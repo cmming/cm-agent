@@ -6,6 +6,7 @@ import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.store.InMemoryPlatformStore;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -50,7 +51,7 @@ public class AgentController {
     }
 
     @PostMapping
-    public AgentDefinition create(@RequestBody AgentCreateRequest request, Authentication authentication) {
+    public AgentDefinition create(@Valid @RequestBody AgentCreateRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:write");
         AgentDefinition agent = new AgentDefinition(
@@ -85,6 +86,10 @@ public class AgentController {
         }
     }
 
-    public record AgentCreateRequest(String name, String systemPrompt, String modelName) {
+    public record AgentCreateRequest(
+            @jakarta.validation.constraints.NotBlank String name,
+            @jakarta.validation.constraints.NotBlank String systemPrompt,
+            @jakarta.validation.constraints.NotBlank String modelName
+    ) {
     }
 }

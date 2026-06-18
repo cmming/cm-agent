@@ -14,6 +14,8 @@ import com.cmagent.core.security.ToolAuthorizationPolicy;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.store.InMemoryPlatformStore;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -51,7 +53,7 @@ public class RunController {
     }
 
     @PostMapping
-    public AgentRunResult run(@PathVariable("agentId") UUID agentId, @RequestBody RunRequest request, Authentication authentication) {
+    public AgentRunResult run(@PathVariable("agentId") UUID agentId, @Valid @RequestBody RunRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:run");
 
@@ -63,27 +65,20 @@ public class RunController {
 
         List<ToolDefinition> authorizedTools = authorizedTools(principal, agent);
 
-        AgentRunResult result = runtime.run(new AgentRunRequest(
-                principal.tenantId(),
-                agent.id(),
-                principal,
-                request.input(),
-                authorizedTools
-        ));
-
-        store.append(new AuditEvent(
-                UUID.randomUUID(),
-                principal.tenantId(),
-                principal.principalId(),
-                "AGENT_RUN",
-                "AGENT",
-                agent.id().toString(),
-                result.status().name(),
-                result.status() == RunStatus.SUCCEEDED ? "Agent 运行完成" : defaultMessage(result),
-                Instant.now()
-        ));
-
-        return result;
+        try {
+            AgentRunResult result = runtime.run(new AgentRunRequest(
+                    principal.tenantId(),
+                    agent.id(),
+                    principal,
+                    request.input(),
+                    authorizedTools
+            ));
+            appendAuditEvent(principal, agent, result.status().name(), result.status() == RunStatus.SUCCEEDED ? "Agent 运行完成" : defaultMessage(result));
+            return result;
+        } catch (RuntimeException ex) {
+            appendAuditEvent(principal, agent, RunStatus.FAILED.name(), defaultMessage(ex));
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Agent 运行失败", ex);
+        }
     }
 
     private List<ToolDefinition> authorizedTools(PrincipalRef principal, AgentDefinition agent) {
@@ -110,6 +105,26 @@ public class RunController {
                 : result.errorMessage();
     }
 
+    private String defaultMessage(RuntimeException ex) {
+        return ex.getMessage() == null || ex.getMessage().isBlank()
+                ? "Agent 运行失败"
+                : ex.getMessage();
+    }
+
+    private void appendAuditEvent(PrincipalRef principal, AgentDefinition agent, String status, String message) {
+        store.append(new AuditEvent(
+                UUID.randomUUID(),
+                principal.tenantId(),
+                principal.principalId(),
+                "AGENT_RUN",
+                "AGENT",
+                agent.id().toString(),
+                status,
+                message,
+                Instant.now()
+        ));
+    }
+
     private PrincipalRef principal(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated() || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录或令牌无效");
@@ -124,6 +139,6 @@ public class RunController {
         }
     }
 
-    public record RunRequest(String input) {
+    public record RunRequest(@NotBlank String input) {
     }
 }

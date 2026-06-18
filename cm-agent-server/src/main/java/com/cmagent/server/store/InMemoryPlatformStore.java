@@ -12,8 +12,10 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.NoSuchElementException;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Component
 public class InMemoryPlatformStore implements AuditEventRepository {
@@ -39,37 +41,46 @@ public class InMemoryPlatformStore implements AuditEventRepository {
     public List<AgentDefinition> listAgents(UUID tenantId) {
         return agents.values().stream()
                 .filter(agent -> agent.tenantId().equals(tenantId))
-                .sorted(Comparator.comparing(AgentDefinition::name).thenComparing(agent -> agent.id().toString()))
+                .sorted(Comparator.comparing(AgentDefinition::name, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(agent -> agent.id().toString()))
                 .toList();
     }
 
     public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
-        return findAgent(tenantId, agentId)
-                .map(agent -> {
-                    if (agent.toolIds().contains(toolId)) {
-                        return agent;
-                    }
-                    List<UUID> toolIds = new ArrayList<>(agent.toolIds());
-                    toolIds.add(toolId);
-                    AgentDefinition updated = new AgentDefinition(
-                            agent.id(),
-                            agent.tenantId(),
-                            agent.name(),
-                            agent.description(),
-                            agent.systemPrompt(),
-                            agent.modelProviderId(),
-                            agent.modelName(),
-                            agent.temperature(),
-                            agent.maxIterations(),
-                            agent.enabled(),
-                            toolIds,
-                            agent.createdBy(),
-                            agent.updatedBy()
-                    );
-                    agents.put(updated.id(), updated);
-                    return updated;
-                })
-                .orElseThrow();
+        AtomicReference<AgentDefinition> updated = new AtomicReference<>();
+        agents.computeIfPresent(agentId, (id, agent) -> {
+            if (!agent.tenantId().equals(tenantId)) {
+                throw new NoSuchElementException("Agent 不存在");
+            }
+            if (agent.toolIds().contains(toolId)) {
+                updated.set(agent);
+                return agent;
+            }
+            List<UUID> toolIds = new ArrayList<>(agent.toolIds());
+            toolIds.add(toolId);
+            AgentDefinition merged = new AgentDefinition(
+                    agent.id(),
+                    agent.tenantId(),
+                    agent.name(),
+                    agent.description(),
+                    agent.systemPrompt(),
+                    agent.modelProviderId(),
+                    agent.modelName(),
+                    agent.temperature(),
+                    agent.maxIterations(),
+                    agent.enabled(),
+                    toolIds,
+                    agent.createdBy(),
+                    agent.updatedBy()
+            );
+            updated.set(merged);
+            return merged;
+        });
+        AgentDefinition result = updated.get();
+        if (result == null) {
+            throw new NoSuchElementException("Agent 不存在");
+        }
+        return result;
     }
 
     public ToolDefinition saveTool(ToolDefinition tool) {
@@ -88,15 +99,23 @@ public class InMemoryPlatformStore implements AuditEventRepository {
     public List<ToolDefinition> listTools(UUID tenantId) {
         return tools.values().stream()
                 .filter(tool -> tool.tenantId().equals(tenantId))
-                .sorted(Comparator.comparing(ToolDefinition::name).thenComparing(tool -> tool.id().toString()))
+                .sorted(Comparator.comparing(ToolDefinition::name, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(tool -> tool.id().toString()))
                 .toList();
     }
 
     public ToolGrant saveGrant(ToolGrant grant) {
         synchronized (grants) {
-            grants.add(grant);
+            return grants.stream()
+                    .filter(existing -> existing.tenantId().equals(grant.tenantId())
+                            && existing.agentId().equals(grant.agentId())
+                            && existing.toolId().equals(grant.toolId()))
+                    .findFirst()
+                    .orElseGet(() -> {
+                        grants.add(grant);
+                        return grant;
+                    });
         }
-        return grant;
     }
 
     public List<ToolGrant> listGrants(UUID tenantId) {

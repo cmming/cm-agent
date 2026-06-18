@@ -10,6 +10,9 @@ import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.store.InMemoryPlatformStore;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -44,7 +47,7 @@ public class ToolController {
     }
 
     @PostMapping
-    public ToolDefinition create(@RequestBody ToolCreateRequest request, Authentication authentication) {
+    public ToolDefinition create(@Valid @RequestBody ToolCreateRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant");
         ToolDefinition tool = new ToolDefinition(
@@ -64,7 +67,7 @@ public class ToolController {
     }
 
     @PostMapping("/{id}/grants")
-    public ToolGrant grant(@PathVariable("id") UUID id, @RequestBody ToolGrantRequest request, Authentication authentication) {
+    public ToolGrant grant(@PathVariable("id") UUID id, @Valid @RequestBody ToolGrantRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant");
 
@@ -74,9 +77,9 @@ public class ToolController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
 
         ToolGrant grant = new ToolGrant(principal.tenantId(), tool.id(), agent.id(), "", true);
-        store.saveGrant(grant);
+        ToolGrant savedGrant = store.saveGrant(grant);
         store.addToolToAgent(principal.tenantId(), agent.id(), tool.id());
-        return grant;
+        return savedGrant;
     }
 
     private PrincipalRef principal(Authentication authentication) {
@@ -93,9 +96,14 @@ public class ToolController {
         }
     }
 
-    public record ToolCreateRequest(String name, String description, ToolType type, ToolRiskLevel riskLevel) {
+    public record ToolCreateRequest(
+            @NotBlank String name,
+            @NotBlank String description,
+            @NotNull ToolType type,
+            @NotNull ToolRiskLevel riskLevel
+    ) {
     }
 
-    public record ToolGrantRequest(UUID agentId) {
+    public record ToolGrantRequest(@NotNull UUID agentId) {
     }
 }
