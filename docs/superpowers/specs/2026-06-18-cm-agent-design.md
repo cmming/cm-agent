@@ -1,228 +1,228 @@
-# CM Agent Design
+# CM Agent 设计说明
 
-Date: 2026-06-18
-Status: Approved for implementation planning
-License: Apache-2.0
+日期：2026-06-18
+状态：已批准进入实施计划
+开源协议：Apache-2.0
 
-## Purpose
+## 项目目标
 
-CM Agent is an open source enterprise agent foundation built on AgentScope Java. The project targets production use by Java backend developers and enterprise platform teams. It provides both a reusable Java SDK/Spring Boot Starter and an independently deployable server with a thin management console.
+CM Agent 是一个基于 AgentScope Java 的企业级智能体开源底座。项目面向 Java 后端开发者和企业平台团队，既提供可复用的 Java SDK / Spring Boot Starter，也提供可独立部署的服务端和轻量管理控制台。
 
-The first release focuses on the core foundation: SDK, Starter, Agent runtime abstraction, tool governance, lightweight multi-tenancy, RBAC, audit logging, model configuration, and minimal console workflows. Business-specific products such as RAG, customer support bots, data analysis assistants, and workflow automation are future milestones built on top of this foundation.
+第一版重点不是做某个垂直业务智能体，而是把生产可用的基础能力打稳：SDK、Starter、`AgentRuntime` 抽象、工具治理、轻量多租户、RBAC、审计日志、模型配置、AgentScope Java 适配，以及最小控制台工作流。RAG、客服助手、数据分析助手、工作流自动化等业务产品形态都作为后续里程碑构建在这个底座之上。
 
-## Current Context
+## 当前上下文
 
-The workspace starts as an empty repository at `F:\java\cm-agent`.
+当前工作区是空仓库：`F:\java\cm-agent`。
 
-Verified project inputs:
+已确认的外部信息：
 
-- AgentScope Java provides a JVM agent framework with ReAct reasoning, Harness infrastructure, multi-agent orchestration, and MCP/A2A support.
-- The AgentScope Java GitHub repository describes support for ReAct reasoning, tool calling, memory management, and multi-agent collaboration.
-- Maven Central currently lists `io.agentscope` artifacts such as `agentscope-extensions` at `2.0.0-RC3`.
+- AgentScope Java 是 JVM 智能体框架，提供 ReAct 推理、Harness 基础设施、多智能体编排、MCP/A2A 协议支持等能力。
+- AgentScope Java GitHub 仓库说明其支持 ReAct 推理、工具调用、记忆管理和多智能体协作。
+- Maven Central 当前可以看到 `io.agentscope` 下的 `agentscope-extensions` 等构件，版本包含 `2.0.0-RC3`。
 
-References:
+参考资料：
 
-- [AgentScope Java docs](https://java.agentscope.io/v2/en/intro.html)
+- [AgentScope Java 文档](https://java.agentscope.io/v2/en/intro.html)
 - [AgentScope Java GitHub](https://github.com/agentscope-ai/agentscope-java)
 - [Maven Central: agentscope-extensions](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions)
 
-## Goals
+## 核心目标
 
-- Build a modular monolith that can run as one deployable service while keeping SDK, Starter, runtime, persistence, adapter, and console boundaries clean.
-- Expose stable CM Agent core interfaces so application code does not depend directly on AgentScope Java classes.
-- Provide a default AgentScope Java v2 adapter while keeping room to support AgentScope 1.x or other runtimes later.
-- Support lightweight multi-tenancy with `tenantId` on all tenant-owned data and tenant-level model/tool configuration.
-- Provide JWT login, RBAC, API keys for service-to-service calls, and extension points for OIDC/SSO integration.
-- Support DashScope native model configuration and OpenAI-compatible model configuration.
-- Provide local tool governance and external MCP/A2A endpoint configuration.
-- Support both MySQL and PostgreSQL through compatible schema design and automated migration tests.
-- Deliver a thin management console with login, Agent management, tool governance, chat debugging, and audit log views.
-- Provide production baseline features: structured logs, audit logs, health checks, Docker Compose, OpenAPI docs, migration scripts, Chinese README, and examples.
+- 使用 Maven 多模块的模块化单体架构，既能单体部署，也能清晰拆分 SDK、Starter、runtime、persistence、adapter 和 console 边界。
+- 提供稳定的 CM Agent 核心接口，避免业务代码直接依赖 AgentScope Java 具体类。
+- 默认提供 AgentScope Java v2 适配器，同时保留未来支持 AgentScope 1.x 或其他 runtime 的空间。
+- 支持轻量多租户，所有租户数据携带 `tenantId`，模型配置、工具授权、会话和审计都按租户隔离。
+- 提供 JWT 登录、RBAC、服务间 API Key，并为 OIDC/SSO 预留扩展点。
+- 默认支持 DashScope 原生模型配置和 OpenAI-compatible 模型配置。
+- 支持本地工具治理和外部 MCP/A2A 端点配置。
+- 同时支持 MySQL 和 PostgreSQL，通过兼容 schema 和自动化迁移测试保证可用性。
+- 提供薄管理控制台，包含登录、Agent 管理、工具治理、聊天调试和审计查询。
+- 提供生产最低线能力：结构化日志、审计日志、健康检查、Docker Compose、OpenAPI 文档、迁移脚本、中文 README 和示例。
 
-## Documentation Language Constraint
+## 文档语言约束
 
-Production-facing documentation is Chinese-first. README files, quickstart guides, deployment guides, operations notes, configuration examples, release notes, and generated project documentation must be written in Chinese by default. English documentation can be added later as a translation, but it must not replace or block the Chinese production documentation baseline.
+面向生产使用者的文档默认使用中文。README、快速开始、部署指南、运维说明、配置示例、发布说明和项目生成文档都必须优先提供中文版本。后续可以增加英文翻译，但英文文档不能替代或阻塞中文生产文档基线。
 
-## Non-Goals For The First Release
+## 第一版不做的范围
 
-- Full workflow orchestration.
-- Dynamic plugin package loading.
-- Billing, quotas, or commercial tenant plans.
-- End-user chat product features beyond the debugging console.
-- Knowledge base ingestion, RAG, embeddings, or vector search.
-- Complex SSO administration UI.
-- Multi-service deployment topology.
-- Full plugin marketplace.
+- 完整工作流编排。
+- 独立插件包动态加载。
+- 计费、配额、商业套餐。
+- 面向终端用户的正式聊天产品。
+- 知识库导入、RAG、Embedding、向量检索。
+- 复杂 SSO 管理界面。
+- 多服务部署拓扑。
+- 完整插件市场。
 
-## Recommended Approach
+## 推荐路线
 
-Use a Maven multi-module modular monolith.
+第一版采用 Maven 多模块的模块化单体。
 
-This gives the project a production-friendly shape without making the first release too heavy. Developers can consume the SDK/Starter, platform teams can deploy the server, and contributors can understand module boundaries without operating many services. The architecture keeps future service extraction possible by keeping contracts explicit at module boundaries.
+这个路线能兼顾生产形态和开源可用性：开发者可以引入 SDK/Starter，平台团队可以部署独立服务，贡献者也能比较容易理解模块边界。后续如果某些模块需要拆成独立服务，可以基于清晰接口逐步演进。
 
-Rejected alternatives:
+已拒绝的替代路线：
 
-- SDK/Starter-only first release: simpler, but weaker as an enterprise platform and harder to demonstrate.
-- Multi-service platform first release: production-looking, but too heavy for an early open source project and harder for contributors to run.
+- SDK/Starter 优先：更简单，但企业平台感和演示能力较弱。
+- 多服务平台优先：看起来更“生产”，但第一版运行、调试和贡献成本过高。
 
-## Module Structure
+## 模块结构
 
 ### `cm-agent-api`
 
-Public API contracts shared by SDK, server, console, and examples.
+公共 API 契约模块，供 SDK、server、console 和 examples 共享。
 
-Responsibilities:
+职责：
 
-- Common DTOs.
-- Error codes.
-- Pagination request and response models.
-- Tenant context model.
-- Principal model.
-- Audit event model.
-- API response envelope if the project chooses a unified response style.
+- 公共 DTO。
+- 错误码。
+- 分页请求和分页响应。
+- 租户上下文模型。
+- 当前用户/调用方模型。
+- 审计事件模型。
+- 如项目决定统一响应格式，则放置统一响应封装。
 
-Constraints:
+约束：
 
-- No Spring Web dependency.
-- No persistence dependency.
-- No AgentScope Java dependency.
+- 不依赖 Spring Web。
+- 不依赖持久化实现。
+- 不依赖 AgentScope Java。
 
 ### `cm-agent-core`
 
-Stable domain interfaces and core services.
+稳定领域接口和核心服务模块。
 
-Responsibilities:
+职责：
 
-- `AgentRuntime` abstraction.
-- `AgentRunRequest`, `AgentRunResult`, and streaming/run event models.
-- `ToolRegistry`.
-- `ToolExecutor`.
-- `ToolAuthorizationPolicy`.
-- `PermissionEvaluator`.
-- `AuditPublisher`.
-- `ModelRegistry`.
-- Tenant context propagation abstractions.
-- Default in-memory registries useful for tests and local examples.
+- `AgentRuntime` 抽象。
+- `AgentRunRequest`、`AgentRunResult` 和运行事件模型。
+- `ToolRegistry`。
+- `ToolExecutor`。
+- `ToolAuthorizationPolicy`。
+- `PermissionEvaluator`。
+- `AuditPublisher`。
+- `ModelRegistry`。
+- 租户上下文传递抽象。
+- 供测试和本地示例使用的默认内存实现。
 
-Constraints:
+约束：
 
-- No direct database access.
-- No direct dependency on AgentScope Java implementation classes.
-- Spring dependencies are limited to optional integration where needed; core logic should remain testable without starting Spring.
+- 不直接访问数据库。
+- 不直接依赖 AgentScope Java 实现类。
+- 尽量保持核心逻辑不依赖 Spring 容器启动即可测试。
 
 ### `cm-agent-agentscope-adapter`
 
-Default runtime implementation backed by AgentScope Java v2.
+默认 Agent runtime 适配模块，底层接 AgentScope Java v2。
 
-Responsibilities:
+职责：
 
-- Implement `AgentRuntime`.
-- Convert `AgentDefinition` and `AgentRunRequest` into AgentScope runtime objects.
-- Bridge CM Agent tool metadata to AgentScope tool calling.
-- Map AgentScope events, tool calls, errors, and final responses back to CM Agent run events.
-- Keep all AgentScope-specific types behind this module.
+- 实现 `AgentRuntime`。
+- 将 `AgentDefinition` 和 `AgentRunRequest` 转换为 AgentScope 运行对象。
+- 将 CM Agent 工具元数据桥接到 AgentScope 工具调用机制。
+- 将 AgentScope 的事件、工具调用、错误和最终响应映射回 CM Agent 运行事件。
+- 隔离所有 AgentScope 专属类型，避免泄漏到 `core`、`server` 或业务项目。
 
-Version strategy:
+版本策略：
 
-- Pin AgentScope Java dependencies in dependency management.
-- Treat `2.0.0-RC3` as the initial candidate version because it is visible on Maven Central as of 2026-06-18.
-- Re-check AgentScope Java release notes before implementation begins and again before the first public release.
-- Keep adapter-level contract tests so AgentScope changes do not leak into `core` or `server`.
+- 在 dependency management 中锁定 AgentScope Java 依赖版本。
+- 以 `2.0.0-RC3` 作为初始候选版本，因为它在 2026-06-18 已出现在 Maven Central。
+- 在正式实施前和首次公开发布前再次检查 AgentScope Java 最新 release notes。
+- 通过 adapter 契约测试确保 AgentScope API 变化不会影响 `core` 或 `server`。
 
 ### `cm-agent-persistence`
 
-Database-backed repositories and migrations.
+数据库持久化和迁移模块。
 
-Responsibilities:
+职责：
 
-- Flyway migrations.
-- Repository implementations for tenants, users, roles, permissions, API keys, model configs, Agent definitions, tool definitions, tool grants, conversations, messages, runs, tool calls, and audit events.
-- MySQL and PostgreSQL compatibility tests.
+- Flyway 迁移脚本。
+- 租户、用户、角色、权限、API Key、模型配置、Agent 定义、工具定义、工具授权、会话、消息、运行记录、工具调用、审计事件的 repository 实现。
+- MySQL 和 PostgreSQL 兼容性测试。
 
-Database strategy:
+数据库策略：
 
-- Use portable column types where possible.
-- Store structured metadata as text JSON with application-level serialization unless a database-neutral abstraction is introduced.
-- Keep database-specific SQL isolated behind repository implementations or migration variants.
-- Use Testcontainers for MySQL and PostgreSQL migration/repository tests.
+- 优先使用可移植字段类型。
+- 结构化元数据第一版优先以文本 JSON 存储，由应用层序列化和反序列化。
+- 数据库特定 SQL 必须隔离在 repository 或迁移变体中。
+- 使用 Testcontainers 同时验证 MySQL 和 PostgreSQL。
 
 ### `cm-agent-spring-boot-starter`
 
-Auto-configuration for embedding CM Agent in existing Java services.
+供业务系统嵌入使用的 Spring Boot Starter。
 
-Responsibilities:
+职责：
 
-- Configuration properties.
-- Conditional auto-configuration for core services.
-- Default security integration hooks.
-- Default tool registration from Spring beans or annotations.
-- Default audit publisher wiring.
-- Optional adapter and persistence wiring.
+- 配置属性。
+- 核心服务自动装配。
+- 默认安全集成钩子。
+- 基于 Spring Bean 或注解的本地工具注册。
+- 默认审计发布器接入。
+- 可选接入 AgentScope adapter 和 persistence。
 
-Usage target:
+目标用法：
 
-Java backend teams can add the Starter and expose CM Agent capabilities inside their own Spring Boot application without deploying the standalone server.
+Java 后端团队只需引入 Starter，就能在自己的 Spring Boot 应用中嵌入 CM Agent 能力，而不一定要部署独立服务端。
 
 ### `cm-agent-server`
 
-Independently deployable Spring Boot server.
+可独立部署的 Spring Boot 服务端。
 
-Responsibilities:
+职责：
 
-- REST API.
-- Authentication and token issuance.
-- API key authentication for service-to-service calls.
-- Tenant-aware request filters.
-- RBAC enforcement.
-- Agent management.
-- Tool management.
-- Chat debugging/run endpoints.
-- Audit query endpoints.
-- OpenAPI documentation.
-- Actuator health checks.
+- REST API。
+- 登录认证和 token 签发。
+- 服务间 API Key 认证。
+- 租户感知请求过滤器。
+- RBAC 权限控制。
+- Agent 管理。
+- 工具管理。
+- 聊天调试 / Agent run 接口。
+- 审计查询接口。
+- OpenAPI 文档。
+- Actuator 健康检查。
 
 ### `cm-agent-console`
 
-Thin management console.
+轻量管理控制台。
 
-Responsibilities:
+职责：
 
-- Login page.
-- Agent list and edit pages.
-- Tool governance page.
-- Chat debugging page.
-- Audit log page.
+- 登录页。
+- Agent 列表和编辑页。
+- 工具治理页。
+- 聊天调试页。
+- 审计日志页。
 
-Constraints:
+约束：
 
-- The console uses the same REST APIs as external clients.
-- The console does not bypass RBAC or tool authorization.
-- The console is not a polished end-user chat product in the first release.
+- 控制台只调用公开 REST API。
+- 控制台不能绕过 RBAC 或工具授权。
+- 第一版控制台不是面向终端用户的正式聊天产品。
 
 ### `cm-agent-examples`
 
-Runnable examples for users and contributors.
+可运行示例模块，面向用户和贡献者。
 
-Responsibilities:
+职责：
 
-- Starter embedding example.
-- Standalone server example.
-- Local tool example.
-- MCP/A2A endpoint configuration example.
-- DashScope model configuration example.
-- OpenAI-compatible model configuration example.
+- Starter 嵌入示例。
+- 独立 server 示例。
+- 本地工具示例。
+- MCP/A2A 端点配置示例。
+- DashScope 模型配置示例。
+- OpenAI-compatible 模型配置示例。
 
-## Core Domain Model
+## 核心领域模型
 
 ### `Tenant`
 
-Defines the lightweight multi-tenant boundary. Tenant-owned tables include `tenantId`. Tenant-level configuration includes model providers, enabled tools, and security defaults.
+轻量多租户边界。租户归属数据都必须包含 `tenantId`。租户级配置包括模型供应商、启用工具和安全默认值。
 
-### `User`, `Role`, `Permission`
+### `User`、`Role`、`Permission`
 
-Default identity and authorization model for self-hosted deployments. JWT login issues tokens for console and API access. RBAC permissions protect server endpoints and sensitive operations.
+默认身份和授权模型，服务于开源自部署场景。JWT 登录为控制台和 API 调用签发 token，RBAC 权限保护服务端接口和敏感操作。
 
-Examples of permissions:
+权限示例：
 
 - `tenant:read`
 - `tenant:update`
@@ -234,17 +234,17 @@ Examples of permissions:
 - `audit:read`
 - `apikey:write`
 
-OIDC/SSO is not fully implemented in the first release, but the identity layer must allow an external identity provider to map users and roles later.
+第一版不完整实现 OIDC/SSO，但身份层必须允许未来将外部身份源映射为本地用户和角色。
 
 ### `ApiKey`
 
-Service-to-service credential scoped to a tenant and a set of permissions. API keys can be created, disabled, rotated, and audited.
+服务间调用凭证，绑定租户和权限集合。API Key 支持创建、禁用、轮换和审计。
 
 ### `AgentDefinition`
 
-Configuration for an agent.
+Agent 配置对象。
 
-Fields:
+字段：
 
 - `id`
 - `tenantId`
@@ -260,30 +260,30 @@ Fields:
 - `createdBy`
 - `updatedBy`
 
-### `ModelProvider` And `ModelConfig`
+### `ModelProvider` 和 `ModelConfig`
 
-Tenant-level model provider configuration.
+租户级模型供应商配置。
 
-Supported first-release provider modes:
+第一版支持：
 
-- DashScope native.
-- OpenAI-compatible.
+- DashScope 原生模式。
+- OpenAI-compatible 模式。
 
-Secrets such as API keys are stored encrypted or delegated to a pluggable secret provider. Plaintext secrets are never returned through API responses.
+API Key 等密钥必须加密存储，或委托给可插拔 secret provider。任何 API 响应都不能返回明文密钥。
 
 ### `ToolDefinition`
 
-Metadata for local and external tools.
+本地工具和外部工具的元数据。
 
-Fields:
+字段：
 
 - `id`
 - `tenantId`
 - `name`
 - `description`
-- `type`: `LOCAL`, `MCP`, or `A2A`
+- `type`：`LOCAL`、`MCP` 或 `A2A`
 - `inputSchema`
-- `riskLevel`: `LOW`, `MEDIUM`, or `HIGH`
+- `riskLevel`：`LOW`、`MEDIUM` 或 `HIGH`
 - `enabled`
 - `endpoint`
 - `createdBy`
@@ -291,73 +291,73 @@ Fields:
 
 ### `ToolGrant`
 
-Authorization binding that controls which tenant, Agent, role, or principal may call a tool.
+工具授权绑定，用于控制租户、Agent、角色或调用方是否可以调用某个工具。
 
-The first release supports tenant-level and Agent-level grants. Role-aware grants can be represented in the model and implemented where RBAC data is available.
+第一版必须支持租户级授权和 Agent 级授权。角色级授权可以先体现在模型中，在 RBAC 数据可用时实现。
 
-### `Conversation`, `Message`, `Run`, `ToolCall`
+### `Conversation`、`Message`、`Run`、`ToolCall`
 
-Operational records for chat debugging and traceability.
+聊天调试和运行追踪记录。
 
-`Run` records:
+`Run` 记录：
 
-- Requesting tenant and principal.
-- Agent used.
-- Status.
-- Started and finished timestamps.
-- Error code and message.
-- Token usage fields where provider data is available.
-- Cost estimate fields where pricing configuration is available.
+- 请求租户和调用方。
+- 使用的 Agent。
+- 运行状态。
+- 开始和结束时间。
+- 错误码和错误消息。
+- 模型返回 token 用量时记录 token 字段。
+- 存在价格配置时记录费用估算字段。
 
-`ToolCall` records:
+`ToolCall` 记录：
 
-- Tool id.
-- Tool name.
-- Input summary.
-- Output summary.
-- Status.
-- Duration.
-- Authorization decision.
-- Error details.
+- 工具 ID。
+- 工具名称。
+- 输入摘要。
+- 输出摘要。
+- 状态。
+- 耗时。
+- 授权决策。
+- 错误详情。
 
 ### `AuditEvent`
 
-Append-only audit record for production traceability.
+追加写入的审计记录，用于生产追踪。
 
-Events include:
+审计事件包括：
 
-- Login success and failure.
-- API key creation, disablement, and rotation.
-- Tenant configuration changes.
-- Model configuration changes.
-- Agent creation, update, enablement, disablement, and run.
-- Tool registration, enablement, disablement, and grant changes.
-- Tool calls.
-- Permission denials.
-- Runtime errors.
+- 登录成功和失败。
+- API Key 创建、禁用和轮换。
+- 租户配置变更。
+- 模型配置变更。
+- Agent 创建、更新、启用、禁用和运行。
+- 工具注册、启用、禁用和授权变更。
+- 工具调用。
+- 权限拒绝。
+- runtime 错误。
 
-## Primary Data Flow
+## 主数据流
 
-1. A console user or API client sends a request with a JWT or API key.
-2. The server resolves `TenantContext` and `Principal`.
-3. RBAC checks the requested operation.
-4. For Agent runs, the server loads `AgentDefinition`, tenant-level `ModelConfig`, and authorized `ToolDefinition` records.
-5. The server creates a `Run` record.
-6. `AgentRuntime.run()` receives a fully scoped request.
-7. The AgentScope adapter maps the request into AgentScope Java v2 runtime objects.
-8. Before each tool execution, `ToolAuthorizationPolicy` checks tenant, Agent, principal, and grant state.
-9. Authorized local tools run in-process; MCP/A2A tools call configured external endpoints.
-10. Tool calls, run events, errors, and final outputs are persisted.
-11. `AuditPublisher` emits audit events for security-sensitive and operational actions.
-12. The console chat debugging page displays messages, tool calls, and errors through the same REST APIs external clients use.
+1. 控制台用户或 API 客户端携带 JWT/API Key 发起请求。
+2. 服务端解析 `TenantContext` 和 `Principal`。
+3. RBAC 校验当前操作权限。
+4. 对 Agent run 请求，服务端加载 `AgentDefinition`、租户级 `ModelConfig` 和已授权的 `ToolDefinition`。
+5. 服务端创建 `Run` 记录。
+6. `AgentRuntime.run()` 接收完整的租户作用域请求。
+7. AgentScope adapter 将请求映射为 AgentScope Java v2 运行对象。
+8. 每次工具执行前，`ToolAuthorizationPolicy` 检查租户、Agent、调用方和授权状态。
+9. 已授权的本地工具在进程内执行；MCP/A2A 工具调用已配置的外部端点。
+10. 工具调用、运行事件、错误和最终输出写入持久化存储。
+11. `AuditPublisher` 为安全敏感操作和运行过程发布审计事件。
+12. 控制台聊天调试页通过同一套 REST API 展示消息、工具调用和错误。
 
-Design principle:
+设计原则：
 
-AgentScope Java runs the agent. CM Agent owns enterprise governance boundaries: tenant scoping, permission checks, tool grants, audit logging, API contracts, and deployment ergonomics.
+AgentScope Java 负责运行 Agent。CM Agent 负责企业治理边界：租户隔离、权限检查、工具授权、审计日志、API 契约和部署体验。
 
-## REST API Surface
+## REST API 范围
 
-### Authentication
+### 认证
 
 - `POST /api/auth/login`
 - `POST /api/auth/refresh`
@@ -367,7 +367,7 @@ AgentScope Java runs the agent. CM Agent owns enterprise governance boundaries: 
 - `POST /api/api-keys/{id}/disable`
 - `POST /api/api-keys/{id}/rotate`
 
-### Tenants
+### 租户
 
 - `GET /api/tenants`
 - `GET /api/tenants/{id}`
@@ -377,7 +377,7 @@ AgentScope Java runs the agent. CM Agent owns enterprise governance boundaries: 
 - `PATCH /api/tenants/{id}/model-configs/{configId}`
 - `POST /api/tenants/{id}/model-configs/{configId}/disable`
 
-### Agents
+### Agent 管理
 
 - `GET /api/agents`
 - `POST /api/agents`
@@ -386,7 +386,7 @@ AgentScope Java runs the agent. CM Agent owns enterprise governance boundaries: 
 - `POST /api/agents/{id}/enable`
 - `POST /api/agents/{id}/disable`
 
-### Tools
+### 工具
 
 - `GET /api/tools`
 - `GET /api/tools/{id}`
@@ -398,7 +398,7 @@ AgentScope Java runs the agent. CM Agent owns enterprise governance boundaries: 
 - `POST /api/tools/{id}/grants`
 - `DELETE /api/tools/{id}/grants/{grantId}`
 
-### Runs And Chat Debugging
+### 运行和聊天调试
 
 - `POST /api/agents/{id}/runs`
 - `GET /api/runs/{id}`
@@ -407,86 +407,86 @@ AgentScope Java runs the agent. CM Agent owns enterprise governance boundaries: 
 - `GET /api/conversations`
 - `GET /api/conversations/{id}`
 
-Streaming can be introduced through Server-Sent Events for run events. If streaming is not ready in the first implementation slice, synchronous run execution plus persisted events is acceptable for the first implementation plan.
+运行事件可以通过 Server-Sent Events 引入流式输出。如果第一版实施切片无法完成流式能力，同步 run 加持久化事件也可以作为第一阶段验收口径。
 
-### Audit
+### 审计
 
 - `GET /api/audit-events`
 
-Filters:
+支持过滤条件：
 
-- Time range.
-- Tenant.
-- Principal.
-- Agent.
-- Tool.
-- Event type.
-- Status.
+- 时间范围。
+- 租户。
+- 调用方。
+- Agent。
+- 工具。
+- 事件类型。
+- 状态。
 
-## Console Scope
+## 控制台范围
 
-The console is intentionally thin.
+控制台必须保持轻量。
 
-Pages:
+页面：
 
-- Login.
-- Agent list.
-- Agent editor.
-- Tool governance.
-- Chat debugging.
-- Audit log.
+- 登录。
+- Agent 列表。
+- Agent 编辑。
+- 工具治理。
+- 聊天调试。
+- 审计日志。
 
-Required behavior:
+要求：
 
-- All pages call the REST API.
-- RBAC controls which pages and actions are visible.
-- Chat debugging shows final response, message history, tool calls, authorization failures, and runtime errors.
-- Audit log supports filters that match the audit API.
+- 所有页面调用 REST API。
+- RBAC 控制可见页面和可执行操作。
+- 聊天调试展示最终回答、消息历史、工具调用、授权失败和 runtime 错误。
+- 审计日志过滤能力与审计 API 保持一致。
 
-## Security And Governance
+## 安全和治理
 
-Authentication:
+认证：
 
-- JWT for users.
-- API keys for service-to-service calls.
-- OIDC/SSO extension point in the identity layer.
+- 用户使用 JWT。
+- 服务间调用使用 API Key。
+- 身份层预留 OIDC/SSO 扩展点。
 
-Authorization:
+授权：
 
-- RBAC protects API operations.
-- Tool grants protect tool invocation.
-- High-risk tools can require explicit grants before they are available to an Agent.
+- RBAC 保护 API 操作。
+- Tool grant 保护工具调用。
+- 高风险工具必须显式授权后才能被 Agent 使用。
 
-Secret handling:
+密钥处理：
 
-- Model API keys and external endpoint credentials are never returned through APIs.
-- Secret storage is abstracted so local encrypted storage can later be replaced by Vault, KMS, or cloud secret managers.
+- 模型 API Key 和外部端点凭证不能通过 API 明文返回。
+- Secret 存储必须抽象化，后续可替换为 Vault、KMS 或云厂商 Secret Manager。
 
-Audit:
+审计：
 
-- All administrative changes and Agent/tool runtime actions emit audit events.
-- Permission denials and tool authorization denials are auditable.
+- 所有管理配置变更和 Agent/工具运行行为都要产生审计事件。
+- 权限拒绝和工具授权拒绝必须可审计。
 
-Tenant isolation:
+租户隔离：
 
-- Every tenant-owned query filters by `tenantId`.
-- Server request context carries `tenantId` from authenticated principal or API key.
-- Tests must include cross-tenant access denial cases.
+- 所有租户归属查询都必须按 `tenantId` 过滤。
+- 服务端请求上下文从登录用户或 API Key 中解析 `tenantId`。
+- 测试必须覆盖跨租户访问拒绝场景。
 
-## Persistence And Migration
+## 持久化和迁移
 
-Supported databases:
+支持数据库：
 
-- MySQL.
-- PostgreSQL.
+- MySQL。
+- PostgreSQL。
 
-Migration approach:
+迁移方式：
 
-- Flyway migrations define the schema.
-- Repository tests run against both MySQL and PostgreSQL using Testcontainers.
-- Schema names and indexes avoid database-specific features unless hidden behind explicit migration variants.
+- 使用 Flyway 定义 schema。
+- Repository 测试使用 Testcontainers 同时跑 MySQL 和 PostgreSQL。
+- Schema 命名和索引设计避免依赖数据库特性；确实需要时必须通过明确的迁移变体隔离。
 
-First-release tables:
+第一版表：
 
 - `tenants`
 - `users`
@@ -505,126 +505,126 @@ First-release tables:
 - `tool_calls`
 - `audit_events`
 
-## Testing Strategy
+## 测试策略
 
-### Unit Tests
+### 单元测试
 
-Targets:
+覆盖：
 
-- Permission evaluation.
-- Tenant context propagation.
-- Tool authorization.
-- Tool registry behavior.
-- Agent run request assembly.
-- Audit event creation.
-- Model provider selection.
+- 权限判断。
+- 租户上下文传递。
+- 工具授权。
+- 工具注册表行为。
+- Agent run 请求组装。
+- 审计事件生成。
+- 模型供应商选择。
 
-### Persistence Tests
+### 持久化测试
 
-Targets:
+覆盖：
 
-- Flyway migration success on MySQL.
-- Flyway migration success on PostgreSQL.
-- Repository CRUD.
-- Tenant isolation.
-- Audit event append/query.
+- MySQL Flyway 迁移成功。
+- PostgreSQL Flyway 迁移成功。
+- Repository CRUD。
+- 租户隔离。
+- 审计事件追加写入和查询。
 
-### Server Integration Tests
+### 服务端集成测试
 
-Targets:
+覆盖：
 
-- Login and token refresh.
-- API key authentication.
-- RBAC success and denial paths.
-- Agent CRUD.
-- Tool grants.
-- Agent run with a fake runtime.
-- Audit event creation after administrative and runtime actions.
+- 登录和 token 刷新。
+- API Key 认证。
+- RBAC 成功和拒绝路径。
+- Agent CRUD。
+- 工具授权。
+- 使用 fake runtime 的 Agent run。
+- 管理操作和运行操作后的审计事件生成。
 
-### Adapter Contract Tests
+### 适配器契约测试
 
-Targets:
+覆盖：
 
-- CM Agent request to AgentScope adapter input mapping.
-- Tool call bridge.
-- Error mapping.
-- Run event mapping.
+- CM Agent 请求到 AgentScope adapter 输入的映射。
+- 工具调用桥接。
+- 错误映射。
+- 运行事件映射。
 
-These tests use fake model/runtime behavior where possible so CI does not depend on live LLM credentials.
+这些测试优先使用 fake model/runtime，避免 CI 依赖真实大模型凭证。
 
-### Console Smoke Tests
+### 控制台冒烟测试
 
-Targets:
+覆盖：
 
-- Login.
-- Create or edit Agent.
-- Grant tool.
-- Run chat debugging request.
-- View audit log.
+- 登录。
+- 创建或编辑 Agent。
+- 授权工具。
+- 发起聊天调试请求。
+- 查看审计日志。
 
-## Production Baseline
+## 生产最低线
 
-The first release must include:
+第一版必须包含：
 
-- Structured application logs.
-- Audit events persisted to the database.
-- Spring Boot Actuator health endpoint.
-- OpenAPI documentation.
-- Docker Compose for server, MySQL, and PostgreSQL development profiles.
-- Local development configuration.
-- Example configuration for DashScope native models.
-- Example configuration for OpenAI-compatible models.
-- Chinese README with quickstart, architecture overview, and production notes.
-- Chinese production documentation for deployment, operations, configuration, and release notes.
-- Apache-2.0 license file.
+- 结构化应用日志。
+- 持久化审计事件。
+- Spring Boot Actuator 健康检查。
+- OpenAPI 文档。
+- server、MySQL、PostgreSQL 开发 profile 的 Docker Compose。
+- 本地开发配置。
+- DashScope 原生模型配置示例。
+- OpenAI-compatible 模型配置示例。
+- 中文 README，包含快速开始、架构概览和生产说明。
+- 中文生产文档，覆盖部署、运维、配置和发布说明。
+- Apache-2.0 license 文件。
 
-## First Implementation Slice
+## 第一阶段实施切片
 
-The implementation plan should produce a working thin vertical slice:
+实施计划应产出一个可工作的薄纵切：
 
-1. Maven multi-module skeleton.
-2. Core interfaces and domain models.
-3. Spring Boot Starter auto-configuration.
-4. Persistence migrations for MySQL and PostgreSQL.
-5. Server authentication, tenant context, and RBAC baseline.
-6. Agent definition CRUD.
-7. Tool definition and grant management.
-8. Fake runtime-backed Agent run endpoint.
-9. AgentScope adapter module with contract tests and a guarded integration path.
-10. Audit event publishing and query.
-11. Minimal console pages for login, Agent editing, tool governance, chat debugging, and audit viewing.
-12. Examples and documentation.
+1. Maven 多模块骨架。
+2. 核心接口和领域模型。
+3. Spring Boot Starter 自动装配。
+4. MySQL 和 PostgreSQL 持久化迁移。
+5. 服务端认证、租户上下文和 RBAC 基线。
+6. Agent definition CRUD。
+7. Tool definition 和 grant 管理。
+8. 基于 fake runtime 的 Agent run 接口。
+9. AgentScope adapter 模块，包含契约测试和受控集成路径。
+10. 审计事件发布和查询。
+11. 最小控制台页面：登录、Agent 编辑、工具治理、聊天调试和审计查看。
+12. 示例和中文文档。
 
-## Acceptance Criteria
+## 验收标准
 
-- A developer can run the standalone server locally through documented commands.
-- A developer can include the Starter in a Spring Boot example and register a local tool.
-- MySQL and PostgreSQL migrations pass in automated tests.
-- A tenant admin can log in, configure an Agent, grant a tool, run a chat debugging request, and see audit records.
-- A service client can call the run API with an API key scoped to a tenant.
-- Cross-tenant reads and writes are denied in tests.
-- Tool calls are denied when the Agent lacks a grant.
-- AgentScope Java-specific types do not appear in `cm-agent-core` public interfaces.
-- Public Chinese documentation clearly explains the first-release scope and non-goals.
+- 开发者可以通过中文文档中的命令在本地运行独立 server。
+- 开发者可以在 Spring Boot 示例中引入 Starter 并注册本地工具。
+- MySQL 和 PostgreSQL 迁移在自动化测试中通过。
+- 租户管理员可以登录、配置 Agent、授权工具、发起聊天调试请求，并看到审计记录。
+- 服务客户端可以使用绑定租户的 API Key 调用 run API。
+- 测试覆盖跨租户读写拒绝。
+- Agent 缺少工具授权时，工具调用被拒绝。
+- AgentScope Java 专属类型不出现在 `cm-agent-core` 公共接口中。
+- 公开中文文档清楚说明第一版范围和不做范围。
 
-## Risks And Mitigations
+## 风险和缓解措施
 
-Risk: AgentScope Java v2 APIs can change while still in RC.
+风险：AgentScope Java v2 仍处于 RC 阶段，API 可能变化。
 
-Mitigation: isolate all direct AgentScope usage in `cm-agent-agentscope-adapter`, pin dependency versions, and test adapter contracts.
+缓解：所有直接 AgentScope 使用都隔离在 `cm-agent-agentscope-adapter`，锁定依赖版本，并为 adapter 编写契约测试。
 
-Risk: Dual database support increases first-release complexity.
+风险：双数据库支持会增加第一版复杂度。
 
-Mitigation: keep schema portable, avoid database-specific JSON features in the first release, and require Testcontainers coverage for both databases.
+缓解：schema 保持可移植，第一版避免数据库专属 JSON 能力，要求 MySQL 和 PostgreSQL 都有 Testcontainers 覆盖。
 
-Risk: Console work can expand beyond the foundation.
+风险：控制台范围容易膨胀。
 
-Mitigation: limit the console to management and debugging pages that validate backend capabilities.
+缓解：控制台只做管理和调试页面，用来验证后端能力，不做终端用户聊天产品。
 
-Risk: Security scope can become too large.
+风险：安全范围容易过大。
 
-Mitigation: implement JWT, RBAC, API keys, and OIDC extension points first; defer full SSO administration UI.
+缓解：第一版实现 JWT、RBAC、API Key 和 OIDC 扩展点，完整 SSO 管理界面后置。
 
-Risk: Tool execution can become unsafe in enterprise environments.
+风险：工具执行在企业环境中可能带来安全隐患。
 
-Mitigation: require tool metadata, risk level, explicit grants, pre-execution authorization, and auditable tool call records.
+缓解：工具必须有元数据、风险等级、显式授权、执行前鉴权和可审计的工具调用记录。
