@@ -14,7 +14,8 @@ CREATE TABLE users (
     display_name VARCHAR(120) NOT NULL,
     enabled BOOLEAN NOT NULL,
     created_at TIMESTAMP NOT NULL,
-    UNIQUE (tenant_id, username)
+    UNIQUE (tenant_id, username),
+    CONSTRAINT fk_users_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id)
 );
 
 CREATE TABLE roles (
@@ -22,7 +23,8 @@ CREATE TABLE roles (
     tenant_id CHAR(36) NOT NULL,
     code VARCHAR(120) NOT NULL,
     name VARCHAR(120) NOT NULL,
-    UNIQUE (tenant_id, code)
+    UNIQUE (tenant_id, code),
+    CONSTRAINT fk_roles_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id)
 );
 
 CREATE TABLE permissions (
@@ -33,13 +35,17 @@ CREATE TABLE permissions (
 CREATE TABLE user_roles (
     user_id CHAR(36) NOT NULL,
     role_id CHAR(36) NOT NULL,
-    PRIMARY KEY (user_id, role_id)
+    PRIMARY KEY (user_id, role_id),
+    CONSTRAINT fk_user_roles_user FOREIGN KEY (user_id) REFERENCES users (id),
+    CONSTRAINT fk_user_roles_role FOREIGN KEY (role_id) REFERENCES roles (id)
 );
 
 CREATE TABLE role_permissions (
     role_id CHAR(36) NOT NULL,
     permission_code VARCHAR(120) NOT NULL,
-    PRIMARY KEY (role_id, permission_code)
+    PRIMARY KEY (role_id, permission_code),
+    CONSTRAINT fk_role_permissions_role FOREIGN KEY (role_id) REFERENCES roles (id),
+    CONSTRAINT fk_role_permissions_permission FOREIGN KEY (permission_code) REFERENCES permissions (code)
 );
 
 CREATE TABLE api_keys (
@@ -50,7 +56,8 @@ CREATE TABLE api_keys (
     permissions_json TEXT NOT NULL,
     enabled BOOLEAN NOT NULL,
     created_at TIMESTAMP NOT NULL,
-    rotated_at TIMESTAMP
+    rotated_at TIMESTAMP,
+    CONSTRAINT fk_api_keys_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id)
 );
 
 CREATE TABLE model_configs (
@@ -62,7 +69,8 @@ CREATE TABLE model_configs (
     model_name VARCHAR(160) NOT NULL,
     encrypted_api_key TEXT NOT NULL,
     enabled BOOLEAN NOT NULL,
-    created_at TIMESTAMP NOT NULL
+    created_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_model_configs_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id)
 );
 
 CREATE TABLE agent_definitions (
@@ -80,7 +88,9 @@ CREATE TABLE agent_definitions (
     created_by VARCHAR(120) NOT NULL,
     updated_by VARCHAR(120) NOT NULL,
     created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL
+    updated_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_agent_definitions_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id),
+    CONSTRAINT fk_agent_definitions_model_provider FOREIGN KEY (model_provider_id) REFERENCES model_configs (id)
 );
 
 CREATE TABLE tool_definitions (
@@ -96,7 +106,8 @@ CREATE TABLE tool_definitions (
     created_by VARCHAR(120) NOT NULL,
     updated_by VARCHAR(120) NOT NULL,
     created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL
+    updated_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_tool_definitions_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id)
 );
 
 CREATE TABLE tool_grants (
@@ -106,7 +117,12 @@ CREATE TABLE tool_grants (
     agent_id CHAR(36) NOT NULL,
     role_code VARCHAR(120) NOT NULL,
     granted BOOLEAN NOT NULL,
-    created_at TIMESTAMP NOT NULL
+    created_at TIMESTAMP NOT NULL,
+    UNIQUE (tenant_id, tool_id, agent_id, role_code),
+    CONSTRAINT fk_tool_grants_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id),
+    CONSTRAINT fk_tool_grants_tool FOREIGN KEY (tool_id) REFERENCES tool_definitions (id),
+    CONSTRAINT fk_tool_grants_agent FOREIGN KEY (agent_id) REFERENCES agent_definitions (id),
+    CONSTRAINT fk_tool_grants_role FOREIGN KEY (tenant_id, role_code) REFERENCES roles (tenant_id, code)
 );
 
 CREATE TABLE conversations (
@@ -115,7 +131,9 @@ CREATE TABLE conversations (
     agent_id CHAR(36) NOT NULL,
     title VARCHAR(200) NOT NULL,
     created_by VARCHAR(120) NOT NULL,
-    created_at TIMESTAMP NOT NULL
+    created_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_conversations_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id),
+    CONSTRAINT fk_conversations_agent FOREIGN KEY (agent_id) REFERENCES agent_definitions (id)
 );
 
 CREATE TABLE messages (
@@ -124,7 +142,9 @@ CREATE TABLE messages (
     conversation_id CHAR(36) NOT NULL,
     role VARCHAR(30) NOT NULL,
     content TEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL
+    created_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_messages_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id),
+    CONSTRAINT fk_messages_conversation FOREIGN KEY (conversation_id) REFERENCES conversations (id)
 );
 
 CREATE TABLE runs (
@@ -134,10 +154,12 @@ CREATE TABLE runs (
     principal_id VARCHAR(120) NOT NULL,
     status VARCHAR(30) NOT NULL,
     input_text TEXT NOT NULL,
-    output_text TEXT NOT NULL,
-    error_message TEXT NOT NULL,
+    output_text TEXT,
+    error_message TEXT,
     started_at TIMESTAMP NOT NULL,
-    finished_at TIMESTAMP
+    finished_at TIMESTAMP,
+    CONSTRAINT fk_runs_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id),
+    CONSTRAINT fk_runs_agent FOREIGN KEY (agent_id) REFERENCES agent_definitions (id)
 );
 
 CREATE TABLE tool_calls (
@@ -147,14 +169,18 @@ CREATE TABLE tool_calls (
     tool_id CHAR(36) NOT NULL,
     tool_name VARCHAR(160) NOT NULL,
     input_summary TEXT NOT NULL,
-    output_summary TEXT NOT NULL,
+    output_summary TEXT,
     status VARCHAR(30) NOT NULL,
     authorized BOOLEAN NOT NULL,
-    duration_ms BIGINT NOT NULL,
-    error_message TEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL
+    duration_ms BIGINT,
+    error_message TEXT,
+    created_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_tool_calls_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id),
+    CONSTRAINT fk_tool_calls_run FOREIGN KEY (run_id) REFERENCES runs (id),
+    CONSTRAINT fk_tool_calls_tool FOREIGN KEY (tool_id) REFERENCES tool_definitions (id)
 );
 
+-- principal_id 和 resource_id 故意保留为软引用，用于不可变审计历史，不强制外键约束。
 CREATE TABLE audit_events (
     id CHAR(36) PRIMARY KEY,
     tenant_id CHAR(36) NOT NULL,
@@ -164,7 +190,8 @@ CREATE TABLE audit_events (
     resource_id VARCHAR(120) NOT NULL,
     status VARCHAR(30) NOT NULL,
     message TEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL
+    created_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_audit_events_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id)
 );
 
 CREATE INDEX idx_agent_definitions_tenant ON agent_definitions (tenant_id);
