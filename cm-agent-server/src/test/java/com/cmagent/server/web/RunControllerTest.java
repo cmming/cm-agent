@@ -168,9 +168,29 @@ class RunControllerTest {
         mockMvc.perform(post("/api/agents")
                         .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+                .content("""
                                 {"name":"企业助手","systemPrompt":"你是企业助手","modelName":"qwen-max"}
                                 """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listAgentsWithoutReadPermissionIsForbidden() throws Exception {
+        String token = tokenWithPermissions("agent-list-lite", List.of("agent:write"));
+
+        mockMvc.perform(get("/api/agents")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getAgentWithoutReadPermissionIsForbidden() throws Exception {
+        String fullToken = loginToken();
+        String agentId = createAgent(fullToken);
+        String limitedToken = tokenWithPermissions("agent-get-lite", List.of("agent:write"));
+
+        mockMvc.perform(get("/api/agents/{id}", agentId)
+                        .header("Authorization", bearer(limitedToken)))
                 .andExpect(status().isForbidden());
     }
 
@@ -200,6 +220,15 @@ class RunControllerTest {
     }
 
     @Test
+    void listToolsWithoutReadPermissionIsForbidden() throws Exception {
+        String token = tokenWithPermissions("tool-list-lite", List.of("agent:write", "tool:grant"));
+
+        mockMvc.perform(get("/api/tools")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void runWithoutRunPermissionIsForbidden() throws Exception {
         String setupToken = loginToken();
         String agentId = createAgent(setupToken);
@@ -218,10 +247,20 @@ class RunControllerTest {
         mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
                         .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+                .content("""
                                 {"input":"你好"}
                                 """))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createAgentWithoutAuthenticationIsRejected() throws Exception {
+        mockMvc.perform(post("/api/agents")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"企业助手","systemPrompt":"你是企业助手","modelName":"qwen-max"}
+                                """))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
