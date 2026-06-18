@@ -1,0 +1,16 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: cm-agent-server
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+cm-agent:
+  fake-runtime-enabled: true
+  default-tenant-code: default
