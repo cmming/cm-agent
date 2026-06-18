@@ -22,7 +22,6 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
-            <version>${agentscope.version}</version>
             <optional>true</optional>
         </dependency>
         <dependency>

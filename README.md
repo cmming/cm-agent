@@ -6,7 +6,7 @@ CM Agent 是一个基于 AgentScope Java 的企业级智能体开源底座。第
 
 ```powershell
 mvn -q -DskipTests package
-mvn -pl cm-agent-server spring-boot:run
+mvn -pl cm-agent-server -am spring-boot:run
 ```
 
 服务启动后访问：
