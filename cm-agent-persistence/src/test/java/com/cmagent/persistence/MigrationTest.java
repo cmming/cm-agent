@@ -13,6 +13,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -87,7 +88,7 @@ class MigrationTest {
             while (resultSet.next()) {
                 String tableName = resultSet.getString("TABLE_NAME");
                 if (tableName != null) {
-                    names.add(tableName.toLowerCase());
+                    names.add(tableName.toLowerCase(Locale.ROOT));
                 }
             }
             return names;
@@ -101,7 +102,7 @@ class MigrationTest {
             while (resultSet.next()) {
                 String indexName = resultSet.getString("INDEX_NAME");
                 if (indexName != null) {
-                    names.add(indexName.toLowerCase());
+                    names.add(indexName.toLowerCase(Locale.ROOT));
                 }
             }
             return names;
