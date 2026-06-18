@@ -37,6 +37,9 @@ public class JwtSecurityConfiguration {
     }
 
     private boolean allowFallback(String[] activeProfiles, boolean allowDevJwtFallback) {
+        if (hasProductionLikeProfile(activeProfiles)) {
+            return false;
+        }
         if (!allowDevJwtFallback) {
             return false;
         }
@@ -46,6 +49,15 @@ public class JwtSecurityConfiguration {
         return Arrays.stream(activeProfiles)
                 .map(String::toLowerCase)
                 .anyMatch(profile -> profile.equals("local") || profile.equals("test"));
+    }
+
+    private boolean hasProductionLikeProfile(String[] activeProfiles) {
+        if (activeProfiles == null || activeProfiles.length == 0) {
+            return false;
+        }
+        return Arrays.stream(activeProfiles)
+                .map(String::toLowerCase)
+                .anyMatch(profile -> profile.equals("production") || profile.equals("prod"));
     }
 
     private SecretKey createKey(String secret) {
