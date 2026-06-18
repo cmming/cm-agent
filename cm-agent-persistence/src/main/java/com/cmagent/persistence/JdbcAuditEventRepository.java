@@ -55,6 +55,9 @@ public class JdbcAuditEventRepository implements AuditEventRepository {
 
     @Override
     public List<AuditEvent> listByTenant(UUID tenantId, int limit) {
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit 必须大于 0");
+        }
         return jdbcClient.sql("""
                         SELECT
                             id,
@@ -68,7 +71,7 @@ public class JdbcAuditEventRepository implements AuditEventRepository {
                             created_at
                         FROM audit_events
                         WHERE tenant_id = :tenantId
-                        ORDER BY created_at DESC
+                        ORDER BY created_at DESC, id DESC
                         LIMIT :limit
                         """)
                 .param("tenantId", tenantId.toString())

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 class JdbcAuditEventRepositoryTest {
@@ -60,16 +61,38 @@ class JdbcAuditEventRepositoryTest {
         repository.append(new AuditEvent(
                 UUID.fromString("11111111-1111-1111-1111-111111111111"),
                 tenantA,
-                "principal-a",
+                "principal-a-1",
                 "agent.run",
                 "agent",
-                "agent-a",
+                "agent-a-1",
                 "SUCCESS",
-                "运行成功",
+                "运行成功-1",
                 Instant.parse("2026-06-18T01:00:00Z")
         ));
         repository.append(new AuditEvent(
                 UUID.fromString("22222222-2222-2222-2222-222222222222"),
+                tenantA,
+                "principal-a-2",
+                "agent.run",
+                "agent",
+                "agent-a-2",
+                "SUCCESS",
+                "运行成功-2",
+                Instant.parse("2026-06-18T02:00:00Z")
+        ));
+        repository.append(new AuditEvent(
+                UUID.fromString("33333333-3333-3333-3333-333333333333"),
+                tenantA,
+                "principal-a-3",
+                "agent.run",
+                "agent",
+                "agent-a-3",
+                "SUCCESS",
+                "运行成功-3",
+                Instant.parse("2026-06-18T03:00:00Z")
+        ));
+        repository.append(new AuditEvent(
+                UUID.fromString("44444444-4444-4444-4444-444444444444"),
                 tenantB,
                 "principal-b",
                 "agent.run",
@@ -77,14 +100,28 @@ class JdbcAuditEventRepositoryTest {
                 "agent-b",
                 "SUCCESS",
                 "运行成功",
-                Instant.parse("2026-06-18T02:00:00Z")
+                Instant.parse("2026-06-18T04:00:00Z")
         ));
 
-        List<AuditEvent> events = repository.listByTenant(tenantA, 20);
+        List<AuditEvent> events = repository.listByTenant(tenantA, 2);
 
-        assertThat(events).hasSize(1);
-        assertThat(events.getFirst().tenantId()).isEqualTo(tenantA);
-        assertThat(events.getFirst().resourceId()).isEqualTo("agent-a");
+        assertThat(events).hasSize(2);
+        assertThat(events).extracting(AuditEvent::tenantId).containsOnly(tenantA);
+        assertThat(events).extracting(AuditEvent::resourceId)
+                .containsExactly("agent-a-3", "agent-a-2");
+        assertThat(events.getFirst().principalId()).isEqualTo("principal-a-3");
+        assertThat(events.getFirst().eventType()).isEqualTo("agent.run");
+        assertThat(events.getFirst().message()).isEqualTo("运行成功-3");
+        assertThat(events.getFirst().createdAt()).isEqualTo(Instant.parse("2026-06-18T03:00:00Z"));
+        assertThat(events.get(1).principalId()).isEqualTo("principal-a-2");
+        assertThat(events.get(1).message()).isEqualTo("运行成功-2");
+    }
+
+    @Test
+    void listByTenantRejectsNonPositiveLimit() {
+        assertThatThrownBy(() -> repository.listByTenant(UUID.fromString("00000000-0000-0000-0000-000000000001"), 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("limit 必须大于 0");
     }
 
     private static void seedTenants(DataSource dataSource) {
