@@ -20,6 +20,7 @@ public class JwtSecurityConfiguration {
     @Bean
     SecretKey jwtSigningKey(
             @Value("${cm-agent.security.jwt-secret:}") String configuredSecret,
+            @Value("${cm-agent.security.allow-dev-jwt-fallback:false}") boolean allowDevJwtFallback,
             Environment environment
     ) {
         String secret = configuredSecret == null ? "" : configuredSecret.trim();
@@ -27,7 +28,7 @@ public class JwtSecurityConfiguration {
             return createKey(secret);
         }
 
-        if (allowFallback(environment.getActiveProfiles())) {
+        if (allowFallback(environment.getActiveProfiles(), allowDevJwtFallback)) {
             log.warn("未配置 cm-agent.security.jwt-secret，当前仅使用本地/测试回退密钥，生产环境必须外部提供。");
             return createKey(LOCAL_FALLBACK_SECRET);
         }
@@ -35,9 +36,12 @@ public class JwtSecurityConfiguration {
         throw new IllegalStateException("未配置 cm-agent.security.jwt-secret；生产环境必须外部提供 JWT 密钥");
     }
 
-    private boolean allowFallback(String[] activeProfiles) {
+    private boolean allowFallback(String[] activeProfiles, boolean allowDevJwtFallback) {
+        if (!allowDevJwtFallback) {
+            return false;
+        }
         if (activeProfiles == null || activeProfiles.length == 0) {
-            return true;
+            return false;
         }
         return Arrays.stream(activeProfiles)
                 .map(String::toLowerCase)

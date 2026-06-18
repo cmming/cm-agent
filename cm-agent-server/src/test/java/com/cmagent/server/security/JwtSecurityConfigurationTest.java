@@ -1,8 +1,9 @@
 package com.cmagent.server.security;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.beans.factory.BeanCreationException;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import io.jsonwebtoken.security.WeakKeyException;
 
 import javax.crypto.SecretKey;
 
@@ -13,21 +14,58 @@ class JwtSecurityConfigurationTest {
             .withUserConfiguration(JwtSecurityConfiguration.class);
 
     @Test
-    void usesLocalFallbackWhenNoProfileIsActiveAndSecretMissing() {
+    void failsWhenSecretMissingWithoutExplicitFallbackFlag() {
         contextRunner.run(context -> {
-            assertThat(context).hasSingleBean(SecretKey.class);
-            assertThat(context).hasNotFailed();
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure())
+                    .isInstanceOf(BeanCreationException.class)
+                    .hasMessageContaining("生产环境必须外部提供 JWT 密钥");
         });
     }
 
     @Test
-    void requiresExternalSecretInProductionProfile() {
-        contextRunner.withPropertyValues("spring.profiles.active=production")
+    void allowsFallbackOnlyForLocalOrTestProfileWithExplicitOptIn() {
+        contextRunner
+                .withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
+                .withPropertyValues("spring.profiles.active=test")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(SecretKey.class);
+                });
+    }
+
+    @Test
+    void rejectsFallbackWhenProfileIsMissingEvenWithOptInFlag() {
+        contextRunner.withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
                             .isInstanceOf(BeanCreationException.class)
                             .hasMessageContaining("生产环境必须外部提供 JWT 密钥");
+                });
+    }
+
+    @Test
+    void requiresExternalSecretInProductionProfile() {
+        contextRunner
+                .withPropertyValues("spring.profiles.active=production")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .isInstanceOf(BeanCreationException.class)
+                            .hasMessageContaining("生产环境必须外部提供 JWT 密钥");
+                });
+    }
+
+    @Test
+    void rejectsWeakConfiguredSecret() {
+        contextRunner
+                .withPropertyValues("cm-agent.security.jwt-secret=short-secret")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .isInstanceOf(BeanCreationException.class)
+                            .hasRootCauseInstanceOf(WeakKeyException.class);
                 });
     }
 }
