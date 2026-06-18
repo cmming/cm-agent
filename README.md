@@ -1,0 +1,31 @@
+# CM Agent
+
+CM Agent 是一个基于 AgentScope Java 的企业级智能体开源底座。第一阶段提供 Java SDK、Spring Boot Starter、独立服务端、轻量控制台、工具治理、轻量多租户、RBAC 和审计能力。
+
+## 快速开始
+
+```powershell
+mvn -q -DskipTests package
+mvn -pl cm-agent-server spring-boot:run
+```
+
+服务启动后访问：
+
+- 健康检查：`http://localhost:8080/actuator/health`
+- 控制台：`http://localhost:8080/`
+- OpenAPI：`http://localhost:8080/swagger-ui/index.html`
+
+## 第一阶段范围
+
+- Maven 多模块骨架
+- 核心领域模型和接口
+- Spring Boot Starter
+- MySQL 和 PostgreSQL 迁移
+- JWT、RBAC、API Key 基线
+- Agent 配置、工具治理、fake runtime 运行链路
+- 审计日志
+- 最小控制台
+
+## 文档语言
+
+生产文档默认使用中文。英文文档可以作为翻译补充，但不能替代中文文档。
