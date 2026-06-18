@@ -37,7 +37,11 @@ References:
 - Provide local tool governance and external MCP/A2A endpoint configuration.
 - Support both MySQL and PostgreSQL through compatible schema design and automated migration tests.
 - Deliver a thin management console with login, Agent management, tool governance, chat debugging, and audit log views.
-- Provide production baseline features: structured logs, audit logs, health checks, Docker Compose, OpenAPI docs, migration scripts, README, and examples.
+- Provide production baseline features: structured logs, audit logs, health checks, Docker Compose, OpenAPI docs, migration scripts, Chinese README, and examples.
+
+## Documentation Language Constraint
+
+Production-facing documentation is Chinese-first. README files, quickstart guides, deployment guides, operations notes, configuration examples, release notes, and generated project documentation must be written in Chinese by default. English documentation can be added later as a translation, but it must not replace or block the Chinese production documentation baseline.
 
 ## Non-Goals For The First Release
 
@@ -570,7 +574,8 @@ The first release must include:
 - Local development configuration.
 - Example configuration for DashScope native models.
 - Example configuration for OpenAI-compatible models.
-- README with quickstart, architecture overview, and production notes.
+- Chinese README with quickstart, architecture overview, and production notes.
+- Chinese production documentation for deployment, operations, configuration, and release notes.
 - Apache-2.0 license file.
 
 ## First Implementation Slice
@@ -600,7 +605,7 @@ The implementation plan should produce a working thin vertical slice:
 - Cross-tenant reads and writes are denied in tests.
 - Tool calls are denied when the Agent lacks a grant.
 - AgentScope Java-specific types do not appear in `cm-agent-core` public interfaces.
-- Public documentation clearly explains the first-release scope and non-goals.
+- Public Chinese documentation clearly explains the first-release scope and non-goals.
 
 ## Risks And Mitigations
 
