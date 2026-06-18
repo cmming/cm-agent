@@ -12,5 +12,7 @@ management:
         include: health,info
 
 cm-agent:
+  security:
+    jwt-secret: ${CM_AGENT_JWT_SECRET:}
   fake-runtime-enabled: true
   default-tenant-code: default

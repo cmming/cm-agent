@@ -1,6 +1,7 @@
 package com.cmagent.server.web;
 
 import com.cmagent.server.security.JwtService;
+import com.cmagent.server.security.CurrentUserResponse;
 import com.cmagent.server.security.LoginRequest;
 import com.cmagent.server.security.LoginResponse;
 import org.springframework.http.HttpStatus;
@@ -49,18 +50,16 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public LoginResponse me() {
+    public CurrentUserResponse me() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated() || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录或令牌无效");
         }
-        String accessToken = authentication.getCredentials() instanceof String token ? token : "";
-        return new LoginResponse(
+        return new CurrentUserResponse(
                 session.tenantId().toString(),
                 session.principalId(),
                 session.displayName(),
-                session.permissions(),
-                accessToken
+                session.permissions()
         );
     }
 }

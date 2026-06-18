@@ -4,11 +4,9 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.JwtException;
-import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
@@ -17,10 +15,12 @@ import java.util.UUID;
 
 @Service
 public class JwtService {
-    private static final SecretKey SIGNING_KEY = Keys.hmacShaKeyFor(
-            "cm-agent-server-local-jwt-signing-key-2026-06-19-strong".getBytes(StandardCharsets.UTF_8)
-    );
     private static final Duration TOKEN_TTL = Duration.ofHours(8);
+    private final SecretKey signingKey;
+
+    public JwtService(SecretKey jwtSigningKey) {
+        this.signingKey = jwtSigningKey;
+    }
 
     public String createToken(UUID tenantId, String principalId, String displayName, List<String> permissions) {
         Instant now = Instant.now();
@@ -31,21 +31,18 @@ public class JwtService {
                 .claim("permissions", List.copyOf(permissions))
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(TOKEN_TTL)))
-                .signWith(SIGNING_KEY)
+                .signWith(signingKey)
                 .compact();
     }
 
-    @SuppressWarnings("unchecked")
     public JwtSession parseAndVerify(String token) throws JwtException {
         Jws<Claims> jws = Jwts.parser()
-                .verifyWith(SIGNING_KEY)
+                .verifyWith(signingKey)
                 .build()
                 .parseSignedClaims(token);
         Claims claims = jws.getPayload();
-        List<String> permissions = ((List<Object>) claims.get("permissions", List.class))
-                .stream()
-                .map(Object::toString)
-                .toList();
+        List<?> permissionValues = claims.get("permissions", List.class);
+        List<String> permissions = permissionValues == null ? List.of() : permissionValues.stream().map(Object::toString).toList();
         return new JwtSession(
                 UUID.fromString(claims.get("tenantId", String.class)),
                 claims.getSubject(),
