@@ -8,16 +8,18 @@ import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.core.security.ToolAuthorizationPolicy;
 import com.cmagent.core.tool.InMemoryToolRegistry;
 import com.cmagent.core.tool.ToolRegistry;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 
-@Configuration(proxyBeanMethods = false)
+@AutoConfiguration
 @EnableConfigurationProperties(CmAgentProperties.class)
 public class CmAgentAutoConfiguration {
 
     @Bean
+    @ConditionalOnProperty(prefix = "cm-agent", name = "fake-runtime-enabled", havingValue = "true", matchIfMissing = true)
     @ConditionalOnMissingBean
     AgentRuntime agentRuntime() {
         return new FakeAgentRuntime();
