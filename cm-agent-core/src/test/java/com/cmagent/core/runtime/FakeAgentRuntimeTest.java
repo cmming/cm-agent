@@ -26,7 +26,11 @@ class FakeAgentRuntimeTest {
 
         var result = new FakeAgentRuntime().run(request);
 
+        assertThat(result.runId()).isNotNull();
         assertThat(result.status()).isEqualTo(RunStatus.SUCCEEDED);
         assertThat(result.output()).isEqualTo("fake-runtime: 请查询今天日程");
+        assertThat(result.toolCalls()).isEmpty();
+        assertThat(result.startedAt()).isEqualTo(result.finishedAt());
+        assertThat(result.errorMessage()).isEmpty();
     }
 }

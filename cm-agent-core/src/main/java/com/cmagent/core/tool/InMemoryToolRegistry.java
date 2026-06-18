@@ -2,33 +2,33 @@ package com.cmagent.core.tool;
 
 import com.cmagent.core.domain.ToolDefinition;
 
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class InMemoryToolRegistry implements ToolRegistry {
 
-    private final Map<UUID, ToolDefinition> definitions = new ConcurrentHashMap<>();
-    private final Map<UUID, ToolExecutor> executors = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Registration> registrations = new ConcurrentHashMap<>();
 
     @Override
     public void register(ToolDefinition definition, ToolExecutor executor) {
-        definitions.put(definition.id(), definition);
-        executors.put(definition.id(), executor);
+        registrations.put(definition.id(), new Registration(definition, executor));
     }
 
     @Override
     public Optional<ToolDefinition> find(UUID toolId) {
-        return Optional.ofNullable(definitions.get(toolId));
+        return Optional.ofNullable(registrations.get(toolId)).map(Registration::definition);
     }
 
     @Override
     public ToolExecutionResult execute(ToolExecutionRequest request) {
-        ToolExecutor executor = executors.get(request.toolId());
-        if (executor == null) {
+        Registration registration = registrations.get(request.toolId());
+        if (registration == null) {
             return new ToolExecutionResult("工具未注册 " + request.toolId(), false);
         }
-        return executor.execute(request);
+        return registration.executor().execute(request);
+    }
+
+    private record Registration(ToolDefinition definition, ToolExecutor executor) {
     }
 }

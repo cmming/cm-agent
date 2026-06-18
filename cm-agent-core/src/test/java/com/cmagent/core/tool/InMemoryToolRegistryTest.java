@@ -34,7 +34,20 @@ class InMemoryToolRegistryTest {
         registry.register(definition, request -> new ToolExecutionResult("收到：" + request.inputJson(), true));
 
         assertThat(registry.find(toolId)).contains(definition);
-        assertThat(registry.execute(new ToolExecutionRequest(toolId, "{\"text\":\"你好\"}")).outputSummary())
+        ToolExecutionResult result = registry.execute(new ToolExecutionRequest(toolId, "{\"text\":\"你好\"}"));
+        assertThat(result.success()).isTrue();
+        assertThat(result.outputSummary())
                 .isEqualTo("收到：{\"text\":\"你好\"}");
+    }
+
+    @Test
+    void executeMissingToolReturnsNotRegisteredMessage() {
+        InMemoryToolRegistry registry = new InMemoryToolRegistry();
+        UUID toolId = UUID.fromString("00000000-0000-0000-0000-000000000102");
+
+        ToolExecutionResult result = registry.execute(new ToolExecutionRequest(toolId, "{}"));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.outputSummary()).isEqualTo("工具未注册 " + toolId);
     }
 }
