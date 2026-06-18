@@ -90,7 +90,7 @@ class RunControllerTest {
     }
 
     @Test
-    void runWithoutToolGrantIsRejected() throws Exception {
+    void runWithoutToolGrantStillSucceeds() throws Exception {
         String accessToken = login();
 
         String agentResponse = mockMvc.perform(post("/api/agents")
@@ -111,7 +111,9 @@ class RunControllerTest {
                         .content("""
                                 {"input":"你好"}
                                 """))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.output").value("fake-runtime: 你好"));
     }
 
     private String login() throws Exception {

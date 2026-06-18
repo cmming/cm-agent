@@ -62,9 +62,6 @@ public class RunController {
         }
 
         List<ToolDefinition> authorizedTools = authorizedTools(principal, agent);
-        if (authorizedTools.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Agent 未获得工具授权");
-        }
 
         AgentRunResult result = runtime.run(new AgentRunRequest(
                 principal.tenantId(),
