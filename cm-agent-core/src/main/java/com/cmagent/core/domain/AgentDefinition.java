@@ -20,12 +20,12 @@ public record AgentDefinition(
 ) {
 
     public AgentDefinition {
+        toolIds = List.copyOf(toolIds);
         if (temperature < 0 || temperature > 2) {
             throw new IllegalArgumentException("temperature 必须在 0 到 2 之间");
         }
         if (maxIterations < 1 || maxIterations > 30) {
             throw new IllegalArgumentException("maxIterations 必须在 1 到 30 之间");
         }
-        toolIds = List.copyOf(toolIds);
     }
 }
