@@ -1,6 +1,8 @@
 package com.cmagent.server.web;
 
 import com.cmagent.server.security.JwtService;
+import com.cmagent.server.audit.AuditAppender;
+import com.cmagent.server.security.BootstrapAdminProperties;
 import com.cmagent.server.security.CurrentUserResponse;
 import com.cmagent.server.security.LoginRequest;
 import com.cmagent.server.security.LoginResponse;
@@ -21,9 +23,6 @@ import java.util.UUID;
 @RequestMapping("/api/auth")
 public class AuthController {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
-    private static final String USERNAME = "admin";
-    private static final String PASSWORD = "admin123456";
-    private static final String DISPLAY_NAME = "系统管理员";
     private static final List<String> PERMISSIONS = List.of(
             "agent:run",
             "agent:read",
@@ -35,18 +34,34 @@ public class AuthController {
     );
 
     private final JwtService jwtService;
+    private final BootstrapAdminProperties bootstrapAdminProperties;
+    private final AuditAppender auditAppender;
 
-    public AuthController(JwtService jwtService) {
+    public AuthController(JwtService jwtService, BootstrapAdminProperties bootstrapAdminProperties, AuditAppender auditAppender) {
         this.jwtService = jwtService;
+        this.bootstrapAdminProperties = bootstrapAdminProperties;
+        this.auditAppender = auditAppender;
     }
 
     @PostMapping("/login")
     public LoginResponse login(@RequestBody LoginRequest request) {
-        if (!USERNAME.equals(request.username()) || !PASSWORD.equals(request.password())) {
+        String username = principalFrom(request);
+        String password = request == null || request.password() == null ? "" : request.password();
+        if (!bootstrapAdminProperties.isBootstrapAdminEnabled()) {
+            auditLogin(username, "FAILED", "bootstrap admin 未启用");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "bootstrap admin 未启用");
+        }
+        if (!bootstrapAdminProperties.getBootstrapAdminUsername().equals(username)
+                || !bootstrapAdminProperties.getBootstrapAdminPassword().equals(password)) {
+            auditLogin(username, "FAILED", "用户名或密码错误");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "用户名或密码错误");
         }
-        String token = jwtService.createToken(TENANT_ID, USERNAME, DISPLAY_NAME, PERMISSIONS);
-        return new LoginResponse(TENANT_ID.toString(), USERNAME, DISPLAY_NAME, PERMISSIONS, token);
+
+        String configuredUsername = bootstrapAdminProperties.getBootstrapAdminUsername();
+        String displayName = bootstrapAdminProperties.getBootstrapAdminDisplayName();
+        String token = jwtService.createToken(TENANT_ID, configuredUsername, displayName, PERMISSIONS);
+        auditLogin(configuredUsername, "SUCCEEDED", "登录成功");
+        return new LoginResponse(TENANT_ID.toString(), configuredUsername, displayName, PERMISSIONS, token);
     }
 
     @GetMapping("/me")
@@ -60,6 +75,25 @@ public class AuthController {
                 session.principalId(),
                 session.displayName(),
                 session.permissions()
+        );
+    }
+
+    private String principalFrom(LoginRequest request) {
+        if (request == null || request.username() == null || request.username().isBlank()) {
+            return "anonymous";
+        }
+        return request.username();
+    }
+
+    private void auditLogin(String principalId, String status, String message) {
+        auditAppender.append(
+                TENANT_ID,
+                principalId,
+                "LOGIN",
+                "AUTH",
+                "bootstrap-admin",
+                status,
+                message
         );
     }
 }

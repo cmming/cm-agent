@@ -26,7 +26,9 @@ Invoke-RestMethod http://localhost:8080/actuator/health
 GET /api/audit-events
 ```
 
-该端点用于查询登录、运行、工具调用等关键动作的审计记录。除健康检查和登录接口外，业务 API 默认需要认证；调用审计查询前应先通过登录流程获取令牌，并在请求中携带 `Authorization: Bearer <token>`。
+该端点用于查询登录、Agent 创建/运行、工具创建/授权、权限拒绝等关键动作的审计记录。除健康检查和登录接口外，业务 API 默认需要认证；调用审计查询前应先通过登录流程获取令牌，并在请求中携带 `Authorization: Bearer <token>`。
+
+第一阶段默认审计存储仍为内存 store，适合验证事件结构和权限链路；进程重启后审计事件会丢失。生产试点前应接入持久化审计 repository，并确认审计写入失败告警、容量上限、查询分页和备份策略。
 
 ## 日志与告警
 
@@ -38,4 +40,5 @@ GET /api/audit-events
 
 - MySQL 和 PostgreSQL 迁移脚本位于 `cm-agent-persistence/src/main/resources/db/migration`。
 - 本地 `docker-compose.yml` 仅用于开发验证，不代表生产容量、备份或高可用方案。
+- 默认服务端 REST API 尚未把 Agent、Tool、Grant 和 Audit 运行态数据写入这些数据库；生产试点前需要完成持久化服务层接入。
 - 生产环境应启用定期备份、恢复演练、最小权限账号和连接池监控。

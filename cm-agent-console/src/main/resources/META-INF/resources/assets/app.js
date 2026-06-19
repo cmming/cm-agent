@@ -7,6 +7,8 @@ const state = {
 const $ = (id) => document.getElementById(id);
 
 const statusEl = $("status");
+const loginUsernameEl = $("loginUsername");
+const loginPasswordEl = $("loginPassword");
 const agentOutputEl = $("agentOutput");
 const toolOutputEl = $("toolOutput");
 const runOutputEl = $("runOutput");
@@ -86,17 +88,25 @@ function requireAgent() {
 }
 
 async function login() {
+    const username = loginUsernameEl.value.trim();
+    const password = loginPasswordEl.value;
+    if (!username || !password) {
+        setStatus("登录失败", "error");
+        setOutput(agentOutputEl, "请输入 bootstrap admin 用户名和密码。");
+        return;
+    }
+
     setStatus("正在登录...", "busy");
     try {
         const body = await request("/api/auth/login", {
             method: "POST",
             body: JSON.stringify({
-                username: "admin",
-                password: "admin123456"
+                username,
+                password
             })
         });
         state.token = body.accessToken || "";
-        setStatus("已登录默认管理员", "ok");
+        setStatus(`已登录：${body.principalId || username}`, "ok");
         setOutput(agentOutputEl, `登录成功：${body.displayName || "系统管理员"}`);
     } catch (error) {
         setStatus("登录失败", "error");

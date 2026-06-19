@@ -34,7 +34,7 @@ class DefaultToolAuthorizationPolicyTest {
                 "admin",
                 "admin"
         );
-        ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, "", true);
+        ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true);
         PrincipalRef principal = new PrincipalRef(
                 TENANT_ID,
                 "admin",
@@ -91,7 +91,7 @@ class DefaultToolAuthorizationPolicyTest {
                 "admin",
                 "admin"
         );
-        ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, "", true);
+        ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true);
         PrincipalRef principal = new PrincipalRef(
                 TENANT_ID,
                 "admin",
@@ -120,7 +120,7 @@ class DefaultToolAuthorizationPolicyTest {
                 "admin",
                 "admin"
         );
-        ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, "", true);
+        ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true);
         PrincipalRef principal = new PrincipalRef(
                 TENANT_ID,
                 "admin",
@@ -149,7 +149,7 @@ class DefaultToolAuthorizationPolicyTest {
                 "admin",
                 "admin"
         );
-        ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, "", false);
+        ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, false);
         PrincipalRef principal = new PrincipalRef(
                 TENANT_ID,
                 "admin",
@@ -161,5 +161,33 @@ class DefaultToolAuthorizationPolicyTest {
 
         assertThat(decision.allowed()).isFalse();
         assertThat(decision.reason()).isEqualTo("Agent 未获得工具授权 calendar.query");
+    }
+
+    @Test
+    void allowGrantWithRoleCodeMetadataForCurrentAgent() {
+        ToolDefinition tool = new ToolDefinition(
+                TOOL_ID,
+                TENANT_ID,
+                "calendar.query",
+                "查询日程",
+                ToolType.LOCAL,
+                "{\"type\":\"object\"}",
+                ToolRiskLevel.LOW,
+                true,
+                "",
+                "admin",
+                "admin"
+        );
+        ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, "ops-admin", true);
+        PrincipalRef principal = new PrincipalRef(
+                TENANT_ID,
+                "admin",
+                "管理员",
+                Set.of("agent:run")
+        );
+
+        AuthorizationDecision decision = new DefaultToolAuthorizationPolicy().check(principal, AGENT_ID, tool, List.of(grant));
+
+        assertThat(decision.allowed()).isTrue();
     }
 }

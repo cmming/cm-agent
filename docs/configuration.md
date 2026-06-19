@@ -10,6 +10,10 @@
 | `cm-agent.default-tenant-code` | `default` | 默认租户标识 |
 | `cm-agent.fake-runtime-enabled` | `true` | 第一阶段使用 fake runtime，便于在未接入真实模型时验证 Agent 运行链路 |
 | `cm-agent.security.jwt-secret` | 空 | JWT 签名密钥，生产环境必须由外部安全注入 |
+| `cm-agent.security.bootstrap-admin-enabled` | `false` | 是否启用本地 bootstrap admin 登录；仅限本地开发/演示 |
+| `cm-agent.security.bootstrap-admin-username` | `admin` | bootstrap admin 用户名 |
+| `cm-agent.security.bootstrap-admin-password` | 空 | bootstrap admin 密码；启用时必须由外部 Secret 或本地命令行显式注入 |
+| `cm-agent.security.bootstrap-admin-display-name` | `系统管理员` | bootstrap admin 显示名 |
 
 ## fake runtime
 
@@ -22,6 +26,10 @@ cm-agent:
 
 fake runtime 用于验证 Agent 配置、权限、工具治理、审计和控制台体验。接入真实模型供应商前，可以保留该配置完成端到端联调；准备切换真实运行时时，应先完成模型配置、密钥托管、权限校验和审计策略。
 
+## 运行态存储
+
+第一阶段服务端默认使用内存 store 承载 Agent、Tool、Grant 和 Audit API 的运行态数据，适合本地演示和纵切验证。MySQL/PostgreSQL schema、Flyway 迁移和 JDBC repository 已作为持久化基线存在，但默认 REST 服务端尚未接入这些表保存运行态数据。生产试点前应完成 JDBC store 或等价服务层接入，并重新验证迁移、租户隔离、备份和恢复流程。
+
 ## JWT 密钥
 
 生产环境必须配置安全长度的 `cm-agent.security.jwt-secret`，推荐通过部署平台 Secret、环境变量或密钥管理服务注入。不要将密钥提交到 Git、写入镜像层或打印到日志。
@@ -29,8 +37,21 @@ fake runtime 用于验证 Agent 配置、权限、工具治理、审计和控制
 本地开发可以临时使用命令行参数：
 
 ```powershell
-mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.security.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026"
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.security.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026 --cm-agent.security.bootstrap-admin-enabled=true --cm-agent.security.bootstrap-admin-password=<local-dev-only-password>"
 ```
+
+## Bootstrap Admin
+
+bootstrap admin 默认关闭。需要本地开发或演示登录控制台时，必须显式配置：
+
+```yaml
+cm-agent:
+  security:
+    bootstrap-admin-enabled: true
+    bootstrap-admin-password: ${CM_AGENT_BOOTSTRAP_ADMIN_PASSWORD}
+```
+
+不要在配置文件、前端代码或文档示例中写入可直接使用的真实密码。`prod` 或 `production` profile 下禁止启用 bootstrap admin；如果启用，服务端会在启动时失败。
 
 ## 模型供应商与 API Key
 

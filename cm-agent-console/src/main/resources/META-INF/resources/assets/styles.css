@@ -58,6 +58,23 @@ h1 {
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.login-controls {
+    display: grid;
+    grid-template-columns: auto minmax(120px, 160px) auto minmax(160px, 220px);
+    gap: 8px;
+    align-items: center;
+}
+
+.login-controls label {
+    margin: 0;
+    white-space: nowrap;
+}
+
+.login-controls input {
+    min-height: 38px;
 }
 
 .status {
@@ -187,6 +204,16 @@ button:hover {
 @media (max-width: 900px) {
     .topbar {
         flex-direction: column;
+    }
+
+    .toolbar {
+        justify-content: flex-start;
+        width: 100%;
+    }
+
+    .login-controls {
+        grid-template-columns: 1fr;
+        width: 100%;
     }
 
     .grid {

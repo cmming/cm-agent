@@ -6,7 +6,7 @@ CM Agent 是一个基于 AgentScope Java 的企业级智能体开源底座。第
 
 ```powershell
 mvn -q "-DskipTests" package
-mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.security.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026"
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.security.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026 --cm-agent.security.bootstrap-admin-enabled=true --cm-agent.security.bootstrap-admin-password=<local-dev-only-password>"
 ```
 
 服务启动后访问：
@@ -14,6 +14,10 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-ag
 - 健康检查：`http://localhost:8080/actuator/health`
 - 控制台：`http://localhost:8080/`
 - OpenAPI：`http://localhost:8080/swagger-ui/index.html`
+
+`bootstrap-admin` 仅用于本地开发/演示，必须显式开启并从外部传入本地密码。生产或 `prod`/`production` profile 不要启用 bootstrap admin，服务端会拒绝启动。
+
+第一阶段服务端的 Agent、Tool、Grant 和 Audit API 默认使用内存 store，用于薄纵切演示和接口验证；进程重启后运行态数据会丢失。MySQL/PostgreSQL 迁移和 JDBC repository 是持久化基线，生产试点前需要接入正式 JDBC store 或等价持久化服务层。
 
 ## 生产文档
 

@@ -8,6 +8,7 @@ import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.PermissionEvaluator;
+import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import jakarta.validation.Valid;
@@ -33,23 +34,25 @@ public class ToolController {
 
     private final InMemoryPlatformStore store;
     private final PermissionEvaluator permissionEvaluator;
+    private final AuditAppender auditAppender;
 
-    public ToolController(InMemoryPlatformStore store, PermissionEvaluator permissionEvaluator) {
+    public ToolController(InMemoryPlatformStore store, PermissionEvaluator permissionEvaluator, AuditAppender auditAppender) {
         this.store = store;
         this.permissionEvaluator = permissionEvaluator;
+        this.auditAppender = auditAppender;
     }
 
     @GetMapping
     public List<ToolDefinition> list(Authentication authentication) {
         PrincipalRef principal = principal(authentication);
-        authorize(principal, "tool:read");
+        authorize(principal, "tool:read", "TOOL", "list");
         return store.listTools(principal.tenantId());
     }
 
     @PostMapping
     public ToolDefinition create(@Valid @RequestBody ToolCreateRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
-        authorize(principal, "tool:grant");
+        authorize(principal, "tool:grant", "TOOL", "create");
         ToolDefinition tool = new ToolDefinition(
                 UUID.randomUUID(),
                 principal.tenantId(),
@@ -63,22 +66,41 @@ public class ToolController {
                 principal.principalId(),
                 principal.principalId()
         );
-        return store.saveTool(tool);
+        ToolDefinition savedTool = store.saveTool(tool);
+        auditAppender.append(
+                principal.tenantId(),
+                principal.principalId(),
+                "TOOL_CREATE",
+                "TOOL",
+                savedTool.id().toString(),
+                "SUCCEEDED",
+                "Tool 创建成功"
+        );
+        return savedTool;
     }
 
     @PostMapping("/{id}/grants")
     public ToolGrant grant(@PathVariable("id") UUID id, @Valid @RequestBody ToolGrantRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
-        authorize(principal, "tool:grant");
+        authorize(principal, "tool:grant", "TOOL", id.toString());
 
         ToolDefinition tool = store.findTool(principal.tenantId(), id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
         AgentDefinition agent = store.findAgent(principal.tenantId(), request.agentId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
 
-        ToolGrant grant = new ToolGrant(principal.tenantId(), tool.id(), agent.id(), "", true);
+        ToolGrant grant = new ToolGrant(principal.tenantId(), tool.id(), agent.id(), null, true);
         ToolGrant savedGrant = store.saveGrant(grant);
         store.addToolToAgent(principal.tenantId(), agent.id(), tool.id());
+        auditAppender.append(
+                principal.tenantId(),
+                principal.principalId(),
+                "TOOL_GRANT",
+                "TOOL",
+                tool.id().toString(),
+                "SUCCEEDED",
+                "Tool 已授权给 Agent " + agent.id()
+        );
         return savedGrant;
     }
 
@@ -89,9 +111,10 @@ public class ToolController {
         return new PrincipalRef(session.tenantId(), session.principalId(), session.displayName(), Set.copyOf(session.permissions()));
     }
 
-    private void authorize(PrincipalRef principal, String permission) {
+    private void authorize(PrincipalRef principal, String permission, String resourceType, String resourceId) {
         AuthorizationDecision decision = permissionEvaluator.check(principal, permission);
         if (!decision.allowed()) {
+            auditAppender.accessDenied(principal, resourceType, resourceId, permission, decision.reason());
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, decision.reason());
         }
     }

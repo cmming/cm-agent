@@ -23,6 +23,7 @@ public class DefaultToolAuthorizationPolicy implements ToolAuthorizationPolicy {
                 grant.granted()
                         && grant.tenantId().equals(principal.tenantId())
                         && grant.toolId().equals(tool.id())
+                        // The first slice authorizes tools at agent scope; roleCode is optional metadata.
                         && grant.agentId().equals(agentId)
         );
 

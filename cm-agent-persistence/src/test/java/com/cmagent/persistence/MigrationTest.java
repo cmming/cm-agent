@@ -12,9 +12,14 @@ import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -76,6 +81,9 @@ class MigrationTest {
             assertThat(indexNames(connection, "tool_grants")).contains("idx_tool_grants_tenant_agent");
             assertThat(indexNames(connection, "runs")).contains("idx_runs_tenant_agent");
             assertThat(indexNames(connection, "audit_events")).contains("idx_audit_events_tenant_time");
+            assertThat(isNullable(connection, "tool_grants", "role_code")).isTrue();
+            assertThat(importedKeyTargets(connection, "tool_grants")).doesNotContain("roles");
+            assertThat(uniqueIndexColumns(connection, "tool_grants")).contains(Set.of("tenant_id", "tool_id", "agent_id"));
         } catch (SQLException e) {
             throw new AssertionError("验证迁移后的 schema 失败", e);
         }
@@ -107,5 +115,47 @@ class MigrationTest {
             }
             return names;
         }
+    }
+
+    private static boolean isNullable(Connection connection, String tableName, String columnName) throws SQLException {
+        DatabaseMetaData metadata = connection.getMetaData();
+        try (ResultSet resultSet = metadata.getColumns(null, null, tableName, columnName)) {
+            if (!resultSet.next()) {
+                throw new AssertionError("找不到列 " + tableName + "." + columnName);
+            }
+            return resultSet.getInt("NULLABLE") == DatabaseMetaData.columnNullable;
+        }
+    }
+
+    private static Set<String> importedKeyTargets(Connection connection, String tableName) throws SQLException {
+        DatabaseMetaData metadata = connection.getMetaData();
+        try (ResultSet resultSet = metadata.getImportedKeys(null, null, tableName)) {
+            Set<String> targets = new HashSet<>();
+            while (resultSet.next()) {
+                String target = resultSet.getString("PKTABLE_NAME");
+                if (target != null) {
+                    targets.add(target.toLowerCase(Locale.ROOT));
+                }
+            }
+            return targets;
+        }
+    }
+
+    private static List<Set<String>> uniqueIndexColumns(Connection connection, String tableName) throws SQLException {
+        DatabaseMetaData metadata = connection.getMetaData();
+        Map<String, Set<String>> columnsByIndex = new TreeMap<>();
+        try (ResultSet resultSet = metadata.getIndexInfo(null, null, tableName, true, false)) {
+            while (resultSet.next()) {
+                String indexName = resultSet.getString("INDEX_NAME");
+                String columnName = resultSet.getString("COLUMN_NAME");
+                if (indexName == null || columnName == null) {
+                    continue;
+                }
+                columnsByIndex
+                        .computeIfAbsent(indexName.toLowerCase(Locale.ROOT), ignored -> new LinkedHashSet<>())
+                        .add(columnName.toLowerCase(Locale.ROOT));
+            }
+        }
+        return new ArrayList<>(columnsByIndex.values());
     }
 }

@@ -1,14 +1,26 @@
 package com.cmagent.server.web;
 
+import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.server.CmAgentServerApplication;
+import com.cmagent.server.audit.AuditAppender;
+import com.cmagent.server.security.BootstrapAdminProperties;
+import com.cmagent.server.store.InMemoryPlatformStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.env.MockEnvironment;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.util.List;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -17,9 +29,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(classes = CmAgentServerApplication.class)
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@org.springframework.test.context.TestPropertySource(properties = "cm-agent.security.allow-dev-jwt-fallback=true")
+@TestPropertySource(properties = {
+        "cm-agent.security.allow-dev-jwt-fallback=true",
+        "cm-agent.security.bootstrap-admin-enabled=true",
+        "cm-agent.security.bootstrap-admin-password=admin-test-password-only"
+})
+@DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class AuthControllerTest {
 
+    private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final String TEST_PASSWORD = "admin-test-password-only";
     private static final String[] EXPECTED_PERMISSIONS = {
             "agent:run",
             "agent:read",
@@ -33,13 +52,14 @@ class AuthControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private InMemoryPlatformStore store;
+
     @Test
     void loginAndReadCurrentUser() throws Exception {
         String loginResponse = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"username":"admin","password":"admin123456"}
-                                """))
+                        .content(loginBody(TEST_PASSWORD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("系统管理员"))
                 .andExpect(jsonPath("$.permissions[0]").value(EXPECTED_PERMISSIONS[0]))
@@ -81,6 +101,60 @@ class AuthControllerTest {
     }
 
     @Test
+    void loginRejectsBootstrapAdminWhenDisabledByDefault() throws Exception {
+        BootstrapAdminProperties properties = new BootstrapAdminProperties(new MockEnvironment());
+        MockMvc disabledBootstrapMockMvc = MockMvcBuilders.standaloneSetup(new AuthController(
+                null,
+                properties,
+                new AuditAppender(new InMemoryPlatformStore())
+        )).build();
+
+        disabledBootstrapMockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"admin","password":"well-known-default-password"}
+                                """))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void loginRejectsFormerHardcodedPasswordWhenConfiguredPasswordDiffers() throws Exception {
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"admin","password":"well-known-default-password"}
+                                """))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void loginWritesAuditEventsForSuccessAndFailure() throws Exception {
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"admin","password":"wrong"}
+                                """))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginBody(TEST_PASSWORD)))
+                .andExpect(status().isOk());
+
+        List<AuditEvent> events = store.listAuditEvents(TENANT_ID);
+        assertThat(events).anySatisfy(event -> {
+            assertThat(event.eventType()).isEqualTo("LOGIN");
+            assertThat(event.principalId()).isEqualTo("admin");
+            assertThat(event.status()).isEqualTo("FAILED");
+        });
+        assertThat(events).anySatisfy(event -> {
+            assertThat(event.eventType()).isEqualTo("LOGIN");
+            assertThat(event.principalId()).isEqualTo("admin");
+            assertThat(event.status()).isEqualTo("SUCCEEDED");
+        });
+    }
+
+    @Test
     void meRejectsInvalidToken() throws Exception {
         mockMvc.perform(get("/api/auth/me")
                         .header("Authorization", "Bearer not-a-token"))
@@ -91,9 +165,7 @@ class AuthControllerTest {
     void meRejectsTamperedToken() throws Exception {
         String loginResponse = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"username":"admin","password":"admin123456"}
-                                """))
+                        .content(loginBody(TEST_PASSWORD)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -113,10 +185,14 @@ class AuthControllerTest {
         mockMvc.perform(post("/api/auth/login")
                         .header("Authorization", "Bearer bad-token")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"username":"admin","password":"admin123456"}
-                                """))
+                        .content(loginBody(TEST_PASSWORD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("系统管理员"));
+    }
+
+    private String loginBody(String password) {
+        return """
+                {"username":"admin","password":"%s"}
+                """.formatted(password);
     }
 }

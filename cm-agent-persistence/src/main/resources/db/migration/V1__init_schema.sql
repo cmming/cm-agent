@@ -122,14 +122,13 @@ CREATE TABLE tool_grants (
     tenant_id CHAR(36) NOT NULL,
     tool_id CHAR(36) NOT NULL,
     agent_id CHAR(36) NOT NULL,
-    role_code VARCHAR(120) NOT NULL,
+    role_code VARCHAR(120),
     granted BOOLEAN NOT NULL,
     created_at TIMESTAMP NOT NULL,
-    UNIQUE (tenant_id, tool_id, agent_id, role_code),
+    UNIQUE (tenant_id, tool_id, agent_id),
     CONSTRAINT fk_tool_grants_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id),
     CONSTRAINT fk_tool_grants_tool FOREIGN KEY (tool_id, tenant_id) REFERENCES tool_definitions (id, tenant_id),
-    CONSTRAINT fk_tool_grants_agent FOREIGN KEY (agent_id, tenant_id) REFERENCES agent_definitions (id, tenant_id),
-    CONSTRAINT fk_tool_grants_role FOREIGN KEY (tenant_id, role_code) REFERENCES roles (tenant_id, code)
+    CONSTRAINT fk_tool_grants_agent FOREIGN KEY (agent_id, tenant_id) REFERENCES agent_definitions (id, tenant_id)
 );
 
 CREATE TABLE conversations (

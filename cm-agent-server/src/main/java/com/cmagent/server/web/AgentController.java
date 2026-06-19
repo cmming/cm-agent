@@ -4,6 +4,7 @@ import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.PermissionEvaluator;
+import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import jakarta.validation.Valid;
@@ -29,23 +30,25 @@ public class AgentController {
 
     private final InMemoryPlatformStore store;
     private final PermissionEvaluator permissionEvaluator;
+    private final AuditAppender auditAppender;
 
-    public AgentController(InMemoryPlatformStore store, PermissionEvaluator permissionEvaluator) {
+    public AgentController(InMemoryPlatformStore store, PermissionEvaluator permissionEvaluator, AuditAppender auditAppender) {
         this.store = store;
         this.permissionEvaluator = permissionEvaluator;
+        this.auditAppender = auditAppender;
     }
 
     @GetMapping
     public List<AgentDefinition> list(Authentication authentication) {
         PrincipalRef principal = principal(authentication);
-        authorize(principal, "agent:read");
+        authorize(principal, "agent:read", "AGENT", "list");
         return store.listAgents(principal.tenantId());
     }
 
     @GetMapping("/{id}")
     public AgentDefinition get(@PathVariable("id") UUID id, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
-        authorize(principal, "agent:read");
+        authorize(principal, "agent:read", "AGENT", id.toString());
         return store.findAgent(principal.tenantId(), id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
     }
@@ -53,7 +56,7 @@ public class AgentController {
     @PostMapping
     public AgentDefinition create(@Valid @RequestBody AgentCreateRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
-        authorize(principal, "agent:write");
+        authorize(principal, "agent:write", "AGENT", "create");
         AgentDefinition agent = new AgentDefinition(
                 UUID.randomUUID(),
                 principal.tenantId(),
@@ -69,7 +72,17 @@ public class AgentController {
                 principal.principalId(),
                 principal.principalId()
         );
-        return store.saveAgent(agent);
+        AgentDefinition savedAgent = store.saveAgent(agent);
+        auditAppender.append(
+                principal.tenantId(),
+                principal.principalId(),
+                "AGENT_CREATE",
+                "AGENT",
+                savedAgent.id().toString(),
+                "SUCCEEDED",
+                "Agent 创建成功"
+        );
+        return savedAgent;
     }
 
     private PrincipalRef principal(Authentication authentication) {
@@ -79,9 +92,10 @@ public class AgentController {
         return new PrincipalRef(session.tenantId(), session.principalId(), session.displayName(), Set.copyOf(session.permissions()));
     }
 
-    private void authorize(PrincipalRef principal, String permission) {
+    private void authorize(PrincipalRef principal, String permission, String resourceType, String resourceId) {
         AuthorizationDecision decision = permissionEvaluator.check(principal, permission);
         if (!decision.allowed()) {
+            auditAppender.accessDenied(principal, resourceType, resourceId, permission, decision.reason());
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, decision.reason());
         }
     }

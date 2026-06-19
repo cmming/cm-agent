@@ -14,5 +14,10 @@ management:
 cm-agent:
   security:
     jwt-secret: ${CM_AGENT_JWT_SECRET:}
+    bootstrap-admin-enabled: false
+    bootstrap-admin-username: ${CM_AGENT_BOOTSTRAP_ADMIN_USERNAME:admin}
+    bootstrap-admin-password: ${CM_AGENT_BOOTSTRAP_ADMIN_PASSWORD:}
+    bootstrap-admin-display-name: ${CM_AGENT_BOOTSTRAP_ADMIN_DISPLAY_NAME:系统管理员}
+    public-api-docs-enabled: ${CM_AGENT_PUBLIC_API_DOCS_ENABLED:true}
   fake-runtime-enabled: true
   default-tenant-code: default

@@ -14,7 +14,13 @@
             <p class="subtitle">用于登录、创建 Agent 和 Tool、执行运行以及查看审计日志。</p>
         </div>
         <div class="toolbar">
-            <button id="loginBtn" class="primary">登录默认管理员</button>
+            <div class="login-controls">
+                <label for="loginUsername">用户名</label>
+                <input id="loginUsername" type="text" value="admin" autocomplete="username">
+                <label for="loginPassword">密码</label>
+                <input id="loginPassword" type="password" placeholder="输入本地 bootstrap admin 密码" autocomplete="current-password">
+            </div>
+            <button id="loginBtn" class="primary">登录</button>
             <div id="status" class="status" aria-live="polite">未登录</div>
         </div>
     </header>

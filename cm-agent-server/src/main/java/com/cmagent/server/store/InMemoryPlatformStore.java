@@ -164,6 +164,10 @@ public class InMemoryPlatformStore implements AuditEventRepository {
     }
 
     public List<AuditEvent> listAuditEvents(UUID tenantId) {
-        return listByTenant(tenantId, Integer.MAX_VALUE);
+        return listAuditEvents(tenantId, 100);
+    }
+
+    public List<AuditEvent> listAuditEvents(UUID tenantId, int limit) {
+        return listByTenant(tenantId, limit);
     }
 }

@@ -1,7 +1,6 @@
 package com.cmagent.server.web;
 
 import com.cmagent.api.PrincipalRef;
-import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
@@ -12,6 +11,7 @@ import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.core.security.ToolAuthorizationPolicy;
 import com.cmagent.core.runtime.AgentRuntime;
+import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import jakarta.validation.Valid;
@@ -25,7 +25,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,21 +40,24 @@ public class RunController {
     private final InMemoryPlatformStore store;
     private final PermissionEvaluator permissionEvaluator;
     private final ToolAuthorizationPolicy toolAuthorizationPolicy;
+    private final AuditAppender auditAppender;
 
     public RunController(AgentRuntime runtime,
                          InMemoryPlatformStore store,
                          PermissionEvaluator permissionEvaluator,
-                         ToolAuthorizationPolicy toolAuthorizationPolicy) {
+                         ToolAuthorizationPolicy toolAuthorizationPolicy,
+                         AuditAppender auditAppender) {
         this.runtime = runtime;
         this.store = store;
         this.permissionEvaluator = permissionEvaluator;
         this.toolAuthorizationPolicy = toolAuthorizationPolicy;
+        this.auditAppender = auditAppender;
     }
 
     @PostMapping
     public AgentRunResult run(@PathVariable("agentId") UUID agentId, @Valid @RequestBody RunRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
-        authorize(principal, "agent:run");
+        authorize(principal, "agent:run", "AGENT", agentId.toString());
 
         AgentDefinition agent = store.findAgent(principal.tenantId(), agentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
@@ -112,17 +114,15 @@ public class RunController {
     }
 
     private void appendAuditEvent(PrincipalRef principal, AgentDefinition agent, String status, String message) {
-        store.append(new AuditEvent(
-                UUID.randomUUID(),
+        auditAppender.append(
                 principal.tenantId(),
                 principal.principalId(),
                 "AGENT_RUN",
                 "AGENT",
                 agent.id().toString(),
                 status,
-                message,
-                Instant.now()
-        ));
+                message
+        );
     }
 
     private PrincipalRef principal(Authentication authentication) {
@@ -132,9 +132,10 @@ public class RunController {
         return new PrincipalRef(session.tenantId(), session.principalId(), session.displayName(), Set.copyOf(session.permissions()));
     }
 
-    private void authorize(PrincipalRef principal, String permission) {
+    private void authorize(PrincipalRef principal, String permission, String resourceType, String resourceId) {
         AuthorizationDecision decision = permissionEvaluator.check(principal, permission);
         if (!decision.allowed()) {
+            auditAppender.accessDenied(principal, resourceType, resourceId, permission, decision.reason());
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, decision.reason());
         }
     }

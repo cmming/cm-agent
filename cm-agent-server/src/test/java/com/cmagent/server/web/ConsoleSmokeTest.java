@@ -9,14 +9,17 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(classes = CmAgentServerApplication.class)
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
-@TestPropertySource(properties = "cm-agent.security.allow-dev-jwt-fallback=true")
+@ActiveProfiles("production")
+@TestPropertySource(properties = "cm-agent.security.jwt-secret=cm-agent-console-smoke-jwt-secret-with-32-bytes")
 class ConsoleSmokeTest {
 
     @Autowired
@@ -26,6 +29,32 @@ class ConsoleSmokeTest {
     void serveConsoleIndex() throws Exception {
         mockMvc.perform(get("/"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("CM Agent 控制台")));
+                .andExpect(content().string(containsString("CM Agent 控制台")));
+    }
+
+    @Test
+    void consoleLoginUsesUserEnteredCredentials() throws Exception {
+        mockMvc.perform(get("/"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(allOf(
+                        containsString("id=\"loginUsername\""),
+                        containsString("id=\"loginPassword\""),
+                        containsString("type=\"password\""),
+                        not(containsString("value=\"well-known-default-password\""))
+                )));
+
+        mockMvc.perform(get("/assets/app.js"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(allOf(
+                        containsString("$(\"loginUsername\")"),
+                        containsString("$(\"loginPassword\")"),
+                        not(containsString("well-known-default-password"))
+                )));
+    }
+
+    @Test
+    void swaggerUiIsNotPublicInProductionProfile() throws Exception {
+        mockMvc.perform(get("/swagger-ui/index.html"))
+                .andExpect(status().isUnauthorized());
     }
 }

@@ -60,6 +60,9 @@ class RunControllerTest {
     @Autowired
     private CapturingAgentRuntime agentRuntime;
 
+    @Autowired
+    private InMemoryPlatformStore store;
+
     @BeforeEach
     void resetRuntime() {
         agentRuntime.reset();
@@ -76,8 +79,9 @@ class RunControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"agentId":"%s"}
-                                """.formatted(agentId)))
+                """.formatted(agentId)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roleCode").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.granted").value(true));
 
         mockMvc.perform(post("/api/tools/{toolId}/grants", toolId)
@@ -102,6 +106,9 @@ class RunControllerTest {
         assertThat(agentRuntime.lastRequest()).isNotNull();
         assertThat(agentRuntime.lastRequest().tools()).hasSize(1);
         assertThat(agentRuntime.lastRequest().tools().getFirst().name()).isEqualTo("echo");
+        assertThat(store.listAuditEvents(TENANT_ID))
+                .extracting(AuditEvent::eventType)
+                .contains("AGENT_CREATE", "TOOL_CREATE", "TOOL_GRANT", "AGENT_RUN");
 
         mockMvc.perform(get("/api/audit-events")
                         .header("Authorization", bearer(accessToken)))
@@ -270,6 +277,52 @@ class RunControllerTest {
         mockMvc.perform(get("/api/audit-events")
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isForbidden());
+
+        assertThat(store.listAuditEvents(TENANT_ID))
+                .anySatisfy(event -> {
+                    assertThat(event.eventType()).isEqualTo("ACCESS_DENIED");
+                    assertThat(event.resourceType()).isEqualTo("AUDIT");
+                    assertThat(event.status()).isEqualTo("DENIED");
+                    assertThat(event.principalId()).isEqualTo("audit-lite");
+                });
+    }
+
+    @Test
+    void listAuditEventsDefaultsToOneHundred() throws Exception {
+        appendAuditEvents(101);
+        String token = tokenWithPermissions("auditor", List.of("audit:read"));
+
+        mockMvc.perform(get("/api/audit-events")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(100));
+    }
+
+    @Test
+    void listAuditEventsHonorsLimit() throws Exception {
+        appendAuditEvents(3);
+        String token = tokenWithPermissions("auditor", List.of("audit:read"));
+
+        mockMvc.perform(get("/api/audit-events")
+                        .header("Authorization", bearer(token))
+                        .param("limit", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    void listAuditEventsRejectsOutOfRangeLimit() throws Exception {
+        String token = tokenWithPermissions("auditor", List.of("audit:read"));
+
+        mockMvc.perform(get("/api/audit-events")
+                        .header("Authorization", bearer(token))
+                        .param("limit", "0"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/audit-events")
+                        .header("Authorization", bearer(token))
+                        .param("limit", "501"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -363,6 +416,22 @@ class RunControllerTest {
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(expected));
+    }
+
+    private void appendAuditEvents(int count) {
+        for (int i = 0; i < count; i++) {
+            store.append(new AuditEvent(
+                    UUID.randomUUID(),
+                    TENANT_ID,
+                    "auditor",
+                    "TEST_EVENT",
+                    "TEST",
+                    String.valueOf(i),
+                    "SUCCEEDED",
+                    "seed " + i,
+                    Instant.now().plusMillis(i)
+            ));
+        }
     }
 
     private String loginToken() throws Exception {
