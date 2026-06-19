@@ -29,7 +29,7 @@ fake runtime 用于验证 Agent 配置、权限、工具治理、审计和控制
 本地开发可以临时使用命令行参数：
 
 ```powershell
-mvn -pl cm-agent-server spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.security.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026"
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.security.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026"
 ```
 
 ## 模型供应商与 API Key

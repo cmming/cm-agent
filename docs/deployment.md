@@ -20,10 +20,12 @@ mvn -q "-DskipTests" package
 如果在 Windows PowerShell 中需要指定 Java 21，可以先执行：
 
 ```powershell
-$jdk='C:\Users\chmi\.codex\jdks\microsoft-jdk-21.0.11-extracted\PFiles64\Microsoft\jdk-21.0.11.10-hotspot'
+$jdk='C:\Program Files\Java\jdk-21'
 $env:JAVA_HOME=$jdk
 $env:Path="$jdk\bin;$env:Path"
 ```
+
+请替换为本机 JDK 21 安装路径。
 
 ## 启动开发数据库
 
@@ -33,7 +35,7 @@ $env:Path="$jdk\bin;$env:Path"
 docker compose up -d mysql postgres
 ```
 
-默认数据库名为 `cm_agent`，本地开发密码为 `cmagent`。该配置只用于本地开发和集成验证，生产环境应使用独立数据库账号、强密码和受控网络访问策略。
+默认数据库名为 `cm_agent`。本地开发凭据为 MySQL `root` 用户/密码 `cmagent`，PostgreSQL `cmagent` 用户/密码 `cmagent`；这些凭据仅用于开发和集成验证，生产环境应使用独立数据库账号、强密码和受控网络访问策略。
 
 ## 启动服务端
 
