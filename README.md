@@ -5,8 +5,8 @@ CM Agent 是一个基于 AgentScope Java 的企业级智能体开源底座。第
 ## 快速开始
 
 ```powershell
-mvn -q -DskipTests package
-mvn -pl cm-agent-server -am spring-boot:run
+mvn -q "-DskipTests" package
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.security.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026"
 ```
 
 服务启动后访问：
@@ -14,6 +14,13 @@ mvn -pl cm-agent-server -am spring-boot:run
 - 健康检查：`http://localhost:8080/actuator/health`
 - 控制台：`http://localhost:8080/`
 - OpenAPI：`http://localhost:8080/swagger-ui/index.html`
+
+## 生产文档
+
+- [部署指南](docs/deployment.md)
+- [运维说明](docs/operations.md)
+- [配置说明](docs/configuration.md)
+- [发布说明](docs/release-notes.md)
 
 ## 第一阶段范围
 

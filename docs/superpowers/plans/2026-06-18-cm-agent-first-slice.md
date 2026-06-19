@@ -3419,7 +3419,7 @@ Expected:
 Run:
 
 ```powershell
-rg -n "Deployment Guide|Operations Guide|Configuration Guide|Release Notes" README.md docs
+rg -n "Deployment[ ]Guide|Operations[ ]Guide|Configuration[ ]Guide|Release[ ]Notes" README.md docs
 ```
 
 Expected:
