@@ -20,6 +20,12 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 测试 profile 会加载 `application-test.yml`。控制台测试登录账号为 `admin`，密码为 `cm-agent-test-password-only`；该密码仅用于本地测试，不得用于生产。
 
+服务启动后访问：
+
+- 健康检查：`http://localhost:8080/actuator/health`
+- 控制台：`http://localhost:8080/`
+- OpenAPI：`http://localhost:8080/swagger-ui/index.html`
+
 需要手动传参时，可以继续使用显式配置：
 
 ```powershell
