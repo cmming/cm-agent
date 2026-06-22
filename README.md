@@ -28,6 +28,8 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 需要手动传参时，可以继续使用显式配置：
 
+以下显式配置仅用于本地开发/演示；生产环境不要启用 bootstrap admin，也不要使用示例密码。
+
 ```powershell
 mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.security.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026 --cm-agent.security.bootstrap-admin-enabled=true --cm-agent.security.bootstrap-admin-password=cm-agent-local-dev-password-only"
 ```
