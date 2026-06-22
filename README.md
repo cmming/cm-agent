@@ -4,20 +4,27 @@ CM Agent 是一个基于 AgentScope Java 的企业级智能体开源底座。第
 
 ## 快速开始
 
+本地测试启动可以直接使用 `test` profile：
+
 ```powershell
 mvn -q "-DskipTests" package
-mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.security.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026 --cm-agent.security.bootstrap-admin-enabled=true --cm-agent.security.bootstrap-admin-password=<local-dev-only-password>"
+$env:CM_AGENT_PROFILE='test'
+mvn -pl cm-agent-server -am spring-boot:run
 ```
 
-服务启动后访问：
+也可以使用 Spring Boot 命令行参数显式指定：
 
-- 健康检查：`http://localhost:8080/actuator/health`
-- 控制台：`http://localhost:8080/`
-- OpenAPI：`http://localhost:8080/swagger-ui/index.html`
+```powershell
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=test"
+```
 
-`bootstrap-admin` 仅用于本地开发/演示，必须显式开启并从外部传入本地密码。生产或 `prod`/`production` profile 不要启用 bootstrap admin，服务端会拒绝启动。
+测试 profile 会加载 `application-test.yml`。控制台测试登录账号为 `admin`，密码为 `cm-agent-test-password-only`；该密码仅用于本地测试，不得用于生产。
 
-第一阶段服务端的 Agent、Tool、Grant 和 Audit API 默认使用内存 store，用于薄纵切演示和接口验证；进程重启后运行态数据会丢失。MySQL/PostgreSQL 迁移和 JDBC repository 是持久化基线，生产试点前需要接入正式 JDBC store 或等价持久化服务层。
+需要手动传参时，可以继续使用显式配置：
+
+```powershell
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.security.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026 --cm-agent.security.bootstrap-admin-enabled=true --cm-agent.security.bootstrap-admin-password=cm-agent-local-dev-password-only"
+```
 
 ## 生产文档
 

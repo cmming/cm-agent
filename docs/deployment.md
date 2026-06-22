@@ -41,6 +41,15 @@ docker compose up -d mysql postgres
 
 ## 启动服务端
 
+本地测试可以使用 `test` profile 快速启动：
+
+```powershell
+$env:CM_AGENT_PROFILE='test'
+mvn -pl cm-agent-server -am spring-boot:run
+```
+
+`test` profile 会启用本地 bootstrap admin，测试账号为 `admin`，密码为 `cm-agent-test-password-only`。该 profile 仅用于本地测试。
+
 本地开发可以通过命令行传入安全长度的 JWT 密钥启动服务端：
 
 ```powershell
@@ -60,6 +69,8 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-ag
 - 不要依赖本地开发数据库配置；生产数据库凭据必须由密钥系统注入。
 - 不要在配置文件、镜像层或日志中写入 JWT 密钥、模型 API Key 或数据库密码。
 - `cm-agent.security.jwt-secret` 缺失时，生产环境应保持启动失败，避免使用开发回退密钥。
+- 生产部署必须显式设置 `CM_AGENT_PROFILE=prod` 或 `CM_AGENT_PROFILE=production`，避免使用本地测试 profile。
+- 不要在生产环境使用 `application-test.yml` 中的测试账号或测试 JWT 密钥。
 - `prod` 或 `production` profile 下禁止启用 bootstrap admin；管理员账号应接入正式身份源或受控账号体系。
 - 生产试点前必须接入 JDBC store/Flyway/service 层或等价持久化方案，不能依赖第一阶段默认内存 store 保存运行态数据。
 - 第一阶段默认启用 fake runtime，适合验证控制台、权限、审计和运行链路；接入真实模型前应完成模型供应商和密钥托管配置。

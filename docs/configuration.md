@@ -7,13 +7,38 @@
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `server.port` | `8080` | 服务端监听端口 |
+| `CM_AGENT_PROFILE` / `spring.profiles.active` | `local` | 运行环境选择器；默认进入本地 profile，可设置为 `test`、`prod` 或 `production` |
 | `cm-agent.default-tenant-code` | `default` | 默认租户标识 |
 | `cm-agent.fake-runtime-enabled` | `true` | 第一阶段使用 fake runtime，便于在未接入真实模型时验证 Agent 运行链路 |
 | `cm-agent.security.jwt-secret` | 空 | JWT 签名密钥，生产环境必须由外部安全注入 |
+| `cm-agent.security.allow-dev-jwt-fallback` | `false` | 是否允许 local/test profile 在缺少 JWT 密钥时使用开发回退密钥；仅限本地调试 |
 | `cm-agent.security.bootstrap-admin-enabled` | `false` | 是否启用本地 bootstrap admin 登录；仅限本地开发/演示 |
 | `cm-agent.security.bootstrap-admin-username` | `admin` | bootstrap admin 用户名 |
 | `cm-agent.security.bootstrap-admin-password` | 空 | bootstrap admin 密码；启用时必须由外部 Secret 或本地命令行显式注入 |
 | `cm-agent.security.bootstrap-admin-display-name` | `系统管理员` | bootstrap admin 显示名 |
+
+## 环境 Profile
+
+默认配置通过 `CM_AGENT_PROFILE` 选择运行环境：
+
+```yaml
+spring:
+  profiles:
+    active: ${CM_AGENT_PROFILE:local}
+```
+
+本地测试可以设置：
+
+```powershell
+$env:CM_AGENT_PROFILE='test'
+mvn -pl cm-agent-server -am spring-boot:run
+```
+
+`test` profile 会加载 `application-test.yml`，用于本地控制台和接口联调。测试登录账号为 `admin`，密码为 `cm-agent-test-password-only`。该配置包含可直接使用的测试凭据，只能用于本地测试。
+
+开发 JWT 回退默认关闭。需要本地无密钥调试时，可以显式设置 `CM_AGENT_ALLOW_DEV_JWT_FALLBACK=true`；生产环境不得启用该开关。
+
+生产部署应设置 `CM_AGENT_PROFILE=prod` 或 `CM_AGENT_PROFILE=production`，并通过外部 Secret 注入 `CM_AGENT_JWT_SECRET`。生产 profile 下启用 bootstrap admin 会导致服务启动失败。
 
 ## fake runtime
 
@@ -34,7 +59,7 @@ fake runtime 用于验证 Agent 配置、权限、工具治理、审计和控制
 
 生产环境必须配置安全长度的 `cm-agent.security.jwt-secret`，推荐通过部署平台 Secret、环境变量或密钥管理服务注入。不要将密钥提交到 Git、写入镜像层或打印到日志。
 
-本地开发可以临时使用命令行参数：
+本地测试优先使用 `CM_AGENT_PROFILE=test`；需要手动覆盖配置时，也可以临时使用命令行参数：
 
 ```powershell
 mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.security.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026 --cm-agent.security.bootstrap-admin-enabled=true --cm-agent.security.bootstrap-admin-password=<local-dev-only-password>"
