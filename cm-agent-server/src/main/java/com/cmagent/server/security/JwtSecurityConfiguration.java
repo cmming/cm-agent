@@ -52,8 +52,7 @@ public class JwtSecurityConfiguration {
             return false;
         }
         return Arrays.stream(activeProfiles)
-                .map(String::toLowerCase)
-                .anyMatch(profile -> profile.equals("local") || profile.equals("test"));
+                .anyMatch(profile -> "local".equalsIgnoreCase(profile) || "test".equalsIgnoreCase(profile));
     }
 
     private boolean hasProductionLikeProfile(String[] activeProfiles) {
@@ -61,8 +60,7 @@ public class JwtSecurityConfiguration {
             return false;
         }
         return Arrays.stream(activeProfiles)
-                .map(String::toLowerCase)
-                .anyMatch(profile -> profile.equals("production") || profile.equals("prod"));
+                .anyMatch(profile -> "production".equalsIgnoreCase(profile) || "prod".equalsIgnoreCase(profile));
     }
 
     private boolean hasTestProfile(String[] activeProfiles) {
@@ -70,8 +68,7 @@ public class JwtSecurityConfiguration {
             return false;
         }
         return Arrays.stream(activeProfiles)
-                .map(String::toLowerCase)
-                .anyMatch(profile -> profile.equals("test"));
+                .anyMatch(profile -> "test".equalsIgnoreCase(profile));
     }
 
     private SecretKey createKey(String secret) {
