@@ -1,2 +1,11 @@
 .idea/
 .worktrees/
+target/
+.mvn/wrapper/maven-wrapper.jar
+*.iml
+*.log
+logs/
+.env
+node_modules/
+dist/
+coverage/

@@ -1,0 +1,28 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: cm-agent-server
+  profiles:
+    # Production must set CM_AGENT_PROFILE=prod or production and inject CM_AGENT_JWT_SECRET.
+    active: ${CM_AGENT_PROFILE:local}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+cm-agent:
+  security:
+    jwt-secret: ${CM_AGENT_JWT_SECRET:}
+    # Local/test fallback only; production profiles still reject missing CM_AGENT_JWT_SECRET.
+    allow-dev-jwt-fallback: ${CM_AGENT_ALLOW_DEV_JWT_FALLBACK:false}
+    bootstrap-admin-enabled: false
+    bootstrap-admin-username: ${CM_AGENT_BOOTSTRAP_ADMIN_USERNAME:admin}
+    bootstrap-admin-password: ${CM_AGENT_BOOTSTRAP_ADMIN_PASSWORD:}
+    bootstrap-admin-display-name: ${CM_AGENT_BOOTSTRAP_ADMIN_DISPLAY_NAME:系统管理员}
+    public-api-docs-enabled: ${CM_AGENT_PUBLIC_API_DOCS_ENABLED:true}
+  fake-runtime-enabled: true
+  default-tenant-code: default

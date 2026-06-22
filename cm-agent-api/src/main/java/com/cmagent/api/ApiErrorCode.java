@@ -1,0 +1,12 @@
+package com.cmagent.api;
+
+public enum ApiErrorCode {
+    UNAUTHORIZED,
+    FORBIDDEN,
+    TENANT_NOT_FOUND,
+    AGENT_NOT_FOUND,
+    TOOL_NOT_FOUND,
+    TOOL_NOT_GRANTED,
+    VALIDATION_FAILED,
+    RUNTIME_ERROR
+}

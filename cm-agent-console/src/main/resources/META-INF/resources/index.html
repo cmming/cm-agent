@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CM Agent 控制台</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+<main class="shell">
+    <header class="topbar">
+        <div>
+            <h1>CM Agent 控制台</h1>
+            <p class="subtitle">用于登录、创建 Agent 和 Tool、执行运行以及查看审计日志。</p>
+        </div>
+        <div class="toolbar">
+            <div class="login-controls">
+                <label for="loginUsername">用户名</label>
+                <input id="loginUsername" type="text" value="admin" autocomplete="username">
+                <label for="loginPassword">密码</label>
+                <input id="loginPassword" type="password" placeholder="输入本地 bootstrap admin 密码" autocomplete="current-password">
+            </div>
+            <button id="loginBtn" class="primary">登录</button>
+            <div id="status" class="status" aria-live="polite">未登录</div>
+        </div>
+    </header>
+
+    <section class="grid">
+        <article class="panel">
+            <h2>Agent 管理</h2>
+            <label for="agentName">Agent 名称</label>
+            <input id="agentName" type="text" value="企业助手">
+
+            <label for="systemPrompt">System Prompt</label>
+            <textarea id="systemPrompt" rows="5">你是企业内部的 CM Agent 助手，负责回答问题、调用工具并产出简洁可靠的结果。</textarea>
+
+            <div class="actions">
+                <button id="createAgentBtn" class="primary">创建 Agent</button>
+            </div>
+
+            <pre id="agentOutput" class="output" aria-live="polite">等待创建 Agent。</pre>
+        </article>
+
+        <article class="panel">
+            <h2>工具治理</h2>
+            <label for="toolName">Tool 名称</label>
+            <input id="toolName" type="text" value="echo">
+
+            <div class="hint">创建后会自动授予当前 Agent。</div>
+
+            <div class="actions">
+                <button id="createToolBtn">创建并授权 Tool</button>
+            </div>
+
+            <pre id="toolOutput" class="output" aria-live="polite">等待创建 Tool。</pre>
+        </article>
+
+        <article class="panel">
+            <h2>聊天调试</h2>
+            <label for="runInput">输入</label>
+            <textarea id="runInput" rows="5">你好，帮我总结今天的重点。</textarea>
+
+            <div class="actions">
+                <button id="runBtn">执行运行</button>
+            </div>
+
+            <pre id="runOutput" class="output" aria-live="polite">等待运行结果。</pre>
+        </article>
+
+        <article class="panel">
+            <h2>审计日志</h2>
+            <div class="actions">
+                <button id="auditBtn">刷新审计日志</button>
+            </div>
+
+            <pre id="auditOutput" class="output" aria-live="polite">等待查询审计日志。</pre>
+        </article>
+    </section>
+</main>
+<script src="/assets/app.js"></script>
+</body>
+</html>
