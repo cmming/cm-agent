@@ -284,6 +284,12 @@ In `docs/configuration.md`, add this row to the basic configuration table immedi
 | `CM_AGENT_PROFILE` / `spring.profiles.active` | `local` | 运行环境选择器；默认进入本地 profile，可设置为 `test`、`prod` 或 `production` |
 ```
 
+Also add this row immediately after `cm-agent.security.jwt-secret`:
+
+```markdown
+| `cm-agent.security.allow-dev-jwt-fallback` | `false` | 是否允许 local/test profile 在缺少 JWT 密钥时使用开发回退密钥；仅限本地调试 |
+```
+
 Then insert this new section immediately before `## fake runtime`:
 
 ````markdown
@@ -305,6 +311,8 @@ mvn -pl cm-agent-server -am spring-boot:run
 ```
 
 `test` profile 会加载 `application-test.yml`，用于本地控制台和接口联调。测试登录账号为 `admin`，密码为 `cm-agent-test-password-only`。该配置包含可直接使用的测试凭据，只能用于本地测试。
+
+开发 JWT 回退默认关闭。需要本地无密钥调试时，可以显式设置 `CM_AGENT_ALLOW_DEV_JWT_FALLBACK=true`；生产环境不得启用该开关。
 
 生产部署应设置 `CM_AGENT_PROFILE=prod` 或 `CM_AGENT_PROFILE=production`，并通过外部 Secret 注入 `CM_AGENT_JWT_SECRET`。生产 profile 下启用 bootstrap admin 会导致服务启动失败。
 ````
