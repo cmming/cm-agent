@@ -1,8 +1,10 @@
 package com.cmagent.server.config;
 
+import com.cmagent.server.CmAgentServerApplication;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.core.env.Environment;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -12,6 +14,10 @@ class ApplicationProfileConfigurationTest {
     private static final String TEST_ADMIN_PASSWORD = "cm-agent-test-password-only";
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+            .withInitializer(new ConfigDataApplicationContextInitializer());
+
+    private final WebApplicationContextRunner webContextRunner = new WebApplicationContextRunner()
+            .withUserConfiguration(CmAgentServerApplication.class)
             .withInitializer(new ConfigDataApplicationContextInitializer());
 
     @Test
@@ -39,6 +45,17 @@ class ApplicationProfileConfigurationTest {
         contextRunner
                 .withPropertyValues("spring.profiles.active=test")
                 .run(context -> assertTestProfileLoaded(context.getEnvironment()));
+    }
+
+    @Test
+    void productionProfileRejectsMissingJwtSecretWhenConfigDataDefaultsAreLoaded() {
+        webContextRunner
+                .withPropertyValues("spring.profiles.active=production")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("生产环境必须外部提供 JWT 密钥");
+                });
     }
 
     private static void assertTestProfileLoaded(Environment environment) {

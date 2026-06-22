@@ -1,3 +1,4 @@
+# Local test profile only. Do not use this configuration in production.
 cm-agent:
   security:
     jwt-secret: cm-agent-test-jwt-secret-with-at-least-32-bytes

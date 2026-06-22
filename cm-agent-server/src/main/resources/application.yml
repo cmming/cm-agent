@@ -5,6 +5,7 @@ spring:
   application:
     name: cm-agent-server
   profiles:
+    # Production must set CM_AGENT_PROFILE=prod or production and inject CM_AGENT_JWT_SECRET.
     active: ${CM_AGENT_PROFILE:local}
 
 management:
@@ -16,6 +17,7 @@ management:
 cm-agent:
   security:
     jwt-secret: ${CM_AGENT_JWT_SECRET:}
+    # Local/test fallback only; production profiles still reject missing CM_AGENT_JWT_SECRET.
     allow-dev-jwt-fallback: ${CM_AGENT_ALLOW_DEV_JWT_FALLBACK:true}
     bootstrap-admin-enabled: false
     bootstrap-admin-username: ${CM_AGENT_BOOTSTRAP_ADMIN_USERNAME:admin}
