@@ -147,4 +147,23 @@ class JwtSecurityConfigurationTest {
                             .hasMessageContaining("production/prod profile 禁止启用 bootstrap admin");
                 });
     }
+
+    @Test
+    void rejectsBootstrapAdminForUppercaseProductionProfileAcrossDefaultLocales() {
+        Locale defaultLocale = Locale.getDefault();
+        Locale.setDefault(Locale.forLanguageTag("tr"));
+        try {
+            serverContextRunner
+                    .withPropertyValues("spring.profiles.active=PRODUCTION")
+                    .withPropertyValues("cm-agent.security.bootstrap-admin-enabled=true")
+                    .withPropertyValues("cm-agent.security.bootstrap-admin-password=local-only-password")
+                    .run(context -> {
+                        assertThat(context).hasFailed();
+                        assertThat(context.getStartupFailure())
+                                .hasMessageContaining("production/prod profile 禁止启用 bootstrap admin");
+                    });
+        } finally {
+            Locale.setDefault(defaultLocale);
+        }
+    }
 }

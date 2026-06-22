@@ -1,52 +1,52 @@
-# 测试环境启动配置 Implementation Plan
+# 测试环境启动配置实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **给智能体执行者：** 必须使用子技能：按任务逐项执行本计划时，优先使用 `superpowers:subagent-driven-development`，也可以使用 `superpowers:executing-plans`。执行进度使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** 在 `application.yml` 中提供环境选择器，并新增可直接用于本地测试启动的 `application-test.yml`。
+**目标：** 在 `application.yml` 中提供环境选择器，并新增可直接用于本地测试启动的 `application-test.yml`。
 
-**Architecture:** 使用 Spring Boot 原生 profile 机制：默认 profile 从 `CM_AGENT_PROFILE` 读取，未设置时使用 `local`；测试环境通过 `application-test.yml` 覆盖 JWT 和 bootstrap admin 配置。开发 JWT 回退默认关闭，只有显式设置 `CM_AGENT_ALLOW_DEV_JWT_FALLBACK=true` 才会启用；生产安全边界仍由现有 `JwtSecurityConfiguration` 和 `BootstrapAdminProperties` 保证，`prod`/`production` 不允许 bootstrap admin，也不能使用开发 JWT 回退。
+**架构：** 使用 Spring Boot 原生 profile 机制：默认 profile 从 `CM_AGENT_PROFILE` 读取，未设置时使用 `local`；测试环境通过 `application-test.yml` 覆盖 JWT 和 bootstrap admin 配置。开发 JWT 回退默认关闭，只有显式设置 `CM_AGENT_ALLOW_DEV_JWT_FALLBACK=true` 才会启用；生产安全边界仍由现有 `JwtSecurityConfiguration` 和 `BootstrapAdminProperties` 保证，`prod`/`production` 不允许 bootstrap admin，也不能使用开发 JWT 回退。
 
-**Tech Stack:** Java 21、Spring Boot 3.5、JUnit 5、AssertJ、Maven、YAML 配置、中文 Markdown 文档。
-
----
-
-## File Structure
-
-- Create: `cm-agent-server/src/test/java/com/cmagent/server/config/ApplicationProfileConfigurationTest.java`
-  - Verifies `application.yml` activates default `local` profile.
-  - Verifies `CM_AGENT_PROFILE=test` loads `application-test.yml`.
-  - Verifies command-line style `spring.profiles.active=test` loads `application-test.yml`.
-- Modify: `cm-agent-server/src/main/resources/application.yml`
-  - Adds `spring.profiles.active: ${CM_AGENT_PROFILE:local}`.
-  - Adds `cm-agent.security.allow-dev-jwt-fallback: ${CM_AGENT_ALLOW_DEV_JWT_FALLBACK:false}` so local fallback requires explicit opt-in.
-- Create: `cm-agent-server/src/main/resources/application-test.yml`
-  - Contains test-only JWT secret and bootstrap admin credentials.
-  - Keeps fake runtime enabled for local end-to-end verification.
-- Modify: `README.md`
-  - Adds simple test profile startup path.
-  - Keeps explicit long-form local startup command for users who do not want the test profile.
-- Modify: `docs/configuration.md`
-  - Documents `CM_AGENT_PROFILE`, `application-test.yml`, and test credentials.
-  - Reiterates production must inject secrets externally.
-- Modify: `docs/deployment.md`
-  - Documents production profile selection and warns against test profile in production.
-
-## Controller Ledger
-
-The controller, not the task subagents, maintains `docs/superpowers/progress-ledger.md` during execution. Append entries after Task 1, after Task 2, and after final review. Do not include the ledger in task commits unless the user explicitly asks to publish it.
+**技术栈：** Java 21、Spring Boot 3.5、JUnit 5、AssertJ、Maven、YAML 配置、中文 Markdown 文档。
 
 ---
 
-### Task 1: Add Profile Configuration and Tests
+## 文件结构
 
-**Files:**
-- Create: `cm-agent-server/src/test/java/com/cmagent/server/config/ApplicationProfileConfigurationTest.java`
-- Modify: `cm-agent-server/src/main/resources/application.yml`
-- Create: `cm-agent-server/src/main/resources/application-test.yml`
+- 新建：`cm-agent-server/src/test/java/com/cmagent/server/config/ApplicationProfileConfigurationTest.java`
+  - 验证 `application.yml` 会启用默认 `local` profile。
+  - 验证 `CM_AGENT_PROFILE=test` 会加载 `application-test.yml`。
+  - 验证命令行形式的 `spring.profiles.active=test` 会加载 `application-test.yml`。
+- 修改：`cm-agent-server/src/main/resources/application.yml`
+  - 增加 `spring.profiles.active: ${CM_AGENT_PROFILE:local}`。
+  - 增加 `cm-agent.security.allow-dev-jwt-fallback: ${CM_AGENT_ALLOW_DEV_JWT_FALLBACK:false}`，让本地回退必须显式开启。
+- 新建：`cm-agent-server/src/main/resources/application-test.yml`
+  - 包含仅用于测试的 JWT 密钥和 bootstrap admin 凭据。
+  - 保持 fake runtime 开启，便于本地端到端验证。
+- 修改：`README.md`
+  - 增加简单的 test profile 启动路径。
+  - 保留显式长命令形式的本地启动方式，方便不想使用 test profile 的用户。
+- 修改：`docs/configuration.md`
+  - 说明 `CM_AGENT_PROFILE`、`application-test.yml` 和测试凭据。
+  - 重申生产环境必须从外部注入 Secret。
+- 修改：`docs/deployment.md`
+  - 说明生产 profile 选择，并警告不要在生产环境使用 test profile。
 
-- [ ] **Step 1: Write the failing test**
+## 控制器台账
 
-Create `cm-agent-server/src/test/java/com/cmagent/server/config/ApplicationProfileConfigurationTest.java` with this complete content:
+执行期间由控制器维护 `docs/superpowers/progress-ledger.md`，任务 subagent 不维护该文件。在任务 1、任务 2 和最终审查之后追加记录。除非用户明确要求发布，否则不要把该台账纳入任务提交。
+
+---
+
+### 任务 1：增加 Profile 配置和测试
+
+**文件：**
+- 新建：`cm-agent-server/src/test/java/com/cmagent/server/config/ApplicationProfileConfigurationTest.java`
+- 修改：`cm-agent-server/src/main/resources/application.yml`
+- 新建：`cm-agent-server/src/main/resources/application-test.yml`
+
+- [ ] **步骤 1：编写失败测试**
+
+使用以下完整内容新建 `cm-agent-server/src/test/java/com/cmagent/server/config/ApplicationProfileConfigurationTest.java`：
 
 ```java
 package com.cmagent.server.config;
@@ -122,9 +122,9 @@ class ApplicationProfileConfigurationTest {
 }
 ```
 
-- [ ] **Step 2: Run the new test and verify it fails**
+- [ ] **步骤 2：运行新测试并确认失败**
 
-Run with Java 21:
+使用 Java 21 运行：
 
 ```powershell
 $env:JAVA_HOME='C:\Users\chmi\.codex\jdks\microsoft-jdk-21.0.11-extracted\PFiles64\Microsoft\jdk-21.0.11.10-hotspot'
@@ -132,7 +132,7 @@ $env:PATH="$env:JAVA_HOME\bin;$env:PATH"
 mvn -q -pl cm-agent-server -am '-Dtest=ApplicationProfileConfigurationTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
 ```
 
-Expected: FAIL. At least one assertion should fail because the current `application.yml` does not define `spring.profiles.active`, `cm-agent.security.allow-dev-jwt-fallback`, or `application-test.yml`. A valid failure includes one of these messages:
+预期：失败。由于当前 `application.yml` 尚未定义 `spring.profiles.active`、`cm-agent.security.allow-dev-jwt-fallback`，也尚未提供 `application-test.yml`，至少应有一个断言失败。有效失败信息包含以下任一内容：
 
 ```text
 Expecting actual:
@@ -141,16 +141,16 @@ to contain exactly:
   ["local"]
 ```
 
-or:
+或：
 
 ```text
 expected: "cm-agent-test-jwt-secret-with-at-least-32-bytes"
  but was: null
 ```
 
-- [ ] **Step 3: Update `application.yml`**
+- [ ] **步骤 3：更新 `application.yml`**
 
-Replace `cm-agent-server/src/main/resources/application.yml` with this complete content:
+用以下完整内容替换 `cm-agent-server/src/main/resources/application.yml`：
 
 ```yaml
 server:
@@ -183,9 +183,9 @@ cm-agent:
   default-tenant-code: default
 ```
 
-- [ ] **Step 4: Add `application-test.yml`**
+- [ ] **步骤 4：增加 `application-test.yml`**
 
-Create `cm-agent-server/src/main/resources/application-test.yml` with this complete content:
+使用以下完整内容新建 `cm-agent-server/src/main/resources/application-test.yml`：
 
 ```yaml
 # Local test profile only. Do not use this configuration in production.
@@ -200,9 +200,9 @@ cm-agent:
   fake-runtime-enabled: true
 ```
 
-- [ ] **Step 5: Run the new test and verify it passes**
+- [ ] **步骤 5：运行新测试并确认通过**
 
-Run:
+运行：
 
 ```powershell
 $env:JAVA_HOME='C:\Users\chmi\.codex\jdks\microsoft-jdk-21.0.11-extracted\PFiles64\Microsoft\jdk-21.0.11.10-hotspot'
@@ -210,11 +210,11 @@ $env:PATH="$env:JAVA_HOME\bin;$env:PATH"
 mvn -q -pl cm-agent-server -am '-Dtest=ApplicationProfileConfigurationTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
 ```
 
-Expected: PASS with exit code `0`.
+预期：通过，退出码为 `0`。
 
-- [ ] **Step 6: Run focused regression tests**
+- [ ] **步骤 6：运行聚焦回归测试**
 
-Run:
+运行：
 
 ```powershell
 $env:JAVA_HOME='C:\Users\chmi\.codex\jdks\microsoft-jdk-21.0.11-extracted\PFiles64\Microsoft\jdk-21.0.11.10-hotspot'
@@ -222,31 +222,31 @@ $env:PATH="$env:JAVA_HOME\bin;$env:PATH"
 mvn -q -pl cm-agent-server -am '-Dtest=ApplicationProfileConfigurationTest,JwtSecurityConfigurationTest,AuthControllerTest,ConsoleSmokeTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
 ```
 
-Expected: PASS with exit code `0`. Warnings about missing JWT in explicit production profile tests are acceptable because they prove production secret injection remains required.
+预期：通过，退出码为 `0`。显式 production profile 测试中关于缺少 JWT 的警告可以接受，因为它证明生产环境仍要求注入 Secret。
 
-- [ ] **Step 7: Commit Task 1**
+- [ ] **步骤 7：提交任务 1**
 
-Run:
+运行：
 
 ```powershell
 git add 'cm-agent-server/src/test/java/com/cmagent/server/config/ApplicationProfileConfigurationTest.java' 'cm-agent-server/src/main/resources/application.yml' 'cm-agent-server/src/main/resources/application-test.yml'
 git commit -m "feat: 添加测试启动 profile 配置"
 ```
 
-Expected: commit succeeds and `git status --short` shows only files unrelated to Task 1, such as `docs/superpowers/progress-ledger.md` if the controller has updated it.
+预期：提交成功，且 `git status --short` 只显示与任务 1 无关的文件，例如控制器已更新的 `docs/superpowers/progress-ledger.md`。
 
 ---
 
-### Task 2: Update Chinese Startup Documentation
+### 任务 2：更新中文启动文档
 
-**Files:**
-- Modify: `README.md`
-- Modify: `docs/configuration.md`
-- Modify: `docs/deployment.md`
+**文件：**
+- 修改：`README.md`
+- 修改：`docs/configuration.md`
+- 修改：`docs/deployment.md`
 
-- [ ] **Step 1: Update README quick start**
+- [ ] **步骤 1：更新 README 快速开始**
 
-In `README.md`, replace the whole `## 快速开始` section with this exact section:
+在 `README.md` 中，将整个 `## 快速开始` 章节替换为以下精确内容：
 
 ````markdown
 ## 快速开始
@@ -274,23 +274,23 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-ag
 ```
 ````
 
-Keep the rest of `README.md` unchanged.
+保持 `README.md` 的其他内容不变。
 
-- [ ] **Step 2: Update configuration documentation**
+- [ ] **步骤 2：更新配置文档**
 
-In `docs/configuration.md`, add this row to the basic configuration table immediately after `server.port`:
+在 `docs/configuration.md` 中，将以下行加入基础配置表，并放在 `server.port` 后面：
 
 ```markdown
 | `CM_AGENT_PROFILE` / `spring.profiles.active` | `local` | 运行环境选择器；默认进入本地 profile，可设置为 `test`、`prod` 或 `production` |
 ```
 
-Also add this row immediately after `cm-agent.security.jwt-secret`:
+同时将以下行放在 `cm-agent.security.jwt-secret` 后面：
 
 ```markdown
 | `cm-agent.security.allow-dev-jwt-fallback` | `false` | 是否允许 local/test profile 在缺少 JWT 密钥时使用开发回退密钥；仅限本地调试 |
 ```
 
-Then insert this new section immediately before `## fake runtime`:
+然后在 `## fake runtime` 前插入以下新章节：
 
 ````markdown
 ## 环境 Profile
@@ -317,15 +317,15 @@ mvn -pl cm-agent-server -am spring-boot:run
 生产部署应设置 `CM_AGENT_PROFILE=prod` 或 `CM_AGENT_PROFILE=production`，并通过外部 Secret 注入 `CM_AGENT_JWT_SECRET`。生产 profile 下启用 bootstrap admin 会导致服务启动失败。
 ````
 
-Then replace the sentence under `## JWT 密钥` that currently says `本地开发可以临时使用命令行参数：` with this exact sentence:
+然后将 `## JWT 密钥` 下当前写着 `本地开发可以临时使用命令行参数：` 的句子替换为以下精确句子：
 
 ```markdown
 本地测试优先使用 `CM_AGENT_PROFILE=test`；需要手动覆盖配置时，也可以临时使用命令行参数：
 ```
 
-- [ ] **Step 3: Update deployment documentation**
+- [ ] **步骤 3：更新部署文档**
 
-In `docs/deployment.md`, under `## 启动服务端`, insert this block before the existing sentence `本地开发可以通过命令行传入安全长度的 JWT 密钥启动服务端：`:
+在 `docs/deployment.md` 的 `## 启动服务端` 下，将以下内容插入到现有句子 `本地开发可以通过命令行传入安全长度的 JWT 密钥启动服务端：` 之前：
 
 ````markdown
 本地测试可以使用 `test` profile 快速启动：
@@ -338,40 +338,40 @@ mvn -pl cm-agent-server -am spring-boot:run
 `test` profile 会启用本地 bootstrap admin，测试账号为 `admin`，密码为 `cm-agent-test-password-only`。该 profile 仅用于本地测试。
 ````
 
-In `docs/deployment.md`, add these two bullets to `## 生产部署要点` after the JWT secret bullet:
+在 `docs/deployment.md` 中，将以下两条加入 `## 生产部署要点`，并放在 JWT secret 条目之后：
 
 ```markdown
 - 生产部署必须显式设置 `CM_AGENT_PROFILE=prod` 或 `CM_AGENT_PROFILE=production`，避免使用本地测试 profile。
 - 不要在生产环境使用 `application-test.yml` 中的测试账号或测试 JWT 密钥。
 ```
 
-- [ ] **Step 4: Verify documentation content**
+- [ ] **步骤 4：验证文档内容**
 
-Run:
+运行：
 
 ```powershell
 rg -n "CM_AGENT_PROFILE|application-test.yml|cm-agent-test-password-only|spring.profiles.active" README.md docs/configuration.md docs/deployment.md
 rg -n "prod|production|bootstrap admin|外部 Secret|CM_AGENT_JWT_SECRET" docs/configuration.md docs/deployment.md
 ```
 
-Expected: the first command prints matches in all three files; the second command prints production warnings in both `docs/configuration.md` and `docs/deployment.md`.
+预期：第一条命令在三个文件中都打印匹配结果；第二条命令在 `docs/configuration.md` 和 `docs/deployment.md` 中都打印生产环境警告。
 
-- [ ] **Step 5: Commit Task 2**
+- [ ] **步骤 5：提交任务 2**
 
-Run:
+运行：
 
 ```powershell
 git add README.md docs/configuration.md docs/deployment.md
 git commit -m "docs: 补充测试 profile 启动说明"
 ```
 
-Expected: commit succeeds and `git status --short` shows only files unrelated to Task 2, such as `docs/superpowers/progress-ledger.md` if the controller has updated it.
+预期：提交成功，且 `git status --short` 只显示与任务 2 无关的文件，例如控制器已更新的 `docs/superpowers/progress-ledger.md`。
 
 ---
 
-## Final Verification After All Tasks
+## 全部任务后的最终验证
 
-Run from `F:\java\cm-agent\.worktrees\cm-agent-first-slice`:
+从 `F:\java\cm-agent\.worktrees\cm-agent-first-slice` 运行：
 
 ```powershell
 $env:JAVA_HOME='C:\Users\chmi\.codex\jdks\microsoft-jdk-21.0.11-extracted\PFiles64\Microsoft\jdk-21.0.11.10-hotspot'
@@ -382,19 +382,19 @@ mvn -q -pl cm-agent-server -am '-DskipTests' package
 docker compose config
 ```
 
-Expected:
+预期：
 
-- All Maven commands exit with code `0`.
-- `docker compose config` exits with code `0` and prints MySQL/PostgreSQL services.
-- `git status --short --branch` shows the implementation branch ahead of `origin/cm-agent-first-slice`; it may also show the untracked progress ledger.
+- 所有 Maven 命令退出码均为 `0`。
+- `docker compose config` 退出码为 `0`，并打印 MySQL/PostgreSQL 服务。
+- `git status --short --branch` 显示实现分支领先于 `origin/cm-agent-first-slice`；也可能显示未跟踪的进度台账。
 
-## Final Review
+## 最终审查
 
-After all task-specific spec and code quality reviews pass, dispatch one final code reviewer for the full implementation range from `55d5b6d` to `HEAD`. The reviewer must check:
+所有任务级规格审查和代码质量审查通过后，为从 `55d5b6d` 到 `HEAD` 的完整实现范围派发一次最终代码审查。审查者必须检查：
 
-- The plan requirements are all implemented.
-- Test profile credentials are documented as local-test-only.
-- Production profile protections remain intact.
-- No unrelated files were changed.
+- 计划要求已全部实现。
+- test profile 凭据已说明仅限本地测试。
+- 生产 profile 保护仍然有效。
+- 没有修改无关文件。
 
-Then use `superpowers:finishing-a-development-branch` with option 2 semantics: push the branch and create or update the Pull Request for `cm-agent-first-slice`.
+然后按选项 2 的语义使用 `superpowers:finishing-a-development-branch`：推送分支，并为 `cm-agent-first-slice` 创建或更新 Pull Request。

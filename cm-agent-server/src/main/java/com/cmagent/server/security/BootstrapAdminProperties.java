@@ -68,8 +68,7 @@ public class BootstrapAdminProperties {
 
     private boolean hasProductionProfile() {
         return Arrays.stream(environment.getActiveProfiles())
-                .map(String::toLowerCase)
-                .anyMatch(profile -> profile.equals("production") || profile.equals("prod"));
+                .anyMatch(profile -> "production".equalsIgnoreCase(profile) || "prod".equalsIgnoreCase(profile));
     }
 
     private String blankToDefault(String value, String defaultValue) {
