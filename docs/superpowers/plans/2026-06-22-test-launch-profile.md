@@ -4,7 +4,7 @@
 
 **Goal:** 在 `application.yml` 中提供环境选择器，并新增可直接用于本地测试启动的 `application-test.yml`。
 
-**Architecture:** 使用 Spring Boot 原生 profile 机制：默认 profile 从 `CM_AGENT_PROFILE` 读取，未设置时使用 `local`；测试环境通过 `application-test.yml` 覆盖 JWT 和 bootstrap admin 配置。生产安全边界仍由现有 `JwtSecurityConfiguration` 和 `BootstrapAdminProperties` 保证，`prod`/`production` 不允许 bootstrap admin，也不能使用开发 JWT 回退。
+**Architecture:** 使用 Spring Boot 原生 profile 机制：默认 profile 从 `CM_AGENT_PROFILE` 读取，未设置时使用 `local`；测试环境通过 `application-test.yml` 覆盖 JWT 和 bootstrap admin 配置。开发 JWT 回退默认关闭，只有显式设置 `CM_AGENT_ALLOW_DEV_JWT_FALLBACK=true` 才会启用；生产安全边界仍由现有 `JwtSecurityConfiguration` 和 `BootstrapAdminProperties` 保证，`prod`/`production` 不允许 bootstrap admin，也不能使用开发 JWT 回退。
 
 **Tech Stack:** Java 21、Spring Boot 3.5、JUnit 5、AssertJ、Maven、YAML 配置、中文 Markdown 文档。
 
@@ -18,7 +18,7 @@
   - Verifies command-line style `spring.profiles.active=test` loads `application-test.yml`.
 - Modify: `cm-agent-server/src/main/resources/application.yml`
   - Adds `spring.profiles.active: ${CM_AGENT_PROFILE:local}`.
-  - Adds `cm-agent.security.allow-dev-jwt-fallback: ${CM_AGENT_ALLOW_DEV_JWT_FALLBACK:true}` so the default local profile can use the existing guarded local fallback.
+  - Adds `cm-agent.security.allow-dev-jwt-fallback: ${CM_AGENT_ALLOW_DEV_JWT_FALLBACK:false}` so local fallback requires explicit opt-in.
 - Create: `cm-agent-server/src/main/resources/application-test.yml`
   - Contains test-only JWT secret and bootstrap admin credentials.
   - Keeps fake runtime enabled for local end-to-end verification.
@@ -51,9 +51,11 @@ Create `cm-agent-server/src/test/java/com/cmagent/server/config/ApplicationProfi
 ```java
 package com.cmagent.server.config;
 
+import com.cmagent.server.CmAgentServerApplication;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.core.env.Environment;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -65,13 +67,17 @@ class ApplicationProfileConfigurationTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withInitializer(new ConfigDataApplicationContextInitializer());
 
+    private final WebApplicationContextRunner webContextRunner = new WebApplicationContextRunner()
+            .withUserConfiguration(CmAgentServerApplication.class)
+            .withInitializer(new ConfigDataApplicationContextInitializer());
+
     @Test
     void defaultConfigurationActivatesLocalProfileFromCmAgentProfileSelector() {
         contextRunner.run(context -> {
             Environment environment = context.getEnvironment();
 
             assertThat(environment.getActiveProfiles()).containsExactly("local");
-            assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class)).isTrue();
+            assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class)).isFalse();
             assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-enabled", Boolean.class)).isFalse();
             assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-username")).isEqualTo("admin");
             assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-password")).isEmpty();
@@ -92,10 +98,21 @@ class ApplicationProfileConfigurationTest {
                 .run(context -> assertTestProfileLoaded(context.getEnvironment()));
     }
 
+    @Test
+    void productionProfileRejectsMissingJwtSecretWhenConfigDataDefaultsAreLoaded() {
+        webContextRunner
+                .withPropertyValues("spring.profiles.active=production")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("生产环境必须外部提供 JWT 密钥");
+                });
+    }
+
     private static void assertTestProfileLoaded(Environment environment) {
         assertThat(environment.getActiveProfiles()).containsExactly("test");
         assertThat(environment.getProperty("cm-agent.security.jwt-secret")).isEqualTo(TEST_JWT_SECRET);
-        assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class)).isTrue();
+        assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class)).isFalse();
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-enabled", Boolean.class)).isTrue();
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-username")).isEqualTo("admin");
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-password")).isEqualTo(TEST_ADMIN_PASSWORD);
@@ -143,6 +160,7 @@ spring:
   application:
     name: cm-agent-server
   profiles:
+    # Production must set CM_AGENT_PROFILE=prod or production and inject CM_AGENT_JWT_SECRET.
     active: ${CM_AGENT_PROFILE:local}
 
 management:
@@ -154,7 +172,8 @@ management:
 cm-agent:
   security:
     jwt-secret: ${CM_AGENT_JWT_SECRET:}
-    allow-dev-jwt-fallback: ${CM_AGENT_ALLOW_DEV_JWT_FALLBACK:true}
+    # Local/test fallback only; production profiles still reject missing CM_AGENT_JWT_SECRET.
+    allow-dev-jwt-fallback: ${CM_AGENT_ALLOW_DEV_JWT_FALLBACK:false}
     bootstrap-admin-enabled: false
     bootstrap-admin-username: ${CM_AGENT_BOOTSTRAP_ADMIN_USERNAME:admin}
     bootstrap-admin-password: ${CM_AGENT_BOOTSTRAP_ADMIN_PASSWORD:}
@@ -169,6 +188,7 @@ cm-agent:
 Create `cm-agent-server/src/main/resources/application-test.yml` with this complete content:
 
 ```yaml
+# Local test profile only. Do not use this configuration in production.
 cm-agent:
   security:
     jwt-secret: cm-agent-test-jwt-secret-with-at-least-32-bytes
@@ -202,7 +222,7 @@ $env:PATH="$env:JAVA_HOME\bin;$env:PATH"
 mvn -q -pl cm-agent-server -am '-Dtest=ApplicationProfileConfigurationTest,JwtSecurityConfigurationTest,AuthControllerTest,ConsoleSmokeTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
 ```
 
-Expected: PASS with exit code `0`. Warnings about local/test JWT fallback are acceptable because they prove production secret injection remains required outside local/test contexts.
+Expected: PASS with exit code `0`. Warnings about missing JWT in explicit production profile tests are acceptable because they prove production secret injection remains required.
 
 - [ ] **Step 7: Commit Task 1**
 

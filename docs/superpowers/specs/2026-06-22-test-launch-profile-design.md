@@ -42,7 +42,7 @@ spring:
 - 设置测试用 bootstrap admin 用户名、密码和显示名。
 - 保持 `fake-runtime-enabled: true`，继续服务第一阶段本地端到端验证。
 
-默认 `local` profile 仍保持 bootstrap admin 关闭、JWT 密钥可走现有本地回退策略。生产部署必须显式使用 `CM_AGENT_PROFILE=prod` 或 `CM_AGENT_PROFILE=production`，并通过外部 Secret 注入 `CM_AGENT_JWT_SECRET`。生产 profile 的启动失败保护继续由现有 `JwtSecurityConfiguration` 和 `BootstrapAdminProperties` 负责。
+默认 `local` profile 仍保持 bootstrap admin 关闭，并且不默认启用开发 JWT 回退。需要本地无密钥回退时，必须显式设置 `CM_AGENT_ALLOW_DEV_JWT_FALLBACK=true`；`test` profile 则通过 `application-test.yml` 提供测试 JWT 密钥，不依赖回退密钥。生产部署必须显式使用 `CM_AGENT_PROFILE=prod` 或 `CM_AGENT_PROFILE=production`，并通过外部 Secret 注入 `CM_AGENT_JWT_SECRET`。生产 profile 的启动失败保护继续由现有 `JwtSecurityConfiguration` 和 `BootstrapAdminProperties` 负责。
 
 ## 使用方式
 
