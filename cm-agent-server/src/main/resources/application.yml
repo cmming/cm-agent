@@ -18,7 +18,7 @@ cm-agent:
   security:
     jwt-secret: ${CM_AGENT_JWT_SECRET:}
     # Local/test fallback only; production profiles still reject missing CM_AGENT_JWT_SECRET.
-    allow-dev-jwt-fallback: ${CM_AGENT_ALLOW_DEV_JWT_FALLBACK:true}
+    allow-dev-jwt-fallback: ${CM_AGENT_ALLOW_DEV_JWT_FALLBACK:false}
     bootstrap-admin-enabled: false
     bootstrap-admin-username: ${CM_AGENT_BOOTSTRAP_ADMIN_USERNAME:admin}
     bootstrap-admin-password: ${CM_AGENT_BOOTSTRAP_ADMIN_PASSWORD:}

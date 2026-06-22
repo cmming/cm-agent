@@ -26,7 +26,7 @@ class ApplicationProfileConfigurationTest {
             Environment environment = context.getEnvironment();
 
             assertThat(environment.getActiveProfiles()).containsExactly("local");
-            assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class)).isTrue();
+            assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class)).isFalse();
             assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-enabled", Boolean.class)).isFalse();
             assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-username")).isEqualTo("admin");
             assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-password")).isEmpty();
@@ -61,7 +61,7 @@ class ApplicationProfileConfigurationTest {
     private static void assertTestProfileLoaded(Environment environment) {
         assertThat(environment.getActiveProfiles()).containsExactly("test");
         assertThat(environment.getProperty("cm-agent.security.jwt-secret")).isEqualTo(TEST_JWT_SECRET);
-        assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class)).isTrue();
+        assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class)).isFalse();
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-enabled", Boolean.class)).isTrue();
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-username")).isEqualTo("admin");
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-password")).isEqualTo(TEST_ADMIN_PASSWORD);
