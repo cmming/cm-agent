@@ -30,7 +30,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @TestPropertySource(properties = {
-        "cm-agent.security.allow-dev-jwt-fallback=true",
         "cm-agent.security.bootstrap-admin-enabled=true",
         "cm-agent.security.bootstrap-admin-password=admin-test-password-only",
         "cm-agent.security.bootstrap-admin-display-name=系统管理员"
