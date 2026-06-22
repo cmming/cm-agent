@@ -58,6 +58,18 @@ class ApplicationProfileConfigurationTest {
                 });
     }
 
+    @Test
+    void rejectsMixedProductionAndTestProfilesEvenWhenBootstrapAdminDisabled() {
+        webContextRunner
+                .withPropertyValues("spring.profiles.active=production,test")
+                .withPropertyValues("cm-agent.security.bootstrap-admin-enabled=false")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod profile 禁止与 test profile 同时启用");
+                });
+    }
+
     private static void assertTestProfileLoaded(Environment environment) {
         assertThat(environment.getActiveProfiles()).containsExactly("test");
         assertThat(environment.getProperty("cm-agent.security.jwt-secret")).isEqualTo(TEST_JWT_SECRET);

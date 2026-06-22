@@ -24,11 +24,16 @@ public class JwtSecurityConfiguration {
             Environment environment
     ) {
         String secret = configuredSecret == null ? "" : configuredSecret.trim();
+        String[] activeProfiles = environment.getActiveProfiles();
+        if (hasProductionLikeProfile(activeProfiles) && hasTestProfile(activeProfiles)) {
+            throw new IllegalStateException("production/prod profile 禁止与 test profile 同时启用，测试 JWT 配置不得用于生产样环境");
+        }
+
         if (!secret.isEmpty()) {
             return createKey(secret);
         }
 
-        if (allowFallback(environment.getActiveProfiles(), allowDevJwtFallback)) {
+        if (allowFallback(activeProfiles, allowDevJwtFallback)) {
             log.warn("未配置 cm-agent.security.jwt-secret，当前仅使用本地/测试回退密钥，生产环境必须外部提供。");
             return createKey(LOCAL_FALLBACK_SECRET);
         }
@@ -58,6 +63,15 @@ public class JwtSecurityConfiguration {
         return Arrays.stream(activeProfiles)
                 .map(String::toLowerCase)
                 .anyMatch(profile -> profile.equals("production") || profile.equals("prod"));
+    }
+
+    private boolean hasTestProfile(String[] activeProfiles) {
+        if (activeProfiles == null || activeProfiles.length == 0) {
+            return false;
+        }
+        return Arrays.stream(activeProfiles)
+                .map(String::toLowerCase)
+                .anyMatch(profile -> profile.equals("test"));
     }
 
     private SecretKey createKey(String secret) {

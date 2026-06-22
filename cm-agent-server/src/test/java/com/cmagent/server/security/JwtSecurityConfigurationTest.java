@@ -43,7 +43,7 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
-    void rejectsMixedProductionAndTestProfilesEvenWithOptInFlag() {
+    void rejectsMixedProductionAndTestProfilesBeforeFallbackDecision() {
         contextRunner
                 .withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
                 .withPropertyValues("spring.profiles.active=test,production")
@@ -51,7 +51,7 @@ class JwtSecurityConfigurationTest {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
                             .isInstanceOf(BeanCreationException.class)
-                            .hasMessageContaining("生产环境必须外部提供 JWT 密钥");
+                            .hasMessageContaining("production/prod profile 禁止与 test profile 同时启用");
                 });
     }
 
