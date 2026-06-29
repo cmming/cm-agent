@@ -37,7 +37,7 @@ docker compose up -d mysql postgres
 
 默认数据库名为 `cm_agent`。本地开发凭据为 MySQL `root` 用户/密码 `cmagent`，PostgreSQL `cmagent` 用户/密码 `cmagent`；这些凭据仅用于开发和集成验证，生产环境应使用独立数据库账号、强密码和受控网络访问策略。
 
-第一阶段的服务端 REST API 默认仍使用内存 store 保存 Agent、Tool、Grant 和 Audit 运行态数据，重启后会丢失。这里的数据库和 Flyway 迁移用于验证持久化基线，不表示默认服务端已经把运行态数据写入生产数据库。
+local 默认使用 memory mode 保存运行态数据，重启后会丢失。启用 `jdbc` 或 `supabase` profile 后，Agent、Tool 和 ToolGrant 会通过 JDBC/Flyway 持久化；Audit、Run、ToolCall 仍属于后续生产化范围或本阶段尚未完成 service 接线。
 
 ## 使用 Supabase development branch 验证持久化
 
@@ -98,5 +98,5 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-ag
 - 生产部署必须显式设置 `CM_AGENT_PROFILE=prod` 或 `CM_AGENT_PROFILE=production`，避免使用本地测试 profile。
 - 不要在生产环境使用 `application-test.yml` 中的测试账号或测试 JWT 密钥。
 - `prod` 或 `production` profile 下禁止启用 bootstrap admin；管理员账号应接入正式身份源或受控账号体系。
-- 生产试点前必须接入 JDBC store/Flyway/service 层或等价持久化方案，不能依赖第一阶段默认内存 store 保存运行态数据。
+- 生产试点前必须启用并验证 JDBC/Supabase 持久化，完成 Supabase branch 或目标数据库 schema 校验，不能使用 memory mode 保存 Agent、Tool、Grant。
 - 第一阶段默认启用 fake runtime，适合验证控制台、权限、审计和运行链路；接入真实模型前应完成模型供应商和密钥托管配置。
