@@ -47,8 +47,8 @@ Supabase 接入复用现有 JDBC/Flyway 持久化链路。默认不要直接对 
 
 1. 在 Supabase 中为项目 `hfgdsvsvuosdkqeodked` 创建 development branch，名称建议为 `cm-agent-supabase-persistence`。
 2. 在 branch 上检查 `public` schema。
-3. 如果缺少 CM Agent 表，在 branch 上应用 `cm-agent-persistence/src/main/resources/db/migration/V1__init_schema.sql`。
-4. 确认至少存在 `tenants`、`model_configs`、`agent_definitions`、`tool_definitions`、`tool_grants`。
+3. 如果缺少本阶段 Agent/Tool/ToolGrant 持久化最小验收表，或 Flyway migration 尚未应用，在 branch 上应用 `cm-agent-persistence/src/main/resources/db/migration/V1__init_schema.sql`。
+4. 本阶段最小验收需确认至少存在 `tenants`、`model_configs`、`agent_definitions`、`tool_definitions`、`tool_grants`；V1 migration 还会创建审计、运行记录等后续阶段使用的表。
 5. 使用 branch 的 JDBC URL 和数据库凭据启动服务端。
 
 本地启动示例：
