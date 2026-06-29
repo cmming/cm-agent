@@ -59,7 +59,10 @@ public class BootstrapAdminProperties {
             return;
         }
         if (hasProductionProfile()) {
-            throw new IllegalStateException("production/prod profile 禁止启用 bootstrap admin");
+            String profileLabel = hasSupabaseProfile()
+                    ? "production/prod/supabase profile"
+                    : "production/prod profile";
+            throw new IllegalStateException(profileLabel + " 禁止启用 bootstrap admin");
         }
         if (getBootstrapAdminPassword().isBlank()) {
             throw new IllegalStateException("启用 bootstrap admin 时必须配置 cm-agent.security.bootstrap-admin-password");
@@ -68,7 +71,14 @@ public class BootstrapAdminProperties {
 
     private boolean hasProductionProfile() {
         return Arrays.stream(environment.getActiveProfiles())
-                .anyMatch(profile -> "production".equalsIgnoreCase(profile) || "prod".equalsIgnoreCase(profile));
+                .anyMatch(profile -> "production".equalsIgnoreCase(profile)
+                        || "prod".equalsIgnoreCase(profile)
+                        || "supabase".equalsIgnoreCase(profile));
+    }
+
+    private boolean hasSupabaseProfile() {
+        return Arrays.stream(environment.getActiveProfiles())
+                .anyMatch(profile -> "supabase".equalsIgnoreCase(profile));
     }
 
     private String blankToDefault(String value, String defaultValue) {

@@ -26,7 +26,10 @@ public class JwtSecurityConfiguration {
         String secret = configuredSecret == null ? "" : configuredSecret.trim();
         String[] activeProfiles = environment.getActiveProfiles();
         if (hasProductionLikeProfile(activeProfiles) && hasTestProfile(activeProfiles)) {
-            throw new IllegalStateException("production/prod profile 禁止与 test profile 同时启用，测试 JWT 配置不得用于生产样环境");
+            String profileLabel = hasSupabaseProfile(activeProfiles)
+                    ? "production/prod/supabase profile"
+                    : "production/prod profile";
+            throw new IllegalStateException(profileLabel + " 禁止与 test profile 同时启用，测试 JWT 配置不得用于生产样环境");
         }
 
         if (!secret.isEmpty()) {
@@ -60,7 +63,9 @@ public class JwtSecurityConfiguration {
             return false;
         }
         return Arrays.stream(activeProfiles)
-                .anyMatch(profile -> "production".equalsIgnoreCase(profile) || "prod".equalsIgnoreCase(profile));
+                .anyMatch(profile -> "production".equalsIgnoreCase(profile)
+                        || "prod".equalsIgnoreCase(profile)
+                        || "supabase".equalsIgnoreCase(profile));
     }
 
     private boolean hasTestProfile(String[] activeProfiles) {
@@ -69,6 +74,14 @@ public class JwtSecurityConfiguration {
         }
         return Arrays.stream(activeProfiles)
                 .anyMatch(profile -> "test".equalsIgnoreCase(profile));
+    }
+
+    private boolean hasSupabaseProfile(String[] activeProfiles) {
+        if (activeProfiles == null || activeProfiles.length == 0) {
+            return false;
+        }
+        return Arrays.stream(activeProfiles)
+                .anyMatch(profile -> "supabase".equalsIgnoreCase(profile));
     }
 
     private SecretKey createKey(String secret) {
