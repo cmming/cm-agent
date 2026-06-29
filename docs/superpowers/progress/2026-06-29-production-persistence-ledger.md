@@ -19,8 +19,8 @@ Spec: docs/superpowers/specs/2026-06-25-production-persistence-design.md
 
 | Task | Status | Implementer | Spec Review | Code Review | Commit |
 | --- | --- | --- | --- | --- | --- |
-| Prep: plan and ledger | in_progress | controller | pending | pending | pending |
-| Task 1: Repository contracts and memory fallback | pending | pending | pending | pending | pending |
+| Prep: plan and ledger | completed | controller | n/a | n/a | 37c6b4a |
+| Task 1: Repository contracts and memory fallback | implemented | worker-task-1 | pending | pending | pending |
 | Task 2: JDBC AgentDefinition repository | pending | pending | pending | pending | pending |
 | Task 3: JDBC mode wiring and AgentController integration | pending | pending | pending | pending | pending |
 | Task 4: JDBC ToolDefinition repository | pending | pending | pending | pending | pending |

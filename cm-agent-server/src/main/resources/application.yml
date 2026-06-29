@@ -26,3 +26,10 @@ cm-agent:
     public-api-docs-enabled: ${CM_AGENT_PUBLIC_API_DOCS_ENABLED:true}
   fake-runtime-enabled: true
   default-tenant-code: default
+  persistence:
+    mode: ${CM_AGENT_PERSISTENCE_MODE:memory}
+    jdbc:
+      url: ${CM_AGENT_JDBC_URL:}
+      username: ${CM_AGENT_JDBC_USERNAME:}
+      password: ${CM_AGENT_JDBC_PASSWORD:}
+      driver-class-name: ${CM_AGENT_JDBC_DRIVER_CLASS_NAME:}
