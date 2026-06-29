@@ -121,5 +121,9 @@ Historical pre-JDK21 attempts:
 ## Final Code Review
 
 - Reviewed changed controllers, JDBC configuration, repositories, and integration tests.
+- Finding fixed: `JdbcPersistenceConfiguration` exposed a persistence-only `ObjectMapper` as an application bean, which could make Spring Boot MVC/Jackson auto-configuration back off in JDBC mode. The mapper is now repository-local.
+- Verification after review fix:
+  - `mvn -q -DskipTests compile` passed with JDK 21.
+  - `mvn -q -pl cm-agent-server -am "-Dtest=ApplicationProfileConfigurationTest,RunControllerTest,AuthControllerTest" "-Dsurefire.failIfNoSpecifiedTests=false" test` passed with JDK 21.
 - No remaining source-level findings after fixes.
 - Known residual risk: Testcontainers coverage has not completed because Docker Desktop Linux engine is unavailable. Start Docker Desktop and re-run the targeted JDBC/Testcontainers commands before merge or release.

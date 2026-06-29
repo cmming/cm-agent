@@ -53,13 +53,8 @@ public class JdbcPersistenceConfiguration {
     }
 
     @Bean
-    ObjectMapper cmAgentPersistenceObjectMapper() {
-        return new ObjectMapper();
-    }
-
-    @Bean
-    AgentDefinitionRepository jdbcAgentDefinitionRepository(JdbcClient cmAgentJdbcClient, ObjectMapper cmAgentPersistenceObjectMapper) {
-        return new JdbcAgentDefinitionRepository(cmAgentJdbcClient, cmAgentPersistenceObjectMapper);
+    AgentDefinitionRepository jdbcAgentDefinitionRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcAgentDefinitionRepository(cmAgentJdbcClient, new ObjectMapper());
     }
 
     @Bean
