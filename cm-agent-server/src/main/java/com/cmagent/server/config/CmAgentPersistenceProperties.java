@@ -16,7 +16,7 @@ public class CmAgentPersistenceProperties {
     }
 
     public void setMode(Mode mode) {
-        this.mode = mode;
+        this.mode = mode == null ? Mode.MEMORY : mode;
     }
 
     public Jdbc getJdbc() {
@@ -24,12 +24,12 @@ public class CmAgentPersistenceProperties {
     }
 
     public void setJdbc(Jdbc jdbc) {
-        this.jdbc = jdbc;
+        this.jdbc = jdbc == null ? new Jdbc() : jdbc;
     }
 
     public void validate(Environment environment) {
         boolean productionProfileActive = Arrays.stream(environment.getActiveProfiles())
-                .anyMatch(profile -> "production".equals(profile) || "prod".equals(profile));
+                .anyMatch(profile -> "production".equalsIgnoreCase(profile) || "prod".equalsIgnoreCase(profile));
         if (productionProfileActive && mode != Mode.JDBC) {
             throw new IllegalStateException("production/prod profile 必须使用 jdbc 持久化模式");
         }

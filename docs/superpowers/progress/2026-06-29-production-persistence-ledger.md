@@ -20,7 +20,7 @@ Spec: docs/superpowers/specs/2026-06-25-production-persistence-design.md
 | Task | Status | Implementer | Spec Review | Code Review | Commit |
 | --- | --- | --- | --- | --- | --- |
 | Prep: plan and ledger | completed | controller | n/a | n/a | 37c6b4a |
-| Task 1: Repository contracts and memory fallback | implemented | worker-task-1 | pending | pending | pending |
+| Task 1: Repository contracts and memory fallback | review-fix | worker-task-1 | approved | controller review found case-insensitive prod profile fix | 512653b + pending fix |
 | Task 2: JDBC AgentDefinition repository | pending | pending | pending | pending | pending |
 | Task 3: JDBC mode wiring and AgentController integration | pending | pending | pending | pending | pending |
 | Task 4: JDBC ToolDefinition repository | pending | pending | pending | pending | pending |
@@ -33,3 +33,13 @@ Spec: docs/superpowers/specs/2026-06-25-production-persistence-design.md
 - Each implementation task uses a fresh subagent.
 - After every implementation task, a spec review and code quality review must run before marking the task complete.
 - If review finds issues, fixes are applied automatically and reviewed again.
+
+## Review Log
+
+### Task 1
+
+- Implementer: worker-task-1 completed commit `512653b`.
+- Spec review: subagent approved with no findings.
+- Code quality review: subagent unavailable due usage limit; controller performed fallback review.
+- Finding fixed: `CmAgentPersistenceProperties` used case-sensitive profile checks for `production`/`prod`, unlike existing security profile handling. Updated to `equalsIgnoreCase`, made null setters defensive, and added uppercase `PRODUCTION` regression test.
+- Verification after fix: Maven remains blocked locally because `java -version` is JDK 17 while project requires release 21.

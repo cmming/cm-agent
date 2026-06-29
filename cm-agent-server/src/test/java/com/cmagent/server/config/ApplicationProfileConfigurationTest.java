@@ -72,6 +72,19 @@ class ApplicationProfileConfigurationTest {
     }
 
     @Test
+    void uppercaseProductionProfileRejectsMemoryPersistenceModeWhenJwtSecretExists() {
+        webContextRunner
+                .withPropertyValues("spring.profiles.active=PRODUCTION")
+                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod profile 必须使用 jdbc 持久化模式");
+                });
+    }
+
+    @Test
     void rejectsMixedProductionAndTestProfilesEvenWhenBootstrapAdminDisabled() {
         webContextRunner
                 .withPropertyValues("spring.profiles.active=production,test")
