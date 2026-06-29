@@ -20,7 +20,7 @@ Spec: docs/superpowers/specs/2026-06-25-production-persistence-design.md
 | Task | Status | Implementer | Spec Review | Code Review | Commit |
 | --- | --- | --- | --- | --- | --- |
 | Prep: plan and ledger | completed | controller | n/a | n/a | 37c6b4a |
-| Task 1: Repository contracts and memory fallback | review-fix | worker-task-1 | approved | controller review found case-insensitive prod profile fix | 512653b + pending fix |
+| Task 1: Repository contracts and memory fallback | completed | worker-task-1 | approved | approved after controller fix | 512653b, 8a77541 |
 | Task 2: JDBC AgentDefinition repository | pending | pending | pending | pending | pending |
 | Task 3: JDBC mode wiring and AgentController integration | pending | pending | pending | pending | pending |
 | Task 4: JDBC ToolDefinition repository | pending | pending | pending | pending | pending |
