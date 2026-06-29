@@ -39,6 +39,32 @@ docker compose up -d mysql postgres
 
 第一阶段的服务端 REST API 默认仍使用内存 store 保存 Agent、Tool、Grant 和 Audit 运行态数据，重启后会丢失。这里的数据库和 Flyway 迁移用于验证持久化基线，不表示默认服务端已经把运行态数据写入生产数据库。
 
+## 使用 Supabase development branch 验证持久化
+
+Supabase 接入复用现有 JDBC/Flyway 持久化链路。默认不要直接对 Supabase 主项目执行 DDL；先创建 development branch，再在 branch 上验证 schema。
+
+推荐流程：
+
+1. 在 Supabase 中为项目 `hfgdsvsvuosdkqeodked` 创建 development branch，名称建议为 `cm-agent-supabase-persistence`。
+2. 在 branch 上检查 `public` schema。
+3. 如果缺少 CM Agent 表，在 branch 上应用 `cm-agent-persistence/src/main/resources/db/migration/V1__init_schema.sql`。
+4. 确认至少存在 `tenants`、`model_configs`、`agent_definitions`、`tool_definitions`、`tool_grants`。
+5. 使用 branch 的 JDBC URL 和数据库凭据启动服务端。
+
+本地启动示例：
+
+```powershell
+$env:CM_AGENT_PROFILE='supabase'
+$env:CM_AGENT_JWT_SECRET='value from secret manager with safe length'
+$env:CM_AGENT_JDBC_URL='Supabase branch JDBC URL from secret manager'
+$env:CM_AGENT_JDBC_USERNAME='Supabase database user from secret manager'
+$env:CM_AGENT_JDBC_PASSWORD='Supabase database password from secret manager'
+$env:CM_AGENT_JDBC_DRIVER_CLASS_NAME='org.postgresql.Driver'
+mvn -pl cm-agent-server -am spring-boot:run
+```
+
+服务启动时 Flyway 会自动检查并应用 classpath 中的 migration。若数据库凭据不可用，仍可先完成配置测试和 Supabase branch 表结构检查，再由部署环境注入 secret 后运行 smoke test。
+
 ## 启动服务端
 
 本地测试可以使用 `test` profile 快速启动：
