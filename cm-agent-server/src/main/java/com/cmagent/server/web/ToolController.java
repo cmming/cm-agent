@@ -6,11 +6,13 @@ import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
+import com.cmagent.core.repository.AgentDefinitionRepository;
+import com.cmagent.core.repository.ToolDefinitionRepository;
+import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.JwtService;
-import com.cmagent.server.store.InMemoryPlatformStore;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -32,12 +34,20 @@ import java.util.UUID;
 @RequestMapping("/api/tools")
 public class ToolController {
 
-    private final InMemoryPlatformStore store;
+    private final AgentDefinitionRepository agentRepository;
+    private final ToolDefinitionRepository toolRepository;
+    private final ToolGrantRepository grantRepository;
     private final PermissionEvaluator permissionEvaluator;
     private final AuditAppender auditAppender;
 
-    public ToolController(InMemoryPlatformStore store, PermissionEvaluator permissionEvaluator, AuditAppender auditAppender) {
-        this.store = store;
+    public ToolController(AgentDefinitionRepository agentRepository,
+                          ToolDefinitionRepository toolRepository,
+                          ToolGrantRepository grantRepository,
+                          PermissionEvaluator permissionEvaluator,
+                          AuditAppender auditAppender) {
+        this.agentRepository = agentRepository;
+        this.toolRepository = toolRepository;
+        this.grantRepository = grantRepository;
         this.permissionEvaluator = permissionEvaluator;
         this.auditAppender = auditAppender;
     }
@@ -46,7 +56,7 @@ public class ToolController {
     public List<ToolDefinition> list(Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:read", "TOOL", "list");
-        return store.listTools(principal.tenantId());
+        return toolRepository.listByTenant(principal.tenantId());
     }
 
     @PostMapping
@@ -66,7 +76,7 @@ public class ToolController {
                 principal.principalId(),
                 principal.principalId()
         );
-        ToolDefinition savedTool = store.saveTool(tool);
+        ToolDefinition savedTool = toolRepository.save(tool);
         auditAppender.append(
                 principal.tenantId(),
                 principal.principalId(),
@@ -84,14 +94,14 @@ public class ToolController {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", "TOOL", id.toString());
 
-        ToolDefinition tool = store.findTool(principal.tenantId(), id)
+        ToolDefinition tool = toolRepository.findByTenantAndId(principal.tenantId(), id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
-        AgentDefinition agent = store.findAgent(principal.tenantId(), request.agentId())
+        AgentDefinition agent = agentRepository.findByTenantAndId(principal.tenantId(), request.agentId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
 
         ToolGrant grant = new ToolGrant(principal.tenantId(), tool.id(), agent.id(), null, true);
-        ToolGrant savedGrant = store.saveGrant(grant);
-        store.addToolToAgent(principal.tenantId(), agent.id(), tool.id());
+        ToolGrant savedGrant = grantRepository.save(grant);
+        agentRepository.addToolToAgent(principal.tenantId(), agent.id(), tool.id());
         auditAppender.append(
                 principal.tenantId(),
                 principal.principalId(),

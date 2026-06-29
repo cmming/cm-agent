@@ -1,10 +1,11 @@
 package com.cmagent.server.config;
 
-import com.cmagent.server.CmAgentServerApplication;
+import com.cmagent.server.security.BootstrapAdminConfiguration;
+import com.cmagent.server.security.BootstrapAdminProperties;
+import com.cmagent.server.security.JwtSecurityConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.core.env.Environment;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,8 +17,13 @@ class ApplicationProfileConfigurationTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withInitializer(new ConfigDataApplicationContextInitializer());
 
-    private final WebApplicationContextRunner webContextRunner = new WebApplicationContextRunner()
-            .withUserConfiguration(CmAgentServerApplication.class)
+    private final ApplicationContextRunner productionGuardContextRunner = new ApplicationContextRunner()
+            .withUserConfiguration(
+                    ServerRepositoryConfiguration.class,
+                    JwtSecurityConfiguration.class,
+                    BootstrapAdminConfiguration.class,
+                    BootstrapAdminProperties.class
+            )
             .withInitializer(new ConfigDataApplicationContextInitializer());
 
     @Test
@@ -49,8 +55,10 @@ class ApplicationProfileConfigurationTest {
 
     @Test
     void productionProfileRejectsMissingJwtSecretWhenConfigDataDefaultsAreLoaded() {
-        webContextRunner
+        productionGuardContextRunner
                 .withPropertyValues("spring.profiles.active=production")
+                .withPropertyValues("cm-agent.persistence.mode=jdbc")
+                .withPropertyValues("cm-agent.persistence.jdbc.url=jdbc:postgresql://localhost/cm_agent")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
@@ -59,9 +67,38 @@ class ApplicationProfileConfigurationTest {
     }
 
     @Test
+    void productionProfileRejectsMemoryPersistenceModeWhenJwtSecretExists() {
+        productionGuardContextRunner
+                .withPropertyValues("spring.profiles.active=production")
+                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod profile 必须使用 jdbc 持久化模式");
+                });
+    }
+
+    @Test
+    void uppercaseProductionProfileRejectsMemoryPersistenceModeWhenJwtSecretExists() {
+        productionGuardContextRunner
+                .withPropertyValues("spring.profiles.active=PRODUCTION")
+                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod profile 必须使用 jdbc 持久化模式");
+                });
+    }
+
+    @Test
     void rejectsMixedProductionAndTestProfilesEvenWhenBootstrapAdminDisabled() {
-        webContextRunner
+        productionGuardContextRunner
                 .withPropertyValues("spring.profiles.active=production,test")
+                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.persistence.mode=jdbc")
+                .withPropertyValues("cm-agent.persistence.jdbc.url=jdbc:postgresql://localhost/cm_agent")
                 .withPropertyValues("cm-agent.security.bootstrap-admin-enabled=false")
                 .run(context -> {
                     assertThat(context).hasFailed();
