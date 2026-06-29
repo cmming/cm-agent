@@ -1,7 +1,9 @@
 package com.cmagent.server.config;
 
 import com.cmagent.core.repository.AgentDefinitionRepository;
+import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.persistence.JdbcAgentDefinitionRepository;
+import com.cmagent.persistence.JdbcToolDefinitionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import org.flywaydb.core.Flyway;
@@ -56,6 +58,11 @@ public class JdbcPersistenceConfiguration {
     @Bean
     AgentDefinitionRepository jdbcAgentDefinitionRepository(JdbcClient cmAgentJdbcClient, ObjectMapper cmAgentPersistenceObjectMapper) {
         return new JdbcAgentDefinitionRepository(cmAgentJdbcClient, cmAgentPersistenceObjectMapper);
+    }
+
+    @Bean
+    ToolDefinitionRepository jdbcToolDefinitionRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcToolDefinitionRepository(cmAgentJdbcClient);
     }
 
     @Bean
