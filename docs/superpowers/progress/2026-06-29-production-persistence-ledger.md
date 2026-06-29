@@ -22,7 +22,7 @@ Spec: docs/superpowers/specs/2026-06-25-production-persistence-design.md
 | Prep: plan and ledger | completed | controller | n/a | n/a | 37c6b4a |
 | Task 1: Repository contracts and memory fallback | completed | worker-task-1 | approved | approved after controller fix | 512653b, 8a77541 |
 | Task 2: JDBC AgentDefinition repository | completed | controller fallback | approved | approved | pending commit |
-| Task 3: JDBC mode wiring and AgentController integration | pending | pending | pending | pending | pending |
+| Task 3: JDBC mode wiring and AgentController integration | completed | controller fallback | approved | approved | pending commit |
 | Task 4: JDBC ToolDefinition repository | pending | pending | pending | pending | pending |
 | Task 5: JDBC ToolGrant repository and run path integration | pending | pending | pending | pending | pending |
 | Task 6: Final verification | pending | pending | pending | pending | pending |
@@ -53,3 +53,15 @@ Spec: docs/superpowers/specs/2026-06-25-production-persistence-design.md
 - RED and GREEN Maven commands are blocked locally by JDK 17 not supporting project release 21.
 - Spec review: approved by controller fallback; methods and tests match Task 2 scope.
 - Code quality review: approved by controller fallback; SQL is tenant-scoped and JSON serialization is localized.
+
+### Task 3
+
+- Subagent execution remains unavailable due usage limit; controller implemented the task.
+- Added `AgentControllerJdbcPersistenceTest`.
+- Added `JdbcPersistenceConfiguration` with explicit DataSource, Flyway, JdbcClient, ObjectMapper, Agent repository, and default tenant/model config initializer.
+- Switched `AgentController` from `InMemoryPlatformStore` to `AgentDefinitionRepository`.
+- Added server Testcontainers dependencies.
+- Hardened JDBC property getters to return empty strings for unset values.
+- Maven RED/GREEN command is blocked locally by JDK 17 not supporting project release 21.
+- Spec review: approved by controller fallback; Task 3 files and behavior match plan.
+- Code quality review: approved by controller fallback; fixed list-order fragility in JDBC integration test and guarded blank driver class handling.

@@ -54,7 +54,7 @@ public class CmAgentPersistenceProperties {
         private String driverClassName;
 
         public String getUrl() {
-            return url;
+            return url == null ? "" : url;
         }
 
         public void setUrl(String url) {
@@ -62,7 +62,7 @@ public class CmAgentPersistenceProperties {
         }
 
         public String getUsername() {
-            return username;
+            return username == null ? "" : username;
         }
 
         public void setUsername(String username) {
@@ -70,7 +70,7 @@ public class CmAgentPersistenceProperties {
         }
 
         public String getPassword() {
-            return password;
+            return password == null ? "" : password;
         }
 
         public void setPassword(String password) {
@@ -78,7 +78,7 @@ public class CmAgentPersistenceProperties {
         }
 
         public String getDriverClassName() {
-            return driverClassName;
+            return driverClassName == null ? "" : driverClassName;
         }
 
         public void setDriverClassName(String driverClassName) {
