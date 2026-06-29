@@ -25,8 +25,8 @@ Spec: docs/superpowers/specs/2026-06-25-production-persistence-design.md
 | Task 3: JDBC mode wiring and AgentController integration | completed | controller fallback | approved | approved | pending commit |
 | Task 4: JDBC ToolDefinition repository | completed | controller fallback | approved | approved | pending commit |
 | Task 5: JDBC ToolGrant repository and run path integration | completed | controller fallback | approved | approved | pending commit |
-| Task 6: Final verification | pending | pending | pending | pending | pending |
-| Final code review | pending | pending | pending | pending | pending |
+| Task 6: Final verification | blocked-by-local-jdk | controller | n/a | n/a | pending commit |
+| Final code review | completed | controller | n/a | approved with verification blocker noted | pending commit |
 
 ## Notes
 
@@ -88,3 +88,23 @@ Spec: docs/superpowers/specs/2026-06-25-production-persistence-design.md
 - Maven RED/GREEN command is blocked locally by JDK 17 not supporting project release 21.
 - Spec review: approved by controller fallback; Task 5 files and run path match plan.
 - Code quality review: approved by controller fallback after naming the JDBC test runtime bean explicitly to reduce test context bean collisions.
+
+### Task 6
+
+- Targeted persistence test command attempted:
+  `mvn -q -pl cm-agent-persistence "-Dtest=JdbcAgentDefinitionRepositoryTest,JdbcToolDefinitionRepositoryTest,JdbcToolGrantRepositoryTest" test`
+- Targeted server test command attempted:
+  `mvn -q -pl cm-agent-server "-Dtest=ApplicationProfileConfigurationTest,AgentControllerJdbcPersistenceTest,RunControllerTest,RunControllerJdbcPersistenceTest,AuthControllerTest" test`
+- Full test command attempted:
+  `mvn -q test`
+- All Maven commands are blocked before tests execute because only JDK 17 is on PATH and the project requires release 21.
+- Evidence: `java -version` reports `openjdk version "17.0.13"` from `F:\java17\bin\java.exe`; Maven compiler reports unsupported release version `21`.
+- Non-Maven checks:
+  - `rg -n "待实现|临时实现|补充实现" cm-agent-core cm-agent-persistence cm-agent-server` produced no output.
+  - `git diff --check` passed.
+
+## Final Code Review
+
+- Reviewed changed controllers, JDBC configuration, repositories, and integration tests.
+- No remaining source-level findings after fixes.
+- Known residual risk: Java 21 verification has not run in this environment. Re-run all Task 6 Maven commands with JDK 21 before merge or release.
