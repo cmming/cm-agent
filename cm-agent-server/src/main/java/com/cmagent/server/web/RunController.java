@@ -7,13 +7,15 @@ import com.cmagent.core.domain.AgentRunResult;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
+import com.cmagent.core.repository.AgentDefinitionRepository;
+import com.cmagent.core.repository.ToolDefinitionRepository;
+import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.core.security.ToolAuthorizationPolicy;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.JwtService;
-import com.cmagent.server.store.InMemoryPlatformStore;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
@@ -37,18 +39,24 @@ import java.util.UUID;
 public class RunController {
 
     private final AgentRuntime runtime;
-    private final InMemoryPlatformStore store;
+    private final AgentDefinitionRepository agentRepository;
+    private final ToolDefinitionRepository toolRepository;
+    private final ToolGrantRepository grantRepository;
     private final PermissionEvaluator permissionEvaluator;
     private final ToolAuthorizationPolicy toolAuthorizationPolicy;
     private final AuditAppender auditAppender;
 
     public RunController(AgentRuntime runtime,
-                         InMemoryPlatformStore store,
+                         AgentDefinitionRepository agentRepository,
+                         ToolDefinitionRepository toolRepository,
+                         ToolGrantRepository grantRepository,
                          PermissionEvaluator permissionEvaluator,
                          ToolAuthorizationPolicy toolAuthorizationPolicy,
                          AuditAppender auditAppender) {
         this.runtime = runtime;
-        this.store = store;
+        this.agentRepository = agentRepository;
+        this.toolRepository = toolRepository;
+        this.grantRepository = grantRepository;
         this.permissionEvaluator = permissionEvaluator;
         this.toolAuthorizationPolicy = toolAuthorizationPolicy;
         this.auditAppender = auditAppender;
@@ -59,7 +67,7 @@ public class RunController {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:run", "AGENT", agentId.toString());
 
-        AgentDefinition agent = store.findAgent(principal.tenantId(), agentId)
+        AgentDefinition agent = agentRepository.findByTenantAndId(principal.tenantId(), agentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
         if (!agent.enabled()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Agent 已禁用");
@@ -84,13 +92,13 @@ public class RunController {
     }
 
     private List<ToolDefinition> authorizedTools(PrincipalRef principal, AgentDefinition agent) {
-        List<ToolGrant> grants = store.listGrants(principal.tenantId(), agent.id());
+        List<ToolGrant> grants = grantRepository.listByTenantAndAgent(principal.tenantId(), agent.id());
         Map<UUID, ToolDefinition> tools = new LinkedHashMap<>();
         for (ToolGrant grant : grants) {
             if (!grant.granted()) {
                 continue;
             }
-            store.findTool(principal.tenantId(), grant.toolId())
+            toolRepository.findByTenantAndId(principal.tenantId(), grant.toolId())
                     .ifPresent(tool -> {
                         AuthorizationDecision decision = toolAuthorizationPolicy.check(principal, agent.id(), tool, grants);
                         if (decision.allowed()) {

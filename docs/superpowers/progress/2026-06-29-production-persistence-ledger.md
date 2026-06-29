@@ -24,7 +24,7 @@ Spec: docs/superpowers/specs/2026-06-25-production-persistence-design.md
 | Task 2: JDBC AgentDefinition repository | completed | controller fallback | approved | approved | pending commit |
 | Task 3: JDBC mode wiring and AgentController integration | completed | controller fallback | approved | approved | pending commit |
 | Task 4: JDBC ToolDefinition repository | completed | controller fallback | approved | approved | pending commit |
-| Task 5: JDBC ToolGrant repository and run path integration | pending | pending | pending | pending | pending |
+| Task 5: JDBC ToolGrant repository and run path integration | completed | controller fallback | approved | approved | pending commit |
 | Task 6: Final verification | pending | pending | pending | pending | pending |
 | Final code review | pending | pending | pending | pending | pending |
 
@@ -75,3 +75,16 @@ Spec: docs/superpowers/specs/2026-06-25-production-persistence-design.md
 - Maven RED/GREEN command is blocked locally by JDK 17 not supporting project release 21.
 - Spec review: approved by controller fallback; Task 4 files match plan.
 - Code quality review: approved by controller fallback; SQL is tenant-scoped and mapper uses domain enums.
+
+### Task 5
+
+- Subagent execution remains unavailable due usage limit; controller implemented the task.
+- Added `JdbcToolGrantRepositoryTest`.
+- Added `JdbcToolGrantRepository`.
+- Registered `ToolGrantRepository` JDBC bean in `JdbcPersistenceConfiguration`.
+- Switched `ToolController` to Agent/Tool/Grant repository interfaces.
+- Switched `RunController` to Agent/Tool/Grant repository interfaces.
+- Added `RunControllerJdbcPersistenceTest` for authorized tool loading from JDBC.
+- Maven RED/GREEN command is blocked locally by JDK 17 not supporting project release 21.
+- Spec review: approved by controller fallback; Task 5 files and run path match plan.
+- Code quality review: approved by controller fallback after naming the JDBC test runtime bean explicitly to reduce test context bean collisions.
