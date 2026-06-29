@@ -130,6 +130,7 @@ class ApplicationProfileConfigurationTest {
         productionGuardContextRunner
                 .withPropertyValues("spring.profiles.active=supabase")
                 .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.persistence.jdbc.url=")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
