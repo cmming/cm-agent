@@ -16,7 +16,7 @@ Supabase branch: blocked by Supabase plan
 | Task 2: Supabase profile guardrails | completed | subagent | approved after review fix | 9f1e8ed, 2b3b514 |
 | Task 3: Documentation | completed | subagent | approved after doc fixes | 26bfbc0, e3a3973, eb12877 |
 | Task 4: Supabase branch schema verification | blocked by Supabase plan | controller | n/a | pending |
-| Task 5: Final verification | pending | controller | pending | pending |
+| Task 5: Final verification | completed with Supabase branch blocker noted | controller | pending | pending |
 
 ## Supabase Verification Log
 
@@ -37,5 +37,13 @@ To complete Supabase-side schema verification later, upgrade to a plan with bran
 
 ## Verification Commands
 
-- mvn -q -DskipTests compile: pending
-- mvn -q -pl cm-agent-server -am "-Dtest=ApplicationProfileConfigurationTest,RunControllerTest,AuthControllerTest" "-Dsurefire.failIfNoSpecifiedTests=false" test: pending
+- mvn -q -DskipTests compile: passed with JDK 21, exit code 0.
+- mvn -q -pl cm-agent-server -am "-Dtest=ApplicationProfileConfigurationTest,RunControllerTest,AuthControllerTest" "-Dsurefire.failIfNoSpecifiedTests=false" test: passed with JDK 21, exit code 0.
+
+## Final Verification
+
+- `git status --short`: clean.
+- `git diff --check`: passed.
+- Placeholder scan produced no output for the implementation artifact paths:
+  `docs/superpowers/specs`, `docs/superpowers/progress`, `cm-agent-server/src/main`, `cm-agent-server/src/test`, `docs/configuration.md`, and `docs/deployment.md`.
+- Supabase-side development branch verification remains blocked by project plan. No DDL was executed against the main Supabase project.
