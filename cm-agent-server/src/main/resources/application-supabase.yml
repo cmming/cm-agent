@@ -1,0 +1,13 @@
+# Supabase profile for hosted PostgreSQL deployments.
+# Secrets must be injected by environment variables or a secret manager.
+cm-agent:
+  security:
+    allow-dev-jwt-fallback: false
+    bootstrap-admin-enabled: false
+  persistence:
+    mode: jdbc
+    jdbc:
+      url: ${CM_AGENT_JDBC_URL:}
+      username: ${CM_AGENT_JDBC_USERNAME:}
+      password: ${CM_AGENT_JDBC_PASSWORD:}
+      driver-class-name: ${CM_AGENT_JDBC_DRIVER_CLASS_NAME:org.postgresql.Driver}

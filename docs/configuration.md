@@ -53,7 +53,32 @@ fake runtime 用于验证 Agent 配置、权限、工具治理、审计和控制
 
 ## 运行态存储
 
-第一阶段服务端默认使用内存 store 承载 Agent、Tool、Grant 和 Audit API 的运行态数据，适合本地演示和纵切验证。MySQL/PostgreSQL schema、Flyway 迁移和 JDBC repository 已作为持久化基线存在，但默认 REST 服务端尚未接入这些表保存运行态数据。生产试点前应完成 JDBC store 或等价服务层接入，并重新验证迁移、租户隔离、备份和恢复流程。
+服务端默认使用 memory store，适合本地演示和纵切验证。生产或类生产环境必须使用 JDBC 持久化：
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CM_AGENT_PERSISTENCE_MODE` / `cm-agent.persistence.mode` | `memory` | `memory` 或 `jdbc`；`prod`、`production`、`supabase` profile 下必须为 `jdbc` |
+| `CM_AGENT_JDBC_URL` / `cm-agent.persistence.jdbc.url` | 空 | JDBC URL；启用 `jdbc` 时必须配置 |
+| `CM_AGENT_JDBC_USERNAME` / `cm-agent.persistence.jdbc.username` | 空 | 数据库用户名 |
+| `CM_AGENT_JDBC_PASSWORD` / `cm-agent.persistence.jdbc.password` | 空 | 数据库密码，必须由 Secret 注入 |
+| `CM_AGENT_JDBC_DRIVER_CLASS_NAME` / `cm-agent.persistence.jdbc.driver-class-name` | 空 | JDBC driver；Supabase 推荐 `org.postgresql.Driver` |
+
+### Supabase PostgreSQL
+
+Supabase 作为托管 PostgreSQL 接入，不需要 Supabase Java SDK。推荐使用 `supabase` profile：
+
+```powershell
+$env:CM_AGENT_PROFILE='supabase'
+$env:CM_AGENT_JWT_SECRET='value from secret manager with safe length'
+$env:CM_AGENT_JDBC_URL='Supabase development branch or production JDBC URL from secret manager'
+$env:CM_AGENT_JDBC_USERNAME='Supabase database user from secret manager'
+$env:CM_AGENT_JDBC_PASSWORD='Supabase database password from secret manager'
+$env:CM_AGENT_JDBC_DRIVER_CLASS_NAME='org.postgresql.Driver'
+```
+
+`supabase` profile 会默认启用 JDBC 持久化、禁用 bootstrap admin、禁用开发 JWT fallback。缺少 JDBC URL 或试图使用 memory mode 时，服务会启动失败。
+
+不要把 Supabase 数据库密码、JWT secret 或完整 JDBC URL 提交到 Git、写入镜像层或打印到日志。开发验证应优先使用 Supabase development branch，避免直接对主项目数据库执行 DDL。
 
 ## JWT 密钥
 
@@ -76,7 +101,7 @@ cm-agent:
     bootstrap-admin-password: ${CM_AGENT_BOOTSTRAP_ADMIN_PASSWORD}
 ```
 
-不要在配置文件、前端代码或文档示例中写入可直接使用的真实密码。`prod` 或 `production` profile 下禁止启用 bootstrap admin；如果启用，服务端会在启动时失败。
+不要在配置文件、前端代码或文档示例中写入可直接使用的真实凭据。`prod`、`production` 或 `supabase` profile 下禁止启用 bootstrap admin；如果启用，服务端会在启动时失败。
 
 ## 模型供应商与 API Key
 

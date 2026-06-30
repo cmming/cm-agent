@@ -60,7 +60,9 @@ public class SecurityConfig {
             return false;
         }
         for (String profile : environment.getActiveProfiles()) {
-            if ("production".equalsIgnoreCase(profile) || "prod".equalsIgnoreCase(profile)) {
+            if ("production".equalsIgnoreCase(profile)
+                    || "prod".equalsIgnoreCase(profile)
+                    || "supabase".equalsIgnoreCase(profile)) {
                 return false;
             }
         }

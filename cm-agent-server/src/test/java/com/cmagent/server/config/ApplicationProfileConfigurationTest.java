@@ -107,6 +107,81 @@ class ApplicationProfileConfigurationTest {
                 });
     }
 
+    @Test
+    void supabaseProfileLoadsJdbcDefaultsFromConfigData() {
+        contextRunner
+                .withPropertyValues("spring.profiles.active=supabase")
+                .run(context -> {
+                    Environment environment = context.getEnvironment();
+
+                    assertThat(environment.getActiveProfiles()).containsExactly("supabase");
+                    assertThat(environment.getProperty("cm-agent.persistence.mode")).isEqualTo("jdbc");
+                    assertThat(environment.getProperty("cm-agent.persistence.jdbc.driver-class-name"))
+                            .isEqualTo("org.postgresql.Driver");
+                    assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class))
+                            .isFalse();
+                    assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-enabled", Boolean.class))
+                            .isFalse();
+                });
+    }
+
+    @Test
+    void supabaseProfileRejectsMissingJdbcUrlWhenJwtSecretExists() {
+        productionGuardContextRunner
+                .withPropertyValues("spring.profiles.active=supabase")
+                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.persistence.jdbc.url=")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("启用 jdbc 持久化模式时必须配置 cm-agent.persistence.jdbc.url");
+                });
+    }
+
+    @Test
+    void supabaseProfileRejectsMemoryPersistenceModeWhenJwtSecretExists() {
+        productionGuardContextRunner
+                .withPropertyValues("spring.profiles.active=supabase")
+                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod/supabase profile 必须使用 jdbc 持久化模式");
+                });
+    }
+
+    @Test
+    void supabaseProfileRejectsBootstrapAdminWhenJdbcConfigured() {
+        productionGuardContextRunner
+                .withPropertyValues("spring.profiles.active=supabase")
+                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.persistence.mode=jdbc")
+                .withPropertyValues("cm-agent.persistence.jdbc.url=jdbc:postgresql://localhost/cm_agent")
+                .withPropertyValues("cm-agent.security.bootstrap-admin-enabled=true")
+                .withPropertyValues("cm-agent.security.bootstrap-admin-password=local-password")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod/supabase profile 禁止启用 bootstrap admin");
+                });
+    }
+
+    @Test
+    void supabaseProfileRejectsTestProfileMixingWhenJdbcConfigured() {
+        productionGuardContextRunner
+                .withPropertyValues("spring.profiles.active=supabase,test")
+                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.persistence.mode=jdbc")
+                .withPropertyValues("cm-agent.persistence.jdbc.url=jdbc:postgresql://localhost/cm_agent")
+                .withPropertyValues("cm-agent.security.bootstrap-admin-enabled=false")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod/supabase profile 禁止与 test profile 同时启用");
+                });
+    }
+
     private static void assertTestProfileLoaded(Environment environment) {
         assertThat(environment.getActiveProfiles()).containsExactly("test");
         assertThat(environment.getProperty("cm-agent.security.jwt-secret")).isEqualTo(TEST_JWT_SECRET);

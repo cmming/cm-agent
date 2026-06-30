@@ -37,7 +37,33 @@ docker compose up -d mysql postgres
 
 默认数据库名为 `cm_agent`。本地开发凭据为 MySQL `root` 用户/密码 `cmagent`，PostgreSQL `cmagent` 用户/密码 `cmagent`；这些凭据仅用于开发和集成验证，生产环境应使用独立数据库账号、强密码和受控网络访问策略。
 
-第一阶段的服务端 REST API 默认仍使用内存 store 保存 Agent、Tool、Grant 和 Audit 运行态数据，重启后会丢失。这里的数据库和 Flyway 迁移用于验证持久化基线，不表示默认服务端已经把运行态数据写入生产数据库。
+local 默认使用 memory mode 保存运行态数据，重启后会丢失。启用 `jdbc` 或 `supabase` profile 后，Agent、Tool 和 ToolGrant 会通过 JDBC/Flyway 持久化；Audit、Run、ToolCall 仍属于后续生产化范围或本阶段尚未完成 service 接线。
+
+## 使用 Supabase development branch 验证持久化
+
+Supabase 接入复用现有 JDBC/Flyway 持久化链路。默认不要直接对 Supabase 主项目执行 DDL；先创建 development branch，再在 branch 上验证 schema。
+
+推荐流程：
+
+1. 在 Supabase 中为项目 `hfgdsvsvuosdkqeodked` 创建 development branch，名称建议为 `cm-agent-supabase-persistence`。
+2. 在 branch 上检查 `public` schema。
+3. 如果缺少本阶段 Agent/Tool/ToolGrant 持久化最小验收表，或 Flyway migration 尚未应用，在 branch 上应用 `cm-agent-persistence/src/main/resources/db/migration/V1__init_schema.sql`。
+4. 本阶段最小验收需确认至少存在 `tenants`、`model_configs`、`agent_definitions`、`tool_definitions`、`tool_grants`；V1 migration 还会创建审计、运行记录等后续阶段使用的表。
+5. 使用 branch 的 JDBC URL 和数据库凭据启动服务端。
+
+本地启动示例：
+
+```powershell
+$env:CM_AGENT_PROFILE='supabase'
+$env:CM_AGENT_JWT_SECRET='value from secret manager with safe length'
+$env:CM_AGENT_JDBC_URL='Supabase branch JDBC URL from secret manager'
+$env:CM_AGENT_JDBC_USERNAME='Supabase database user from secret manager'
+$env:CM_AGENT_JDBC_PASSWORD='Supabase database password from secret manager'
+$env:CM_AGENT_JDBC_DRIVER_CLASS_NAME='org.postgresql.Driver'
+mvn -pl cm-agent-server -am spring-boot:run
+```
+
+服务启动时 Flyway 会自动检查并应用 classpath 中的 migration。若数据库凭据不可用，仍可先完成配置测试和 Supabase branch 表结构检查，再由部署环境注入 secret 后运行 smoke test。
 
 ## 启动服务端
 
@@ -69,8 +95,8 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-ag
 - 不要依赖本地开发数据库配置；生产数据库凭据必须由密钥系统注入。
 - 不要在配置文件、镜像层或日志中写入 JWT 密钥、模型 API Key 或数据库密码。
 - `cm-agent.security.jwt-secret` 缺失时，生产环境应保持启动失败，避免使用开发回退密钥。
-- 生产部署必须显式设置 `CM_AGENT_PROFILE=prod` 或 `CM_AGENT_PROFILE=production`，避免使用本地测试 profile。
+- 生产部署必须显式设置 `CM_AGENT_PROFILE=prod`、`CM_AGENT_PROFILE=production` 或用于 Supabase 托管 PostgreSQL 的 `CM_AGENT_PROFILE=supabase`，避免使用本地测试 profile。
 - 不要在生产环境使用 `application-test.yml` 中的测试账号或测试 JWT 密钥。
-- `prod` 或 `production` profile 下禁止启用 bootstrap admin；管理员账号应接入正式身份源或受控账号体系。
-- 生产试点前必须接入 JDBC store/Flyway/service 层或等价持久化方案，不能依赖第一阶段默认内存 store 保存运行态数据。
+- `prod`、`production` 或 `supabase` profile 下禁止启用 bootstrap admin；管理员账号应接入正式身份源或受控账号体系。
+- 生产试点前必须启用并验证 JDBC/Supabase 持久化，完成 Supabase branch 或目标数据库 schema 校验，不能使用 memory mode 保存 Agent、Tool、Grant。
 - 第一阶段默认启用 fake runtime，适合验证控制台、权限、审计和运行链路；接入真实模型前应完成模型供应商和密钥托管配置。

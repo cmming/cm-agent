@@ -28,14 +28,28 @@ public class CmAgentPersistenceProperties {
     }
 
     public void validate(Environment environment) {
-        boolean productionProfileActive = Arrays.stream(environment.getActiveProfiles())
-                .anyMatch(profile -> "production".equalsIgnoreCase(profile) || "prod".equalsIgnoreCase(profile));
-        if (productionProfileActive && mode != Mode.JDBC) {
-            throw new IllegalStateException("production/prod profile 必须使用 jdbc 持久化模式");
+        boolean strictPersistenceProfileActive = hasStrictPersistenceProfile(environment);
+        if (strictPersistenceProfileActive && mode != Mode.JDBC) {
+            String profileLabel = hasSupabaseProfile(environment)
+                    ? "production/prod/supabase profile"
+                    : "production/prod profile";
+            throw new IllegalStateException(profileLabel + " 必须使用 jdbc 持久化模式");
         }
         if (mode == Mode.JDBC && (jdbc == null || isBlank(jdbc.getUrl()))) {
             throw new IllegalStateException("启用 jdbc 持久化模式时必须配置 cm-agent.persistence.jdbc.url");
         }
+    }
+
+    private boolean hasStrictPersistenceProfile(Environment environment) {
+        return Arrays.stream(environment.getActiveProfiles())
+                .anyMatch(profile -> "production".equalsIgnoreCase(profile)
+                        || "prod".equalsIgnoreCase(profile)
+                        || "supabase".equalsIgnoreCase(profile));
+    }
+
+    private boolean hasSupabaseProfile(Environment environment) {
+        return Arrays.stream(environment.getActiveProfiles())
+                .anyMatch(profile -> "supabase".equalsIgnoreCase(profile));
     }
 
     private static boolean isBlank(String value) {
