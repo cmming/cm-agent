@@ -101,7 +101,7 @@ cm-agent:
     bootstrap-admin-password: ${CM_AGENT_BOOTSTRAP_ADMIN_PASSWORD}
 ```
 
-不要在配置文件、前端代码或文档示例中写入可直接使用的真实凭据。`prod` 或 `production` profile 下禁止启用 bootstrap admin；如果启用，服务端会在启动时失败。
+不要在配置文件、前端代码或文档示例中写入可直接使用的真实凭据。`prod`、`production` 或 `supabase` profile 下禁止启用 bootstrap admin；如果启用，服务端会在启动时失败。
 
 ## 模型供应商与 API Key
 
