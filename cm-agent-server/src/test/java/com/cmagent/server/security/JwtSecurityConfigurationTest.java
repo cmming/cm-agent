@@ -1,11 +1,11 @@
 package com.cmagent.server.security;
 
-import com.cmagent.server.CmAgentServerApplication;
 import io.jsonwebtoken.security.WeakKeyException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.BeanCreationException;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
+import org.springframework.boot.test.context.TestConfiguration;
 
 import javax.crypto.SecretKey;
 import java.util.Locale;
@@ -18,8 +18,13 @@ class JwtSecurityConfigurationTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withUserConfiguration(JwtSecurityConfiguration.class);
 
-    private final WebApplicationContextRunner serverContextRunner = new WebApplicationContextRunner()
-            .withUserConfiguration(CmAgentServerApplication.class)
+    private final ApplicationContextRunner serverContextRunner = new ApplicationContextRunner()
+            .withUserConfiguration(
+                    JwtSecurityConfiguration.class,
+                    BootstrapAdminConfiguration.class,
+                    BootstrapAdminProperties.class,
+                    BootstrapAdminPropertiesBindingConfiguration.class
+            )
             .withPropertyValues("cm-agent.security.jwt-secret=" + STRONG_TEST_SECRET);
 
     @Test
@@ -165,5 +170,10 @@ class JwtSecurityConfigurationTest {
         } finally {
             Locale.setDefault(defaultLocale);
         }
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    @EnableConfigurationProperties
+    static class BootstrapAdminPropertiesBindingConfiguration {
     }
 }

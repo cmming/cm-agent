@@ -16,6 +16,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -61,7 +62,7 @@ class JdbcToolGrantRepositoryTest {
 
     private static void seedData(DataSource dataSource) {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
-        Instant now = Instant.parse("2026-06-26T00:00:00Z");
+        Timestamp now = Timestamp.from(Instant.parse("2026-06-26T00:00:00Z"));
         jdbcClient.sql("INSERT INTO tenants (id, code, name, enabled, created_at) VALUES (:id, 'default', '默认租户', true, :createdAt)")
                 .param("id", TENANT_ID.toString())
                 .param("createdAt", now)

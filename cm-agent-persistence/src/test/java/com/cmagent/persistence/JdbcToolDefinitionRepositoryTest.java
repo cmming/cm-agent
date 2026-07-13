@@ -13,6 +13,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -85,12 +86,12 @@ class JdbcToolDefinitionRepositoryTest {
 
     private static void seedTenants(DataSource dataSource) {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
-        Instant now = Instant.parse("2026-06-26T00:00:00Z");
+        Timestamp now = Timestamp.from(Instant.parse("2026-06-26T00:00:00Z"));
         insertTenant(jdbcClient, TENANT_A, "tenant-a", "租户A", now);
         insertTenant(jdbcClient, TENANT_B, "tenant-b", "租户B", now);
     }
 
-    private static void insertTenant(JdbcClient jdbcClient, UUID tenantId, String code, String name, Instant now) {
+    private static void insertTenant(JdbcClient jdbcClient, UUID tenantId, String code, String name, Timestamp now) {
         jdbcClient.sql("""
                         INSERT INTO tenants (id, code, name, enabled, created_at)
                         VALUES (:id, :code, :name, true, :createdAt)

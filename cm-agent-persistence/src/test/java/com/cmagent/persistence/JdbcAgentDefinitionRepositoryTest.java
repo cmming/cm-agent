@@ -12,6 +12,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -116,14 +117,14 @@ class JdbcAgentDefinitionRepositoryTest {
 
     private static void seedTenantAndModelConfigs(DataSource dataSource) {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
-        Instant now = Instant.parse("2026-06-26T00:00:00Z");
+        Timestamp now = Timestamp.from(Instant.parse("2026-06-26T00:00:00Z"));
         insertTenant(jdbcClient, TENANT_A, "tenant-a", "租户A", now);
         insertTenant(jdbcClient, TENANT_B, "tenant-b", "租户B", now);
         insertModelConfig(jdbcClient, MODEL_PROVIDER_A, TENANT_A, now);
         insertModelConfig(jdbcClient, MODEL_PROVIDER_B, TENANT_B, now);
     }
 
-    private static void insertTenant(JdbcClient jdbcClient, UUID tenantId, String code, String name, Instant now) {
+    private static void insertTenant(JdbcClient jdbcClient, UUID tenantId, String code, String name, Timestamp now) {
         jdbcClient.sql("""
                         INSERT INTO tenants (id, code, name, enabled, created_at)
                         VALUES (:id, :code, :name, true, :createdAt)
@@ -135,7 +136,7 @@ class JdbcAgentDefinitionRepositoryTest {
                 .update();
     }
 
-    private static void insertModelConfig(JdbcClient jdbcClient, UUID modelProviderId, UUID tenantId, Instant now) {
+    private static void insertModelConfig(JdbcClient jdbcClient, UUID modelProviderId, UUID tenantId, Timestamp now) {
         jdbcClient.sql("""
                         INSERT INTO model_configs (
                             id, tenant_id, provider_type, display_name, base_url, model_name,

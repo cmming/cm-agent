@@ -172,8 +172,10 @@ class AuthControllerTest {
                 .getContentAsString();
 
         String accessToken = com.jayway.jsonpath.JsonPath.read(loginResponse, "$.accessToken");
-        String tamperedToken = accessToken.substring(0, accessToken.length() - 1)
-                + (accessToken.endsWith("a") ? "b" : "a");
+        int signatureStart = accessToken.lastIndexOf('.') + 1;
+        String tamperedToken = accessToken.substring(0, signatureStart)
+                + (accessToken.charAt(signatureStart) == 'A' ? 'B' : 'A')
+                + accessToken.substring(signatureStart + 1);
 
         mockMvc.perform(get("/api/auth/me")
                         .header("Authorization", "Bearer " + tamperedToken))
