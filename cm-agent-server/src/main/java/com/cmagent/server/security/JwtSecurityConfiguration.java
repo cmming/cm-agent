@@ -25,6 +25,11 @@ public class JwtSecurityConfiguration {
     ) {
         String secret = configuredSecret == null ? "" : configuredSecret.trim();
         String[] activeProfiles = environment.getActiveProfiles();
+        if (hasProductionLikeProfile(activeProfiles) && hasVirtualMachineDatabaseProfile(activeProfiles)) {
+            throw new IllegalStateException(
+                    "production/prod/supabase profile 禁止与 postgres/mysql 虚拟机数据库 profile 同时启用，虚拟机联调凭据不得用于生产样环境"
+            );
+        }
         if (hasProductionLikeProfile(activeProfiles) && hasTestProfile(activeProfiles)) {
             String profileLabel = hasSupabaseProfile(activeProfiles)
                     ? "production/prod/supabase profile"
@@ -66,6 +71,14 @@ public class JwtSecurityConfiguration {
                 .anyMatch(profile -> "production".equalsIgnoreCase(profile)
                         || "prod".equalsIgnoreCase(profile)
                         || "supabase".equalsIgnoreCase(profile));
+    }
+
+    private boolean hasVirtualMachineDatabaseProfile(String[] activeProfiles) {
+        if (activeProfiles == null || activeProfiles.length == 0) {
+            return false;
+        }
+        return Arrays.stream(activeProfiles)
+                .anyMatch(profile -> "postgres".equalsIgnoreCase(profile) || "mysql".equalsIgnoreCase(profile));
     }
 
     private boolean hasTestProfile(String[] activeProfiles) {
