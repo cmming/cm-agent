@@ -1,0 +1,12 @@
+# Virtual-machine MySQL profile. Values mirror 192.168.0.66:/data/cm-agent/docker-compose.yml.
+
+cm-agent:
+  config:
+    jwt-secret: cm-agent-vm-profile-jwt-secret-with-at-least-32-bytes-2026
+    allow-dev-jwt-fallback: false
+    bootstrap-admin-enabled: false
+    persistence-mode: jdbc
+    jdbc-url: jdbc:mysql://192.168.0.66:3306/cm_agent?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    jdbc-username: root
+    jdbc-password: cmagent
+    jdbc-driver-class-name: com.mysql.cj.jdbc.Driver
