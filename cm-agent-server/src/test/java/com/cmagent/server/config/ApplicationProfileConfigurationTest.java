@@ -20,6 +20,9 @@ class ApplicationProfileConfigurationTest {
     private static final String LOCAL_ADMIN_PASSWORD = "cm-agent-local-dev-password-only";
     private static final String TEST_JWT_SECRET = "cm-agent-test-jwt-secret-with-at-least-32-bytes";
     private static final String TEST_ADMIN_PASSWORD = "cm-agent-test-password-only";
+    private static final String VM_JWT_SECRET = "cm-agent-vm-profile-jwt-secret-with-at-least-32-bytes-2026";
+    private static final String POSTGRES_JDBC_URL = "jdbc:postgresql://192.168.0.66:5432/cm_agent";
+    private static final String MYSQL_JDBC_URL = "jdbc:mysql://192.168.0.66:3306/cm_agent?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withInitializer(new ConfigDataApplicationContextInitializer());
@@ -128,6 +131,20 @@ class ApplicationProfileConfigurationTest {
                     assertThat(environment.getActiveProfiles()).contains("prod", "production");
                     assertThat(environment.getProperty("cm-agent.config.persistence-mode")).isEqualTo("jdbc");
                 });
+    }
+
+    @Test
+    void postgresProfileLoadsVirtualMachineJdbcConfiguration() {
+        contextRunner
+                .withPropertyValues("spring.profiles.active=postgres")
+                .run(context -> assertPostgresProfileLoaded(context.getEnvironment()));
+    }
+
+    @Test
+    void mysqlProfileLoadsVirtualMachineJdbcConfiguration() {
+        contextRunner
+                .withPropertyValues("spring.profiles.active=mysql")
+                .run(context -> assertMysqlProfileLoaded(context.getEnvironment()));
     }
 
     @Test
@@ -260,6 +277,35 @@ class ApplicationProfileConfigurationTest {
                     assertThat(context.getStartupFailure())
                             .hasMessageContaining("production/prod/supabase profile 禁止与 test profile 同时启用");
                 });
+    }
+
+    private static void assertPostgresProfileLoaded(Environment environment) {
+        assertVirtualMachineProfileLoaded(environment, "postgres", POSTGRES_JDBC_URL, "cmagent", "org.postgresql.Driver");
+    }
+
+    private static void assertMysqlProfileLoaded(Environment environment) {
+        assertVirtualMachineProfileLoaded(environment, "mysql", MYSQL_JDBC_URL, "root", "com.mysql.cj.jdbc.Driver");
+    }
+
+    private static void assertVirtualMachineProfileLoaded(
+            Environment environment, String profile, String jdbcUrl, String username, String driverClassName) {
+        assertThat(environment.getActiveProfiles()).containsExactly(profile);
+        assertThat(environment.getProperty("cm-agent.config.jwt-secret")).isEqualTo(VM_JWT_SECRET);
+        assertThat(environment.getProperty("cm-agent.security.jwt-secret")).isEqualTo(VM_JWT_SECRET);
+        assertThat(environment.getProperty("cm-agent.config.persistence-mode")).isEqualTo("jdbc");
+        assertThat(environment.getProperty("cm-agent.persistence.mode")).isEqualTo("jdbc");
+        assertThat(environment.getProperty("cm-agent.config.jdbc-url")).isEqualTo(jdbcUrl);
+        assertThat(environment.getProperty("cm-agent.persistence.jdbc.url")).isEqualTo(jdbcUrl);
+        assertThat(environment.getProperty("cm-agent.config.jdbc-username")).isEqualTo(username);
+        assertThat(environment.getProperty("cm-agent.persistence.jdbc.username")).isEqualTo(username);
+        assertThat(environment.getProperty("cm-agent.config.jdbc-password")).isEqualTo("cmagent");
+        assertThat(environment.getProperty("cm-agent.persistence.jdbc.password")).isEqualTo("cmagent");
+        assertThat(environment.getProperty("cm-agent.config.jdbc-driver-class-name")).isEqualTo(driverClassName);
+        assertThat(environment.getProperty("cm-agent.persistence.jdbc.driver-class-name")).isEqualTo(driverClassName);
+        assertThat(environment.getProperty("cm-agent.config.allow-dev-jwt-fallback", Boolean.class)).isFalse();
+        assertThat(environment.getProperty("cm-agent.config.bootstrap-admin-enabled", Boolean.class)).isFalse();
+        assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class)).isFalse();
+        assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-enabled", Boolean.class)).isFalse();
     }
 
     private static void assertLocalProfileLoaded(Environment environment) {
