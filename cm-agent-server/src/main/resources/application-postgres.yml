@@ -1,0 +1,12 @@
+# Virtual-machine PostgreSQL profile. Values mirror 192.168.0.66:/data/cm-agent/docker-compose.yml.
+
+cm-agent:
+  config:
+    jwt-secret: cm-agent-vm-profile-jwt-secret-with-at-least-32-bytes-2026
+    allow-dev-jwt-fallback: false
+    bootstrap-admin-enabled: false
+    persistence-mode: jdbc
+    jdbc-url: jdbc:postgresql://192.168.0.66:5432/cm_agent
+    jdbc-username: cmagent
+    jdbc-password: cmagent
+    jdbc-driver-class-name: org.postgresql.Driver
