@@ -1,12 +1,14 @@
 server:
-  port: 8080
+  port: ${cm-agent.config.server-port:8080}
 
 spring:
   application:
     name: cm-agent-server
   profiles:
-    # Production must set CM_AGENT_PROFILE=prod or production and inject CM_AGENT_JWT_SECRET.
+    # Legacy profile selector is supported temporarily; new deployments use spring.profiles.active.
     active: ${CM_AGENT_PROFILE:local}
+    group:
+      prod: production
 
 management:
   endpoints:
@@ -16,20 +18,19 @@ management:
 
 cm-agent:
   security:
-    jwt-secret: ${CM_AGENT_JWT_SECRET:}
-    # Local/test fallback only; production profiles still reject missing CM_AGENT_JWT_SECRET.
-    allow-dev-jwt-fallback: ${CM_AGENT_ALLOW_DEV_JWT_FALLBACK:false}
-    bootstrap-admin-enabled: false
-    bootstrap-admin-username: ${CM_AGENT_BOOTSTRAP_ADMIN_USERNAME:admin}
-    bootstrap-admin-password: ${CM_AGENT_BOOTSTRAP_ADMIN_PASSWORD:}
-    bootstrap-admin-display-name: ${CM_AGENT_BOOTSTRAP_ADMIN_DISPLAY_NAME:系统管理员}
-    public-api-docs-enabled: ${CM_AGENT_PUBLIC_API_DOCS_ENABLED:true}
-  fake-runtime-enabled: true
-  default-tenant-code: default
+    jwt-secret: ${cm-agent.config.jwt-secret:}
+    allow-dev-jwt-fallback: ${cm-agent.config.allow-dev-jwt-fallback:false}
+    bootstrap-admin-enabled: ${cm-agent.config.bootstrap-admin-enabled:false}
+    bootstrap-admin-username: ${cm-agent.config.bootstrap-admin-username:admin}
+    bootstrap-admin-password: ${cm-agent.config.bootstrap-admin-password:}
+    bootstrap-admin-display-name: ${cm-agent.config.bootstrap-admin-display-name:系统管理员}
+    public-api-docs-enabled: ${cm-agent.config.public-api-docs-enabled:true}
+  fake-runtime-enabled: ${cm-agent.config.fake-runtime-enabled:true}
+  default-tenant-code: ${cm-agent.config.default-tenant-code:default}
   persistence:
-    mode: ${CM_AGENT_PERSISTENCE_MODE:memory}
+    mode: ${cm-agent.config.persistence-mode:memory}
     jdbc:
-      url: ${CM_AGENT_JDBC_URL:}
-      username: ${CM_AGENT_JDBC_USERNAME:}
-      password: ${CM_AGENT_JDBC_PASSWORD:}
-      driver-class-name: ${CM_AGENT_JDBC_DRIVER_CLASS_NAME:}
+      url: ${cm-agent.config.jdbc-url:}
+      username: ${cm-agent.config.jdbc-username:}
+      password: ${cm-agent.config.jdbc-password:}
+      driver-class-name: ${cm-agent.config.jdbc-driver-class-name:}

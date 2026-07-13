@@ -1,0 +1,10 @@
+# Local development/debug profile only. This file defines variables only.
+
+cm-agent:
+  config:
+    jwt-secret: cm-agent-local-dev-jwt-secret-with-at-least-32-bytes-2026
+    bootstrap-admin-enabled: true
+    bootstrap-admin-username: admin
+    bootstrap-admin-password: cm-agent-local-dev-password-only
+    bootstrap-admin-display-name: 本地管理员
+    persistence-mode: memory

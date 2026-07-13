@@ -11,6 +11,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -126,7 +127,7 @@ class JdbcAuditEventRepositoryTest {
 
     private static void seedTenants(DataSource dataSource) {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
-        Instant now = Instant.parse("2026-06-18T00:00:00Z");
+        Timestamp now = Timestamp.from(Instant.parse("2026-06-18T00:00:00Z"));
 
         jdbcClient.sql("""
                         INSERT INTO tenants (id, code, name, enabled, created_at)

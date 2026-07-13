@@ -1,10 +1,9 @@
-# Local test profile only. Do not use this configuration in production.
+# Local test profile only. This file defines variables only.
+
 cm-agent:
-  security:
+  config:
     jwt-secret: cm-agent-test-jwt-secret-with-at-least-32-bytes
     bootstrap-admin-enabled: true
     bootstrap-admin-username: admin
     bootstrap-admin-password: cm-agent-test-password-only
     bootstrap-admin-display-name: 测试管理员
-    public-api-docs-enabled: true
-  fake-runtime-enabled: true

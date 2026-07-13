@@ -4,21 +4,22 @@ CM Agent 是一个基于 AgentScope Java 的企业级智能体开源底座。第
 
 ## 快速开始
 
-本地测试启动可以直接使用 `test` profile：
+本地开发调试默认使用 `local` profile。该 profile 会加载 `application-local.yml`，启用 memory 持久化、fake runtime、本地 bootstrap admin 和本地专用 JWT 密钥：
 
 ```powershell
 mvn -q "-DskipTests" package
-$env:CM_AGENT_PROFILE='test'
-mvn -pl cm-agent-server -am spring-boot:run
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=local"
 ```
 
 也可以使用 Spring Boot 命令行参数显式指定：
 
 ```powershell
-mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=test"
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=local"
 ```
 
-测试 profile 会加载 `application-test.yml`。控制台测试登录账号为 `admin`，密码为 `cm-agent-test-password-only`；该密码仅用于本地测试，不得用于生产。
+本地开发控制台登录账号为 `admin`，密码为 `cm-agent-local-dev-password-only`；该密码仅用于本地开发调试，不得用于生产。
+
+自动化测试或需要复用测试凭据时，使用 `--spring.profiles.active=test` 显式选择 `test` profile。`test` profile 会加载 `application-test.yml`，控制台测试登录账号为 `admin`，密码为 `cm-agent-test-password-only`；该密码仅用于本地测试，不得用于生产。
 
 服务启动后访问：
 
@@ -26,12 +27,12 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 - 控制台：`http://localhost:8080/`
 - OpenAPI：`http://localhost:8080/swagger-ui/index.html`
 
-需要手动传参时，可以继续使用显式配置：
+需要临时覆盖本地配置时，可以继续使用显式参数：
 
 以下显式配置仅用于本地开发/演示；生产环境不要启用 bootstrap admin，也不要使用示例密码。
 
 ```powershell
-mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.security.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026 --cm-agent.security.bootstrap-admin-enabled=true --cm-agent.security.bootstrap-admin-password=cm-agent-local-dev-password-only"
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.config.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026 --cm-agent.config.bootstrap-admin-enabled=true --cm-agent.config.bootstrap-admin-password=cm-agent-local-dev-password-only"
 ```
 
 ## 生产文档

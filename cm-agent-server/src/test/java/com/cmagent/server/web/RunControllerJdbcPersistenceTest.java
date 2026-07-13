@@ -8,14 +8,12 @@ import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.server.CmAgentServerApplication;
 import com.cmagent.server.security.JwtService;
 import com.jayway.jsonpath.JsonPath;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
@@ -32,6 +30,8 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -40,7 +40,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
-@Import(RunControllerJdbcPersistenceTest.TestRuntimeConfig.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class RunControllerJdbcPersistenceTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -50,6 +49,7 @@ class RunControllerJdbcPersistenceTest {
 
     @DynamicPropertySource
     static void jdbcProperties(DynamicPropertyRegistry registry) {
+        registry.add("cm-agent.fake-runtime-enabled", () -> "false");
         registry.add("cm-agent.persistence.mode", () -> "jdbc");
         registry.add("cm-agent.persistence.jdbc.url", postgres::getJdbcUrl);
         registry.add("cm-agent.persistence.jdbc.username", postgres::getUsername);
@@ -63,8 +63,29 @@ class RunControllerJdbcPersistenceTest {
     @Autowired
     private JwtService jwtService;
 
-    @Autowired
-    private CapturingAgentRuntime agentRuntime;
+    @MockBean
+    private AgentRuntime agentRuntime;
+
+    private final AtomicReference<AgentRunRequest> lastRequest = new AtomicReference<>();
+
+    @BeforeEach
+    void arrangeRuntime() {
+        lastRequest.set(null);
+        when(agentRuntime.run(any())).thenAnswer(invocation -> {
+            AgentRunRequest request = invocation.getArgument(0);
+            lastRequest.set(request);
+            Instant now = Instant.now();
+            return new AgentRunResult(
+                    UUID.randomUUID(),
+                    RunStatus.SUCCEEDED,
+                    "fake-runtime: " + request.input(),
+                    List.of(),
+                    now,
+                    now,
+                    ""
+            );
+        });
+    }
 
     @Test
     void createToolGrantAndRunLoadsAuthorizedToolFromJdbc() throws Exception {
@@ -120,43 +141,12 @@ class RunControllerJdbcPersistenceTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCEEDED"));
 
-        assertThat(agentRuntime.lastRequest()).isNotNull();
-        assertThat(agentRuntime.lastRequest().tools()).extracting(ToolDefinition::name).containsExactly("echo");
+        assertThat(lastRequest.get()).isNotNull();
+        assertThat(lastRequest.get().tools()).extracting(ToolDefinition::name).containsExactly("echo");
     }
 
     private static String bearer(String token) {
         return "Bearer " + token;
     }
 
-    @TestConfiguration
-    static class TestRuntimeConfig {
-        @Bean("jdbcCapturingAgentRuntime")
-        @Primary
-        CapturingAgentRuntime agentRuntime() {
-            return new CapturingAgentRuntime();
-        }
-    }
-
-    static class CapturingAgentRuntime implements AgentRuntime {
-        private final AtomicReference<AgentRunRequest> lastRequest = new AtomicReference<>();
-
-        @Override
-        public AgentRunResult run(AgentRunRequest request) {
-            lastRequest.set(request);
-            Instant now = Instant.now();
-            return new AgentRunResult(
-                    UUID.randomUUID(),
-                    RunStatus.SUCCEEDED,
-                    "fake-runtime: " + request.input(),
-                    List.of(),
-                    now,
-                    now,
-                    ""
-            );
-        }
-
-        AgentRunRequest lastRequest() {
-            return lastRequest.get();
-        }
-    }
 }

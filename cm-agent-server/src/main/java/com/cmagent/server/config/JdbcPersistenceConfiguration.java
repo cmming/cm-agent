@@ -16,6 +16,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 import javax.sql.DataSource;
+import java.sql.Timestamp;
 import java.time.Instant;
 
 @Configuration
@@ -70,7 +71,7 @@ public class JdbcPersistenceConfiguration {
     @Bean
     ApplicationRunner defaultTenantDataInitializer(JdbcClient cmAgentJdbcClient, Flyway cmAgentFlyway) {
         return args -> {
-            Instant now = Instant.now();
+            Timestamp now = Timestamp.from(Instant.now());
             cmAgentJdbcClient.sql("""
                             INSERT INTO tenants (id, code, name, enabled, created_at)
                             SELECT :id, :code, :name, true, :createdAt
