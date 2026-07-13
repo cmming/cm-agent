@@ -37,13 +37,13 @@ docker compose up -d mysql postgres
 
 默认数据库名为 `cm_agent`。本地开发凭据为 MySQL `root` 用户/密码 `cmagent`，PostgreSQL `cmagent` 用户/密码 `cmagent`；这些凭据仅用于开发和集成验证，生产环境应使用独立数据库账号、强密码和受控网络访问策略。
 
-local 默认使用 memory mode 保存运行态数据，重启后会丢失。启用 `jdbc` 或 `supabase` profile 后，Agent、Tool 和 ToolGrant 会通过 JDBC/Flyway 持久化；Audit、Run、ToolCall 仍属于后续生产化范围或本阶段尚未完成 service 接线。
+local 默认使用 memory mode 保存运行态数据，重启后会丢失。启用 JDBC 持久化模式，或使用 `postgres`、`mysql`、`production`/`prod`、`supabase` profile 后，Agent、Tool 和 ToolGrant 会通过 JDBC/Flyway 持久化；Audit、Run、ToolCall 仍属于后续生产化范围或本阶段尚未完成 service 接线。
 
 ## 数据库场景与项目配置
 
 CM Agent 第一阶段的持久化由 `cm-agent.config.persistence-mode` 控制。公共 `application.yml` 将该变量实际绑定到 `cm-agent.persistence.mode`；`memory` 只适合本地开发、演示和自动化测试，`jdbc` 用于 PostgreSQL、MySQL 和 Supabase PostgreSQL。服务端进入 `jdbc` 模式后会创建 Hikari DataSource，并在启动时通过 Flyway 自动执行 `classpath:db/migration` 下的迁移。
 
-数据库配置建议写入部署节点上的外部 YAML 配置文件，例如本地 `./config/application-local.yml`、生产 `/etc/cm-agent/application-production.yml` 或 `/etc/cm-agent/application-supabase.yml`。启动时通过 `--spring.config.additional-location=file:<配置目录>/` 加载外部配置目录，并通过 `--spring.profiles.active=<profile>` 选择运行 profile。数据库环境变量方式当前不使用；连接信息必须写入受控外部 YAML。
+数据库配置建议写入部署节点上的外部 YAML 配置文件，例如本地 `./config/application-local.yml`、生产 `/etc/cm-agent/application-production.yml` 或 `/etc/cm-agent/application-supabase.yml`。当前内网虚拟机数据库也提供内置 `postgres` 和 `mysql` profile，可直接复用 `192.168.0.66:/data/cm-agent/docker-compose.yml` 中的连接信息。启动时通过 `--spring.config.additional-location=file:./config/` 或 `--spring.config.additional-location=file:/etc/cm-agent/` 加载外部配置目录，并通过 `--spring.profiles.active=local`、`--spring.profiles.active=postgres`、`--spring.profiles.active=mysql`、`--spring.profiles.active=production` 或 `--spring.profiles.active=supabase` 选择运行 profile。数据库环境变量方式当前不使用；连接信息必须写入受控外部 YAML 或明确的内网虚拟机 profile。
 
 通用配置项如下：
 
@@ -120,7 +120,29 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 `allowPublicKeyRetrieval=true` 仅用于本地 Docker 验证。生产 MySQL 应使用受控账号、TLS、最小权限和受控外部配置文件，不要沿用本地 root 用户或示例密码。
 
-### 场景四：生产或类生产 PostgreSQL
+### 场景四：内网虚拟机数据库 profile
+
+适用于直接连接部署节点 `192.168.0.66:/data/cm-agent/docker-compose.yml` 中已经启动的数据库。该场景不需要额外编写外部 YAML；profile 已内置当前虚拟机的 JDBC URL、账号、密码和驱动。
+
+PostgreSQL profile：
+
+```powershell
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=postgres"
+```
+
+`postgres` 会连接 `jdbc:postgresql://192.168.0.66:5432/cm_agent`，使用账号 `cmagent`、密码 `cmagent` 和驱动 `org.postgresql.Driver`。
+
+MySQL profile：
+
+```powershell
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=mysql"
+```
+
+`mysql` 会连接 `jdbc:mysql://192.168.0.66:3306/cm_agent?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC`，使用账号 `root`、密码 `cmagent` 和驱动 `com.mysql.cj.jdbc.Driver`。
+
+两个 profile 都启用 JDBC/Flyway，首次连接空库时会自动执行 `classpath:db/migration`。MySQL `root` 账号、`cmagent` 密码和 `allowPublicKeyRetrieval=true` 仅适用于当前虚拟机联调配置；生产化 MySQL 仍应使用最小权限账号、强密码、TLS 和受控外部配置文件。
+
+### 场景五：生产或类生产 PostgreSQL
 
 适用于自建 PostgreSQL、云厂商托管 PostgreSQL 或企业内部 PostgreSQL。推荐使用 `production` 或 `prod` profile，并在 `/etc/cm-agent/application-production.yml` 中显式启用 JDBC：
 
@@ -141,7 +163,7 @@ java -jar cm-agent-server\target\cm-agent-server-0.1.0-SNAPSHOT.jar --spring.pro
 
 如果数据库平台要求 SSL，请在 JDBC URL 中加入平台要求的 SSL 参数，例如 `sslmode=require`。生产数据库账号应具备应用运行和 Flyway migration 所需权限；如果组织要求 DDL 与运行账号分离，应由发布流程先执行 migration，再使用运行账号启动应用。
 
-### 场景五：生产或类生产 MySQL
+### 场景六：生产或类生产 MySQL
 
 适用于自建 MySQL 8.4、云厂商托管 MySQL 或企业内部 MySQL。推荐使用 `production` 或 `prod` profile，并在 `/etc/cm-agent/application-production.yml` 中显式启用 JDBC：
 
@@ -162,7 +184,7 @@ java -jar cm-agent-server\target\cm-agent-server-0.1.0-SNAPSHOT.jar --spring.pro
 
 生产 MySQL 不要使用本地示例中的 `root` 用户、`allowPublicKeyRetrieval=true`，也不要把数据库密码写入 Git 管理的配置文件或镜像层。请按平台要求配置 TLS、字符集、备份、恢复演练和连接数上限。
 
-### 场景六：Supabase PostgreSQL
+### 场景七：Supabase PostgreSQL
 
 Supabase 接入复用现有 PostgreSQL JDBC/Flyway 链路，不需要引入 Supabase Java SDK。推荐使用 `supabase` profile；该 profile 会默认启用 `jdbc`、禁用 bootstrap admin、禁用开发 JWT fallback，并默认使用 `org.postgresql.Driver`。
 
@@ -226,7 +248,7 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-ag
 - 不要依赖本地开发数据库配置；生产数据库配置必须使用受控外部配置文件，数据库密码应由密钥系统生成或挂载。
 - 不要在 Git 管理的配置文件、镜像层或日志中写入 JWT 密钥、模型 API Key 或数据库密码。
 - `cm-agent.config.jwt-secret` 缺失时，生产环境应保持启动失败，避免使用开发回退密钥。
-- 生产部署必须显式设置 `spring.profiles.active=prod`、`spring.profiles.active=production` 或用于 Supabase 托管 PostgreSQL 的 `spring.profiles.active=supabase`，避免使用本地测试 profile。
+- 生产部署必须显式设置 `spring.profiles.active=prod`、`spring.profiles.active=production` 或用于 Supabase 托管 PostgreSQL 的 `spring.profiles.active=supabase`，避免使用本地测试 profile；内网虚拟机联调可使用 `spring.profiles.active=postgres` 或 `spring.profiles.active=mysql`。
 - 不要在生产环境使用 `application-local.yml` 或 `application-test.yml` 中的本地/测试账号和 JWT 密钥。
 - `prod`、`production` 或 `supabase` profile 下禁止启用 bootstrap admin；管理员账号应接入正式身份源或受控账号体系。
 - 生产试点前必须启用并验证 JDBC/Supabase 持久化，完成 Supabase branch 或目标数据库 schema 校验，不能使用 memory mode 保存 Agent、Tool、Grant。
