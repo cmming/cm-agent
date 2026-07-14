@@ -1,140 +1,137 @@
 package com.cmagent.server.web;
 
 import com.cmagent.api.PrincipalRef;
-import com.cmagent.core.domain.AgentDefinition;
-import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
-import com.cmagent.core.domain.RunStatus;
-import com.cmagent.core.domain.ToolDefinition;
-import com.cmagent.core.domain.ToolGrant;
-import com.cmagent.core.repository.AgentDefinitionRepository;
-import com.cmagent.core.repository.ToolDefinitionRepository;
-import com.cmagent.core.repository.ToolGrantRepository;
+import com.cmagent.core.domain.RunPageRequest;
+import com.cmagent.core.domain.RunRecord;
+import com.cmagent.core.domain.RunToolCall;
 import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.PermissionEvaluator;
-import com.cmagent.core.security.ToolAuthorizationPolicy;
-import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.server.audit.AuditAppender;
+import com.cmagent.server.runtime.RunExecutionService;
+import com.cmagent.server.runtime.RunPersistenceService;
 import com.cmagent.server.security.JwtService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/agents/{agentId}/runs")
 public class RunController {
-
-    private final AgentRuntime runtime;
-    private final AgentDefinitionRepository agentRepository;
-    private final ToolDefinitionRepository toolRepository;
-    private final ToolGrantRepository grantRepository;
+    private final RunExecutionService executionService;
+    private final RunPersistenceService persistenceService;
     private final PermissionEvaluator permissionEvaluator;
-    private final ToolAuthorizationPolicy toolAuthorizationPolicy;
     private final AuditAppender auditAppender;
 
-    public RunController(AgentRuntime runtime,
-                         AgentDefinitionRepository agentRepository,
-                         ToolDefinitionRepository toolRepository,
-                         ToolGrantRepository grantRepository,
-                         PermissionEvaluator permissionEvaluator,
-                         ToolAuthorizationPolicy toolAuthorizationPolicy,
-                         AuditAppender auditAppender) {
-        this.runtime = runtime;
-        this.agentRepository = agentRepository;
-        this.toolRepository = toolRepository;
-        this.grantRepository = grantRepository;
+    public RunController(
+            RunExecutionService executionService,
+            RunPersistenceService persistenceService,
+            PermissionEvaluator permissionEvaluator,
+            AuditAppender auditAppender
+    ) {
+        this.executionService = executionService;
+        this.persistenceService = persistenceService;
         this.permissionEvaluator = permissionEvaluator;
-        this.toolAuthorizationPolicy = toolAuthorizationPolicy;
         this.auditAppender = auditAppender;
     }
 
     @PostMapping
-    public AgentRunResult run(@PathVariable("agentId") UUID agentId, @Valid @RequestBody RunRequest request, Authentication authentication) {
+    public AgentRunResult run(
+            @PathVariable("agentId") UUID agentId,
+            @Valid @RequestBody RunRequest request,
+            Authentication authentication
+    ) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:run", "AGENT", agentId.toString());
-
-        AgentDefinition agent = agentRepository.findByTenantAndId(principal.tenantId(), agentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
-        if (!agent.enabled()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Agent 已禁用");
-        }
-
-        List<ToolDefinition> authorizedTools = authorizedTools(principal, agent);
-
-        try {
-            AgentRunResult result = runtime.run(new AgentRunRequest(
-                    principal.tenantId(),
-                    agent.id(),
-                    principal,
-                    request.input(),
-                    authorizedTools
-            ));
-            appendAuditEvent(principal, agent, result.status().name(), result.status() == RunStatus.SUCCEEDED ? "Agent 运行完成" : defaultMessage(result));
-            return result;
-        } catch (RuntimeException ex) {
-            appendAuditEvent(principal, agent, RunStatus.FAILED.name(), defaultMessage(ex));
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Agent 运行失败", ex);
-        }
+        return executionService.run(principal, agentId, request.input());
     }
 
-    private List<ToolDefinition> authorizedTools(PrincipalRef principal, AgentDefinition agent) {
-        List<ToolGrant> grants = grantRepository.listByTenantAndAgent(principal.tenantId(), agent.id());
-        Map<UUID, ToolDefinition> tools = new LinkedHashMap<>();
-        for (ToolGrant grant : grants) {
-            if (!grant.granted()) {
-                continue;
-            }
-            toolRepository.findByTenantAndId(principal.tenantId(), grant.toolId())
-                    .ifPresent(tool -> {
-                        AuthorizationDecision decision = toolAuthorizationPolicy.check(principal, agent.id(), tool, grants);
-                        if (decision.allowed()) {
-                            tools.putIfAbsent(tool.id(), tool);
-                        }
-                    });
-        }
-        return new ArrayList<>(tools.values());
-    }
-
-    private String defaultMessage(AgentRunResult result) {
-        return result.errorMessage() == null || result.errorMessage().isBlank()
-                ? "Agent 运行失败"
-                : result.errorMessage();
-    }
-
-    private String defaultMessage(RuntimeException ex) {
-        return ex.getMessage() == null || ex.getMessage().isBlank()
-                ? "Agent 运行失败"
-                : ex.getMessage();
-    }
-
-    private void appendAuditEvent(PrincipalRef principal, AgentDefinition agent, String status, String message) {
-        auditAppender.append(
-                principal.tenantId(),
-                principal.principalId(),
-                "AGENT_RUN",
-                "AGENT",
-                agent.id().toString(),
-                status,
-                message
+    @GetMapping
+    public RunPageResponse list(
+            @PathVariable("agentId") UUID agentId,
+            @RequestParam(name = "limit", defaultValue = "20") int limit,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            Authentication authentication
+    ) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "agent:read", "AGENT", agentId.toString());
+        CursorPosition position = decodeCursor(cursor);
+        RunPageRequest pageRequest = new RunPageRequest(
+                limit,
+                position == null ? null : position.startedAt(),
+                position == null ? null : position.id()
         );
+        List<RunRecord> items = persistenceService.list(principal.tenantId(), agentId, pageRequest);
+        String nextCursor = null;
+        if (items.size() == limit && !items.isEmpty()) {
+            RunRecord last = items.getLast();
+            boolean hasNext = !persistenceService.list(
+                    principal.tenantId(), agentId, new RunPageRequest(1, last.startedAt(), last.id())
+            ).isEmpty();
+            if (hasNext) {
+                nextCursor = encodeCursor(last);
+            }
+        }
+        return new RunPageResponse(items, nextCursor);
+    }
+
+    @GetMapping("/{runId}")
+    public RunDetailResponse get(
+            @PathVariable("agentId") UUID agentId,
+            @PathVariable("runId") UUID runId,
+            Authentication authentication
+    ) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "agent:read", "AGENT", agentId.toString());
+        RunPersistenceService.RunDetail detail = persistenceService.findDetail(
+                principal.tenantId(), agentId, runId
+        );
+        return new RunDetailResponse(detail.run(), detail.toolCalls());
+    }
+
+    private CursorPosition decodeCursor(String cursor) {
+        if (cursor == null) {
+            return null;
+        }
+        try {
+            if (cursor.isBlank()) {
+                throw new IllegalArgumentException("空游标");
+            }
+            String decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+            String[] fields = decoded.split("\\|", -1);
+            if (fields.length != 2 || fields[0].isBlank() || fields[1].isBlank()) {
+                throw new IllegalArgumentException("游标格式不合法");
+            }
+            return new CursorPosition(Instant.parse(fields[0]), UUID.fromString(fields[1]));
+        } catch (RuntimeException ignored) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请求参数不合法");
+        }
+    }
+
+    private String encodeCursor(RunRecord run) {
+        String value = run.startedAt() + "|" + run.id();
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
     private PrincipalRef principal(Authentication authentication) {
-        if (authentication == null || !authentication.isAuthenticated() || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
+        if (authentication == null || !authentication.isAuthenticated()
+                || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录或令牌无效");
         }
         return new PrincipalRef(session.tenantId(), session.principalId(), session.displayName(), Set.copyOf(session.permissions()));
@@ -149,5 +146,20 @@ public class RunController {
     }
 
     public record RunRequest(@NotBlank String input) {
+    }
+
+    public record RunPageResponse(List<RunRecord> items, String nextCursor) {
+        public RunPageResponse {
+            items = List.copyOf(items);
+        }
+    }
+
+    public record RunDetailResponse(RunRecord run, List<RunToolCall> toolCalls) {
+        public RunDetailResponse {
+            toolCalls = List.copyOf(toolCalls);
+        }
+    }
+
+    private record CursorPosition(Instant startedAt, UUID id) {
     }
 }

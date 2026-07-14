@@ -1,10 +1,14 @@
 # Supabase profile for hosted PostgreSQL deployments. This file defines non-secret defaults.
-# Secrets and JDBC connection details must only be generated or mounted through controlled external YAML or a secret manager; do not inject them through environment variables.
+# Secrets and JDBC connection details must only be supplied through controlled external configuration or a secret manager.
 
 cm-agent:
   config:
-    allow-dev-jwt-fallback: false
+    jwt-secret: ${cm-agent.config.external-jwt-secret}
     bootstrap-admin-enabled: false
     public-api-docs-enabled: false
     persistence-mode: jdbc
+    jdbc-url: ${cm-agent.config.external-jdbc-url}
+    jdbc-username: ${cm-agent.config.external-jdbc-username}
+    jdbc-password: ${cm-agent.config.external-jdbc-password}
     jdbc-driver-class-name: org.postgresql.Driver
+    fake-runtime-enabled: false

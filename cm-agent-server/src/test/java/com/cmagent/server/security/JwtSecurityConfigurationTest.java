@@ -7,7 +7,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.context.TestConfiguration;
 
-import javax.crypto.SecretKey;
 import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,78 +27,80 @@ class JwtSecurityConfigurationTest {
             .withPropertyValues("cm-agent.security.jwt-secret=" + STRONG_TEST_SECRET);
 
     @Test
-    void failsWhenSecretMissingWithoutExplicitFallbackFlag() {
+    void failsWhenSecretMissing() {
         contextRunner.run(context -> {
             assertThat(context).hasFailed();
             assertThat(context.getStartupFailure())
                     .isInstanceOf(BeanCreationException.class)
-                    .hasMessageContaining("生产环境必须外部提供 JWT 密钥");
+                    .hasMessageContaining("未配置 cm-agent.security.jwt-secret");
         });
     }
 
     @Test
-    void allowsFallbackOnlyForLocalOrTestProfileWithExplicitOptIn() {
+    void rejectsFormerFallbackFlagForLocalProfile() {
         contextRunner
                 .withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
-                .withPropertyValues("spring.profiles.active=test")
-                .run(context -> {
-                    assertThat(context).hasNotFailed();
-                    assertThat(context).hasSingleBean(SecretKey.class);
-                });
-    }
-
-    @Test
-    void rejectsMixedProductionAndTestProfilesBeforeFallbackDecision() {
-        contextRunner
-                .withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
-                .withPropertyValues("spring.profiles.active=test,production")
+                .withPropertyValues("spring.profiles.active=local")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
                             .isInstanceOf(BeanCreationException.class)
-                            .hasMessageContaining("production/prod profile 禁止与 test profile 同时启用");
+                            .hasMessageContaining("未配置 cm-agent.security.jwt-secret");
                 });
     }
 
     @Test
-    void rejectsMixedProductionAndPostgresProfilesBeforeAcceptingConfiguredSecret() {
+    void rejectsFormerFallbackFlagForTestProfile() {
         contextRunner
+                .withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
+                .withPropertyValues("spring.profiles.active=test")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .isInstanceOf(BeanCreationException.class)
+                            .hasMessageContaining("未配置 cm-agent.security.jwt-secret");
+                });
+    }
+
+    @Test
+    void profileValidatorRejectsMixedProductionAndPostgresProfilesBeforeAcceptingConfiguredSecret() {
+        profileContextRunner()
                 .withPropertyValues("spring.profiles.active=production,postgres")
                 .withPropertyValues("cm-agent.security.jwt-secret=" + STRONG_TEST_SECRET)
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
                             .isInstanceOf(BeanCreationException.class)
-                            .hasMessageContaining("production/prod/supabase profile 禁止与 postgres/mysql 虚拟机数据库 profile 同时启用");
+                            .hasMessageContaining("production/prod/supabase profile 禁止与 local/test/postgres/mysql profile 同时启用");
                 });
     }
 
     @Test
-    void rejectsMixedSupabaseAndMysqlProfilesBeforeAcceptingConfiguredSecret() {
-        contextRunner
+    void profileValidatorRejectsMixedSupabaseAndMysqlProfilesBeforeAcceptingConfiguredSecret() {
+        profileContextRunner()
                 .withPropertyValues("spring.profiles.active=supabase,mysql")
                 .withPropertyValues("cm-agent.security.jwt-secret=" + STRONG_TEST_SECRET)
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
                             .isInstanceOf(BeanCreationException.class)
-                            .hasMessageContaining("production/prod/supabase profile 禁止与 postgres/mysql 虚拟机数据库 profile 同时启用");
+                            .hasMessageContaining("production/prod/supabase profile 禁止与 local/test/postgres/mysql profile 同时启用");
                 });
     }
 
     @Test
-    void rejectsFallbackWhenProfileIsMissingEvenWithOptInFlag() {
+    void rejectsFormerFallbackFlagWhenProfileIsMissing() {
         contextRunner.withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
                             .isInstanceOf(BeanCreationException.class)
-                            .hasMessageContaining("生产环境必须外部提供 JWT 密钥");
+                            .hasMessageContaining("未配置 cm-agent.security.jwt-secret");
                 });
     }
 
     @Test
-    void rejectsFallbackForProductionProfileEvenWithOptInFlag() {
+    void rejectsFormerFallbackFlagForProductionProfile() {
         contextRunner
                 .withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
                 .withPropertyValues("spring.profiles.active=production")
@@ -107,7 +108,7 @@ class JwtSecurityConfigurationTest {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
                             .isInstanceOf(BeanCreationException.class)
-                            .hasMessageContaining("生产环境必须外部提供 JWT 密钥");
+                            .hasMessageContaining("未配置 cm-agent.security.jwt-secret");
                 });
     }
 
@@ -116,14 +117,14 @@ class JwtSecurityConfigurationTest {
         Locale defaultLocale = Locale.getDefault();
         Locale.setDefault(Locale.forLanguageTag("tr"));
         try {
-            contextRunner
-                    .withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
+            profileContextRunner()
+                    .withPropertyValues("cm-agent.security.jwt-secret=" + STRONG_TEST_SECRET)
                     .withPropertyValues("spring.profiles.active=PRODUCTION,test")
                     .run(context -> {
                         assertThat(context).hasFailed();
                         assertThat(context.getStartupFailure())
                                 .isInstanceOf(BeanCreationException.class)
-                                .hasMessageContaining("production/prod profile 禁止与 test profile 同时启用");
+                                .hasMessageContaining("production/prod/supabase profile 禁止与 local/test/postgres/mysql profile 同时启用");
                     });
         } finally {
             Locale.setDefault(defaultLocale);
@@ -138,7 +139,7 @@ class JwtSecurityConfigurationTest {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
                             .isInstanceOf(BeanCreationException.class)
-                            .hasMessageContaining("生产环境必须外部提供 JWT 密钥");
+                    .hasMessageContaining("未配置 cm-agent.security.jwt-secret");
                 });
     }
 
@@ -196,6 +197,11 @@ class JwtSecurityConfigurationTest {
         } finally {
             Locale.setDefault(defaultLocale);
         }
+    }
+
+    private ApplicationContextRunner profileContextRunner() {
+        return new ApplicationContextRunner()
+                .withUserConfiguration(JwtSecurityConfiguration.class, ProfileSafetyValidator.class);
     }
 
     @TestConfiguration(proxyBeanMethods = false)

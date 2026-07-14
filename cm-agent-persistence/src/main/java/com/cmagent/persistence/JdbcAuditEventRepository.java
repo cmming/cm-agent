@@ -1,11 +1,13 @@
 package com.cmagent.persistence;
 
 import com.cmagent.core.audit.AuditEvent;
+import com.cmagent.core.audit.AuditPageRequest;
 import com.cmagent.core.audit.AuditEventRepository;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.sql.Timestamp;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 public class JdbcAuditEventRepository implements AuditEventRepository {
@@ -58,7 +60,24 @@ public class JdbcAuditEventRepository implements AuditEventRepository {
         if (limit <= 0) {
             throw new IllegalArgumentException("limit 必须大于 0");
         }
-        return jdbcClient.sql("""
+        return query(tenantId, limit, null);
+    }
+
+    @Override
+    public boolean supportsCursorPagination() {
+        return true;
+    }
+
+    @Override
+    public List<AuditEvent> listByTenant(UUID tenantId, AuditPageRequest pageRequest) {
+        Objects.requireNonNull(pageRequest, "pageRequest 不能为空");
+        return query(tenantId, pageRequest.limit(), pageRequest);
+    }
+
+    private List<AuditEvent> query(UUID tenantId, int limit, AuditPageRequest pageRequest) {
+        Objects.requireNonNull(tenantId, "tenantId 不能为空");
+        String sql = pageRequest == null || pageRequest.beforeCreatedAt() == null
+                ? """
                         SELECT
                             id,
                             tenant_id,
@@ -73,20 +92,43 @@ public class JdbcAuditEventRepository implements AuditEventRepository {
                         WHERE tenant_id = :tenantId
                         ORDER BY created_at DESC, id DESC
                         LIMIT :limit
-                        """)
+                        """
+                : """
+                        SELECT
+                            id,
+                            tenant_id,
+                            principal_id,
+                            event_type,
+                            resource_type,
+                            resource_id,
+                            status,
+                            message,
+                            created_at
+                        FROM audit_events
+                        WHERE tenant_id = :tenantId
+                          AND (created_at < :beforeCreatedAt
+                               OR (created_at = :beforeCreatedAt AND id < :beforeId))
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT :limit
+                        """;
+        JdbcClient.StatementSpec statement = jdbcClient.sql(sql)
                 .param("tenantId", tenantId.toString())
-                .param("limit", limit)
-                .query((rs, rowNum) -> new AuditEvent(
-                        UUID.fromString(rs.getString("id")),
-                        UUID.fromString(rs.getString("tenant_id")),
-                        rs.getString("principal_id"),
-                        rs.getString("event_type"),
-                        rs.getString("resource_type"),
-                        rs.getString("resource_id"),
-                        rs.getString("status"),
-                        rs.getString("message"),
-                        rs.getTimestamp("created_at").toInstant()
-                ))
-                .list();
+                .param("limit", limit);
+        if (pageRequest != null && pageRequest.beforeCreatedAt() != null) {
+            statement = statement
+                    .param("beforeCreatedAt", Timestamp.from(pageRequest.beforeCreatedAt()))
+                    .param("beforeId", pageRequest.beforeId().toString());
+        }
+        return statement.query((rs, rowNum) -> new AuditEvent(
+                UUID.fromString(rs.getString("id")),
+                UUID.fromString(rs.getString("tenant_id")),
+                rs.getString("principal_id"),
+                rs.getString("event_type"),
+                rs.getString("resource_type"),
+                rs.getString("resource_id"),
+                rs.getString("status"),
+                rs.getString("message"),
+                rs.getTimestamp("created_at").toInstant()
+        )).list();
     }
 }

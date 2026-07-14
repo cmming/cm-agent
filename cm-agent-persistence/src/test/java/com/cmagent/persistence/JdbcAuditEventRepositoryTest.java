@@ -1,6 +1,7 @@
 package com.cmagent.persistence;
 
 import com.cmagent.core.audit.AuditEvent;
+import com.cmagent.core.audit.AuditPageRequest;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -123,6 +124,42 @@ class JdbcAuditEventRepositoryTest {
         assertThatThrownBy(() -> repository.listByTenant(UUID.fromString("00000000-0000-0000-0000-000000000001"), 0))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("limit 必须大于 0");
+    }
+
+    @Test
+    void advertisesCursorPaginationSupport() {
+        assertThat(repository.supportsCursorPagination()).isTrue();
+    }
+
+    @Test
+    void listByTenantPageUsesCreatedAtAndIdKeysetWithinTenant() {
+        UUID tenantA = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID tenantB = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        Instant sameTime = Instant.parse("2026-06-18T05:00:00Z");
+        AuditEvent older = auditEvent("11111111-1111-1111-1111-111111111111", tenantA, sameTime.minusSeconds(1));
+        AuditEvent lowerId = auditEvent("22222222-2222-2222-2222-222222222222", tenantA, sameTime);
+        AuditEvent higherId = auditEvent("33333333-3333-3333-3333-333333333333", tenantA, sameTime);
+        AuditEvent otherTenant = auditEvent("44444444-4444-4444-4444-444444444444", tenantB, sameTime.plusSeconds(1));
+
+        repository.append(older);
+        repository.append(lowerId);
+        repository.append(higherId);
+        repository.append(otherTenant);
+
+        List<AuditEvent> firstPage = repository.listByTenant(tenantA, new AuditPageRequest(2, null, null));
+        assertThat(firstPage).containsExactly(higherId, lowerId);
+
+        List<AuditEvent> secondPage = repository.listByTenant(tenantA, new AuditPageRequest(
+                2, lowerId.createdAt(), lowerId.id()));
+        assertThat(secondPage).containsExactly(older);
+        assertThat(secondPage).extracting(AuditEvent::tenantId).containsOnly(tenantA);
+    }
+
+    private static AuditEvent auditEvent(String id, UUID tenantId, Instant createdAt) {
+        return new AuditEvent(
+                UUID.fromString(id), tenantId, "principal", "TEST", "RESOURCE", id,
+                "SUCCEEDED", "message", createdAt
+        );
     }
 
     private static void seedTenants(DataSource dataSource) {

@@ -5,6 +5,7 @@ target/
 *.iml
 *.log
 logs/
+.superpowers/
 .env
 node_modules/
 dist/

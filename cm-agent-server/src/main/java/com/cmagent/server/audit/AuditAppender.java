@@ -3,8 +3,10 @@ package com.cmagent.server.audit;
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.core.audit.AuditEventRepository;
+import com.cmagent.server.security.SensitiveDataRedactor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -15,9 +17,16 @@ public class AuditAppender {
     private static final Logger log = LoggerFactory.getLogger(AuditAppender.class);
 
     private final AuditEventRepository repository;
+    private final SensitiveDataRedactor redactor;
+
+    @Autowired
+    public AuditAppender(AuditEventRepository repository, SensitiveDataRedactor redactor) {
+        this.repository = repository;
+        this.redactor = redactor;
+    }
 
     public AuditAppender(AuditEventRepository repository) {
-        this.repository = repository;
+        this(repository, new SensitiveDataRedactor());
     }
 
     public void append(UUID tenantId,
@@ -36,15 +45,16 @@ public class AuditAppender {
                     resourceType,
                     resourceId == null || resourceId.isBlank() ? "-" : resourceId,
                     status,
-                    message == null || message.isBlank() ? "-" : message,
+                    message == null || message.isBlank() ? "-" : redactor.redact(message),
                     Instant.now()
             ));
         } catch (RuntimeException ex) {
-            log.warn("写入审计事件失败，业务流程继续执行。eventType={}, resourceType={}, resourceId={}",
-                    eventType,
-                    resourceType,
-                    resourceId,
-                    ex);
+            log.warn("写入审计事件失败。eventType={}, resourceType={}, resourceId={}, reason={}",
+                    redactor.redact(eventType),
+                    redactor.redact(resourceType),
+                    redactor.redact(resourceId),
+                    redactor.redact(ex.getMessage()));
+            throw new AuditPersistenceException("审计写入失败", ex);
         }
     }
 

@@ -1,12 +1,12 @@
-# Virtual-machine MySQL profile. Values mirror 192.168.0.66:/data/cm-agent/docker-compose.yml.
+# Rocky VM MySQL integration profile. Sensitive values come from external configuration.
 
 cm-agent:
   config:
-    jwt-secret: cm-agent-vm-profile-jwt-secret-with-at-least-32-bytes-2026
-    allow-dev-jwt-fallback: false
+    jwt-secret: ${cm-agent.config.external-jwt-secret}
+    fake-runtime-enabled: false
     bootstrap-admin-enabled: false
     persistence-mode: jdbc
-    jdbc-url: jdbc:mysql://192.168.0.66:3306/cm_agent?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-    jdbc-username: root
-    jdbc-password: cmagent
+    jdbc-url: ${cm-agent.config.external-jdbc-url}
+    jdbc-username: ${cm-agent.config.external-jdbc-username}
+    jdbc-password: ${cm-agent.config.external-jdbc-password}
     jdbc-driver-class-name: com.mysql.cj.jdbc.Driver

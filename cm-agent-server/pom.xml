@@ -91,6 +91,16 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <CM_AGENT_TEST_JWT_SECRET>external-test-jwt-secret-with-at-least-32-bytes</CM_AGENT_TEST_JWT_SECRET>
+                        <CM_AGENT_TEST_BOOTSTRAP_ADMIN_PASSWORD>cm-agent-test-password-only</CM_AGENT_TEST_BOOTSTRAP_ADMIN_PASSWORD>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>

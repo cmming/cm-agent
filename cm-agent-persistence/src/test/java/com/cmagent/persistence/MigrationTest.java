@@ -72,7 +72,7 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(1);
+        assertThat(migrationsExecuted).isEqualTo(3);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
@@ -80,7 +80,19 @@ class MigrationTest {
             assertThat(indexNames(connection, "tool_definitions")).contains("idx_tool_definitions_tenant");
             assertThat(indexNames(connection, "tool_grants")).contains("idx_tool_grants_tenant_agent");
             assertThat(indexNames(connection, "runs")).contains("idx_runs_tenant_agent");
+            assertThat(indexNames(connection, "runs")).contains("idx_runs_tenant_agent_started");
+            assertThat(indexNames(connection, "tool_calls")).contains("idx_tool_calls_tenant_run");
+            assertThat(indexNames(connection, "tool_calls")).contains("idx_tool_calls_tenant_run_created_at");
             assertThat(indexNames(connection, "audit_events")).contains("idx_audit_events_tenant_time");
+            assertThat(indexNames(connection, "audit_events")).contains("idx_audit_events_tenant_time_id");
+            assertThat(indexColumns(connection, "runs", "idx_runs_tenant_agent_started"))
+                    .containsExactly("tenant_id", "agent_id", "started_at", "id");
+            assertThat(indexColumns(connection, "tool_calls", "idx_tool_calls_tenant_run"))
+                    .containsExactly("tenant_id", "run_id", "id");
+            assertThat(indexColumns(connection, "tool_calls", "idx_tool_calls_tenant_run_created_at"))
+                    .containsExactly("tenant_id", "run_id", "created_at", "id");
+            assertThat(indexColumns(connection, "audit_events", "idx_audit_events_tenant_time_id"))
+                    .containsExactly("tenant_id", "created_at", "id");
             assertThat(isNullable(connection, "tool_grants", "role_code")).isTrue();
             assertThat(importedKeyTargets(connection, "tool_grants")).doesNotContain("roles");
             assertThat(uniqueIndexColumns(connection, "tool_grants")).contains(Set.of("tenant_id", "tool_id", "agent_id"));
@@ -115,6 +127,22 @@ class MigrationTest {
             }
             return names;
         }
+    }
+
+    private static List<String> indexColumns(Connection connection, String tableName, String indexName) throws SQLException {
+        DatabaseMetaData metadata = connection.getMetaData();
+        Map<Short, String> columnsByPosition = new TreeMap<>();
+        try (ResultSet resultSet = metadata.getIndexInfo(null, null, tableName, false, false)) {
+            while (resultSet.next()) {
+                String resultIndexName = resultSet.getString("INDEX_NAME");
+                String columnName = resultSet.getString("COLUMN_NAME");
+                if (resultIndexName == null || columnName == null || !indexName.equalsIgnoreCase(resultIndexName)) {
+                    continue;
+                }
+                columnsByPosition.put(resultSet.getShort("ORDINAL_POSITION"), columnName.toLowerCase(Locale.ROOT));
+            }
+        }
+        return new ArrayList<>(columnsByPosition.values());
     }
 
     private static boolean isNullable(Connection connection, String tableName, String columnName) throws SQLException {

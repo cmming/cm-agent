@@ -1,144 +1,91 @@
 # 配置说明
 
-本文档说明 CM Agent 第一阶段常用配置项和敏感配置处理要求。
+本文档说明阶段2服务端的 profile、持久化、安全和敏感信息配置。`local`/`test` 可显式使用 fake runtime；生产 profile 必须关闭 fake runtime，并使用外部签发、受控验证的 JWT。
+
+## Profile 选择
+
+公共 `application.yml` 通过 `spring.profiles.active` 选择环境，也兼容使用 `CM_AGENT_PROFILE` 作为 profile 选择器。部署时优先使用 `spring.profiles.active`，例如：
+
+```powershell
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=local"
+```
+
+`application.yml` 没有把 `local` 设为默认 profile。未显式设置 `spring.profiles.active` 且未设置 `CM_AGENT_PROFILE` 时，不会自动加载 `application-local.yml`；服务将使用公共配置中的默认值。
+
+| Profile | 用途 | 持久化与安全边界 |
+| --- | --- | --- |
+| `local` | 本地开发和演示 | 可以使用 memory、fake runtime 和 bootstrap admin；凭据仅限本地 |
+| `test` | 自动化测试 | 可以使用 memory 和测试 bootstrap admin；测试凭据由代码/CI 注入 |
+| `postgres`、`mysql` | Rocky VM 集成验证 | 使用 JDBC/Flyway；仅限联调，不是生产凭据来源 |
+| `prod`、`production` | 生产或类生产 | 必须使用 JDBC，关闭 fake runtime，禁用 bootstrap admin 和开发 JWT fallback |
+| `supabase` | Supabase PostgreSQL | 必须使用 JDBC，关闭 fake runtime，禁用 bootstrap admin 和开发 JWT fallback |
+
+`prod` profile 通过 Spring profile group 复用 `production` 配置。生产 profile 启动时，如果缺少安全 JWT secret、误用 memory、启用 bootstrap admin 或混入不允许的 profile，服务应启动失败。
 
 ## 基础配置
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `server.port` | `8080` | 服务端监听端口 |
-| `spring.profiles.active` | `local` | 运行环境选择器；默认进入本地 profile，可设置为 `test`、`postgres`、`mysql`、`prod`、`production` 或 `supabase` |
+| `spring.profiles.active` | 空 | 运行环境选择器；推荐显式设置 |
+| `CM_AGENT_PROFILE` | 空 | profile 兼容选择器；仅在未通过 Spring 配置选择时使用 |
+| `cm-agent.fake-runtime-enabled` | `false` | fake runtime 开关；仅 `local`/`test` 可按需设为 `true`，strict profile 必须为 `false` |
+| `cm-agent.persistence.mode` | `memory` | `memory` 只允许本地开发和测试；生产 profile 必须为 `jdbc` |
 | `cm-agent.default-tenant-code` | `default` | 默认租户标识 |
-| `cm-agent.fake-runtime-enabled` | `true` | 第一阶段使用 fake runtime，便于在未接入真实模型时验证 Agent 运行链路 |
-| `cm-agent.security.jwt-secret` | 空 | JWT 签名密钥；由 `cm-agent.config.jwt-secret` 绑定，生产环境必须由受控外部 YAML 提供 |
-| `cm-agent.security.allow-dev-jwt-fallback` | `false` | 是否允许 local/test profile 在缺少 JWT 密钥时使用开发回退密钥；仅限本地调试 |
-| `cm-agent.security.bootstrap-admin-enabled` | `false` | 是否启用本地 bootstrap admin 登录；仅限本地开发/演示 |
-| `cm-agent.security.bootstrap-admin-username` | `admin` | bootstrap admin 用户名 |
-| `cm-agent.security.bootstrap-admin-password` | 空 | bootstrap admin 密码；启用时必须由外部 Secret 或本地命令行显式注入 |
-| `cm-agent.security.bootstrap-admin-display-name` | `系统管理员` | bootstrap admin 显示名 |
 
-## 环境 Profile
-
-公共 `application.yml` 集中定义实际 Spring 绑定项，并从 `cm-agent.config.*` 读取变量值。profile YAML 和受控外部 YAML 只定义这些变量，用于覆盖环境差异；profile 始终通过 `--spring.profiles.active=<profile>` 选择。
-
-```yaml
-cm-agent:
-  security:
-    jwt-secret: ${cm-agent.config.jwt-secret:}
-```
-
-本地开发调试默认使用 `local` profile，也可以显式设置：
-
-```powershell
-mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=local"
-```
-
-`local` profile 会加载 `application-local.yml`，用于团队本地开发和调试。该 profile 默认使用 memory 持久化、fake runtime、本地专用 JWT 密钥和 bootstrap admin。控制台登录账号为 `admin`，密码为 `cm-agent-local-dev-password-only`。该配置包含可直接使用的本地凭据，只能用于本地开发调试。
-
-自动化测试或需要复用测试凭据时，可以显式设置：
-
-```powershell
-mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=test"
-```
-
-`test` profile 会加载 `application-test.yml`，用于本地控制台和接口联调测试。测试登录账号为 `admin`，密码为 `cm-agent-test-password-only`。该配置包含可直接使用的测试凭据，只能用于本地测试。
-
-### 内网虚拟机数据库 profile
-
-部署节点 `192.168.0.66:/data/cm-agent/docker-compose.yml` 提供 PostgreSQL 和 MySQL 两套虚拟机数据库。需要直接连接这套数据库时，可以选择内置 profile：
-
-- `postgres`：连接 `jdbc:postgresql://192.168.0.66:5432/cm_agent`，账号 `cmagent`，密码 `cmagent`，驱动 `org.postgresql.Driver`。
-- `mysql`：连接 `jdbc:mysql://192.168.0.66:3306/cm_agent?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC`，账号 `root`，密码 `cmagent`，驱动 `com.mysql.cj.jdbc.Driver`。
-
-两个 profile 都启用 `jdbc` 持久化、关闭 bootstrap admin、关闭开发 JWT fallback，并内置仅用于该虚拟机联调环境的 JWT 密钥。`postgres` 或 `mysql` 不得与 `prod`、`production` 或 `supabase` 同时启用；混用时服务会在接受 JWT 密钥前启动失败。MySQL `root` 账号、`cmagent` 密码和 `allowPublicKeyRetrieval=true` 仅适用于当前虚拟机联调配置；生产化部署仍应改为最小权限账号、强密码和 TLS。
-
-PostgreSQL 启动示例：
-
-```powershell
-mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=postgres"
-```
-
-MySQL 启动示例：
-
-```powershell
-mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=mysql"
-```
-
-开发 JWT 回退默认关闭。需要本地无密钥调试时，可以显式传入 `--cm-agent.config.allow-dev-jwt-fallback=true`；生产环境不得启用该开关。
-
-生产部署应通过 `--spring.profiles.active=prod` 或 `--spring.profiles.active=production` 选择 profile，并在受控外部 YAML 中设置 `cm-agent.config.jwt-secret`。生产 profile 下启用 bootstrap admin 会导致服务启动失败。
-
-## fake runtime
-
-第一阶段默认使用：
-
-```yaml
-cm-agent:
-  fake-runtime-enabled: true
-```
-
-fake runtime 用于验证 Agent 配置、权限、工具治理、审计和控制台体验。接入真实模型供应商前，可以保留该配置完成端到端联调；准备切换真实运行时时，应先完成模型配置、密钥托管、权限校验和审计策略。
-
-## 运行态存储
-
-服务端默认使用 memory store，适合本地演示和纵切验证。`postgres`、`mysql`、`production`、`prod` 和 `supabase` 等数据库 profile 使用 JDBC 持久化：
-
-| 配置变量 | 映射的实际配置项 | 说明 |
-| --- | --- | --- |
-| `cm-agent.config.jwt-secret` | `cm-agent.security.jwt-secret` | 生产环境由受控外部 YAML 提供 |
-| `cm-agent.config.persistence-mode` | `cm-agent.persistence.mode` | `memory` 或 `jdbc` |
-| `cm-agent.config.jdbc-url` | `cm-agent.persistence.jdbc.url` | 启用 JDBC 时必填 |
-| `cm-agent.config.jdbc-username` | `cm-agent.persistence.jdbc.username` | 数据库用户名 |
-| `cm-agent.config.jdbc-password` | `cm-agent.persistence.jdbc.password` | 仅写入受控外部 YAML |
-| `cm-agent.config.jdbc-driver-class-name` | `cm-agent.persistence.jdbc.driver-class-name` | PostgreSQL 或 MySQL JDBC 驱动 |
-
-### Supabase PostgreSQL
-
-Supabase 作为托管 PostgreSQL 接入，不需要 Supabase Java SDK。推荐使用 `supabase` profile，并在受控外部 `application-supabase.yml` 中定义变量：
+通过 `cm-agent.config.*` 可以覆盖公共 YAML 中对应的 `cm-agent.*` 属性。生产配置应放在受控外部 YAML 或由 secret manager 生成并挂载的配置文件中：
 
 ```yaml
 cm-agent:
   config:
-    jwt-secret: <secret-manager-jwt-secret>
+    jwt-secret: <externally-controlled-jwt-verification-key>
     persistence-mode: jdbc
-    jdbc-url: jdbc:postgresql://<db-host>:5432/<database-name>
+    jdbc-url: <controlled-jdbc-url>
     jdbc-username: <least-privilege-db-user>
     jdbc-password: <secret-manager-db-password>
     jdbc-driver-class-name: org.postgresql.Driver
+    fake-runtime-enabled: false
 ```
 
-`supabase` profile 会默认启用 JDBC 持久化、禁用 bootstrap admin、禁用开发 JWT fallback。缺少 JDBC URL 或试图使用 memory mode 时，服务会启动失败。
+不要把上面的占位符替换后的值提交到 Git、镜像层、日志、审计消息或 API 响应。敏感配置不应通过文档中的固定值传播。
 
-不要把 Supabase 数据库密码、JWT secret 或完整 JDBC URL 提交到 Git、写入镜像层或打印到日志。开发验证应优先使用 Supabase development branch，避免直接对主项目数据库执行 DDL。
+## JDBC 与 Flyway
 
-## JWT 密钥
+| 覆盖项 | 实际绑定项 | 说明 |
+| --- | --- | --- |
+| `cm-agent.config.persistence-mode` | `cm-agent.persistence.mode` | `memory` 或 `jdbc` |
+| `cm-agent.config.jdbc-url` | `cm-agent.persistence.jdbc.url` | 启用 JDBC 时必须配置 |
+| `cm-agent.config.jdbc-username` | `cm-agent.persistence.jdbc.username` | 使用最小权限账号 |
+| `cm-agent.config.jdbc-password` | `cm-agent.persistence.jdbc.password` | 仅从受控外部 YAML 或 secret manager 注入 |
+| `cm-agent.config.jdbc-driver-class-name` | `cm-agent.persistence.jdbc.driver-class-name` | PostgreSQL 或 MySQL 驱动 |
 
-生产环境必须在受控外部 YAML 中配置安全长度的 `cm-agent.config.jwt-secret`，推荐由部署平台或密钥管理服务生成、挂载或更新该文件。不要将密钥提交到 Git、写入镜像层或打印到日志。
+JDBC 模式创建 DataSource，并在启动时由 Flyway 执行 `classpath:db/migration`。已发布的 `V1__init_schema.sql` 不修改；阶段2新增 `V2__add_runtime_query_indexes.sql` 和 `V3__add_tool_calls_created_at_index.sql`，为 `runs`、`tool_calls` 和 `audit_events` 增加租户范围的查询索引。生产环境需先核对 Flyway 历史，再按发布流程应用新迁移。
 
-本地开发调试使用 `--spring.profiles.active=local`；自动化测试使用 `--spring.profiles.active=test`。需要手动覆盖配置时，也可以临时使用命令行参数：
+## 安全配置
 
-```powershell
-mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.config.jwt-secret=cm-agent-local-secret-with-at-least-32-bytes-2026 --cm-agent.config.bootstrap-admin-enabled=true --cm-agent.config.bootstrap-admin-password=<local-dev-only-password>"
-```
+| 配置项 | 说明 |
+| --- | --- |
+| `cm-agent.config.jwt-secret` | 生产和类生产必须使用由外部身份系统/secret manager 或受控外部 YAML 管理的 JWT 验证密钥 |
+| `cm-agent.config.bootstrap-admin-enabled` | `local`/`test` 可按需启用；`prod`、`production`、`supabase` 必须为 `false` |
+| `cm-agent.config.bootstrap-admin-password` | 不写入生产配置仓库、镜像、文档或日志；测试凭据由代码/CI 注入 |
+| `cm-agent.config.public-api-docs-enabled` | 生产 profile 默认关闭公开 API 文档 |
 
-## Bootstrap Admin
+生产 profile 不提供开发 JWT fallback。缺少 JWT secret 或违反 profile 安全约束时，服务应拒绝启动，而不是生成或回退到开发密钥。
 
-bootstrap admin 默认关闭。需要本地开发或演示登录控制台时，必须显式配置：
+### 生产认证边界
 
-```yaml
-cm-agent:
-  config:
-    bootstrap-admin-enabled: true
-    bootstrap-admin-password: <local-dev-only-password>
-```
+生产和类生产服务使用外部身份系统或受控认证服务签发的 Bearer JWT。服务只从受控外部配置取得验证密钥，用于校验外部签发的令牌；不得在 Git、镜像、命令行、日志或审计消息中保存密钥或令牌。
 
-不要在配置文件、前端代码或文档示例中写入可直接使用的真实凭据。`prod`、`production` 或 `supabase` profile 下禁止启用 bootstrap admin；如果启用，服务端会在启动时失败。
+`/api/auth/login` 是 bootstrap admin 登录入口，仅供显式启用 bootstrap admin 的 `local` profile 使用。`production`、`prod` 和 `supabase` 必须关闭 bootstrap admin，因此生产调用该入口应被拒绝；生产调用方应携带外部签发的 Bearer JWT。`test` 的 bootstrap 凭据也必须由测试代码、CI 或受控外部配置注入。
 
-## 模型供应商与 API Key
+## 审计与错误语义
 
-模型供应商配置和 API Key 属于敏感数据：
+阶段2审计写入是严格路径。登录、权限拒绝、Agent 变更、工具治理和运行生命周期等关键动作写入失败时，不吞掉异常，不把请求伪装成成功；API 返回 HTTP `503 Service Unavailable`，日志只记录脱敏后的上下文。生产告警应区分审计失败、数据库连接失败和普通业务失败。
 
-- API Key 不得明文返回给前端、日志、审计响应或普通查询接口。
-- 持久化时应加密保存，或只保存密钥引用，由 secret provider 在运行时解析。
-- 配置展示时应只返回脱敏摘要、状态、创建人、更新时间等非敏感字段。
-- 轮换 API Key 时应记录审计事件，并避免中断正在执行的运行任务。
+Run 与 ToolCall 使用当前认证主体的 tenant 条件读写；Run 列表和 Audit 列表采用有界 cursor 分页，避免跨租户或无界扫描。返回内容和日志中的输入、输出、错误消息经过敏感信息脱敏。
+
+## 运行边界
+
+- `memory` 仅限开发和测试，进程重启会丢失运行、工具调用和审计状态。
+- JDBC 模式已接通 Run、ToolCall、Audit 的持久化与查询；`local`/`test` 的运行执行器可以由 fake runtime 提供结果。
+- 生产 profile 不提供 fake runtime，部署时必须提供真实 AgentScope runtime 或对应适配器 Bean；metrics、集中式日志/追踪、备份治理和 CI/CD 不应在当前配置文档中被视为已交付能力，对应工作列入[中文路线图](roadmap.md)的阶段3-5。
