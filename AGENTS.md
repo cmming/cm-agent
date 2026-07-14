@@ -19,7 +19,7 @@
 - AgentScope: `agentscope-core` 2.0.0-RC3，在 adapter 模块中为 optional 依赖。
 - 数据库: 默认 memory，可通过 `cm-agent.persistence.mode=jdbc` 使用 JDBC/Flyway；目标为 PostgreSQL/Supabase PostgreSQL 和 MySQL。
 - 本地数据库: `docker-compose.yml` 提供 PostgreSQL 16-alpine 和 MySQL 8.4。
-- 测试: Spring Boot Test、JUnit Jupiter 5.12.2、AssertJ 3.27.3、Mockito 5.17.0、MockMvc、Spring Security Test、Testcontainers。当前旧坐标 `org.testcontainers:*` 实际解析为 1.21.0，升级前必须用 `dependency:tree` 复核。
+- 测试: Spring Boot Test、JUnit Jupiter 5.12.2、AssertJ 3.27.3、Mockito 5.17.0、MockMvc、Spring Security Test、Testcontainers。Testcontainers 通过父 `pom.xml` 的 `testcontainers-bom` 管理，当前为 2.0.5；升级前必须用 `mvn -pl <module> dependency:tree` 复核。
 
 ## 目录结构约定
 - `cm-agent-api`: 对外共享 API 类型，如分页、租户上下文、主体引用、错误码。
