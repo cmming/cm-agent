@@ -62,6 +62,32 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
+    void rejectsMixedProductionAndPostgresProfilesBeforeAcceptingConfiguredSecret() {
+        contextRunner
+                .withPropertyValues("spring.profiles.active=production,postgres")
+                .withPropertyValues("cm-agent.security.jwt-secret=" + STRONG_TEST_SECRET)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .isInstanceOf(BeanCreationException.class)
+                            .hasMessageContaining("production/prod/supabase profile 禁止与 postgres/mysql 虚拟机数据库 profile 同时启用");
+                });
+    }
+
+    @Test
+    void rejectsMixedSupabaseAndMysqlProfilesBeforeAcceptingConfiguredSecret() {
+        contextRunner
+                .withPropertyValues("spring.profiles.active=supabase,mysql")
+                .withPropertyValues("cm-agent.security.jwt-secret=" + STRONG_TEST_SECRET)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .isInstanceOf(BeanCreationException.class)
+                            .hasMessageContaining("production/prod/supabase profile 禁止与 postgres/mysql 虚拟机数据库 profile 同时启用");
+                });
+    }
+
+    @Test
     void rejectsFallbackWhenProfileIsMissingEvenWithOptInFlag() {
         contextRunner.withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
                 .run(context -> {

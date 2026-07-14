@@ -7,7 +7,7 @@
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `server.port` | `8080` | 服务端监听端口 |
-| `spring.profiles.active` | `local` | 运行环境选择器；默认进入本地 profile，可设置为 `test`、`prod` 或 `production` |
+| `spring.profiles.active` | `local` | 运行环境选择器；默认进入本地 profile，可设置为 `test`、`postgres`、`mysql`、`prod`、`production` 或 `supabase` |
 | `cm-agent.default-tenant-code` | `default` | 默认租户标识 |
 | `cm-agent.fake-runtime-enabled` | `true` | 第一阶段使用 fake runtime，便于在未接入真实模型时验证 Agent 运行链路 |
 | `cm-agent.security.jwt-secret` | 空 | JWT 签名密钥；由 `cm-agent.config.jwt-secret` 绑定，生产环境必须由受控外部 YAML 提供 |
@@ -43,6 +43,27 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 `test` profile 会加载 `application-test.yml`，用于本地控制台和接口联调测试。测试登录账号为 `admin`，密码为 `cm-agent-test-password-only`。该配置包含可直接使用的测试凭据，只能用于本地测试。
 
+### 内网虚拟机数据库 profile
+
+部署节点 `192.168.0.66:/data/cm-agent/docker-compose.yml` 提供 PostgreSQL 和 MySQL 两套虚拟机数据库。需要直接连接这套数据库时，可以选择内置 profile：
+
+- `postgres`：连接 `jdbc:postgresql://192.168.0.66:5432/cm_agent`，账号 `cmagent`，密码 `cmagent`，驱动 `org.postgresql.Driver`。
+- `mysql`：连接 `jdbc:mysql://192.168.0.66:3306/cm_agent?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC`，账号 `root`，密码 `cmagent`，驱动 `com.mysql.cj.jdbc.Driver`。
+
+两个 profile 都启用 `jdbc` 持久化、关闭 bootstrap admin、关闭开发 JWT fallback，并内置仅用于该虚拟机联调环境的 JWT 密钥。`postgres` 或 `mysql` 不得与 `prod`、`production` 或 `supabase` 同时启用；混用时服务会在接受 JWT 密钥前启动失败。MySQL `root` 账号、`cmagent` 密码和 `allowPublicKeyRetrieval=true` 仅适用于当前虚拟机联调配置；生产化部署仍应改为最小权限账号、强密码和 TLS。
+
+PostgreSQL 启动示例：
+
+```powershell
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=postgres"
+```
+
+MySQL 启动示例：
+
+```powershell
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=mysql"
+```
+
 开发 JWT 回退默认关闭。需要本地无密钥调试时，可以显式传入 `--cm-agent.config.allow-dev-jwt-fallback=true`；生产环境不得启用该开关。
 
 生产部署应通过 `--spring.profiles.active=prod` 或 `--spring.profiles.active=production` 选择 profile，并在受控外部 YAML 中设置 `cm-agent.config.jwt-secret`。生产 profile 下启用 bootstrap admin 会导致服务启动失败。
@@ -60,7 +81,7 @@ fake runtime 用于验证 Agent 配置、权限、工具治理、审计和控制
 
 ## 运行态存储
 
-服务端默认使用 memory store，适合本地演示和纵切验证。生产或类生产环境必须使用 JDBC 持久化：
+服务端默认使用 memory store，适合本地演示和纵切验证。`postgres`、`mysql`、`production`、`prod` 和 `supabase` 等数据库 profile 使用 JDBC 持久化：
 
 | 配置变量 | 映射的实际配置项 | 说明 |
 | --- | --- | --- |
