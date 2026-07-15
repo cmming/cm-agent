@@ -2,9 +2,10 @@
 
 cm-agent:
   config:
-    jwt-secret: cm-agent-local-dev-jwt-secret-with-at-least-32-bytes-2026
+    jwt-secret: ${CM_AGENT_JWT_SECRET:}
     bootstrap-admin-enabled: true
     bootstrap-admin-username: admin
-    bootstrap-admin-password: cm-agent-local-dev-password-only
+    bootstrap-admin-password: ${CM_AGENT_BOOTSTRAP_ADMIN_PASSWORD:}
     bootstrap-admin-display-name: 本地管理员
     persistence-mode: memory
+    fake-runtime-enabled: true

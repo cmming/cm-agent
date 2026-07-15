@@ -4,7 +4,9 @@ import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.repository.AgentDefinitionRepository;
+import com.cmagent.core.repository.RunRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
+import com.cmagent.core.repository.ToolCallRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import org.springframework.beans.factory.InitializingBean;
@@ -25,8 +27,23 @@ public class ServerRepositoryConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
     public InMemoryPlatformStore inMemoryPlatformStore() {
         return new InMemoryPlatformStore();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(RunRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    public RunRepository memoryRunRepository(InMemoryPlatformStore store) {
+        return store;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(ToolCallRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    public ToolCallRepository memoryToolCallRepository(InMemoryPlatformStore store) {
+        return store;
     }
 
     @Bean

@@ -1,5 +1,9 @@
 package com.cmagent.server.web;
 
+import com.cmagent.core.domain.AgentRunResult;
+import com.cmagent.core.domain.RunStatus;
+import com.cmagent.core.runtime.AgentRuntime;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.cmagent.server.CmAgentServerApplication;
 import com.cmagent.server.security.JwtAuthenticationFilter;
 import com.cmagent.server.security.SecurityConfig;
@@ -13,6 +17,9 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -32,6 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("production")
 @TestPropertySource(properties = "cm-agent.security.jwt-secret=cm-agent-console-smoke-jwt-secret-with-32-bytes")
 @Testcontainers
+@Import(ConsoleSmokeTest.ProductionRuntimeConfig.class)
 class ConsoleSmokeTest {
 
     @Container
@@ -81,6 +89,16 @@ class ConsoleSmokeTest {
         mockMvc.perform(get("/swagger-ui/index.html"))
                 .andExpect(status().isUnauthorized());
     }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class ProductionRuntimeConfig {
+        @Bean
+        AgentRuntime agentRuntime() {
+            return request -> new AgentRunResult(
+                    null, RunStatus.SUCCEEDED, "", java.util.List.of(), null, null, ""
+            );
+        }
+    }
 }
 
 class SupabaseConsoleSmokeTest {
@@ -89,7 +107,12 @@ class SupabaseConsoleSmokeTest {
     void swaggerUiIsNotPublicInSupabaseProfile() {
         MockEnvironment environment = new MockEnvironment();
         environment.setActiveProfiles("supabase");
-        SecurityConfig securityConfig = new SecurityConfig(mock(JwtAuthenticationFilter.class), environment, true);
+        SecurityConfig securityConfig = new SecurityConfig(
+                mock(JwtAuthenticationFilter.class),
+                environment,
+                true,
+                new ObjectMapper()
+        );
 
         Boolean publicApiDocsAllowed = ReflectionTestUtils.invokeMethod(securityConfig, "isPublicApiDocsAllowed");
 

@@ -11,6 +11,8 @@ import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.server.CmAgentServerApplication;
+import com.cmagent.server.audit.AuditAppender;
+import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import com.jayway.jsonpath.JsonPath;
@@ -20,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
@@ -35,6 +38,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -60,6 +66,9 @@ class RunControllerTest {
 
     @Autowired
     private InMemoryPlatformStore store;
+
+    @SpyBean
+    private AuditAppender auditAppender;
 
     @BeforeEach
     void resetRuntime() {
@@ -111,8 +120,8 @@ class RunControllerTest {
         mockMvc.perform(get("/api/audit-events")
                         .header("Authorization", bearer(accessToken)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].eventType").value("AGENT_RUN"))
-                .andExpect(jsonPath("$[0].status").value("SUCCEEDED"));
+                .andExpect(jsonPath("$.items[0].eventType").value("AGENT_RUN"))
+                .andExpect(jsonPath("$.items[0].status").value("SUCCEEDED"));
     }
 
     @Test
@@ -132,6 +141,76 @@ class RunControllerTest {
 
         assertThat(agentRuntime.lastRequest()).isNotNull();
         assertThat(agentRuntime.lastRequest().tools()).isEmpty();
+    }
+
+    @Test
+    void runDetailAndListAreTenantScopedAndUseOpaqueCursor() throws Exception {
+        String accessToken = loginToken();
+        String otherTenantToken = tokenWithPermissions(
+                UUID.fromString("00000000-0000-0000-0000-000000000002"),
+                "other-admin",
+                List.of("agent:read")
+        );
+        String agentId = createAgent(accessToken);
+
+        String runResponse = mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"input":"password=run-secret"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.runId").isNotEmpty())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String runId = JsonPath.read(runResponse, "$.runId");
+
+        mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"input\":\"second-run\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/agents/{agentId}/runs/{runId}", agentId, runId)
+                        .header("Authorization", bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.run.id").value(runId))
+                .andExpect(jsonPath("$.run.input").value("password=<已脱敏>"));
+
+        String firstPage = mockMvc.perform(get("/api/agents/{agentId}/runs", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .param("limit", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.nextCursor").isNotEmpty())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String cursor = JsonPath.read(firstPage, "$.nextCursor");
+        assertThat(cursor).doesNotContain("|").doesNotContain(runId);
+
+        mockMvc.perform(get("/api/agents/{agentId}/runs/{runId}", agentId, runId)
+                        .header("Authorization", bearer(otherTenantToken)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void runQueryRejectsInvalidLimitAndCursorWithoutLeakingInput() throws Exception {
+        String accessToken = loginToken();
+        String agentId = createAgent(accessToken);
+
+        mockMvc.perform(get("/api/agents/{agentId}/runs", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .param("limit", "0"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/agents/{agentId}/runs", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .param("cursor", "raw-cursor-value"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("raw-cursor-value"))));
     }
 
     @Test
@@ -293,7 +372,8 @@ class RunControllerTest {
         mockMvc.perform(get("/api/audit-events")
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(100));
+                .andExpect(jsonPath("$.items.length()").value(100))
+                .andExpect(jsonPath("$.nextCursor").isNotEmpty());
     }
 
     @Test
@@ -303,9 +383,10 @@ class RunControllerTest {
 
         mockMvc.perform(get("/api/audit-events")
                         .header("Authorization", bearer(token))
-                        .param("limit", "2"))
+                .param("limit", "2"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.nextCursor").isNotEmpty());
     }
 
     @Test
@@ -319,8 +400,46 @@ class RunControllerTest {
 
         mockMvc.perform(get("/api/audit-events")
                         .header("Authorization", bearer(token))
-                        .param("limit", "501"))
+                        .param("limit", "101"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void listAuditEventsSupportsOpaqueCursorPagination() throws Exception {
+        appendAuditEvents(3);
+        String token = tokenWithPermissions("auditor", List.of("audit:read"));
+
+        String firstPage = mockMvc.perform(get("/api/audit-events")
+                        .header("Authorization", bearer(token))
+                        .param("limit", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String cursor = JsonPath.read(firstPage, "$.nextCursor");
+
+        assertThat(cursor).isNotBlank().doesNotContain("|");
+        mockMvc.perform(get("/api/audit-events")
+                        .header("Authorization", bearer(token))
+                        .param("limit", "2")
+                        .param("cursor", cursor))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.nextCursor").doesNotExist());
+    }
+
+    @Test
+    void listAuditEventsRejectsInvalidCursorWithoutLeakingCursorText() throws Exception {
+        String token = tokenWithPermissions("auditor", List.of("audit:read"));
+
+        mockMvc.perform(get("/api/audit-events")
+                        .header("Authorization", bearer(token))
+                        .param("cursor", "not-a-valid-cursor"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("请求参数不合法"))
+                .andExpect(jsonPath("$.message")
+                        .value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("not-a-valid-cursor"))));
     }
 
     @Test
@@ -335,14 +454,91 @@ class RunControllerTest {
                         .content("""
                                 {"input":"你好"}
                                 """))
-                .andExpect(status().is5xxServerError());
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
 
         mockMvc.perform(get("/api/audit-events")
                         .header("Authorization", bearer(accessToken)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].eventType").value("AGENT_RUN"))
-                .andExpect(jsonPath("$[0].status").value("FAILED"))
-                .andExpect(jsonPath("$[0].message").value("runtime boom"));
+                .andExpect(jsonPath("$.items[0].eventType").value("AGENT_RUN"))
+                .andExpect(jsonPath("$.items[0].status").value("FAILED"))
+                .andExpect(jsonPath("$.items[0].message").value("Agent 运行失败"));
+
+        assertThat(store.listByTenantAndAgent(
+                TENANT_ID,
+                UUID.fromString(agentId),
+                new com.cmagent.core.domain.RunPageRequest(10, null, null)
+        )).hasSize(1)
+                .first()
+                .extracting(run -> run.status().name(), run -> run.errorMessage())
+                .containsExactly("FAILED", "Agent 运行失败");
+    }
+
+    @Test
+    void runtimeFailureWithUnavailableFailureAuditReturnsAuditUnavailableAfterFailureClosure() throws Exception {
+        String accessToken = loginToken();
+        String agentId = createAgent(accessToken);
+        agentRuntime.failNextRun();
+        doAnswer(invocation -> {
+            if ("AGENT_RUN".equals(invocation.getArgument(2, String.class))
+                    && "FAILED".equals(invocation.getArgument(5, String.class))) {
+                throw new AuditPersistenceException(
+                        "审计写入失败", new IllegalStateException("audit unavailable"));
+            }
+            return invocation.callRealMethod();
+        }).when(auditAppender).append(
+                any(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+
+        var result = mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"input\":\"你好\"}"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("AUDIT_UNAVAILABLE"))
+                .andReturn();
+
+        assertThat(result.getResolvedException())
+                .isInstanceOfSatisfying(AuditPersistenceException.class, exception ->
+                        assertThat(exception.getSuppressed())
+                                .anySatisfy(suppressed -> assertThat(suppressed).hasMessage("runtime boom")));
+        assertThat(store.listByTenantAndAgent(
+                TENANT_ID,
+                UUID.fromString(agentId),
+                new com.cmagent.core.domain.RunPageRequest(10, null, null)
+        )).singleElement().satisfies(run -> {
+            assertThat(run.status()).isEqualTo(RunStatus.FAILED);
+            assertThat(run.errorMessage()).isEqualTo("Agent 运行失败");
+        });
+    }
+
+    @Test
+    void runResponseUsesPersistedFinalStatusAndSanitizedFields() throws Exception {
+        String accessToken = loginToken();
+        String agentId = createAgent(accessToken);
+        Instant now = Instant.now();
+        agentRuntime.returnNext(new AgentRunResult(
+                UUID.randomUUID(), RunStatus.RUNNING, null, List.of(), now, null, null
+        ));
+
+        String response = mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"input\":\"hello\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.output").value(""))
+                .andExpect(jsonPath("$.errorMessage").value("Agent 运行失败"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String runId = JsonPath.read(response, "$.runId");
+        mockMvc.perform(get("/api/agents/{agentId}/runs/{runId}", agentId, runId)
+                        .header("Authorization", bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.run.status").value("FAILED"))
+                .andExpect(jsonPath("$.run.output").value(""))
+                .andExpect(jsonPath("$.run.errorMessage").value("Agent 运行失败"));
     }
 
     @Test
@@ -445,7 +641,11 @@ class RunControllerTest {
     }
 
     private String tokenWithPermissions(String principalId, List<String> permissions) {
-        return jwtService.createToken(TENANT_ID, principalId, "系统管理员", permissions);
+        return tokenWithPermissions(TENANT_ID, principalId, permissions);
+    }
+
+    private String tokenWithPermissions(UUID tenantId, String principalId, List<String> permissions) {
+        return jwtService.createToken(tenantId, principalId, "系统管理员", permissions);
     }
 
     private static String bearer(String token) {
@@ -464,6 +664,7 @@ class RunControllerTest {
 
     static class CapturingAgentRuntime implements AgentRuntime {
         private final AtomicReference<AgentRunRequest> lastRequest = new AtomicReference<>();
+        private final AtomicReference<AgentRunResult> nextResult = new AtomicReference<>();
         private final AtomicBoolean failNextRun = new AtomicBoolean(false);
 
         @Override
@@ -471,6 +672,10 @@ class RunControllerTest {
             lastRequest.set(request);
             if (failNextRun.getAndSet(false)) {
                 throw new IllegalStateException("runtime boom");
+            }
+            AgentRunResult configuredResult = nextResult.getAndSet(null);
+            if (configuredResult != null) {
+                return configuredResult;
             }
             Instant now = Instant.now();
             return new AgentRunResult(
@@ -488,12 +693,17 @@ class RunControllerTest {
             failNextRun.set(true);
         }
 
+        void returnNext(AgentRunResult result) {
+            nextResult.set(result);
+        }
+
         AgentRunRequest lastRequest() {
             return lastRequest.get();
         }
 
         void reset() {
             lastRequest.set(null);
+            nextResult.set(null);
             failNextRun.set(false);
         }
     }

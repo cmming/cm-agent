@@ -7,6 +7,7 @@ import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.JwtService;
+import com.cmagent.server.service.ManagementCommandService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -25,17 +26,21 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/agents")
 public class AgentController {
-
-    private static final UUID MODEL_PROVIDER_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
-
     private final AgentDefinitionRepository agentRepository;
     private final PermissionEvaluator permissionEvaluator;
     private final AuditAppender auditAppender;
+    private final ManagementCommandService managementCommandService;
 
-    public AgentController(AgentDefinitionRepository agentRepository, PermissionEvaluator permissionEvaluator, AuditAppender auditAppender) {
+    public AgentController(
+            AgentDefinitionRepository agentRepository,
+            PermissionEvaluator permissionEvaluator,
+            AuditAppender auditAppender,
+            ManagementCommandService managementCommandService
+    ) {
         this.agentRepository = agentRepository;
         this.permissionEvaluator = permissionEvaluator;
         this.auditAppender = auditAppender;
+        this.managementCommandService = managementCommandService;
     }
 
     @GetMapping
@@ -57,36 +62,14 @@ public class AgentController {
     public AgentDefinition create(@Valid @RequestBody AgentCreateRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:write", "AGENT", "create");
-        AgentDefinition agent = new AgentDefinition(
-                UUID.randomUUID(),
-                principal.tenantId(),
-                request.name(),
-                "",
-                request.systemPrompt(),
-                MODEL_PROVIDER_ID,
-                request.modelName(),
-                0.2d,
-                6,
-                true,
-                List.of(),
-                principal.principalId(),
-                principal.principalId()
+        return managementCommandService.createAgent(
+                principal, request.name(), request.systemPrompt(), request.modelName()
         );
-        AgentDefinition savedAgent = agentRepository.save(agent);
-        auditAppender.append(
-                principal.tenantId(),
-                principal.principalId(),
-                "AGENT_CREATE",
-                "AGENT",
-                savedAgent.id().toString(),
-                "SUCCEEDED",
-                "Agent 创建成功"
-        );
-        return savedAgent;
     }
 
     private PrincipalRef principal(Authentication authentication) {
-        if (authentication == null || !authentication.isAuthenticated() || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
+        if (authentication == null || !authentication.isAuthenticated()
+                || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录或令牌无效");
         }
         return new PrincipalRef(session.tenantId(), session.principalId(), session.displayName(), Set.copyOf(session.permissions()));

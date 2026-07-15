@@ -1,10 +1,16 @@
 package com.cmagent.server.config;
 
+import com.cmagent.core.audit.AuditEventRepository;
 import com.cmagent.core.repository.AgentDefinitionRepository;
+import com.cmagent.core.repository.RunRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
+import com.cmagent.core.repository.ToolCallRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
+import com.cmagent.persistence.JdbcAuditEventRepository;
 import com.cmagent.persistence.JdbcAgentDefinitionRepository;
+import com.cmagent.persistence.JdbcRunRepository;
 import com.cmagent.persistence.JdbcToolDefinitionRepository;
+import com.cmagent.persistence.JdbcToolCallRepository;
 import com.cmagent.persistence.JdbcToolGrantRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
@@ -14,6 +20,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.sql.Timestamp;
@@ -54,6 +63,16 @@ public class JdbcPersistenceConfiguration {
     }
 
     @Bean
+    PlatformTransactionManager cmAgentTransactionManager(DataSource cmAgentDataSource) {
+        return new DataSourceTransactionManager(cmAgentDataSource);
+    }
+
+    @Bean
+    TransactionTemplate cmAgentTransactionTemplate(PlatformTransactionManager cmAgentTransactionManager) {
+        return new TransactionTemplate(cmAgentTransactionManager);
+    }
+
+    @Bean
     AgentDefinitionRepository jdbcAgentDefinitionRepository(JdbcClient cmAgentJdbcClient) {
         return new JdbcAgentDefinitionRepository(cmAgentJdbcClient, new ObjectMapper());
     }
@@ -66,6 +85,24 @@ public class JdbcPersistenceConfiguration {
     @Bean
     ToolGrantRepository jdbcToolGrantRepository(JdbcClient cmAgentJdbcClient) {
         return new JdbcToolGrantRepository(cmAgentJdbcClient);
+    }
+
+    @Bean
+    AuditEventRepository jdbcAuditEventRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcAuditEventRepository(cmAgentJdbcClient);
+    }
+
+    @Bean
+    RunRepository jdbcRunRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcRunRepository(cmAgentJdbcClient);
+    }
+
+    @Bean
+    ToolCallRepository jdbcToolCallRepository(
+            JdbcClient cmAgentJdbcClient,
+            TransactionTemplate cmAgentTransactionTemplate
+    ) {
+        return new JdbcToolCallRepository(cmAgentJdbcClient, cmAgentTransactionTemplate);
     }
 
     @Bean

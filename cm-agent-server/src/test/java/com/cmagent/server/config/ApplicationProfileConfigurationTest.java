@@ -1,12 +1,18 @@
 package com.cmagent.server.config;
 
+import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.server.security.BootstrapAdminConfiguration;
 import com.cmagent.server.security.BootstrapAdminProperties;
 import com.cmagent.server.security.JwtSecurityConfiguration;
+import com.cmagent.server.security.ProfileSafetyValidator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
 import java.io.IOException;
@@ -16,13 +22,23 @@ import java.nio.file.Path;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ApplicationProfileConfigurationTest {
-    private static final String LOCAL_JWT_SECRET = "cm-agent-local-dev-jwt-secret-with-at-least-32-bytes-2026";
-    private static final String LOCAL_ADMIN_PASSWORD = "cm-agent-local-dev-password-only";
-    private static final String TEST_JWT_SECRET = "cm-agent-test-jwt-secret-with-at-least-32-bytes";
-    private static final String TEST_ADMIN_PASSWORD = "cm-agent-test-password-only";
-    private static final String VM_JWT_SECRET = "cm-agent-vm-profile-jwt-secret-with-at-least-32-bytes-2026";
-    private static final String POSTGRES_JDBC_URL = "jdbc:postgresql://192.168.0.66:5432/cm_agent";
-    private static final String MYSQL_JDBC_URL = "jdbc:mysql://192.168.0.66:3306/cm_agent?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
+    private static final String EXTERNAL_LOCAL_JWT_SECRET = "external-local-jwt-secret-with-at-least-32-bytes";
+    private static final String EXTERNAL_LOCAL_ADMIN_PASSWORD = "external-local-admin-password";
+    private static final String EXTERNAL_TEST_JWT_SECRET = "external-test-jwt-secret-with-at-least-32-bytes";
+    private static final String EXTERNAL_JWT_SECRET = "external-strict-jwt-secret-with-at-least-32-bytes";
+    private static final String EXTERNAL_JDBC_URL = "jdbc:postgresql://external-host:5432/cm_agent";
+    private static final String EXTERNAL_JDBC_USERNAME = "external-user";
+    private static final String EXTERNAL_JDBC_PASSWORD = "external-password";
+
+    private static String[] externalConfigProperties(String profileSelector) {
+        return new String[]{
+                profileSelector,
+                "cm-agent.config.external-jwt-secret=" + EXTERNAL_JWT_SECRET,
+                "cm-agent.config.external-jdbc-url=" + EXTERNAL_JDBC_URL,
+                "cm-agent.config.external-jdbc-username=" + EXTERNAL_JDBC_USERNAME,
+                "cm-agent.config.external-jdbc-password=" + EXTERNAL_JDBC_PASSWORD
+        };
+    }
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withInitializer(new ConfigDataApplicationContextInitializer());
@@ -32,13 +48,31 @@ class ApplicationProfileConfigurationTest {
                     ServerRepositoryConfiguration.class,
                     JwtSecurityConfiguration.class,
                     BootstrapAdminConfiguration.class,
-                    BootstrapAdminProperties.class
+                    BootstrapAdminProperties.class,
+                    ProfileSafetyValidator.class,
+                    TestAgentRuntimeConfiguration.class
+            )
+            .withInitializer(new ConfigDataApplicationContextInitializer());
+
+    private final ApplicationContextRunner productionGuardWithoutRuntimeContextRunner = new ApplicationContextRunner()
+            .withUserConfiguration(
+                    ServerRepositoryConfiguration.class,
+                    JwtSecurityConfiguration.class,
+                    BootstrapAdminConfiguration.class,
+                    BootstrapAdminProperties.class,
+                    ProfileSafetyValidator.class
             )
             .withInitializer(new ConfigDataApplicationContextInitializer());
 
     @Test
-    void defaultConfigurationActivatesLocalProfileFromCmAgentProfileSelector() {
-        contextRunner.run(context -> assertLocalProfileLoaded(context.getEnvironment()));
+    void defaultConfigurationRejectsStartupWithoutExplicitProfile() {
+        contextRunner
+                .withUserConfiguration(ProfileSafetyValidator.class)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("必须显式配置 spring.profiles.active 或 CM_AGENT_PROFILE");
+                });
     }
 
     @Test
@@ -58,29 +92,43 @@ class ApplicationProfileConfigurationTest {
     @Test
     void localProfileVariablesOverrideCommonConfiguration() {
         contextRunner
-                .withPropertyValues("spring.profiles.active=local")
+                .withPropertyValues(
+                        "spring.profiles.active=local",
+                        "cm-agent.config.jwt-secret=" + EXTERNAL_LOCAL_JWT_SECRET,
+                        "cm-agent.config.bootstrap-admin-password=" + EXTERNAL_LOCAL_ADMIN_PASSWORD
+                )
                 .run(context -> {
                     Environment environment = context.getEnvironment();
 
-                    assertThat(environment.getProperty("cm-agent.config.jwt-secret")).isEqualTo(LOCAL_JWT_SECRET);
-                    assertThat(environment.getProperty("cm-agent.security.jwt-secret")).isEqualTo(LOCAL_JWT_SECRET);
+                    assertThat(environment.getProperty("cm-agent.config.jwt-secret")).isEqualTo(EXTERNAL_LOCAL_JWT_SECRET);
+                    assertThat(environment.getProperty("cm-agent.security.jwt-secret")).isEqualTo(EXTERNAL_LOCAL_JWT_SECRET);
                     assertThat(environment.getProperty("cm-agent.config.bootstrap-admin-password"))
-                            .isEqualTo(LOCAL_ADMIN_PASSWORD);
+                            .isEqualTo(EXTERNAL_LOCAL_ADMIN_PASSWORD);
                 });
     }
 
     @Test
     void productionProfileProvidesJdbcConfigurationVariables() {
         contextRunner
-                .withPropertyValues("spring.profiles.active=production")
-                .run(context -> assertThat(context.getEnvironment().getProperty("cm-agent.config.persistence-mode"))
-                        .isEqualTo("jdbc"));
+                .withPropertyValues(externalConfigProperties("spring.profiles.active=production"))
+                .run(context -> {
+                    Environment environment = context.getEnvironment();
+
+                    assertThat(environment.getProperty("cm-agent.config.persistence-mode")).isEqualTo("jdbc");
+                    assertThat(environment.getProperty("cm-agent.fake-runtime-enabled", Boolean.class)).isFalse();
+                    assertThat(environment.getProperty("cm-agent.config.jwt-secret")).isEqualTo(EXTERNAL_JWT_SECRET);
+                    assertThat(environment.getProperty("cm-agent.config.jdbc-url")).isEqualTo(EXTERNAL_JDBC_URL);
+                    assertThat(environment.getProperty("cm-agent.config.jdbc-username"))
+                            .isEqualTo(EXTERNAL_JDBC_USERNAME);
+                    assertThat(environment.getProperty("cm-agent.config.jdbc-password"))
+                            .isEqualTo(EXTERNAL_JDBC_PASSWORD);
+                });
     }
 
     @Test
     void legacyProfileSelectorActivatesProductionInsteadOfFallingBackToLocal() {
         contextRunner
-                .withPropertyValues("CM_AGENT_PROFILE=production")
+                .withPropertyValues(externalConfigProperties("CM_AGENT_PROFILE=production"))
                 .run(context -> {
                     Environment environment = context.getEnvironment();
 
@@ -95,10 +143,10 @@ class ApplicationProfileConfigurationTest {
         Files.writeString(configDirectory.resolve("application-production.yml"), """
                 cm-agent:
                   config:
-                    jwt-secret: external-production-jwt-secret-with-at-least-32-bytes
-                    jdbc-url: jdbc:postgresql://external-host:5432/cm_agent
-                    jdbc-username: external-user
-                    jdbc-password: external-password
+                    external-jwt-secret: external-production-jwt-secret-with-at-least-32-bytes
+                    external-jdbc-url: jdbc:postgresql://external-host:5432/cm_agent
+                    external-jdbc-username: external-user
+                    external-jdbc-password: external-password
                     jdbc-driver-class-name: org.postgresql.Driver
                 """);
 
@@ -124,7 +172,7 @@ class ApplicationProfileConfigurationTest {
     @Test
     void prodProfileActivatesProductionVariableGroup() {
         contextRunner
-                .withPropertyValues("spring.profiles.active=prod")
+                .withPropertyValues(externalConfigProperties("spring.profiles.active=prod"))
                 .run(context -> {
                     Environment environment = context.getEnvironment();
 
@@ -134,16 +182,16 @@ class ApplicationProfileConfigurationTest {
     }
 
     @Test
-    void postgresProfileLoadsVirtualMachineJdbcConfiguration() {
+    void postgresProfileLoadsJdbcConfigurationWithExternalPlaceholders() {
         contextRunner
-                .withPropertyValues("spring.profiles.active=postgres")
+                .withPropertyValues(externalConfigProperties("spring.profiles.active=postgres"))
                 .run(context -> assertPostgresProfileLoaded(context.getEnvironment()));
     }
 
     @Test
-    void mysqlProfileLoadsVirtualMachineJdbcConfiguration() {
+    void mysqlProfileLoadsJdbcConfigurationWithExternalPlaceholders() {
         contextRunner
-                .withPropertyValues("spring.profiles.active=mysql")
+                .withPropertyValues(externalConfigProperties("spring.profiles.active=mysql"))
                 .run(context -> assertMysqlProfileLoaded(context.getEnvironment()));
     }
 
@@ -151,12 +199,13 @@ class ApplicationProfileConfigurationTest {
     void productionProfileRejectsMissingJwtSecretWhenConfigDataDefaultsAreLoaded() {
         productionGuardContextRunner
                 .withPropertyValues("spring.profiles.active=production")
+                .withPropertyValues("cm-agent.security.jwt-secret=")
                 .withPropertyValues("cm-agent.persistence.mode=jdbc")
-                .withPropertyValues("cm-agent.persistence.jdbc.url=jdbc:postgresql://localhost/cm_agent")
+                .withPropertyValues("cm-agent.persistence.jdbc.url=" + EXTERNAL_JDBC_URL)
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
-                            .hasMessageContaining("生产环境必须外部提供 JWT 密钥");
+                            .hasMessageContaining("未配置 cm-agent.security.jwt-secret");
                 });
     }
 
@@ -164,12 +213,12 @@ class ApplicationProfileConfigurationTest {
     void productionProfileRejectsMemoryPersistenceModeWhenJwtSecretExists() {
         productionGuardContextRunner
                 .withPropertyValues("spring.profiles.active=production")
-                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.security.jwt-secret=" + EXTERNAL_TEST_JWT_SECRET)
                 .withPropertyValues("cm-agent.persistence.mode=memory")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
-                            .hasMessageContaining("production/prod profile 必须使用 jdbc 持久化模式");
+                            .hasMessageContaining("production/prod/supabase profile 必须使用 jdbc 持久化模式");
                 });
     }
 
@@ -177,12 +226,12 @@ class ApplicationProfileConfigurationTest {
     void uppercaseProductionProfileRejectsMemoryPersistenceModeWhenJwtSecretExists() {
         productionGuardContextRunner
                 .withPropertyValues("spring.profiles.active=PRODUCTION")
-                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.security.jwt-secret=" + EXTERNAL_TEST_JWT_SECRET)
                 .withPropertyValues("cm-agent.persistence.mode=memory")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
-                            .hasMessageContaining("production/prod profile 必须使用 jdbc 持久化模式");
+                            .hasMessageContaining("production/prod/supabase profile 必须使用 jdbc 持久化模式");
                 });
     }
 
@@ -190,21 +239,125 @@ class ApplicationProfileConfigurationTest {
     void rejectsMixedProductionAndTestProfilesEvenWhenBootstrapAdminDisabled() {
         productionGuardContextRunner
                 .withPropertyValues("spring.profiles.active=production,test")
-                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.security.jwt-secret=" + EXTERNAL_TEST_JWT_SECRET)
                 .withPropertyValues("cm-agent.persistence.mode=jdbc")
                 .withPropertyValues("cm-agent.persistence.jdbc.url=jdbc:postgresql://localhost/cm_agent")
                 .withPropertyValues("cm-agent.security.bootstrap-admin-enabled=false")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
-                            .hasMessageContaining("production/prod profile 禁止与 test profile 同时启用");
+                            .hasMessageContaining("production/prod/supabase profile 禁止与 local/test/postgres/mysql profile 同时启用");
+                });
+    }
+
+    @Test
+    void productionProfileRejectsFakeRuntimeWhenJdbcAndJwtAreConfigured() {
+        productionGuardContextRunner
+                .withPropertyValues("spring.profiles.active=production")
+                .withPropertyValues("cm-agent.security.jwt-secret=" + EXTERNAL_TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.persistence.mode=jdbc")
+                .withPropertyValues("cm-agent.persistence.jdbc.url=jdbc:postgresql://localhost/cm_agent")
+                .withPropertyValues("cm-agent.fake-runtime-enabled=true")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod/supabase profile 禁止启用 fake runtime");
+                });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"production", "prod", "supabase"})
+    void strictProfilesRejectMemoryPersistenceMode(String profile) {
+        strictProfileContextRunner(profile)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod/supabase profile 必须使用 jdbc 持久化模式");
+                });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"production", "prod", "supabase"})
+    void strictProfilesRejectBootstrapAdmin(String profile) {
+        strictProfileContextRunner(profile)
+                .withPropertyValues(
+                        "cm-agent.security.bootstrap-admin-enabled=true",
+                        "cm-agent.security.bootstrap-admin-password=local-password"
+                )
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod/supabase profile 禁止启用 bootstrap admin");
+                });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"production", "prod", "supabase"})
+    void strictProfilesRejectDevelopmentJwtFallback(String profile) {
+        strictProfileContextRunner(profile)
+                .withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod/supabase profile 禁止启用开发 JWT 回退");
+                });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"production", "prod", "supabase"})
+    void strictProfilesRejectFakeRuntime(String profile) {
+        strictProfileContextRunner(profile)
+                .withPropertyValues("cm-agent.fake-runtime-enabled=true")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod/supabase profile 禁止启用 fake runtime");
+                });
+    }
+
+    @Test
+    void strictProfileRejectsStartupWhenRealRuntimeBeanIsMissing() {
+        productionGuardWithoutRuntimeContextRunner
+                .withPropertyValues("spring.profiles.active=production")
+                .withPropertyValues("cm-agent.security.jwt-secret=" + EXTERNAL_TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.persistence.mode=jdbc")
+                .withPropertyValues("cm-agent.persistence.jdbc.url=" + EXTERNAL_JDBC_URL)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod/supabase profile 必须提供真实 AgentRuntime");
+                });
+    }
+
+    private ApplicationContextRunner strictProfileContextRunner(String profile) {
+        return productionGuardContextRunner
+                .withPropertyValues(
+                        "spring.profiles.active=" + profile,
+                        "cm-agent.security.jwt-secret=" + EXTERNAL_TEST_JWT_SECRET,
+                        "cm-agent.persistence.mode=jdbc",
+                        "cm-agent.persistence.jdbc.url=" + EXTERNAL_JDBC_URL
+                );
+    }
+
+    @Test
+    void rejectsMixedProductionAndLocalProfilesBeforeLoadingMemoryDefaults() {
+        productionGuardContextRunner
+                .withPropertyValues("spring.profiles.active=production,local")
+                .withPropertyValues("cm-agent.security.jwt-secret=" + EXTERNAL_TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.persistence.mode=jdbc")
+                .withPropertyValues("cm-agent.persistence.jdbc.url=jdbc:postgresql://localhost/cm_agent")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod/supabase profile 禁止与 local/test/postgres/mysql profile 同时启用");
                 });
     }
 
     @Test
     void supabaseProfileLoadsJdbcDefaultsFromConfigData() {
         contextRunner
-                .withPropertyValues("spring.profiles.active=supabase")
+                .withPropertyValues(externalConfigProperties("spring.profiles.active=supabase"))
                 .run(context -> {
                     Environment environment = context.getEnvironment();
 
@@ -215,8 +368,8 @@ class ApplicationProfileConfigurationTest {
                     assertThat(environment.getProperty("cm-agent.persistence.mode")).isEqualTo("jdbc");
                     assertThat(environment.getProperty("cm-agent.persistence.jdbc.driver-class-name"))
                             .isEqualTo("org.postgresql.Driver");
-                    assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class))
-                            .isFalse();
+                    assertThat(environment.getProperty("cm-agent.fake-runtime-enabled", Boolean.class)).isFalse();
+                    assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback")).isNull();
                     assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-enabled", Boolean.class))
                             .isFalse();
                 });
@@ -226,7 +379,7 @@ class ApplicationProfileConfigurationTest {
     void supabaseProfileRejectsMissingJdbcUrlWhenJwtSecretExists() {
         productionGuardContextRunner
                 .withPropertyValues("spring.profiles.active=supabase")
-                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.security.jwt-secret=" + EXTERNAL_TEST_JWT_SECRET)
                 .withPropertyValues("cm-agent.persistence.jdbc.url=")
                 .run(context -> {
                     assertThat(context).hasFailed();
@@ -239,7 +392,7 @@ class ApplicationProfileConfigurationTest {
     void supabaseProfileRejectsMemoryPersistenceModeWhenJwtSecretExists() {
         productionGuardContextRunner
                 .withPropertyValues("spring.profiles.active=supabase")
-                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.security.jwt-secret=" + EXTERNAL_TEST_JWT_SECRET)
                 .withPropertyValues("cm-agent.persistence.mode=memory")
                 .run(context -> {
                     assertThat(context).hasFailed();
@@ -252,7 +405,7 @@ class ApplicationProfileConfigurationTest {
     void supabaseProfileRejectsBootstrapAdminWhenJdbcConfigured() {
         productionGuardContextRunner
                 .withPropertyValues("spring.profiles.active=supabase")
-                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.security.jwt-secret=" + EXTERNAL_TEST_JWT_SECRET)
                 .withPropertyValues("cm-agent.persistence.mode=jdbc")
                 .withPropertyValues("cm-agent.persistence.jdbc.url=jdbc:postgresql://localhost/cm_agent")
                 .withPropertyValues("cm-agent.security.bootstrap-admin-enabled=true")
@@ -268,53 +421,54 @@ class ApplicationProfileConfigurationTest {
     void supabaseProfileRejectsTestProfileMixingWhenJdbcConfigured() {
         productionGuardContextRunner
                 .withPropertyValues("spring.profiles.active=supabase,test")
-                .withPropertyValues("cm-agent.security.jwt-secret=" + TEST_JWT_SECRET)
+                .withPropertyValues("cm-agent.security.jwt-secret=" + EXTERNAL_TEST_JWT_SECRET)
                 .withPropertyValues("cm-agent.persistence.mode=jdbc")
                 .withPropertyValues("cm-agent.persistence.jdbc.url=jdbc:postgresql://localhost/cm_agent")
                 .withPropertyValues("cm-agent.security.bootstrap-admin-enabled=false")
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
-                            .hasMessageContaining("production/prod/supabase profile 禁止与 test profile 同时启用");
+                            .hasMessageContaining("production/prod/supabase profile 禁止与 local/test/postgres/mysql profile 同时启用");
                 });
     }
 
     private static void assertPostgresProfileLoaded(Environment environment) {
-        assertVirtualMachineProfileLoaded(environment, "postgres", POSTGRES_JDBC_URL, "cmagent", "org.postgresql.Driver");
+        assertVirtualMachineProfileLoaded(environment, "postgres", "org.postgresql.Driver");
     }
 
     private static void assertMysqlProfileLoaded(Environment environment) {
-        assertVirtualMachineProfileLoaded(environment, "mysql", MYSQL_JDBC_URL, "root", "com.mysql.cj.jdbc.Driver");
+        assertVirtualMachineProfileLoaded(environment, "mysql", "com.mysql.cj.jdbc.Driver");
     }
 
     private static void assertVirtualMachineProfileLoaded(
-            Environment environment, String profile, String jdbcUrl, String username, String driverClassName) {
+            Environment environment, String profile, String driverClassName) {
         assertThat(environment.getActiveProfiles()).containsExactly(profile);
-        assertThat(environment.getProperty("cm-agent.config.jwt-secret")).isEqualTo(VM_JWT_SECRET);
-        assertThat(environment.getProperty("cm-agent.security.jwt-secret")).isEqualTo(VM_JWT_SECRET);
+        assertThat(environment.getProperty("cm-agent.config.jwt-secret")).isEqualTo(EXTERNAL_JWT_SECRET);
+        assertThat(environment.getProperty("cm-agent.security.jwt-secret")).isEqualTo(EXTERNAL_JWT_SECRET);
         assertThat(environment.getProperty("cm-agent.config.persistence-mode")).isEqualTo("jdbc");
         assertThat(environment.getProperty("cm-agent.persistence.mode")).isEqualTo("jdbc");
-        assertThat(environment.getProperty("cm-agent.config.jdbc-url")).isEqualTo(jdbcUrl);
-        assertThat(environment.getProperty("cm-agent.persistence.jdbc.url")).isEqualTo(jdbcUrl);
-        assertThat(environment.getProperty("cm-agent.config.jdbc-username")).isEqualTo(username);
-        assertThat(environment.getProperty("cm-agent.persistence.jdbc.username")).isEqualTo(username);
-        assertThat(environment.getProperty("cm-agent.config.jdbc-password")).isEqualTo("cmagent");
-        assertThat(environment.getProperty("cm-agent.persistence.jdbc.password")).isEqualTo("cmagent");
+        assertThat(environment.getProperty("cm-agent.config.jdbc-url")).isEqualTo(EXTERNAL_JDBC_URL);
+        assertThat(environment.getProperty("cm-agent.persistence.jdbc.url")).isEqualTo(EXTERNAL_JDBC_URL);
+        assertThat(environment.getProperty("cm-agent.config.jdbc-username")).isEqualTo(EXTERNAL_JDBC_USERNAME);
+        assertThat(environment.getProperty("cm-agent.persistence.jdbc.username")).isEqualTo(EXTERNAL_JDBC_USERNAME);
+        assertThat(environment.getProperty("cm-agent.config.jdbc-password")).isEqualTo(EXTERNAL_JDBC_PASSWORD);
+        assertThat(environment.getProperty("cm-agent.persistence.jdbc.password")).isEqualTo(EXTERNAL_JDBC_PASSWORD);
         assertThat(environment.getProperty("cm-agent.config.jdbc-driver-class-name")).isEqualTo(driverClassName);
         assertThat(environment.getProperty("cm-agent.persistence.jdbc.driver-class-name")).isEqualTo(driverClassName);
-        assertThat(environment.getProperty("cm-agent.config.allow-dev-jwt-fallback", Boolean.class)).isFalse();
         assertThat(environment.getProperty("cm-agent.config.bootstrap-admin-enabled", Boolean.class)).isFalse();
-        assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class)).isFalse();
+        assertThat(environment.getProperty("cm-agent.config.fake-runtime-enabled", Boolean.class)).isFalse();
+        assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback")).isNull();
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-enabled", Boolean.class)).isFalse();
     }
 
     private static void assertLocalProfileLoaded(Environment environment) {
         assertThat(environment.getActiveProfiles()).containsExactly("local");
-        assertThat(environment.getProperty("cm-agent.security.jwt-secret")).isEqualTo(LOCAL_JWT_SECRET);
-        assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class)).isFalse();
+        assertThat(environment.getProperty("cm-agent.config.jwt-secret")).isBlank();
+        assertThat(environment.getProperty("cm-agent.security.jwt-secret")).isBlank();
+        assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback")).isNull();
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-enabled", Boolean.class)).isTrue();
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-username")).isEqualTo("admin");
-        assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-password")).isEqualTo(LOCAL_ADMIN_PASSWORD);
+        assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-password")).isBlank();
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-display-name")).isEqualTo("本地管理员");
         assertThat(environment.getProperty("cm-agent.fake-runtime-enabled", Boolean.class)).isTrue();
         assertThat(environment.getProperty("cm-agent.persistence.mode")).isEqualTo("memory");
@@ -322,12 +476,22 @@ class ApplicationProfileConfigurationTest {
 
     private static void assertTestProfileLoaded(Environment environment) {
         assertThat(environment.getActiveProfiles()).containsExactly("test");
-        assertThat(environment.getProperty("cm-agent.security.jwt-secret")).isEqualTo(TEST_JWT_SECRET);
-        assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback", Boolean.class)).isFalse();
+        assertThat(environment.getProperty("cm-agent.config.jwt-secret")).isEqualTo(EXTERNAL_TEST_JWT_SECRET);
+        assertThat(environment.getProperty("cm-agent.security.jwt-secret")).isEqualTo(EXTERNAL_TEST_JWT_SECRET);
+        assertThat(environment.getProperty("cm-agent.security.allow-dev-jwt-fallback")).isNull();
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-enabled", Boolean.class)).isTrue();
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-username")).isEqualTo("admin");
-        assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-password")).isEqualTo(TEST_ADMIN_PASSWORD);
+        assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-password"))
+                .isEqualTo("cm-agent-test-password-only");
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-display-name")).isEqualTo("测试管理员");
         assertThat(environment.getProperty("cm-agent.fake-runtime-enabled", Boolean.class)).isTrue();
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class TestAgentRuntimeConfiguration {
+        @Bean
+        AgentRuntime agentRuntime() {
+            return request -> null;
+        }
     }
 }

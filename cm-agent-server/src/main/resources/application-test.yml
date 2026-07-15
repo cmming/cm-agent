@@ -2,8 +2,9 @@
 
 cm-agent:
   config:
-    jwt-secret: cm-agent-test-jwt-secret-with-at-least-32-bytes
+    jwt-secret: ${CM_AGENT_TEST_JWT_SECRET:}
     bootstrap-admin-enabled: true
     bootstrap-admin-username: admin
-    bootstrap-admin-password: cm-agent-test-password-only
+    bootstrap-admin-password: ${CM_AGENT_TEST_BOOTSTRAP_ADMIN_PASSWORD:}
     bootstrap-admin-display-name: 测试管理员
+    fake-runtime-enabled: true

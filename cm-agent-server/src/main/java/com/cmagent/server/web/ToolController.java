@@ -1,18 +1,16 @@
 package com.cmagent.server.web;
 
 import com.cmagent.api.PrincipalRef;
-import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
-import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
-import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.JwtService;
+import com.cmagent.server.service.ManagementCommandService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -33,23 +31,21 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/tools")
 public class ToolController {
-
-    private final AgentDefinitionRepository agentRepository;
     private final ToolDefinitionRepository toolRepository;
-    private final ToolGrantRepository grantRepository;
     private final PermissionEvaluator permissionEvaluator;
     private final AuditAppender auditAppender;
+    private final ManagementCommandService managementCommandService;
 
-    public ToolController(AgentDefinitionRepository agentRepository,
-                          ToolDefinitionRepository toolRepository,
-                          ToolGrantRepository grantRepository,
-                          PermissionEvaluator permissionEvaluator,
-                          AuditAppender auditAppender) {
-        this.agentRepository = agentRepository;
+    public ToolController(
+            ToolDefinitionRepository toolRepository,
+            PermissionEvaluator permissionEvaluator,
+            AuditAppender auditAppender,
+            ManagementCommandService managementCommandService
+    ) {
         this.toolRepository = toolRepository;
-        this.grantRepository = grantRepository;
         this.permissionEvaluator = permissionEvaluator;
         this.auditAppender = auditAppender;
+        this.managementCommandService = managementCommandService;
     }
 
     @GetMapping
@@ -63,59 +59,25 @@ public class ToolController {
     public ToolDefinition create(@Valid @RequestBody ToolCreateRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", "TOOL", "create");
-        ToolDefinition tool = new ToolDefinition(
-                UUID.randomUUID(),
-                principal.tenantId(),
-                request.name(),
-                request.description(),
-                request.type(),
-                "{\"type\":\"object\"}",
-                request.riskLevel(),
-                true,
-                "",
-                principal.principalId(),
-                principal.principalId()
+        return managementCommandService.createTool(
+                principal, request.name(), request.description(), request.type(), request.riskLevel()
         );
-        ToolDefinition savedTool = toolRepository.save(tool);
-        auditAppender.append(
-                principal.tenantId(),
-                principal.principalId(),
-                "TOOL_CREATE",
-                "TOOL",
-                savedTool.id().toString(),
-                "SUCCEEDED",
-                "Tool 创建成功"
-        );
-        return savedTool;
     }
 
     @PostMapping("/{id}/grants")
-    public ToolGrant grant(@PathVariable("id") UUID id, @Valid @RequestBody ToolGrantRequest request, Authentication authentication) {
+    public ToolGrant grant(
+            @PathVariable("id") UUID id,
+            @Valid @RequestBody ToolGrantRequest request,
+            Authentication authentication
+    ) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", "TOOL", id.toString());
-
-        ToolDefinition tool = toolRepository.findByTenantAndId(principal.tenantId(), id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
-        AgentDefinition agent = agentRepository.findByTenantAndId(principal.tenantId(), request.agentId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
-
-        ToolGrant grant = new ToolGrant(principal.tenantId(), tool.id(), agent.id(), null, true);
-        ToolGrant savedGrant = grantRepository.save(grant);
-        agentRepository.addToolToAgent(principal.tenantId(), agent.id(), tool.id());
-        auditAppender.append(
-                principal.tenantId(),
-                principal.principalId(),
-                "TOOL_GRANT",
-                "TOOL",
-                tool.id().toString(),
-                "SUCCEEDED",
-                "Tool 已授权给 Agent " + agent.id()
-        );
-        return savedGrant;
+        return managementCommandService.grantTool(principal, id, request.agentId());
     }
 
     private PrincipalRef principal(Authentication authentication) {
-        if (authentication == null || !authentication.isAuthenticated() || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
+        if (authentication == null || !authentication.isAuthenticated()
+                || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录或令牌无效");
         }
         return new PrincipalRef(session.tenantId(), session.principalId(), session.displayName(), Set.copyOf(session.permissions()));

@@ -1,9 +1,18 @@
 package com.cmagent.server.config;
 
+import com.cmagent.core.audit.AuditEventRepository;
+import com.cmagent.core.repository.RunRepository;
+import com.cmagent.core.repository.ToolCallRepository;
+import com.cmagent.persistence.JdbcAuditEventRepository;
+import com.cmagent.persistence.JdbcRunRepository;
+import com.cmagent.persistence.JdbcToolCallRepository;
+import com.cmagent.server.store.InMemoryPlatformStore;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.Timestamp;
 
@@ -14,8 +23,37 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThat;
 
 class JdbcPersistenceConfigurationTest {
+
+    @Test
+    void jdbcModeDoesNotRegisterMemoryStore() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ServerRepositoryConfiguration.class)
+                .withPropertyValues(
+                        "cm-agent.persistence.mode=jdbc",
+                        "cm-agent.persistence.jdbc.url=jdbc:postgresql://localhost/cm_agent"
+                )
+                .run(context -> assertThat(context).doesNotHaveBean(InMemoryPlatformStore.class));
+    }
+
+    @Test
+    void jdbcConfigurationProvidesRuntimeRepositories() {
+        JdbcClient jdbcClient = mock(JdbcClient.class);
+        TransactionTemplate transactionTemplate = mock(TransactionTemplate.class);
+        JdbcPersistenceConfiguration configuration = new JdbcPersistenceConfiguration();
+
+        assertThat(configuration.jdbcAuditEventRepository(jdbcClient))
+                .isInstanceOf(JdbcAuditEventRepository.class)
+                .isInstanceOf(AuditEventRepository.class);
+        assertThat(configuration.jdbcRunRepository(jdbcClient))
+                .isInstanceOf(JdbcRunRepository.class)
+                .isInstanceOf(RunRepository.class);
+        assertThat(configuration.jdbcToolCallRepository(jdbcClient, transactionTemplate))
+                .isInstanceOf(JdbcToolCallRepository.class)
+                .isInstanceOf(ToolCallRepository.class);
+    }
 
     @Test
     void defaultTenantDataInitializerBindsCreatedAtAsSqlTimestamp() throws Exception {
