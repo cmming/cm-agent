@@ -26,6 +26,11 @@ cm-agent:
     public-api-docs-enabled: ${cm-agent.config.public-api-docs-enabled:true}
   fake-runtime-enabled: ${cm-agent.config.fake-runtime-enabled:false}
   default-tenant-code: ${cm-agent.config.default-tenant-code:default}
+  agentscope:
+    enabled: ${cm-agent.config.agentscope-enabled:false}
+    api-key: ${cm-agent.config.agentscope-api-key:}
+    base-url: ${cm-agent.config.agentscope-base-url:}
+    timeout: ${cm-agent.config.agentscope-timeout:60s}
   persistence:
     mode: ${cm-agent.config.persistence-mode:memory}
     jdbc:

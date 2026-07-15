@@ -47,13 +47,14 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
         try {
             validateTools(request);
             AgentScopeRunSpec spec = toRunSpec(request);
-            ReActAgent agent = ReActAgent.builder().name(spec.agentId()).sysPrompt(spec.systemPrompt())
+            try (ReActAgent agent = ReActAgent.builder().name(spec.agentId()).sysPrompt(spec.systemPrompt())
                     .model(modelFactory.apply(request.agent()))
                     .generateOptions(GenerateOptions.builder().modelName(spec.modelName()).temperature(spec.temperature()).stream(false).build())
-                    .maxIters(spec.maxIterations()).build();
-            Msg response = agent.call(List.of(Msg.builder().name(spec.principalId()).role(MsgRole.USER).textContent(spec.userInput()).build()), (RuntimeContext) null).block(timeout);
-            if (response == null) throw new IllegalStateException("AgentScope 未返回最终消息");
-            return result(RunStatus.SUCCEEDED, response.getTextContent(), null, started);
+                    .maxIters(spec.maxIterations()).build()) {
+                Msg response = agent.call(List.of(Msg.builder().name(spec.principalId()).role(MsgRole.USER).textContent(spec.userInput()).build()), (RuntimeContext) null).block(timeout);
+                if (response == null) throw new IllegalStateException("AgentScope 未返回最终消息");
+                return result(RunStatus.SUCCEEDED, response.getTextContent(), null, started);
+            }
         } catch (Throwable ex) {
             return result(RunStatus.FAILED, "", safeMessage(ex), started);
         }

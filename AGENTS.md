@@ -16,6 +16,7 @@
 
 ## 技术栈
 - Java: POM 要求 Java 21，`maven.compiler.release=21`。构建前用 `java -version` 和 `mvn -v` 确认 Maven 运行在 JDK 21。
+- 本机 JDK 21 路径：`F:\java21`；Windows 验证前设置 `$env:JAVA_HOME='F:\java21'` 并将 `$env:Path="$env:JAVA_HOME\bin;$env:Path"`。
 - Maven: 多模块项目；当前文档要求 Maven 3.9+，当前环境曾解析到 Maven 3.9.4。项目没有 Maven Wrapper。
 - Spring Boot: 3.5.0；使用 Web MVC、Security、Actuator、Validation、Auto Configure。
 - API 文档: springdoc OpenAPI 2.8.9。

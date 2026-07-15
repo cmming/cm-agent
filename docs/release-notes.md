@@ -38,3 +38,8 @@
 - 阶段5 CI/CD 交付流水线、发布自动化、稳定性工程和正式版本承诺。
 
 详细边界见[中文路线图](roadmap.md)。
+## 阶段 3：真实 AgentScope Runtime
+
+- 接入 AgentScope Java 2.0.0-RC3 的真实同步 `ReActAgent` 运行桥接，支持 OpenAI 兼容模型配置、Agent 参数映射、超时和受控失败结果。
+- Starter 增加真实 runtime 条件装配；默认仍关闭，生产凭据必须通过外部配置提供。
+- 本阶段不新增 Flyway 迁移，不提供流式输出、会话持久化或工具执行器持久化。

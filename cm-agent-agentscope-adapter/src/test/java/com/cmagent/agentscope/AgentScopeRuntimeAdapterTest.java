@@ -40,7 +40,7 @@ class AgentScopeRuntimeAdapterTest {
 
     @Test
     void mapsAgentDefinitionIntoRunSpec() {
-        AgentScopeRunSpec spec = new AgentScopeRuntimeAdapter().toRunSpec(request(agent(), List.of()));
+        AgentScopeRunSpec spec = new AgentScopeRuntimeAdapter(a -> null, Duration.ofSeconds(1)).toRunSpec(request(agent(), List.of()));
 
         assertThat(spec.systemPrompt()).isEqualTo("你是客服助手");
         assertThat(spec.modelName()).isEqualTo("兼容模型");
@@ -52,7 +52,7 @@ class AgentScopeRuntimeAdapterTest {
     void rejectsToolFromAnotherTenantWithoutExecutingIt() {
         ToolDefinition tool = new ToolDefinition(UUID.randomUUID(), UUID.randomUUID(), "查询", "查询工具", null, "{}", null, true, null, "", "");
 
-        AgentRunResult result = new AgentScopeRuntimeAdapter().run(request(agent(), List.of(tool)));
+        AgentRunResult result = new AgentScopeRuntimeAdapter(a -> null, Duration.ofSeconds(1)).run(request(agent(), List.of(tool)));
 
         assertThat(result.status()).isEqualTo(RunStatus.FAILED);
         assertThat(result.errorMessage()).contains("tenant");
@@ -82,7 +82,7 @@ class AgentScopeRuntimeAdapterTest {
     }
 
     private static AgentRunRequest request(AgentDefinition agent, List<ToolDefinition> tools) {
-        return new AgentRunRequest(agent, agent.tenantId(), agent.id(), new PrincipalRef(agent.tenantId(), "admin", "管理员", Set.of("agent:run")), "查询客户状态", tools);
+        return new AgentRunRequest(agent.tenantId(), agent.id(), agent, new PrincipalRef(agent.tenantId(), "admin", "管理员", Set.of("agent:run")), "查询客户状态", tools);
     }
 
     private static AgentDefinition agent() {

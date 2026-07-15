@@ -14,11 +14,11 @@
 
 当前阶段2仍使用 fake runtime。它只用于验证认证、权限、租户隔离、运行记录、工具调用记录和审计链路，不代表真实模型调用、AgentScope 编排、工具执行或流式输出已经交付。
 
-## 阶段 3：真实 AgentScope runtime（尚未交付）
+## 阶段 3：真实 AgentScope runtime（已交付首版）
 
-阶段3将把当前 `AgentRuntime` 抽象接到真实 AgentScope Java runtime，补齐模型供应商、会话/消息编排、工具执行、超时取消、运行事件和结果映射。交付前需要明确真实 runtime 的生命周期、租户与权限上下文传递、敏感数据边界，以及失败时与当前两段式 Run/ToolCall/Audit 持久化的契约。
+阶段3已将 `AgentRuntime` 抽象接到 AgentScope Java RC3，支持 OpenAI 兼容模型的同步调用、Agent 配置映射、超时和受控失败结果，并保持 tenant、权限、审计和两段式 Run/ToolCall 持久化契约。首版不提供流式输出、会话持久化和工具执行器持久化。
 
-阶段3依赖阶段2已稳定的租户隔离、授权策略、审计严格语义、Run 查询和 JDBC 事务边界。在阶段3完成前，不应把 fake runtime 的成功响应当作真实 AgentScope 能力或生产模型接入承诺。
+阶段3依赖阶段2已稳定的租户隔离、授权策略、审计严格语义、Run 查询和 JDBC 事务边界。生产部署必须通过外部配置提供真实模型凭据，不得启用 fake runtime。
 
 ## 阶段 4：可观测性与运维（尚未交付）
 

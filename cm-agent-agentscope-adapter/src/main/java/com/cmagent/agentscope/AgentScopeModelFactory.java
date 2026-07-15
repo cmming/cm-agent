@@ -17,8 +17,8 @@ public class AgentScopeModelFactory implements java.util.function.Function<Agent
     }
 
     public AgentScopeModelFactory(String apiKey, String baseUrl) {
-        this.apiKey = apiKey;
-        this.baseUrl = baseUrl;
+        this.apiKey = requireText(apiKey, "模型 API Key 未配置");
+        this.baseUrl = requireText(baseUrl, "模型 Base URL 未配置");
     }
 
     @Override
@@ -29,5 +29,12 @@ public class AgentScopeModelFactory implements java.util.function.Function<Agent
                 .modelName(agent.modelName()).temperature(agent.temperature()).stream(false).build();
         return OpenAIChatModel.builder().apiKey(apiKey).baseUrl(baseUrl).modelName(agent.modelName())
                 .stream(false).generateOptions(options).build();
+    }
+
+    private static String requireText(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+        return value;
     }
 }

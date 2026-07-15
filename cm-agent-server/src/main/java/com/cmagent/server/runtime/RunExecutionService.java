@@ -75,7 +75,7 @@ public class RunExecutionService {
         AgentRunResult runtimeResult;
         try {
             runtimeResult = runtime.run(new AgentRunRequest(
-                    principal.tenantId(), agent.id(), principal, input, authorizedTools
+                    principal.tenantId(), agent.id(), agent, principal, input, authorizedTools
             ));
         } catch (AuditPersistenceException auditFailure) {
             bestEffortFailureClosure(principal, runningRun);

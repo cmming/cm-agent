@@ -2,6 +2,7 @@ package com.cmagent.core.runtime;
 
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentRunRequest;
+import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.RunStatus;
 import org.junit.jupiter.api.Test;
 
@@ -19,6 +20,7 @@ class FakeAgentRuntimeTest {
         AgentRunRequest request = new AgentRunRequest(
                 tenantId,
                 UUID.fromString("00000000-0000-0000-0000-000000000201"),
+                new AgentDefinition(UUID.fromString("00000000-0000-0000-0000-000000000201"), tenantId, "测试 Agent", "", "", null, "test", 0.2, 3, true, List.of(), "admin", "admin"),
                 new PrincipalRef(tenantId, "admin", "管理员", Set.of("agent:run")),
                 "请查询今天日程",
                 List.of()

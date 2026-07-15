@@ -89,3 +89,18 @@ Run 与 ToolCall 使用当前认证主体的 tenant 条件读写；Run 列表和
 - `memory` 仅限开发和测试，进程重启会丢失运行、工具调用和审计状态。
 - JDBC 模式已接通 Run、ToolCall、Audit 的持久化与查询；`local`/`test` 的运行执行器可以由 fake runtime 提供结果。
 - 生产 profile 不提供 fake runtime，部署时必须提供真实 AgentScope runtime 或对应适配器 Bean；metrics、集中式日志/追踪、备份治理和 CI/CD 不应在当前配置文档中被视为已交付能力，对应工作列入[中文路线图](roadmap.md)的阶段3-5。
+## 阶段 3：真实 AgentScope Runtime
+
+真实运行时默认关闭。启用时必须同时关闭 fake runtime，并通过外部环境变量提供 OpenAI 兼容模型配置：
+
+```yaml
+cm-agent:
+  fake-runtime-enabled: false
+  agentscope:
+    enabled: true
+    api-key: ${CM_AGENT_MODEL_API_KEY:}
+    base-url: ${CM_AGENT_MODEL_BASE_URL:}
+    timeout: 60s
+```
+
+Agent 的 `modelName`、系统提示词、温度和最大迭代次数会传给 AgentScope。API Key 不得写入仓库、日志、审计或错误响应。当前首版为同步运行，不提供流式输出、会话持久化或工具执行器持久化。
