@@ -89,7 +89,7 @@
 - 测试数据可以使用本地测试凭据，但不得新增可用于生产的默认密码或真实 secret。
 
 ## 容器与集成验证环境
-- 涉及 Docker、Docker Compose、Testcontainers、JDBC Repository、Flyway 迁移或数据库集成测试时，必须使用 `ssh rocky` 连接 Rocky Linux 虚拟机，并在虚拟机的容器环境中执行；本机 Docker Desktop 不是此类验证的执行环境。
+- 涉及 Docker、Docker Compose、Testcontainers、JDBC Repository、Flyway 迁移或数据库集成测试时，必须使用 `ssh rocky` 连接 Rocky Linux 虚拟机，并在虚拟机的容器环境中执行，采用的容器镜像为：maven:3.9.9-eclipse-temurin-21；本机 Docker Desktop 不是此类验证的执行环境。
 - 远程验证前必须在 `ssh rocky` 会话中确认 Docker 可用、Maven 使用 JDK 21，并确认远程工作区的 Git 提交与待验证的本地提交一致。
 - 远程容器操作仅限当前项目所需的 Compose 服务和 Testcontainers；禁止执行全局清理、删除无关容器、卷或镜像等破坏性操作。
 - 远程配置、日志和命令输出不得回传或记录 JWT secret、数据库密码、模型 API Key、完整生产 JDBC URL 等敏感信息。
