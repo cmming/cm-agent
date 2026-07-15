@@ -4,6 +4,7 @@ import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.core.security.ToolAuthorizationPolicy;
 import com.cmagent.core.tool.ToolRegistry;
+import com.cmagent.agentscope.AgentScopeRuntimeAdapter;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -39,11 +40,32 @@ class CmAgentAutoConfigurationTest {
 
         contextRunner.withPropertyValues(
                 "cm-agent.fake-runtime-enabled=false",
-                "cm-agent.default-tenant-code=tenant-a"
+                "cm-agent.default-tenant-code=tenant-a",
+                "cm-agent.agentscope.base-url=https://model.example/v1",
+                "cm-agent.agentscope.api-key=test-key",
+                "cm-agent.agentscope.timeout=15s"
         ).run(context -> {
             CmAgentProperties properties = context.getBean(CmAgentProperties.class);
             assertThat(properties.isFakeRuntimeEnabled()).isFalse();
             assertThat(properties.getDefaultTenantCode()).isEqualTo("tenant-a");
+            assertThat(properties.getAgentscope().getBaseUrl()).isEqualTo("https://model.example/v1");
+            assertThat(properties.getAgentscope().getApiKey()).isEqualTo("test-key");
+            assertThat(properties.getAgentscope().getTimeout()).isEqualTo(java.time.Duration.ofSeconds(15));
+        });
+    }
+
+    @Test
+    void createAgentScopeRuntimeWhenEnabled() {
+        contextRunner.withPropertyValues(
+                "cm-agent.fake-runtime-enabled=false",
+                "cm-agent.agentscope.enabled=true",
+                "cm-agent.agentscope.api-key=test-key",
+                "cm-agent.agentscope.base-url=https://model.example/v1",
+                "cm-agent.agentscope.timeout=15s"
+        ).run(context -> {
+            assertThat(context).hasSingleBean(AgentScopeRuntimeAdapter.class);
+            assertThat(context).getBean(AgentRuntime.class)
+                    .isSameAs(context.getBean(AgentScopeRuntimeAdapter.class));
         });
     }
 

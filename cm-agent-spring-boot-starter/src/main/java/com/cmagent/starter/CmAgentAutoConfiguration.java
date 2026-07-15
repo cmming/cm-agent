@@ -1,5 +1,7 @@
 package com.cmagent.starter;
 
+import com.cmagent.agentscope.AgentScopeModelFactory;
+import com.cmagent.agentscope.AgentScopeRuntimeAdapter;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.runtime.FakeAgentRuntime;
 import com.cmagent.core.security.DefaultPermissionEvaluator;
@@ -11,6 +13,7 @@ import com.cmagent.core.tool.ToolRegistry;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
@@ -20,9 +23,20 @@ public class CmAgentAutoConfiguration {
 
     @Bean
     @ConditionalOnProperty(prefix = "cm-agent", name = "fake-runtime-enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnProperty(prefix = "cm-agent.agentscope", name = "enabled", havingValue = "false", matchIfMissing = true)
     @ConditionalOnMissingBean
     AgentRuntime agentRuntime() {
         return new FakeAgentRuntime();
+    }
+
+    @Bean
+    @ConditionalOnClass(AgentScopeRuntimeAdapter.class)
+    @ConditionalOnProperty(prefix = "cm-agent.agentscope", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(AgentRuntime.class)
+    AgentRuntime agentScopeRuntime(CmAgentProperties properties) {
+        CmAgentProperties.Agentscope config = properties.getAgentscope();
+        return new AgentScopeRuntimeAdapter(
+                new AgentScopeModelFactory(config.getApiKey(), config.getBaseUrl()), config.getTimeout());
     }
 
     @Bean
