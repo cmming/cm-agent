@@ -116,12 +116,28 @@ class ApplicationProfileConfigurationTest {
 
                     assertThat(environment.getProperty("cm-agent.config.persistence-mode")).isEqualTo("jdbc");
                     assertThat(environment.getProperty("cm-agent.fake-runtime-enabled", Boolean.class)).isFalse();
+                    assertThat(environment.getProperty("cm-agent.agentscope.enabled", Boolean.class)).isTrue();
                     assertThat(environment.getProperty("cm-agent.config.jwt-secret")).isEqualTo(EXTERNAL_JWT_SECRET);
                     assertThat(environment.getProperty("cm-agent.config.jdbc-url")).isEqualTo(EXTERNAL_JDBC_URL);
                     assertThat(environment.getProperty("cm-agent.config.jdbc-username"))
                             .isEqualTo(EXTERNAL_JDBC_USERNAME);
                     assertThat(environment.getProperty("cm-agent.config.jdbc-password"))
                             .isEqualTo(EXTERNAL_JDBC_PASSWORD);
+                });
+    }
+
+    @Test
+    void localProfileRejectsFakeAndAgentScopeRuntimeTogether() {
+        contextRunner
+                .withUserConfiguration(ProfileSafetyValidator.class, TestAgentRuntimeConfiguration.class)
+                .withPropertyValues(
+                        "spring.profiles.active=local",
+                        "cm-agent.fake-runtime-enabled=true",
+                        "cm-agent.agentscope.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("AgentScope 真实运行时与 fake runtime 不能同时启用");
                 });
     }
 

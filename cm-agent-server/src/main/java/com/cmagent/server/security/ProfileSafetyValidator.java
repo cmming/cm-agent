@@ -22,6 +22,7 @@ public class ProfileSafetyValidator implements InitializingBean {
     private final boolean bootstrapAdminEnabled;
     private final boolean devJwtFallbackEnabled;
     private final boolean fakeRuntimeEnabled;
+    private final boolean agentScopeRuntimeEnabled;
     private final ObjectProvider<AgentRuntime> agentRuntimeProvider;
 
     public ProfileSafetyValidator(
@@ -30,6 +31,7 @@ public class ProfileSafetyValidator implements InitializingBean {
             @Value("${cm-agent.security.bootstrap-admin-enabled:false}") boolean bootstrapAdminEnabled,
             @Value("${cm-agent.security.allow-dev-jwt-fallback:false}") boolean devJwtFallbackEnabled,
             @Value("${cm-agent.fake-runtime-enabled:false}") boolean fakeRuntimeEnabled,
+            @Value("${cm-agent.agentscope.enabled:false}") boolean agentScopeRuntimeEnabled,
             ObjectProvider<AgentRuntime> agentRuntimeProvider
     ) {
         this.environment = environment;
@@ -37,6 +39,7 @@ public class ProfileSafetyValidator implements InitializingBean {
         this.bootstrapAdminEnabled = bootstrapAdminEnabled;
         this.devJwtFallbackEnabled = devJwtFallbackEnabled;
         this.fakeRuntimeEnabled = fakeRuntimeEnabled;
+        this.agentScopeRuntimeEnabled = agentScopeRuntimeEnabled;
         this.agentRuntimeProvider = agentRuntimeProvider;
     }
 
@@ -48,9 +51,11 @@ public class ProfileSafetyValidator implements InitializingBean {
         if (activeProfiles.isEmpty()) {
             throw new IllegalStateException("必须显式配置 spring.profiles.active 或 CM_AGENT_PROFILE");
         }
-
         boolean strictProfileActive = activeProfiles.stream().anyMatch(STRICT_PROFILES::contains);
         if (!strictProfileActive) {
+            if (fakeRuntimeEnabled && agentScopeRuntimeEnabled) {
+                throw new IllegalStateException("AgentScope 真实运行时与 fake runtime 不能同时启用");
+            }
             return;
         }
         if (activeProfiles.stream().anyMatch(NON_PRODUCTION_PROFILES::contains)) {

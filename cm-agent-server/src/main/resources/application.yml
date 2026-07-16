@@ -25,6 +25,11 @@ cm-agent:
     bootstrap-admin-display-name: ${cm-agent.config.bootstrap-admin-display-name:系统管理员}
     public-api-docs-enabled: ${cm-agent.config.public-api-docs-enabled:true}
   fake-runtime-enabled: ${cm-agent.config.fake-runtime-enabled:false}
+  agentscope:
+    enabled: ${cm-agent.config.agentscope-enabled:false}
+    model-timeout: ${cm-agent.config.agentscope-model-timeout:60s}
+    tool-timeout: ${cm-agent.config.agentscope-tool-timeout:30s}
+    model-max-attempts: ${cm-agent.config.agentscope-model-max-attempts:2}
   default-tenant-code: ${cm-agent.config.default-tenant-code:default}
   persistence:
     mode: ${cm-agent.config.persistence-mode:memory}
