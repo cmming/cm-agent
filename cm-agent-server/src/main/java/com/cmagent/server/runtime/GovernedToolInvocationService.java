@@ -73,6 +73,7 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
 
         ToolDefinition registeredTool = toolRegistry.find(request.toolId()).orElse(null);
         if (!isSameRegistration(tool, registeredTool)) {
+            appendAudit(request, "TOOL_CALL_FAILED", "FAILED", "工具调用失败");
             return ToolInvocationResult.failed(TOOL_UNAVAILABLE);
         }
 
