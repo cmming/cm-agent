@@ -3,12 +3,14 @@ package com.cmagent.server.config;
 import com.cmagent.core.audit.AuditEventRepository;
 import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.cmagent.core.repository.RunRepository;
+import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolCallRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.persistence.JdbcAuditEventRepository;
 import com.cmagent.persistence.JdbcAgentDefinitionRepository;
 import com.cmagent.persistence.JdbcRunRepository;
+import com.cmagent.persistence.JdbcModelConfigRepository;
 import com.cmagent.persistence.JdbcToolDefinitionRepository;
 import com.cmagent.persistence.JdbcToolCallRepository;
 import com.cmagent.persistence.JdbcToolGrantRepository;
@@ -95,6 +97,11 @@ public class JdbcPersistenceConfiguration {
     @Bean
     RunRepository jdbcRunRepository(JdbcClient cmAgentJdbcClient) {
         return new JdbcRunRepository(cmAgentJdbcClient);
+    }
+
+    @Bean
+    ModelConfigRepository jdbcModelConfigRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcModelConfigRepository(cmAgentJdbcClient);
     }
 
     @Bean

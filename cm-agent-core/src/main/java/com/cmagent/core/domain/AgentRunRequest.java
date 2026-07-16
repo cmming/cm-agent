@@ -31,7 +31,10 @@ public record AgentRunRequest(
         if (!tenantId.equals(modelConfig.tenantId())) {
             throw new IllegalArgumentException("模型配置不属于当前租户");
         }
-        if (!agent.modelProviderId().equals(modelConfig.id())) {
+        UUID agentModelProviderId = Objects.requireNonNull(
+                agent.modelProviderId(), "Agent 模型配置 ID 不能为空");
+        UUID modelConfigId = Objects.requireNonNull(modelConfig.id(), "模型配置 ID 不能为空");
+        if (!agentModelProviderId.equals(modelConfigId)) {
             throw new IllegalArgumentException("模型配置与 Agent 绑定不一致");
         }
         if (!tenantId.equals(principal.tenantId())) {
