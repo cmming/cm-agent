@@ -508,6 +508,41 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    void propagatesInterruptFailureWithCloseFailureSuppressedAfterToolTimeout() {
+        IllegalStateException interruptFailure = new IllegalStateException("本地测试中止失败");
+        IllegalStateException closeFailure = new IllegalStateException("本地测试关闭失败");
+        AgentScopeRuntimeOptions timeoutOptions =
+                new AgentScopeRuntimeOptions(Duration.ofSeconds(2), Duration.ofMillis(50), 1);
+        AgentScopeReActExecutor.AgentLifecycle lifecycle =
+                new AgentScopeReActExecutor.AgentLifecycle() {
+                    @Override
+                    public void interrupt(ReActAgent agent, RuntimeContext context) {
+                        throw interruptFailure;
+                    }
+
+                    @Override
+                    public void close(ReActAgent agent) {
+                        throw closeFailure;
+                    }
+                };
+        AgentRuntime runtime = runtime(invocation -> {
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("本地慢网关被取消", interruptedException);
+            }
+            return ToolInvocationResult.succeeded("迟到结果");
+        }, timeoutOptions, lifecycle);
+
+        Throwable thrown = catchThrowable(() ->
+                runtime.run(request(List.of(tool()), "触发工具超时")));
+
+        assertThat(thrown).isSameAs(interruptFailure);
+        assertThat(thrown.getSuppressed()).contains(closeFailure);
+    }
+
+    @Test
     void stopsWaitingParallelToolCallAfterFirstToolTimesOut() throws Exception {
         AtomicInteger gatewayCount = new AtomicInteger();
         CountDownLatch secondGatewayEntered = new CountDownLatch(1);

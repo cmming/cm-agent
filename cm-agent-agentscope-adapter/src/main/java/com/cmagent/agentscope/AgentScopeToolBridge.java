@@ -18,7 +18,6 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.SignalType;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -81,15 +80,7 @@ public class AgentScopeToolBridge implements AgentTool {
 
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-        return Mono.defer(() -> {
-            long startedAt = System.nanoTime();
-            return Mono.fromCallable(() -> invoke(param))
-                    .doFinally(signalType -> {
-                        if (signalType == SignalType.CANCEL) {
-                            runGate.markToolTimeoutIfElapsed(startedAt);
-                        }
-                    });
-        });
+        return Mono.fromCallable(() -> invoke(param));
     }
 
     public List<ToolCallRecord> records() {
@@ -139,6 +130,10 @@ public class AgentScopeToolBridge implements AgentTool {
         } catch (ToolInvocationInfrastructureException infrastructureFailure) {
             throw infrastructureFailure;
         } catch (Exception exception) {
+            if (isInterruption(exception)) {
+                runGate.markInvocationInterrupted();
+                throw new AgentScopeRunGate.RunAbortedException();
+            }
             records.add(new ToolCallRecord(
                     tool.id(), tool.name(), inputSummary, "", RunStatus.FAILED,
                     elapsedSince(startedAt), false, UNEXPECTED_ERROR_MESSAGE));
@@ -169,5 +164,16 @@ public class AgentScopeToolBridge implements AgentTool {
 
     private static Duration elapsedSince(long startedAt) {
         return Duration.ofNanos(Math.max(0, System.nanoTime() - startedAt));
+    }
+
+    private static boolean isInterruption(Throwable failure) {
+        Throwable current = failure;
+        while (current != null) {
+            if (current instanceof InterruptedException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return Thread.currentThread().isInterrupted();
     }
 }

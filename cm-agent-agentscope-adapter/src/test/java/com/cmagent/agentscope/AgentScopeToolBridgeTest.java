@@ -357,7 +357,7 @@ class AgentScopeToolBridgeTest {
 
     @Test
     void ordinaryReactiveCancellationDoesNotMarkToolTimeout() throws Exception {
-        AgentScopeRunGate runGate = new AgentScopeRunGate();
+        AgentScopeRunGate runGate = new AgentScopeRunGate(Duration.ofMillis(20));
         CountDownLatch gatewayEntered = new CountDownLatch(1);
         CountDownLatch releaseGateway = new CountDownLatch(1);
         AgentScopeToolBridge bridge = new AgentScopeToolBridge(
@@ -375,10 +375,30 @@ class AgentScopeToolBridgeTest {
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe();
         assertThat(gatewayEntered.await(1, TimeUnit.SECONDS)).isTrue();
+        Thread.sleep(50);
 
         call.dispose();
         releaseGateway.countDown();
 
+        assertThat(runGate.isToolTimedOut()).isFalse();
+    }
+
+    @Test
+    void fatalFailureAfterConfiguredTimeoutDoesNotMarkToolTimeout() throws Exception {
+        AgentScopeRunGate runGate = new AgentScopeRunGate(Duration.ofMillis(20));
+        ToolInvocationInfrastructureException failure = new ToolInvocationInfrastructureException(
+                "审计写入失败", new IllegalStateException("数据库不可用"));
+        AgentScopeToolBridge bridge = new AgentScopeToolBridge(
+                request(), tool(validSchema()), ignored -> {
+                    try {
+                        Thread.sleep(50);
+                    } catch (InterruptedException interruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
+                    throw failure;
+                }, objectMapper, runGate);
+
+        assertThatThrownBy(() -> bridge.callAsync(toolCallParam()).block()).isSameAs(failure);
         assertThat(runGate.isToolTimedOut()).isFalse();
     }
 

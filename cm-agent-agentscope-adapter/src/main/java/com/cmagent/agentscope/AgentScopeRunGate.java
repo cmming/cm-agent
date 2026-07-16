@@ -16,15 +16,17 @@ final class AgentScopeRunGate {
     private final AtomicReference<ToolInvocationInfrastructureException> infrastructureFailure =
             new AtomicReference<>();
     private final AtomicBoolean toolTimedOut = new AtomicBoolean();
+    private final AtomicBoolean invocationInterrupted = new AtomicBoolean();
     private final AtomicBoolean interrupted = new AtomicBoolean();
-    private final long toolTimeoutNanos;
+    private final AtomicReference<RuntimeException> interruptFailure = new AtomicReference<>();
+    private final String toolTimeoutSignal;
 
     AgentScopeRunGate() {
-        this.toolTimeoutNanos = 0;
+        this.toolTimeoutSignal = "";
     }
 
     AgentScopeRunGate(Duration toolTimeout) {
-        this.toolTimeoutNanos = toolTimeout.toNanos();
+        this.toolTimeoutSignal = "Tool execution timeout after " + toolTimeout;
     }
 
     ToolInvocationResult invoke(ToolInvocationGateway gateway, ToolInvocationRequest request) {
@@ -37,6 +39,7 @@ final class AgentScopeRunGate {
         try {
             throwIfInfrastructureFailure();
             throwIfToolTimedOut();
+            throwIfInvocationInterrupted();
             try {
                 ToolInvocationResult result = gateway.invoke(request);
                 throwIfInfrastructureFailure();
@@ -62,9 +65,9 @@ final class AgentScopeRunGate {
         toolTimedOut.set(true);
     }
 
-    void markToolTimeoutIfElapsed(long startedAtNanos) {
-        // AgentScope 2.0.0 未暴露取消原因；仅达到已配置工具时限的取消可判定为超时。
-        if (toolTimeoutNanos > 0 && System.nanoTime() - startedAtNanos >= toolTimeoutNanos) {
+    void observeToolResultText(String text) {
+        // AgentScope 2.0.0 不暴露 CANCEL 原因，只接受 ToolExecutor 生成的明确超时结果。
+        if (!toolTimeoutSignal.isEmpty() && text != null && text.contains(toolTimeoutSignal)) {
             markToolTimeout();
         }
     }
@@ -73,16 +76,35 @@ final class AgentScopeRunGate {
         return toolTimedOut.get();
     }
 
+    void markInvocationInterrupted() {
+        invocationInterrupted.set(true);
+    }
+
     private void throwIfToolTimedOut() {
         if (toolTimedOut.get()) {
             throw new RunAbortedException();
         }
     }
 
+    private void throwIfInvocationInterrupted() {
+        if (invocationInterrupted.get()) {
+            throw new RunAbortedException();
+        }
+    }
+
     void interruptOnce(Runnable interruptAction) {
         if (interrupted.compareAndSet(false, true)) {
-            interruptAction.run();
+            try {
+                interruptAction.run();
+            } catch (RuntimeException failure) {
+                interruptFailure.compareAndSet(null, failure);
+                throw failure;
+            }
         }
+    }
+
+    RuntimeException interruptFailure() {
+        return interruptFailure.get();
     }
 
     static final class RunAbortedException extends RuntimeException {

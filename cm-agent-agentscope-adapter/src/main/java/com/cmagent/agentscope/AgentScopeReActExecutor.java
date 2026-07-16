@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ExecutionConfig;
@@ -120,6 +121,9 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             RuntimeContext activeContext = context;
             agent.streamEvents(new UserMessage(spec.userInput()), context)
                     .doOnNext(event -> {
+                        if (event instanceof ToolResultTextDeltaEvent toolResultEvent) {
+                            runGate.observeToolResultText(toolResultEvent.getDelta());
+                        }
                         if (event instanceof AgentResultEvent resultEvent) {
                             finalMessage.set(resultEvent.getResult());
                         }
@@ -141,8 +145,18 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             }
             List<ToolCallRecord> records = collectRecords(bridges);
             boolean timedOut = runGate.isToolTimedOut() || isTimeoutFailure(exception);
+            RuntimeException recordedInterruptFailure = runGate.interruptFailure();
+            if (recordedInterruptFailure != null) {
+                primaryFailure = recordedInterruptFailure;
+                throw recordedInterruptFailure;
+            }
             if (timedOut && agent != null && context != null) {
-                interruptOnce(runGate, agent, context, lifecycle);
+                try {
+                    interruptOnce(runGate, agent, context, lifecycle);
+                } catch (RuntimeException interruptFailure) {
+                    primaryFailure = interruptFailure;
+                    throw interruptFailure;
+                }
             }
             ToolCallRecord denied = findDenied(records);
             if (denied != null) {
