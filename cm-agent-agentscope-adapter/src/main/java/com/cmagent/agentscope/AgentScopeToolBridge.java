@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class AgentScopeToolBridge implements AgentTool {
 
@@ -37,6 +38,8 @@ public class AgentScopeToolBridge implements AgentTool {
     private final ObjectMapper objectMapper;
     private final Map<String, Object> parameters;
     private final ConcurrentLinkedQueue<ToolCallRecord> records = new ConcurrentLinkedQueue<>();
+    private final AtomicReference<ToolInvocationInfrastructureException> infrastructureFailure =
+            new AtomicReference<>();
 
     public AgentScopeToolBridge(
             AgentRunRequest request,
@@ -75,6 +78,13 @@ public class AgentScopeToolBridge implements AgentTool {
         return List.copyOf(records);
     }
 
+    public void throwIfInfrastructureFailure() {
+        ToolInvocationInfrastructureException failure = infrastructureFailure.get();
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
     private ToolResultBlock invoke(ToolCallParam param) {
         long startedAt = System.nanoTime();
         ToolUseBlock toolUse = param == null ? null : param.getToolUseBlock();
@@ -110,6 +120,7 @@ public class AgentScopeToolBridge implements AgentTool {
                     duration, result.authorized(), result.errorMessage()));
             return ToolResultBlock.error(result.errorMessage()).withState(ToolResultState.ERROR);
         } catch (ToolInvocationInfrastructureException infrastructureFailure) {
+            this.infrastructureFailure.compareAndSet(null, infrastructureFailure);
             throw infrastructureFailure;
         } catch (Exception exception) {
             records.add(new ToolCallRecord(

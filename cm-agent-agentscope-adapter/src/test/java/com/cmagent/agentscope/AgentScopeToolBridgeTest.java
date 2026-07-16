@@ -21,6 +21,7 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.ToolCallParam;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.List;
@@ -29,9 +30,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -211,6 +214,7 @@ class AgentScopeToolBridgeTest {
             assertThat(record.outputSummary()).doesNotContain(sensitiveValue);
             assertThat(record.errorMessage()).isEqualTo("工具调用失败").doesNotContain(sensitiveValue);
         });
+        assertThatCode(bridge::throwIfInfrastructureFailure).doesNotThrowAnyException();
     }
 
     @Test
@@ -222,6 +226,48 @@ class AgentScopeToolBridgeTest {
         });
 
         assertThatThrownBy(() -> bridge.callAsync(toolCallParam()).block()).isSameAs(failure);
+        assertThat(bridge.records()).isEmpty();
+    }
+
+    @Test
+    void retainsInfrastructureFailureAfterReactiveCallerConsumesError() {
+        ToolInvocationInfrastructureException failure = new ToolInvocationInfrastructureException(
+                "审计写入失败", new IllegalStateException("数据库不可用"));
+        AgentScopeToolBridge bridge = bridge(request(), tool(validSchema()), ignored -> {
+            throw failure;
+        });
+
+        bridge.callAsync(toolCallParam())
+                .onErrorResume(ToolInvocationInfrastructureException.class, ignored -> Mono.empty())
+                .block();
+
+        assertThatThrownBy(bridge::throwIfInfrastructureFailure).isSameAs(failure);
+        assertThat(bridge.records()).isEmpty();
+    }
+
+    @Test
+    void concurrentLaterInfrastructureFailuresNeverReplaceFirstFailure() {
+        ToolInvocationInfrastructureException first = new ToolInvocationInfrastructureException(
+                "首次审计写入失败", new IllegalStateException("首次数据库不可用"));
+        ToolInvocationInfrastructureException later = new ToolInvocationInfrastructureException(
+                "后续审计写入失败", new IllegalStateException("后续数据库不可用"));
+        AtomicInteger invocationCount = new AtomicInteger();
+        AgentScopeToolBridge bridge = bridge(request(), tool(validSchema()), ignored -> {
+            throw invocationCount.getAndIncrement() == 0 ? first : later;
+        });
+        bridge.callAsync(toolCallParam())
+                .onErrorResume(ToolInvocationInfrastructureException.class, ignored -> Mono.empty())
+                .block();
+
+        CompletableFuture<?>[] calls = IntStream.range(0, 32)
+                .mapToObj(index -> CompletableFuture.runAsync(() -> bridge.callAsync(toolCallParam(index))
+                        .onErrorResume(ToolInvocationInfrastructureException.class, ignored -> Mono.empty())
+                        .block()))
+                .toArray(CompletableFuture[]::new);
+        CompletableFuture.allOf(calls).join();
+
+        assertThatThrownBy(bridge::throwIfInfrastructureFailure).isSameAs(first);
+        assertThat(invocationCount).hasValue(33);
         assertThat(bridge.records()).isEmpty();
     }
 
