@@ -6,6 +6,7 @@ import com.cmagent.core.runtime.ToolInvocationRequest;
 import com.cmagent.core.runtime.ToolInvocationResult;
 
 import java.time.Duration;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
@@ -19,14 +20,15 @@ final class AgentScopeRunGate {
     private final AtomicBoolean invocationInterrupted = new AtomicBoolean();
     private final AtomicBoolean interrupted = new AtomicBoolean();
     private final AtomicReference<RuntimeException> interruptFailure = new AtomicReference<>();
-    private final String toolTimeoutSignal;
+    private final ConcurrentHashMap<String, StringBuffer> toolResultTexts = new ConcurrentHashMap<>();
+    private final String toolTimeoutResult;
 
     AgentScopeRunGate() {
-        this.toolTimeoutSignal = "";
+        this.toolTimeoutResult = "";
     }
 
     AgentScopeRunGate(Duration toolTimeout) {
-        this.toolTimeoutSignal = "Tool execution timeout after " + toolTimeout;
+        this.toolTimeoutResult = "Error: Tool execution failed: Tool execution timeout after " + toolTimeout;
     }
 
     ToolInvocationResult invoke(ToolInvocationGateway gateway, ToolInvocationRequest request) {
@@ -44,6 +46,7 @@ final class AgentScopeRunGate {
                 ToolInvocationResult result = gateway.invoke(request);
                 throwIfInfrastructureFailure();
                 throwIfToolTimedOut();
+                throwIfInvocationInterrupted();
                 return result;
             } catch (ToolInvocationInfrastructureException failure) {
                 infrastructureFailure.compareAndSet(null, failure);
@@ -65,9 +68,16 @@ final class AgentScopeRunGate {
         toolTimedOut.set(true);
     }
 
-    void observeToolResultText(String text) {
-        // AgentScope 2.0.0 不暴露 CANCEL 原因，只接受 ToolExecutor 生成的明确超时结果。
-        if (!toolTimeoutSignal.isEmpty() && text != null && text.contains(toolTimeoutSignal)) {
+    void observeToolResultText(String toolCallId, String text) {
+        if (toolCallId != null && text != null) {
+            toolResultTexts.computeIfAbsent(toolCallId, ignored -> new StringBuffer()).append(text);
+        }
+    }
+
+    void observeToolResultEnd(String toolCallId, boolean bridgeCompleted) {
+        StringBuffer text = toolCallId == null ? null : toolResultTexts.remove(toolCallId);
+        // AgentScope 2.0.0 把工具错误终态也标成 SUCCESS，只接受未由 Bridge 完成的精确超时包装。
+        if (!bridgeCompleted && text != null && toolTimeoutResult.contentEquals(text)) {
             markToolTimeout();
         }
     }

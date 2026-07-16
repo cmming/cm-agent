@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
@@ -122,7 +123,15 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             agent.streamEvents(new UserMessage(spec.userInput()), context)
                     .doOnNext(event -> {
                         if (event instanceof ToolResultTextDeltaEvent toolResultEvent) {
-                            runGate.observeToolResultText(toolResultEvent.getDelta());
+                            runGate.observeToolResultText(
+                                    toolResultEvent.getToolCallId(), toolResultEvent.getDelta());
+                        }
+                        if (event instanceof ToolResultEndEvent toolResultEndEvent) {
+                            boolean bridgeCompleted = bridges.stream().anyMatch(bridge ->
+                                    bridge.hasCompletedToolCall(toolResultEndEvent.getToolCallId()));
+                            runGate.observeToolResultEnd(
+                                    toolResultEndEvent.getToolCallId(),
+                                    bridgeCompleted);
                         }
                         if (event instanceof AgentResultEvent resultEvent) {
                             finalMessage.set(resultEvent.getResult());

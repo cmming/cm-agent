@@ -360,14 +360,18 @@ class AgentScopeToolBridgeTest {
         AgentScopeRunGate runGate = new AgentScopeRunGate(Duration.ofMillis(20));
         CountDownLatch gatewayEntered = new CountDownLatch(1);
         CountDownLatch releaseGateway = new CountDownLatch(1);
+        CountDownLatch gatewayReturned = new CountDownLatch(1);
+        AtomicInteger gatewayCount = new AtomicInteger();
         AgentScopeToolBridge bridge = new AgentScopeToolBridge(
                 request(), tool(validSchema()), ignored -> {
+                    gatewayCount.incrementAndGet();
                     gatewayEntered.countDown();
                     try {
                         releaseGateway.await();
                     } catch (InterruptedException interruptedException) {
-                        Thread.currentThread().interrupt();
+                        // 本合同模拟吞掉中断并正常返回的外部网关。
                     }
+                    gatewayReturned.countDown();
                     return ToolInvocationResult.succeeded("取消后的结果");
                 }, objectMapper, runGate);
 
@@ -379,8 +383,13 @@ class AgentScopeToolBridgeTest {
 
         call.dispose();
         releaseGateway.countDown();
+        assertThat(gatewayReturned.await(1, TimeUnit.SECONDS)).isTrue();
 
         assertThat(runGate.isToolTimedOut()).isFalse();
+        assertThat(bridge.records()).isEmpty();
+        assertThatThrownBy(() -> bridge.callAsync(toolCallParam("后续调用", "tool-call-2", "echo")).block())
+                .isInstanceOf(AgentScopeRunGate.RunAbortedException.class);
+        assertThat(gatewayCount).hasValue(1);
     }
 
     @Test

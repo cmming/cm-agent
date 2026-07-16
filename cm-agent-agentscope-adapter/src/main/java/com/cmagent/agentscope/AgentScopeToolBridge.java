@@ -18,6 +18,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -25,6 +26,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class AgentScopeToolBridge implements AgentTool {
@@ -38,6 +41,7 @@ public class AgentScopeToolBridge implements AgentTool {
     private final AgentScopeRunGate runGate;
     private final Map<String, Object> parameters;
     private final ConcurrentLinkedQueue<ToolCallRecord> records = new ConcurrentLinkedQueue<>();
+    private final Set<String> completedToolCallIds = ConcurrentHashMap.newKeySet();
 
     public AgentScopeToolBridge(
             AgentRunRequest request,
@@ -80,7 +84,12 @@ public class AgentScopeToolBridge implements AgentTool {
 
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-        return Mono.fromCallable(() -> invoke(param));
+        return Mono.fromCallable(() -> invoke(param))
+                .doFinally(signalType -> {
+                    if (signalType == SignalType.CANCEL) {
+                        runGate.markInvocationInterrupted();
+                    }
+                });
     }
 
     public List<ToolCallRecord> records() {
@@ -89,6 +98,10 @@ public class AgentScopeToolBridge implements AgentTool {
 
     public void throwIfInfrastructureFailure() {
         runGate.throwIfInfrastructureFailure();
+    }
+
+    boolean hasCompletedToolCall(String toolCallId) {
+        return toolCallId != null && completedToolCallIds.contains(toolCallId);
     }
 
     private ToolResultBlock invoke(ToolCallParam param) {
@@ -114,6 +127,7 @@ public class AgentScopeToolBridge implements AgentTool {
             ));
             Duration duration = elapsedSince(startedAt);
             if (result.success()) {
+                completedToolCallIds.add(toolCallId);
                 records.add(new ToolCallRecord(
                         tool.id(), tool.name(), inputSummary, result.output(), RunStatus.SUCCEEDED,
                         duration, true, ""));
@@ -121,6 +135,7 @@ public class AgentScopeToolBridge implements AgentTool {
             }
 
             RunStatus status = result.authorized() ? RunStatus.FAILED : RunStatus.DENIED;
+            completedToolCallIds.add(toolCallId);
             records.add(new ToolCallRecord(
                     tool.id(), tool.name(), inputSummary, "", status,
                     duration, result.authorized(), result.errorMessage()));
@@ -134,6 +149,7 @@ public class AgentScopeToolBridge implements AgentTool {
                 runGate.markInvocationInterrupted();
                 throw new AgentScopeRunGate.RunAbortedException();
             }
+            completedToolCallIds.add(toolCallId);
             records.add(new ToolCallRecord(
                     tool.id(), tool.name(), inputSummary, "", RunStatus.FAILED,
                     elapsedSince(startedAt), false, UNEXPECTED_ERROR_MESSAGE));
