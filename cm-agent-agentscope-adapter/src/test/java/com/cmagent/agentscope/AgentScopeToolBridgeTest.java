@@ -21,7 +21,9 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.ToolCallParam;
 import org.junit.jupiter.api.Test;
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 import java.util.List;
@@ -29,8 +31,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -271,6 +279,109 @@ class AgentScopeToolBridgeTest {
         assertThat(bridge.records()).isEmpty();
     }
 
+    @Test
+    void interruptedWaiterNeverEntersGatewayAfterCurrentInvocationReturns() throws Exception {
+        AgentScopeRunGate runGate = new AgentScopeRunGate();
+        CountDownLatch holderEntered = new CountDownLatch(1);
+        CountDownLatch releaseHolder = new CountDownLatch(1);
+        AtomicInteger waiterGatewayCount = new AtomicInteger();
+        AtomicReference<Thread> waiterThread = new AtomicReference<>();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> holder = executor.submit(() -> runGate.invoke(ignored -> {
+                holderEntered.countDown();
+                try {
+                    releaseHolder.await();
+                } catch (InterruptedException interruptedException) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("持有者等待被中断", interruptedException);
+                }
+                return ToolInvocationResult.succeeded("holder");
+            }, invocationRequest("holder")));
+            assertThat(holderEntered.await(1, TimeUnit.SECONDS)).isTrue();
+            Future<?> waiter = executor.submit(() -> {
+                waiterThread.set(Thread.currentThread());
+                runGate.invoke(ignored -> {
+                    waiterGatewayCount.incrementAndGet();
+                    return ToolInvocationResult.succeeded("waiter");
+                }, invocationRequest("waiter"));
+            });
+            assertThat(awaitWaiting(waiterThread, Duration.ofSeconds(1))).isTrue();
+
+            waiter.cancel(true);
+            releaseHolder.countDown();
+            holder.get(1, TimeUnit.SECONDS);
+            executor.shutdown();
+            assertThat(executor.awaitTermination(1, TimeUnit.SECONDS)).isTrue();
+
+            assertThat(waiterGatewayCount).hasValue(0);
+        } finally {
+            releaseHolder.countDown();
+            executor.shutdownNow();
+            executor.awaitTermination(1, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void lateGatewayResultAfterTimeoutNeverCreatesToolRecord() throws Exception {
+        AgentScopeRunGate runGate = new AgentScopeRunGate();
+        CountDownLatch gatewayEntered = new CountDownLatch(1);
+        CountDownLatch releaseGateway = new CountDownLatch(1);
+        AgentScopeToolBridge bridge = new AgentScopeToolBridge(
+                request(), tool(validSchema()), ignored -> {
+                    gatewayEntered.countDown();
+                    try {
+                        releaseGateway.await();
+                    } catch (InterruptedException interruptedException) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("迟到网关等待被中断", interruptedException);
+                    }
+                    return ToolInvocationResult.succeeded("迟到结果");
+                }, objectMapper, runGate);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> call = executor.submit(() -> bridge.callAsync(toolCallParam()).block());
+            assertThat(gatewayEntered.await(1, TimeUnit.SECONDS)).isTrue();
+            runGate.markToolTimeout();
+            releaseGateway.countDown();
+
+            assertThatThrownBy(() -> call.get(1, TimeUnit.SECONDS))
+                    .hasCauseInstanceOf(AgentScopeRunGate.RunAbortedException.class);
+            assertThat(bridge.records()).isEmpty();
+        } finally {
+            releaseGateway.countDown();
+            executor.shutdownNow();
+            executor.awaitTermination(1, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void ordinaryReactiveCancellationDoesNotMarkToolTimeout() throws Exception {
+        AgentScopeRunGate runGate = new AgentScopeRunGate();
+        CountDownLatch gatewayEntered = new CountDownLatch(1);
+        CountDownLatch releaseGateway = new CountDownLatch(1);
+        AgentScopeToolBridge bridge = new AgentScopeToolBridge(
+                request(), tool(validSchema()), ignored -> {
+                    gatewayEntered.countDown();
+                    try {
+                        releaseGateway.await();
+                    } catch (InterruptedException interruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return ToolInvocationResult.succeeded("取消后的结果");
+                }, objectMapper, runGate);
+
+        Disposable call = bridge.callAsync(toolCallParam())
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe();
+        assertThat(gatewayEntered.await(1, TimeUnit.SECONDS)).isTrue();
+
+        call.dispose();
+        releaseGateway.countDown();
+
+        assertThat(runGate.isToolTimedOut()).isFalse();
+    }
+
     private AgentScopeToolBridge bridge(
             AgentRunRequest request,
             ToolDefinition tool,
@@ -307,6 +418,30 @@ class AgentScopeToolBridgeTest {
 
     private static ToolCallParam toolCallParam(String value, String toolCallId) {
         return toolCallParam(value, toolCallId, "echo");
+    }
+
+    private static ToolInvocationRequest invocationRequest(String toolCallId) {
+        return new ToolInvocationRequest(
+                TENANT_ID, AGENT_ID,
+                new PrincipalRef(TENANT_ID, "principal", "测试主体", Set.of("agent:run")),
+                RUN_ID, toolCallId, TOOL_ID, "echo", "{}");
+    }
+
+    private static boolean awaitWaiting(
+            AtomicReference<Thread> threadReference,
+            Duration timeout
+    ) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            Thread thread = threadReference.get();
+            if (thread != null && (thread.getState() == Thread.State.BLOCKED
+                    || thread.getState() == Thread.State.WAITING
+                    || thread.getState() == Thread.State.TIMED_WAITING)) {
+                return true;
+            }
+            Thread.onSpinWait();
+        }
+        return false;
     }
 
     private static ToolCallParam toolCallParam(String value, String toolCallId, String toolName) {

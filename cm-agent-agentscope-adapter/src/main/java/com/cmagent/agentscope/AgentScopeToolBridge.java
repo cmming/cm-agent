@@ -81,12 +81,15 @@ public class AgentScopeToolBridge implements AgentTool {
 
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-        return Mono.fromCallable(() -> invoke(param))
-                .doFinally(signalType -> {
-                    if (signalType == SignalType.CANCEL) {
-                        runGate.markToolTimeout();
-                    }
-                });
+        return Mono.defer(() -> {
+            long startedAt = System.nanoTime();
+            return Mono.fromCallable(() -> invoke(param))
+                    .doFinally(signalType -> {
+                        if (signalType == SignalType.CANCEL) {
+                            runGate.markToolTimeoutIfElapsed(startedAt);
+                        }
+                    });
+        });
     }
 
     public List<ToolCallRecord> records() {

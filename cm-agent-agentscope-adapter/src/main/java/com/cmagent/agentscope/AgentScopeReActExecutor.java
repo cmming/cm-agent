@@ -69,7 +69,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         Objects.requireNonNull(toolGateway, "toolGateway 不能为空");
 
         List<AgentScopeToolBridge> bridges = new ArrayList<>();
-        AgentScopeRunGate runGate = new AgentScopeRunGate();
+        AgentScopeRunGate runGate = new AgentScopeRunGate(options.toolTimeout());
         ReActAgent agent = null;
         RuntimeContext context = null;
         RuntimeException primaryFailure = null;
@@ -146,12 +146,15 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             }
             ToolCallRecord denied = findDenied(records);
             if (denied != null) {
+                primaryFailure = null;
                 return AgentScopeExecutionResult.denied(denied.errorMessage(), records);
             }
             if (timedOut) {
+                primaryFailure = null;
                 return AgentScopeExecutionResult.failed(TIMEOUT_MESSAGE, records);
             }
             if (isProviderFailure(exception)) {
+                primaryFailure = null;
                 return AgentScopeExecutionResult.failed(FAILURE_MESSAGE, records);
             }
             throw exception;
@@ -179,7 +182,13 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             runGate.throwIfInfrastructureFailure();
         } catch (ToolInvocationInfrastructureException failure) {
             if (agent != null && context != null) {
-                runGate.interruptOnce(() -> lifecycle.interrupt(agent, context));
+                try {
+                    runGate.interruptOnce(() -> lifecycle.interrupt(agent, context));
+                } catch (RuntimeException interruptFailure) {
+                    if (interruptFailure != failure) {
+                        failure.addSuppressed(interruptFailure);
+                    }
+                }
             }
             throw failure;
         }

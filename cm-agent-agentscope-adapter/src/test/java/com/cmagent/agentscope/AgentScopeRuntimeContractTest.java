@@ -391,6 +391,56 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    void preservesFatalFailureWhenInterruptingAndClosingAgentBothFail() {
+        ToolInvocationInfrastructureException failure = new ToolInvocationInfrastructureException(
+                "审计写入失败", new IllegalStateException("本地测试审计存储不可用"));
+        IllegalStateException interruptFailure = new IllegalStateException("本地测试中止失败");
+        IllegalStateException closeFailure = new IllegalStateException("本地测试关闭失败");
+        AgentScopeReActExecutor.AgentLifecycle lifecycle =
+                new AgentScopeReActExecutor.AgentLifecycle() {
+                    @Override
+                    public void interrupt(ReActAgent agent, RuntimeContext context) {
+                        throw interruptFailure;
+                    }
+
+                    @Override
+                    public void close(ReActAgent agent) {
+                        throw closeFailure;
+                    }
+                };
+        AgentRuntime runtime = runtime(invocation -> {
+            throw failure;
+        }, defaultOptions(), lifecycle);
+
+        Throwable thrown = catchThrowable(() -> runtime.run(request(List.of(tool()))));
+
+        assertThat(thrown).isSameAs(failure);
+        assertThat(thrown.getSuppressed()).contains(interruptFailure, closeFailure);
+    }
+
+    @Test
+    void propagatesCloseFailureInsteadOfDiscardingItAfterControlledProviderFailure() {
+        IllegalStateException closeFailure = new IllegalStateException("本地测试关闭失败");
+        AgentScopeReActExecutor.AgentLifecycle lifecycle =
+                new AgentScopeReActExecutor.AgentLifecycle() {
+                    @Override
+                    public void interrupt(ReActAgent agent, RuntimeContext context) {
+                        agent.interrupt(context);
+                    }
+
+                    @Override
+                    public void close(ReActAgent agent) {
+                        throw closeFailure;
+                    }
+                };
+        AgentRuntime runtime = runtime(
+                ignored -> ToolInvocationResult.succeeded("ok"), defaultOptions(), lifecycle);
+
+        assertThatThrownBy(() -> runtime.run(request(List.of(), "触发模型失败")))
+                .isSameAs(closeFailure);
+    }
+
+    @Test
     void keepsDeniedRecordAheadOfLaterProviderFailure() {
         AgentRuntime runtime = runtime(
                 ignored -> ToolInvocationResult.denied("没有工具权限"), defaultOptions());
@@ -495,6 +545,58 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    void returnsBeforeLateGatewayAndStopsInterruptedParallelWaiter() throws Exception {
+        AtomicInteger gatewayCount = new AtomicInteger();
+        CountDownLatch firstGatewayEntered = new CountDownLatch(1);
+        CountDownLatch releaseLateGateway = new CountDownLatch(1);
+        CountDownLatch lateGatewayFinished = new CountDownLatch(1);
+        CountDownLatch secondGatewayEntered = new CountDownLatch(1);
+        AtomicInteger interruptCount = new AtomicInteger();
+        AtomicInteger closeCount = new AtomicInteger();
+        AgentScopeRuntimeOptions timeoutOptions =
+                new AgentScopeRuntimeOptions(Duration.ofSeconds(2), Duration.ofMillis(50), 1);
+        AgentRuntime runtime = runtime(invocation -> {
+            int current = gatewayCount.incrementAndGet();
+            if (current > 1) {
+                secondGatewayEntered.countDown();
+                return ToolInvocationResult.succeeded("不应执行");
+            }
+            firstGatewayEntered.countDown();
+            boolean released = false;
+            while (!released) {
+                try {
+                    released = releaseLateGateway.await(2, TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {
+                    // 本合同刻意模拟忽略中断的外部工具。
+                }
+            }
+            lateGatewayFinished.countDown();
+            return ToolInvocationResult.succeeded("迟到结果");
+        }, timeoutOptions, trackingLifecycle(interruptCount, closeCount));
+        CompletableFuture<AgentRunResult> future = CompletableFuture.supplyAsync(() ->
+                runtime.run(request(List.of(tool()), "迟到工具超时")));
+
+        AgentRunResult result;
+        try {
+            assertThat(firstGatewayEntered.await(3, TimeUnit.SECONDS)).isTrue();
+            result = future.get(1, TimeUnit.SECONDS);
+            assertThat(result.status()).isEqualTo(RunStatus.FAILED);
+            assertThat(result.errorMessage()).isEqualTo("Agent 运行超时");
+            assertThat(result.toolCalls()).isEmpty();
+            assertThat(gatewayCount).hasValue(1);
+            assertThat(interruptCount).hasValue(1);
+            assertThat(closeCount).hasValue(1);
+        } finally {
+            releaseLateGateway.countDown();
+        }
+        assertThat(lateGatewayFinished.await(1, TimeUnit.SECONDS)).isTrue();
+        boolean laterGatewayExecuted = secondGatewayEntered.await(300, TimeUnit.MILLISECONDS);
+        assertThat(laterGatewayExecuted).isFalse();
+        assertThat(gatewayCount).hasValue(1);
+        assertThat(result.toolCalls()).isEmpty();
+    }
+
+    @Test
     void interruptsAndClosesWhenTimeoutFollowsDeniedRecord() {
         AtomicInteger interruptCount = new AtomicInteger();
         AtomicInteger closeCount = new AtomicInteger();
@@ -593,9 +695,7 @@ class AgentScopeRuntimeContractTest {
         String authorization = exchange.getRequestHeaders().getFirst("Authorization");
         requestHeadersValid.add(contentType != null
                 && contentType.startsWith("application/json")
-                && authorization != null
-                && authorization.startsWith("Bearer ")
-                && authorization.length() > "Bearer ".length());
+                && ("Bearer " + INVALID_TEST_CREDENTIAL).equals(authorization));
         if (Thread.currentThread().isInterrupted()) {
             exchange.close();
             return;
@@ -624,6 +724,11 @@ class AgentScopeRuntimeContractTest {
 
     private String responseFor(int current, String requestBody) {
         if (requestBody.contains("并行工具超时")) {
+            return requestBody.contains("\"role\":\"tool\"")
+                    ? TOOL_FINAL_RESPONSE
+                    : PARALLEL_TOOL_CALL_RESPONSE;
+        }
+        if (requestBody.contains("迟到工具超时")) {
             return requestBody.contains("\"role\":\"tool\"")
                     ? TOOL_FINAL_RESPONSE
                     : PARALLEL_TOOL_CALL_RESPONSE;
