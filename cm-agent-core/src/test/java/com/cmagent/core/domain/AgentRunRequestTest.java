@@ -62,6 +62,30 @@ class AgentRunRequestTest {
     }
 
     @Test
+    void rejectsMissingAgentModelProviderIdWithClassifiedMessage() {
+        AgentDefinition agent = new AgentDefinition(
+                AGENT_ID, TENANT_ID, "企业助手", "", "你是企业助手", null,
+                "agent-model", 0.2, 5, true, List.of(), "tester", "tester");
+
+        assertThatThrownBy(() -> new AgentRunRequest(
+                RUN_ID, TENANT_ID, agent, model(TENANT_ID), principal(TENANT_ID), "你好", List.of()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("Agent 模型配置 ID 不能为空");
+    }
+
+    @Test
+    void rejectsMissingModelConfigIdWithClassifiedMessage() {
+        ModelConfig model = new ModelConfig(
+                null, TENANT_ID, ModelProviderType.OPENAI_COMPATIBLE,
+                "测试模型", "https://example.invalid/v1", "default-model", true);
+
+        assertThatThrownBy(() -> new AgentRunRequest(
+                RUN_ID, TENANT_ID, agent(TENANT_ID), model, principal(TENANT_ID), "你好", List.of()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("模型配置 ID 不能为空");
+    }
+
+    @Test
     void rejectsCrossTenantPrincipal() {
         UUID anotherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 

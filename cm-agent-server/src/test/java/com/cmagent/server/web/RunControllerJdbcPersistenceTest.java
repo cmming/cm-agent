@@ -7,6 +7,8 @@ import com.cmagent.core.domain.ToolCallRecord;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.repository.AgentDefinitionRepository;
+import com.cmagent.core.repository.ModelConfigRepository;
+import com.cmagent.persistence.JdbcModelConfigRepository;
 import com.cmagent.server.CmAgentServerApplication;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
@@ -87,6 +89,9 @@ class RunControllerJdbcPersistenceTest {
     @Autowired
     private AgentDefinitionRepository agentRepository;
 
+    @Autowired
+    private ModelConfigRepository modelConfigRepository;
+
     private final AtomicReference<AgentRunRequest> lastRequest = new AtomicReference<>();
 
     @BeforeEach
@@ -106,6 +111,11 @@ class RunControllerJdbcPersistenceTest {
                     ""
             );
         });
+    }
+
+    @Test
+    void jdbcProfileProvidesModelConfigRepository() {
+        assertThat(modelConfigRepository).isInstanceOf(JdbcModelConfigRepository.class);
     }
 
     @Test
