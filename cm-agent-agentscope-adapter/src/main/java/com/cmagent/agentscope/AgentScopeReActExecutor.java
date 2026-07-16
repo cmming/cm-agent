@@ -4,6 +4,7 @@ import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.ToolCallRecord;
 import com.cmagent.core.runtime.ModelCredential;
 import com.cmagent.core.runtime.ToolInvocationGateway;
+import com.cmagent.core.runtime.ToolInvocationInfrastructureException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
@@ -68,14 +69,17 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         Objects.requireNonNull(toolGateway, "toolGateway 不能为空");
 
         List<AgentScopeToolBridge> bridges = new ArrayList<>();
+        AgentScopeRunGate runGate = new AgentScopeRunGate();
         ReActAgent agent = null;
         RuntimeContext context = null;
+        RuntimeException primaryFailure = null;
         try {
             Toolkit toolkit = new Toolkit();
             ObjectMapper objectMapper = new ObjectMapper();
             spec.request().tools().forEach(tool -> {
                 AgentScopeToolBridge bridge =
-                        new AgentScopeToolBridge(spec.request(), tool, toolGateway, objectMapper);
+                        new AgentScopeToolBridge(
+                                spec.request(), tool, toolGateway, objectMapper, runGate);
                 bridges.add(bridge);
                 toolkit.registerAgentTool(bridge);
             });
@@ -112,32 +116,33 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             lifecycle.onCreated(agent, context);
 
             AtomicReference<Msg> finalMessage = new AtomicReference<>();
+            ReActAgent activeAgent = agent;
+            RuntimeContext activeContext = context;
             agent.streamEvents(new UserMessage(spec.userInput()), context)
                     .doOnNext(event -> {
                         if (event instanceof AgentResultEvent resultEvent) {
                             finalMessage.set(resultEvent.getResult());
                         }
+                        throwIfRunAborted(
+                                runGate, activeAgent, activeContext, lifecycle);
                     })
                     .blockLast();
 
-            throwIfInfrastructureFailure(bridges);
+            throwIfRunAborted(runGate, agent, context, lifecycle);
             List<ToolCallRecord> records = collectRecords(bridges);
-            Msg result = finalMessage.get();
-            if (result == null) {
-                return AgentScopeExecutionResult.failed(FAILURE_MESSAGE, records);
-            }
-            String output = result.getTextContent();
-            ToolCallRecord denied = findDenied(records);
-            if (denied != null) {
-                return AgentScopeExecutionResult.denied(output, denied.errorMessage(), records);
-            }
-            return AgentScopeExecutionResult.succeeded(output, records);
+            return completedResult(finalMessage.get(), records);
         } catch (RuntimeException exception) {
-            throwIfInfrastructureFailure(bridges);
+            primaryFailure = exception;
+            try {
+                throwIfInfrastructureFailure(runGate, agent, context, lifecycle);
+            } catch (RuntimeException infrastructureFailure) {
+                primaryFailure = infrastructureFailure;
+                throw infrastructureFailure;
+            }
             List<ToolCallRecord> records = collectRecords(bridges);
-            boolean timedOut = isTimeoutFailure(exception);
+            boolean timedOut = runGate.isToolTimedOut() || isTimeoutFailure(exception);
             if (timedOut && agent != null && context != null) {
-                lifecycle.interrupt(agent, context);
+                interruptOnce(runGate, agent, context, lifecycle);
             }
             ToolCallRecord denied = findDenied(records);
             if (denied != null) {
@@ -152,13 +157,54 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             throw exception;
         } finally {
             if (agent != null) {
-                lifecycle.close(agent);
+                try {
+                    lifecycle.close(agent);
+                } catch (RuntimeException closeFailure) {
+                    if (primaryFailure == null || primaryFailure == closeFailure) {
+                        throw closeFailure;
+                    }
+                    primaryFailure.addSuppressed(closeFailure);
+                }
             }
         }
     }
 
-    private static void throwIfInfrastructureFailure(List<AgentScopeToolBridge> bridges) {
-        bridges.forEach(AgentScopeToolBridge::throwIfInfrastructureFailure);
+    private static void throwIfInfrastructureFailure(
+            AgentScopeRunGate runGate,
+            ReActAgent agent,
+            RuntimeContext context,
+            AgentLifecycle lifecycle
+    ) {
+        try {
+            runGate.throwIfInfrastructureFailure();
+        } catch (ToolInvocationInfrastructureException failure) {
+            if (agent != null && context != null) {
+                runGate.interruptOnce(() -> lifecycle.interrupt(agent, context));
+            }
+            throw failure;
+        }
+    }
+
+    private static void throwIfRunAborted(
+            AgentScopeRunGate runGate,
+            ReActAgent agent,
+            RuntimeContext context,
+            AgentLifecycle lifecycle
+    ) {
+        throwIfInfrastructureFailure(runGate, agent, context, lifecycle);
+        if (runGate.isToolTimedOut()) {
+            interruptOnce(runGate, agent, context, lifecycle);
+            throw new ToolTimeoutSignal();
+        }
+    }
+
+    private static void interruptOnce(
+            AgentScopeRunGate runGate,
+            ReActAgent agent,
+            RuntimeContext context,
+            AgentLifecycle lifecycle
+    ) {
+        runGate.interruptOnce(() -> lifecycle.interrupt(agent, context));
     }
 
     private static List<ToolCallRecord> collectRecords(List<AgentScopeToolBridge> bridges) {
@@ -172,6 +218,18 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                 .filter(record -> record.status() == RunStatus.DENIED)
                 .findFirst()
                 .orElse(null);
+    }
+
+    static AgentScopeExecutionResult completedResult(Msg result, List<ToolCallRecord> records) {
+        ToolCallRecord denied = findDenied(records);
+        if (denied != null) {
+            String output = result == null ? "" : result.getTextContent();
+            return AgentScopeExecutionResult.denied(output, denied.errorMessage(), records);
+        }
+        if (result == null) {
+            return AgentScopeExecutionResult.failed(FAILURE_MESSAGE, records);
+        }
+        return AgentScopeExecutionResult.succeeded(result.getTextContent(), records);
     }
 
     private static boolean isTimeoutFailure(Throwable failure) {
@@ -211,5 +269,8 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         void interrupt(ReActAgent agent, RuntimeContext context);
 
         void close(ReActAgent agent);
+    }
+
+    private static final class ToolTimeoutSignal extends RuntimeException {
     }
 }

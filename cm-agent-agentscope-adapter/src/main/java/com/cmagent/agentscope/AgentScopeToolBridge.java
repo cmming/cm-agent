@@ -18,6 +18,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -26,7 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicReference;
 
 public class AgentScopeToolBridge implements AgentTool {
 
@@ -36,10 +36,9 @@ public class AgentScopeToolBridge implements AgentTool {
     private final ToolDefinition tool;
     private final ToolInvocationGateway gateway;
     private final ObjectMapper objectMapper;
+    private final AgentScopeRunGate runGate;
     private final Map<String, Object> parameters;
     private final ConcurrentLinkedQueue<ToolCallRecord> records = new ConcurrentLinkedQueue<>();
-    private final AtomicReference<ToolInvocationInfrastructureException> infrastructureFailure =
-            new AtomicReference<>();
 
     public AgentScopeToolBridge(
             AgentRunRequest request,
@@ -47,10 +46,21 @@ public class AgentScopeToolBridge implements AgentTool {
             ToolInvocationGateway gateway,
             ObjectMapper objectMapper
     ) {
+        this(request, tool, gateway, objectMapper, new AgentScopeRunGate());
+    }
+
+    AgentScopeToolBridge(
+            AgentRunRequest request,
+            ToolDefinition tool,
+            ToolInvocationGateway gateway,
+            ObjectMapper objectMapper,
+            AgentScopeRunGate runGate
+    ) {
         this.request = Objects.requireNonNull(request, "request 不能为空");
         this.tool = Objects.requireNonNull(tool, "tool 不能为空");
         this.gateway = Objects.requireNonNull(gateway, "gateway 不能为空");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
+        this.runGate = Objects.requireNonNull(runGate, "runGate 不能为空");
         this.parameters = parseParameters(tool.inputSchema());
     }
 
@@ -71,7 +81,12 @@ public class AgentScopeToolBridge implements AgentTool {
 
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-        return Mono.fromCallable(() -> invoke(param));
+        return Mono.fromCallable(() -> invoke(param))
+                .doFinally(signalType -> {
+                    if (signalType == SignalType.CANCEL) {
+                        runGate.markToolTimeout();
+                    }
+                });
     }
 
     public List<ToolCallRecord> records() {
@@ -79,10 +94,7 @@ public class AgentScopeToolBridge implements AgentTool {
     }
 
     public void throwIfInfrastructureFailure() {
-        ToolInvocationInfrastructureException failure = infrastructureFailure.get();
-        if (failure != null) {
-            throw failure;
-        }
+        runGate.throwIfInfrastructureFailure();
     }
 
     private ToolResultBlock invoke(ToolCallParam param) {
@@ -96,7 +108,7 @@ public class AgentScopeToolBridge implements AgentTool {
         String inputSummary = summarizeInput(input);
         try {
             String inputJson = objectMapper.writeValueAsString(input);
-            ToolInvocationResult result = gateway.invoke(new ToolInvocationRequest(
+            ToolInvocationResult result = runGate.invoke(gateway, new ToolInvocationRequest(
                     request.tenantId(),
                     request.agentId(),
                     request.principal(),
@@ -120,7 +132,6 @@ public class AgentScopeToolBridge implements AgentTool {
                     duration, result.authorized(), result.errorMessage()));
             return ToolResultBlock.error(result.errorMessage()).withState(ToolResultState.ERROR);
         } catch (ToolInvocationInfrastructureException infrastructureFailure) {
-            this.infrastructureFailure.compareAndSet(null, infrastructureFailure);
             throw infrastructureFailure;
         } catch (Exception exception) {
             records.add(new ToolCallRecord(

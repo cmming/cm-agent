@@ -7,6 +7,7 @@ import com.cmagent.core.domain.AgentRunResult;
 import com.cmagent.core.domain.ModelConfig;
 import com.cmagent.core.domain.ModelProviderType;
 import com.cmagent.core.domain.RunStatus;
+import com.cmagent.core.domain.ToolCallRecord;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.runtime.ModelCredential;
 import com.cmagent.core.runtime.ModelCredentialProvider;
@@ -16,6 +17,7 @@ import com.cmagent.core.runtime.ToolInvocationResult;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -125,6 +127,21 @@ class AgentScopeRuntimeAdapterTest {
                 .isThrownBy(() -> new AgentScopeExecutionResult(
                         RunStatus.RUNNING, "", List.of(), ""))
                 .withMessage("执行结果必须是终态");
+    }
+
+    @Test
+    void completedResultPrefersDeniedRecordWhenFinalMessageIsMissing() {
+        ToolCallRecord denied = new ToolCallRecord(
+                UUID.fromString("00000000-0000-0000-0000-000000000501"),
+                "echo", "输入字段: [value]", "", RunStatus.DENIED,
+                Duration.ZERO, false, "没有工具权限");
+
+        AgentScopeExecutionResult result =
+                AgentScopeReActExecutor.completedResult(null, List.of(denied));
+
+        assertThat(result.status()).isEqualTo(RunStatus.DENIED);
+        assertThat(result.output()).isEmpty();
+        assertThat(result.errorMessage()).isEqualTo("没有工具权限");
     }
 
     private static AgentScopeRuntimeAdapter adapter(AgentScopeExecutor executor) {

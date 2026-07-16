@@ -246,7 +246,7 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
-    void concurrentLaterInfrastructureFailuresNeverReplaceFirstFailure() {
+    void firstInfrastructureFailureStopsConcurrentLaterGatewayCalls() {
         ToolInvocationInfrastructureException first = new ToolInvocationInfrastructureException(
                 "首次审计写入失败", new IllegalStateException("首次数据库不可用"));
         ToolInvocationInfrastructureException later = new ToolInvocationInfrastructureException(
@@ -267,7 +267,7 @@ class AgentScopeToolBridgeTest {
         CompletableFuture.allOf(calls).join();
 
         assertThatThrownBy(bridge::throwIfInfrastructureFailure).isSameAs(first);
-        assertThat(invocationCount).hasValue(33);
+        assertThat(invocationCount).hasValue(1);
         assertThat(bridge.records()).isEmpty();
     }
 
