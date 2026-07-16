@@ -41,6 +41,23 @@ class InMemoryToolRegistryTest {
     }
 
     @Test
+    void legacyRequestConstructorRemainsExecutable() {
+        UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID toolId = UUID.fromString("00000000-0000-0000-0000-000000000103");
+        ToolDefinition definition = new ToolDefinition(
+                toolId, tenantId, "legacy-echo", "兼容旧请求", ToolType.LOCAL,
+                "{\"type\":\"object\"}", ToolRiskLevel.LOW, true, "", "tester", "tester");
+        InMemoryToolRegistry registry = new InMemoryToolRegistry();
+        registry.register(definition, request -> new ToolExecutionResult(
+                request.hasRuntimeContext() ? "意外上下文" : request.inputJson(), true));
+
+        ToolExecutionResult result = registry.execute(new ToolExecutionRequest(toolId, "{}"));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.outputSummary()).isEqualTo("{}");
+    }
+
+    @Test
     void executeMissingToolReturnsNotRegisteredMessage() {
         InMemoryToolRegistry registry = new InMemoryToolRegistry();
         UUID toolId = UUID.fromString("00000000-0000-0000-0000-000000000102");
