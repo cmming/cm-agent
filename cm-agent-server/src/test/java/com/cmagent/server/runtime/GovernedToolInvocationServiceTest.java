@@ -107,7 +107,7 @@ class GovernedToolInvocationServiceTest {
         ToolInvocationResult result = service.invoke(request());
 
         assertUnavailable(result);
-        verifyNoInteractions(grantRepository, policy, toolRegistry, auditAppender);
+        verifyDefinitionFailureAuditWithoutAuthorizationOrExecution();
     }
 
     @Test
@@ -118,7 +118,7 @@ class GovernedToolInvocationServiceTest {
         ToolInvocationResult result = service.invoke(request());
 
         assertUnavailable(result);
-        verifyNoInteractions(grantRepository, policy, toolRegistry, auditAppender);
+        verifyDefinitionFailureAuditWithoutAuthorizationOrExecution();
     }
 
     @Test
@@ -132,7 +132,7 @@ class GovernedToolInvocationServiceTest {
         ToolInvocationResult result = service.invoke(request());
 
         assertUnavailable(result);
-        verifyNoInteractions(grantRepository, policy, toolRegistry, auditAppender);
+        verifyDefinitionFailureAuditWithoutAuthorizationOrExecution();
     }
 
     @Test
@@ -142,7 +142,22 @@ class GovernedToolInvocationServiceTest {
         ToolInvocationResult result = service.invoke(request("other-name"));
 
         assertUnavailable(result);
-        verifyNoInteractions(grantRepository, policy, toolRegistry, auditAppender);
+        verifyDefinitionFailureAuditWithoutAuthorizationOrExecution();
+    }
+
+    @Test
+    void databaseDefinitionFailureAuditExceptionIsRethrownUnchangedWithoutAuthorizationOrExecution() {
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.empty());
+        AuditPersistenceException failure = new AuditPersistenceException(
+                "审计写入失败", new IllegalStateException()
+        );
+        doThrow(failure).when(auditAppender).append(
+                TENANT_ID, "principal", "TOOL_CALL_FAILED", "TOOL",
+                TOOL_ID.toString(), "FAILED", "工具调用失败"
+        );
+
+        assertThatThrownBy(() -> service.invoke(request())).isSameAs(failure);
+        verifyNoInteractions(grantRepository, policy, toolRegistry);
     }
 
     @Test
@@ -346,5 +361,11 @@ class GovernedToolInvocationServiceTest {
                 any(), any(), eq("TOOL_CALL_STARTED"), any(), any(), any(), any()
         );
         verify(toolRegistry, never()).execute(any());
+    }
+
+    private void verifyDefinitionFailureAuditWithoutAuthorizationOrExecution() {
+        verify(auditAppender).append(TENANT_ID, "principal", "TOOL_CALL_FAILED",
+                "TOOL", TOOL_ID.toString(), "FAILED", "工具调用失败");
+        verifyNoInteractions(grantRepository, policy, toolRegistry);
     }
 }

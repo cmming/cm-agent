@@ -59,6 +59,7 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
                 .filter(definition -> isVisibleDefinition(request, definition))
                 .orElse(null);
         if (tool == null) {
+            appendAudit(request, "TOOL_CALL_FAILED", "FAILED", "工具调用失败");
             return ToolInvocationResult.failed(TOOL_UNAVAILABLE);
         }
 
