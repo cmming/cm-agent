@@ -18,7 +18,6 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.SignalType;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -84,12 +83,11 @@ public class AgentScopeToolBridge implements AgentTool {
 
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-        return Mono.fromCallable(() -> invoke(param))
-                .doFinally(signalType -> {
-                    if (signalType == SignalType.CANCEL) {
-                        runGate.markInvocationInterrupted();
-                    }
-                });
+        return withCancellationGate(Mono.fromCallable(() -> invoke(param)));
+    }
+
+    Mono<ToolResultBlock> withCancellationGate(Mono<ToolResultBlock> source) {
+        return source.doOnCancel(runGate::markInvocationInterrupted);
     }
 
     public List<ToolCallRecord> records() {

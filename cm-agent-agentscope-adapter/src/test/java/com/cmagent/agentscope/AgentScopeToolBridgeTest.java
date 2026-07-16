@@ -23,6 +23,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import org.junit.jupiter.api.Test;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
@@ -31,14 +32,20 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RunnableFuture;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -375,21 +382,47 @@ class AgentScopeToolBridgeTest {
                     return ToolInvocationResult.succeeded("取消后的结果");
                 }, objectMapper, runGate);
 
-        Disposable call = bridge.callAsync(toolCallParam())
-                .subscribeOn(Schedulers.boundedElastic())
-                .subscribe();
-        assertThat(gatewayEntered.await(1, TimeUnit.SECONDS)).isTrue();
-        Thread.sleep(50);
+        CancelAwaitingExecutor executor = new CancelAwaitingExecutor(gatewayReturned);
+        Scheduler scheduler = Schedulers.fromExecutorService(executor);
+        try {
+            Disposable call = bridge.callAsync(toolCallParam())
+                    .subscribeOn(scheduler)
+                    .subscribe();
+            assertThat(gatewayEntered.await(1, TimeUnit.SECONDS)).isTrue();
+            Thread.sleep(50);
 
+            call.dispose();
+            releaseGateway.countDown();
+            assertThat(gatewayReturned.await(1, TimeUnit.SECONDS)).isTrue();
+
+            assertThat(runGate.isToolTimedOut()).isFalse();
+            assertThat(bridge.records()).isEmpty();
+            assertThatThrownBy(() -> bridge.callAsync(toolCallParam("后续调用", "tool-call-2", "echo")).block())
+                    .isInstanceOf(AgentScopeRunGate.RunAbortedException.class);
+            assertThat(gatewayCount).hasValue(1);
+        } finally {
+            releaseGateway.countDown();
+            scheduler.dispose();
+            executor.shutdownNow();
+            executor.awaitTermination(1, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void cancellationGateClosesBeforeCancellationReachesUpstream() {
+        AgentScopeRunGate runGate = new AgentScopeRunGate(Duration.ofSeconds(1));
+        AgentScopeToolBridge bridge = new AgentScopeToolBridge(
+                request(), tool(validSchema()), ignored -> ToolInvocationResult.succeeded("ok"),
+                objectMapper, runGate);
+        AtomicReference<Boolean> gateStateAtUpstreamCancellation = new AtomicReference<>();
+        Mono<ToolResultBlock> upstream = Mono.<ToolResultBlock>never()
+                .doOnCancel(() -> gateStateAtUpstreamCancellation.set(
+                        runGate.isInvocationInterrupted()));
+
+        Disposable call = bridge.withCancellationGate(upstream).subscribe();
         call.dispose();
-        releaseGateway.countDown();
-        assertThat(gatewayReturned.await(1, TimeUnit.SECONDS)).isTrue();
 
-        assertThat(runGate.isToolTimedOut()).isFalse();
-        assertThat(bridge.records()).isEmpty();
-        assertThatThrownBy(() -> bridge.callAsync(toolCallParam("后续调用", "tool-call-2", "echo")).block())
-                .isInstanceOf(AgentScopeRunGate.RunAbortedException.class);
-        assertThat(gatewayCount).hasValue(1);
+        assertThat(gateStateAtUpstreamCancellation).hasValue(true);
     }
 
     @Test
@@ -471,6 +504,45 @@ class AgentScopeToolBridgeTest {
             Thread.onSpinWait();
         }
         return false;
+    }
+
+    private static final class CancelAwaitingExecutor extends ThreadPoolExecutor {
+
+        private final CountDownLatch gatewayReturned;
+
+        private CancelAwaitingExecutor(CountDownLatch gatewayReturned) {
+            super(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
+            this.gatewayReturned = gatewayReturned;
+        }
+
+        @Override
+        protected <T> RunnableFuture<T> newTaskFor(Callable<T> callable) {
+            return delayedCancelTask(callable);
+        }
+
+        @Override
+        protected <T> RunnableFuture<T> newTaskFor(Runnable runnable, T value) {
+            return delayedCancelTask(() -> {
+                runnable.run();
+                return value;
+            });
+        }
+
+        private <T> RunnableFuture<T> delayedCancelTask(Callable<T> callable) {
+            return new FutureTask<>(callable) {
+                @Override
+                public boolean cancel(boolean mayInterruptIfRunning) {
+                    boolean cancelled = super.cancel(mayInterruptIfRunning);
+                    try {
+                        gatewayReturned.await(1, TimeUnit.SECONDS);
+                    } catch (InterruptedException interruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
+                    LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(50));
+                    return cancelled;
+                }
+            };
+        }
     }
 
     private static ToolCallParam toolCallParam(String value, String toolCallId, String toolName) {

@@ -90,6 +90,10 @@ final class AgentScopeRunGate {
         invocationInterrupted.set(true);
     }
 
+    boolean isInvocationInterrupted() {
+        return invocationInterrupted.get();
+    }
+
     private void throwIfToolTimedOut() {
         if (toolTimedOut.get()) {
             throw new RunAbortedException();
