@@ -10,6 +10,7 @@ import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.runtime.ToolInvocationGateway;
+import com.cmagent.core.runtime.ToolInvocationInfrastructureException;
 import com.cmagent.core.runtime.ToolInvocationRequest;
 import com.cmagent.core.runtime.ToolInvocationResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,6 +34,7 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AgentScopeToolBridgeTest {
 
@@ -117,6 +119,29 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    void forwardsModelSuppliedToolNameForGatewayConsistencyGovernance() {
+        List<ToolInvocationRequest> invocations = new CopyOnWriteArrayList<>();
+        AgentScopeToolBridge bridge = bridge(request(), tool(validSchema()), invocation -> {
+            invocations.add(invocation);
+            return ToolInvocationResult.failed("工具不可用");
+        });
+
+        ToolResultBlock block = bridge.callAsync(
+                toolCallParam("hello", "tool-call-mismatch", "model-supplied-name")).block();
+
+        assertThat(block).isNotNull();
+        assertThat(block.getState()).isEqualTo(ToolResultState.ERROR);
+        assertThat(invocations).singleElement()
+                .extracting(ToolInvocationRequest::toolName)
+                .isEqualTo("model-supplied-name");
+        assertThat(bridge.records()).singleElement().satisfies(record -> {
+            assertThat(record.status()).isEqualTo(RunStatus.FAILED);
+            assertThat(record.authorized()).isTrue();
+            assertThat(record.errorMessage()).isEqualTo("工具不可用");
+        });
+    }
+
+    @Test
     void mapsControlledFailureToErrorResultAndRecord() {
         AgentScopeToolBridge bridge = bridge(request(), tool(validSchema()),
                 ignored -> ToolInvocationResult.failed("工具执行失败"));
@@ -188,6 +213,18 @@ class AgentScopeToolBridgeTest {
         });
     }
 
+    @Test
+    void rethrowsInfrastructureFailureWithoutCreatingOrdinaryFailureRecord() {
+        ToolInvocationInfrastructureException failure = new ToolInvocationInfrastructureException(
+                "审计写入失败", new IllegalStateException("数据库不可用"));
+        AgentScopeToolBridge bridge = bridge(request(), tool(validSchema()), ignored -> {
+            throw failure;
+        });
+
+        assertThatThrownBy(() -> bridge.callAsync(toolCallParam()).block()).isSameAs(failure);
+        assertThat(bridge.records()).isEmpty();
+    }
+
     private AgentScopeToolBridge bridge(
             AgentRunRequest request,
             ToolDefinition tool,
@@ -223,10 +260,14 @@ class AgentScopeToolBridgeTest {
     }
 
     private static ToolCallParam toolCallParam(String value, String toolCallId) {
+        return toolCallParam(value, toolCallId, "echo");
+    }
+
+    private static ToolCallParam toolCallParam(String value, String toolCallId, String toolName) {
         Map<String, Object> input = Map.of("value", value);
         ToolUseBlock toolUse = ToolUseBlock.builder()
                 .id(toolCallId)
-                .name("echo")
+                .name(toolName)
                 .input(input)
                 .build();
         return ToolCallParam.builder()

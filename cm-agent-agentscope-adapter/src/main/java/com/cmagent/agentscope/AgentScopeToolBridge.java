@@ -5,6 +5,7 @@ import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.ToolCallRecord;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.runtime.ToolInvocationGateway;
+import com.cmagent.core.runtime.ToolInvocationInfrastructureException;
 import com.cmagent.core.runtime.ToolInvocationRequest;
 import com.cmagent.core.runtime.ToolInvocationResult;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -81,6 +82,7 @@ public class AgentScopeToolBridge implements AgentTool {
                 ? Map.of()
                 : toolUse.getInput();
         String toolCallId = toolUse == null ? "" : toolUse.getId();
+        String invocationToolName = toolUse == null ? "" : toolUse.getName();
         String inputSummary = summarizeInput(input);
         try {
             String inputJson = objectMapper.writeValueAsString(input);
@@ -91,7 +93,7 @@ public class AgentScopeToolBridge implements AgentTool {
                     request.runId(),
                     toolCallId,
                     tool.id(),
-                    tool.name(),
+                    invocationToolName,
                     inputJson
             ));
             Duration duration = elapsedSince(startedAt);
@@ -107,6 +109,8 @@ public class AgentScopeToolBridge implements AgentTool {
                     tool.id(), tool.name(), inputSummary, "", status,
                     duration, result.authorized(), result.errorMessage()));
             return ToolResultBlock.error(result.errorMessage()).withState(ToolResultState.ERROR);
+        } catch (ToolInvocationInfrastructureException infrastructureFailure) {
+            throw infrastructureFailure;
         } catch (Exception exception) {
             records.add(new ToolCallRecord(
                     tool.id(), tool.name(), inputSummary, "", RunStatus.FAILED,
