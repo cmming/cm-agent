@@ -14,7 +14,6 @@ import org.springframework.context.annotation.Configuration;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AgentScopeRuntimeConfigurationTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -74,15 +73,12 @@ class AgentScopeRuntimeConfigurationTest {
     }
 
     @Test
-    void missingCredentialOnlyReportsControlledMessage() {
+    void defaultCredentialProviderRejectsMissingCredentialsAtStartup() {
         contextRunner.withPropertyValues("cm-agent.agentscope.enabled=true")
-                .run(context -> {
-                    assertThat(context).hasNotFailed();
-                    ModelCredentialProvider provider = context.getBean(ModelCredentialProvider.class);
-                    assertThatThrownBy(() -> provider.resolve(TENANT_ID, MODEL_ID))
-                            .hasMessage("模型凭据不可用")
-                            .hasMessageNotContaining("api-key");
-                });
+                .run(context -> assertThat(context).hasFailed()
+                        .getFailure()
+                        .hasMessageContaining("启用 AgentScope runtime 时必须配置模型凭据或自定义 ModelCredentialProvider")
+                        .hasMessageNotContaining("api-key"));
     }
 
     @Configuration(proxyBeanMethods = false)

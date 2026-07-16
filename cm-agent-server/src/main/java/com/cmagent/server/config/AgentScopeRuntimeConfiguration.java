@@ -34,6 +34,10 @@ public class AgentScopeRuntimeConfiguration {
     @Bean
     @ConditionalOnMissingBean({AgentRuntime.class, ModelCredentialProvider.class})
     ModelCredentialProvider externalModelCredentialProvider(AgentScopeRuntimeProperties properties) {
+        if (properties.getCredentials().isEmpty()) {
+            throw new IllegalStateException(
+                    "启用 AgentScope runtime 时必须配置模型凭据或自定义 ModelCredentialProvider");
+        }
         return new ExternalModelCredentialProvider(properties);
     }
 

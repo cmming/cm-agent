@@ -1,11 +1,10 @@
 package com.cmagent.server.web;
 
-import com.cmagent.core.domain.AgentRunRequest;
-import com.cmagent.core.domain.AgentRunResult;
+import com.cmagent.agentscope.AgentScopeRuntimeAdapter;
+import com.cmagent.agentscope.ControlledAgentScopeRuntimeTestConfiguration;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.ToolCallRecord;
 import com.cmagent.core.domain.ToolDefinition;
-import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.persistence.JdbcModelConfigRepository;
@@ -19,8 +18,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.http.MediaType;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -30,21 +30,16 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.time.Instant;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -54,6 +49,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
+@Import(ControlledAgentScopeRuntimeTestConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class RunControllerJdbcPersistenceTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -77,10 +73,13 @@ class RunControllerJdbcPersistenceTest {
     @Autowired
     private JwtService jwtService;
 
-    @MockBean
-    private AgentRuntime agentRuntime;
+    @Autowired
+    private AgentScopeRuntimeAdapter agentRuntime;
 
-    @MockBean
+    @Autowired
+    private ControlledAgentScopeRuntimeTestConfiguration.ControlledExecutor controlledExecutor;
+
+    @SpyBean
     private AuditAppender auditAppender;
 
     @Autowired
@@ -92,30 +91,15 @@ class RunControllerJdbcPersistenceTest {
     @Autowired
     private ModelConfigRepository modelConfigRepository;
 
-    private final AtomicReference<AgentRunRequest> lastRequest = new AtomicReference<>();
-
     @BeforeEach
     void arrangeRuntime() {
-        lastRequest.set(null);
-        when(agentRuntime.run(any())).thenAnswer(invocation -> {
-            AgentRunRequest request = invocation.getArgument(0);
-            lastRequest.set(request);
-            Instant now = Instant.now();
-            return new AgentRunResult(
-                    UUID.randomUUID(),
-                    RunStatus.SUCCEEDED,
-                    "fake-runtime: " + request.input(),
-                    List.of(),
-                    now,
-                    now,
-                    ""
-            );
-        });
+        controlledExecutor.reset();
     }
 
     @Test
     void jdbcProfileProvidesModelConfigRepository() {
         assertThat(modelConfigRepository).isInstanceOf(JdbcModelConfigRepository.class);
+        assertThat(agentRuntime).isExactlyInstanceOf(AgentScopeRuntimeAdapter.class);
     }
 
     @Test
@@ -182,8 +166,15 @@ class RunControllerJdbcPersistenceTest {
                 .andExpect(jsonPath("$.run.id").value(runId))
                 .andExpect(jsonPath("$.run.input").value("password=<已脱敏>"));
 
-        assertThat(lastRequest.get()).isNotNull();
-        assertThat(lastRequest.get().tools()).extracting(ToolDefinition::name).containsExactly("echo");
+        mockMvc.perform(get("/api/audit-events")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.eventType == 'AGENT_RUN' && @.status == 'SUCCEEDED')]")
+                        .isNotEmpty());
+
+        assertThat(controlledExecutor.lastRequest()).isNotNull();
+        assertThat(controlledExecutor.lastRequest().tools())
+                .extracting(ToolDefinition::name).containsExactly("echo");
     }
 
     @Test
@@ -200,24 +191,16 @@ class RunControllerJdbcPersistenceTest {
                 .andExpect(status().isOk());
 
         UUID authorizedToolId = UUID.fromString(toolId);
-        doAnswer(invocation -> {
-            AgentRunRequest request = invocation.getArgument(0);
-            Instant now = Instant.now();
-            return new AgentRunResult(
-                    UUID.randomUUID(), RunStatus.SUCCEEDED, "output=call-output",
-                    List.of(
-                            new ToolCallRecord(
-                                    authorizedToolId, "echo", "password=call-secret", "apiKey=call-key",
-                                    RunStatus.SUCCEEDED, Duration.ofMillis(1234), true, "Bearer call-token"
-                            ),
-                            new ToolCallRecord(
-                                    UUID.randomUUID(), "foreign", "foreign-input", "foreign-output",
-                                    RunStatus.SUCCEEDED, Duration.ofMillis(5), true, "foreign-error"
-                            )
-                    ),
-                    now, now, ""
-            );
-        }).when(agentRuntime).run(any());
+        controlledExecutor.returnToolCalls(List.of(
+                new ToolCallRecord(
+                        authorizedToolId, "echo", "password=call-secret", "apiKey=call-key",
+                        RunStatus.SUCCEEDED, Duration.ofMillis(1234), true, "Bearer call-token"
+                ),
+                new ToolCallRecord(
+                        UUID.randomUUID(), "foreign", "foreign-input", "foreign-output",
+                        RunStatus.SUCCEEDED, Duration.ofMillis(5), true, "foreign-error"
+                )
+        ));
 
         String runResponse = mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
                         .header("Authorization", bearer(token))
@@ -269,7 +252,7 @@ class RunControllerJdbcPersistenceTest {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("AUDIT_UNAVAILABLE"));
 
-        verify(agentRuntime, never()).run(any());
+        assertThat(controlledExecutor.invocationCount()).isZero();
         assertThat(runRepository.listByTenantAndAgent(
                 TENANT_ID,
                 UUID.fromString(agentId),
@@ -298,7 +281,7 @@ class RunControllerJdbcPersistenceTest {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("AUDIT_UNAVAILABLE"));
 
-        verify(agentRuntime).run(any());
+        assertThat(controlledExecutor.invocationCount()).isEqualTo(1);
         assertThat(runRepository.listByTenantAndAgent(
                 TENANT_ID,
                 UUID.fromString(agentId),
@@ -324,8 +307,8 @@ class RunControllerJdbcPersistenceTest {
             }
             return null;
         }).when(auditAppender).append(any(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
-        doThrow(new AuditPersistenceException("runtime 审计失败", new IllegalStateException("runtime audit unavailable")))
-                .when(agentRuntime).run(any());
+        controlledExecutor.failNext(
+                new AuditPersistenceException("runtime 审计失败", new IllegalStateException("runtime audit unavailable")));
 
         mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
                         .header("Authorization", bearer(token))
@@ -334,7 +317,7 @@ class RunControllerJdbcPersistenceTest {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("AUDIT_UNAVAILABLE"));
 
-        verify(agentRuntime).run(any());
+        assertThat(controlledExecutor.invocationCount()).isEqualTo(1);
         assertThat(runRepository.listByTenantAndAgent(
                 TENANT_ID,
                 UUID.fromString(agentId),

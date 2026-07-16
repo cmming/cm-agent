@@ -1,6 +1,9 @@
 package com.cmagent.server.config;
 
+import com.cmagent.agentscope.AgentScopeRuntimeAdapter;
 import com.cmagent.core.runtime.AgentRuntime;
+import com.cmagent.core.runtime.ToolInvocationGateway;
+import com.cmagent.core.runtime.ToolInvocationResult;
 import com.cmagent.server.security.BootstrapAdminConfiguration;
 import com.cmagent.server.security.BootstrapAdminProperties;
 import com.cmagent.server.security.JwtSecurityConfiguration;
@@ -62,6 +65,12 @@ class ApplicationProfileConfigurationTest {
                     BootstrapAdminProperties.class,
                     ProfileSafetyValidator.class
             )
+            .withInitializer(new ConfigDataApplicationContextInitializer());
+
+    private final ApplicationContextRunner realRuntimeProfileContextRunner = new ApplicationContextRunner()
+            .withUserConfiguration(AgentScopeRuntimeConfiguration.class, ProfileSafetyValidator.class)
+            .withBean(ToolInvocationGateway.class,
+                    () -> request -> ToolInvocationResult.succeeded("测试结果"))
             .withInitializer(new ConfigDataApplicationContextInitializer());
 
     @Test
@@ -194,6 +203,24 @@ class ApplicationProfileConfigurationTest {
 
                     assertThat(environment.getActiveProfiles()).contains("prod", "production");
                     assertThat(environment.getProperty("cm-agent.config.persistence-mode")).isEqualTo("jdbc");
+                });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"production", "prod", "supabase"})
+    void strictProfileProvidesRealAgentScopeRuntimeWithoutTestRuntime(String profile) {
+        realRuntimeProfileContextRunner
+                .withPropertyValues(externalConfigProperties("spring.profiles.active=" + profile))
+                .withPropertyValues(
+                        "cm-agent.agentscope.credentials[0].tenant-id=00000000-0000-0000-0000-000000000001",
+                        "cm-agent.agentscope.credentials[0].model-config-id=00000000-0000-0000-0000-000000000301",
+                        "cm-agent.agentscope.credentials[0].api-key=unit-test-profile-key")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getEnvironment()
+                            .getProperty("cm-agent.agentscope.enabled", Boolean.class)).isTrue();
+                    assertThat(context).hasSingleBean(AgentRuntime.class);
+                    assertThat(context).hasSingleBean(AgentScopeRuntimeAdapter.class);
                 });
     }
 
