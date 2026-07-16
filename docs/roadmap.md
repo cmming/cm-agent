@@ -1,6 +1,6 @@
 # 中文路线图
 
-本文档记录 CM Agent 从当前阶段2到阶段5的交付边界。阶段3、阶段4和阶段5尚未交付；本路线图中的后续内容不是当前版本的能力承诺。
+本文档记录 CM Agent 从当前阶段3到阶段5的交付边界。阶段3已交付，阶段4和阶段5尚未交付；本路线图中的后续内容不是当前版本的能力承诺。
 
 ## 阶段 2：生产持久化与安全收口（已完成）
 
@@ -12,13 +12,15 @@
 - JWT secret、profile、bootstrap admin、错误响应和配置注入完成生产边界收口；生产 profile 必须 JDBC，禁用 bootstrap admin 和开发 JWT fallback。
 - 运行持久化分为启动和完成两段：启动阶段记录 `RUNNING` 与启动审计，完成阶段更新 Run、写入 ToolCall 并记录完成/失败审计。
 
-当前阶段2仍使用 fake runtime。它只用于验证认证、权限、租户隔离、运行记录、工具调用记录和审计链路，不代表真实模型调用、AgentScope 编排、工具执行或流式输出已经交付。
+阶段2保留的 fake runtime 继续仅用于本地和测试，不作为生产模型能力。
 
-## 阶段 3：真实 AgentScope runtime（尚未交付）
+## 阶段 3：真实 AgentScope Runtime（已完成）
 
-阶段3将把当前 `AgentRuntime` 抽象接到真实 AgentScope Java runtime，补齐模型供应商、会话/消息编排、工具执行、超时取消、运行事件和结果映射。交付前需要明确真实 runtime 的生命周期、租户与权限上下文传递、敏感数据边界，以及失败时与当前两段式 Run/ToolCall/Audit 持久化的契约。
+阶段3已将 `AgentRuntime` 接到 AgentScope Java 2.0.0，支持 OpenAI Compatible 与 DashScope Provider、同步单轮 ReAct 运行、外部 `ModelCredentialProvider`、运行事件与结果映射，以及模型和工具 timeout。
 
-阶段3依赖阶段2已稳定的租户隔离、授权策略、审计严格语义、Run 查询和 JDBC 事务边界。在阶段3完成前，不应把 fake runtime 的成功响应当作真实 AgentScope 能力或生产模型接入承诺。
+模型凭据按 `tenantId + modelConfigId` 与外部 Secret 映射，`model_configs` 不保存明文 API Key。工具每次调用重新授权，endpoint 不会自动执行；权限拒绝、审计严格失败和租户隔离继续沿用阶段2边界。对外部副作用，工具和下游仍需自行保证幂等。
+
+阶段3只交付同步单轮能力，不承诺多轮会话持久化、流式 REST、HITL 或手动取消。AgentScope 2.0.0 的通用取消信号也不能证明外部副作用已回滚。
 
 ## 阶段 4：可观测性与运维（尚未交付）
 

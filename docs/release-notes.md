@@ -1,10 +1,15 @@
 # 发布说明
 
-## 0.1.0-SNAPSHOT：阶段2生产运行时收口
+## 0.1.0-SNAPSHOT：阶段3真实 AgentScope Runtime
 
-本快照在第一阶段底座之上完成“生产持久化与安全收口”。第一阶段仍提供 Maven 多模块工程、核心领域接口、Spring Boot Starter、独立服务端、轻量控制台、工具治理、多租户/RBAC 基线和 fake runtime。
+本快照在阶段2生产持久化与安全收口基础上，接入 AgentScope Java 2.0.0 真实 Runtime。第一阶段底座和阶段2的 JDBC/Flyway、安全、多租户、权限与严格审计边界继续保持。
 
 ### 本次变更
+
+- `agentscope.version` 升级到 `2.0.0`，接入 OpenAI Compatible 与 DashScope Provider，提供同步单轮 ReAct 运行。
+- 通过 `tenantId + modelConfigId` 调用外部 `ModelCredentialProvider` 获取模型凭据；默认凭据为空时启动 fail-fast，`model_configs` 不保存明文 API Key。
+- 生产 profile 使用 `fake-runtime-enabled=false` 与 `agentscope-enabled=true`；fake runtime 继续仅服务本地和测试。
+- 工具每次调用重新授权并记录严格审计，endpoint 元数据不自动执行；模型、工具 timeout 和 Provider 故障按固定结果语义收口。
 
 - Run、ToolCall、Audit 接入 JDBC Repository，并保持每次读写的 tenant 隔离。
 - 通过 Flyway 新增 `V2__add_runtime_query_indexes.sql` 和 `V3__add_tool_calls_created_at_index.sql`，为运行、工具调用和审计查询增加租户范围索引。
@@ -27,13 +32,15 @@
 - 现有 API 的认证、权限、租户过滤和审计约束继续生效；新增的 cursor 由服务端生成，调用方不应自行构造。
 - 审计写入失败不再被忽略，会导致请求返回 `503`；部署和告警系统应将其视为依赖不可用。
 - 生产 profile 不允许 bootstrap admin、开发 JWT fallback 或可用的固定凭据。文档和配置示例仅使用占位符。
-- 真实 AgentScope runtime 尚未接入；当前运行结果仍来自 fake runtime，不能据此承诺真实模型、工具执行或流式能力。
+- 真实 Runtime 当前只支持同步单轮；不承诺多轮会话持久化、流式 REST、HITL 或手动取消。
+- AgentScope 2.0.0 工具层的通用取消信号不能证明外部副作用已停止；有副作用的工具必须使用 `runId`、`toolCallId` 或业务键保证幂等。
+- 模型凭据只能使用 `${MODEL_API_KEY}` 一类 Secret 占位符或自定义 `ModelCredentialProvider` 注入，不得进入数据库兼容字段、Git、日志、审计或 API。
 
 ### 未包含范围
 
-以下内容不属于本次阶段2发布：
+以下内容不属于本次阶段3发布：
 
-- 阶段3真实 AgentScope runtime 及其模型/工具适配。
+- 多轮会话持久化、流式 REST、HITL 和手动取消。
 - 阶段4 metrics、集中式日志与追踪、备份恢复自动化、容量治理和应用自动归档。
 - 阶段5 CI/CD 交付流水线、发布自动化、稳定性工程和正式版本承诺。
 

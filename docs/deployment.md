@@ -1,6 +1,6 @@
 # 部署指南
 
-本文档说明阶段2的构建、JDBC/Flyway 部署、运行持久化和 Rocky VM 容器验证方式。生产环境不使用本机 Docker Desktop 作为容器验证环境。
+本文档说明阶段3的构建、AgentScope 2.0.0 真实 Runtime、JDBC/Flyway 部署、运行持久化和 Rocky VM 容器验证方式。生产环境不使用本机 Docker Desktop 作为容器验证环境。
 
 ## 前置条件
 
@@ -8,6 +8,7 @@
 - Maven 3.9 或更高版本。
 - 生产数据库、受控网络和最小权限账号。
 - 生产 JWT secret、数据库 URL、用户名和密码只能由 secret manager 或受控外部 YAML 注入。
+- OpenAI Compatible 或 DashScope 模型服务，以及按租户和模型配置隔离的外部模型凭据。
 - 涉及 Docker Compose、Testcontainers、Flyway 或 JDBC 集成验证时，必须使用 Rocky Linux VM 的容器环境。
 
 ## 构建
@@ -67,7 +68,17 @@ cm-agent:
     jdbc-driver-class-name: org.postgresql.Driver
     bootstrap-admin-enabled: false
     fake-runtime-enabled: false
+    agentscope-enabled: true
+  agentscope:
+    credentials:
+      - tenant-id: <tenant-id>
+        model-config-id: <model-config-id>
+        api-key: ${MODEL_API_KEY}
 ```
+
+真实 Runtime 必须同时满足 `fake-runtime-enabled=false` 与 `agentscope-enabled=true`。上例的 `${MODEL_API_KEY}` 只能由部署平台从 Secret 注入；也可以用自定义 `ModelCredentialProvider` Bean 直接对接 secret manager。默认外部凭据列表为空时应用会 fail-fast，避免生产在无模型凭据的情况下接收流量。
+
+`model_configs` 只部署 Provider、`baseUrl`、`modelName` 等模型元数据，不保存明文 API Key。AgentScope Java 2.0.0 当前支持 OpenAI Compatible 与 DashScope Provider；升级 AgentScope 或 Provider 扩展时必须重新核对依赖树和运行合同。
 
 外部配置目录示例为 `/etc/cm-agent/`，实际路径由部署平台控制。生产启动必须显式选择 `production`、`prod` 或 `supabase` profile：
 
@@ -110,4 +121,6 @@ JWT 验证密钥、数据库凭据和模型 API Key 不得写入 Git、镜像层
 GET http://<service-host>:8080/actuator/health
 ```
 
-启动失败、Flyway 失败、JWT 验证密钥缺失、数据库连接失败和审计写入失败都应阻止流量切入。`local`/`test` 才允许显式启用 fake runtime；生产 profile 固定为 `fake-runtime-enabled=false`，必须提供真实 AgentScope runtime 或对应适配器。
+启动失败、Flyway 失败、JWT 验证密钥缺失、模型凭据缺失、数据库连接失败和审计写入失败都应阻止流量切入。`local`/`test` 才允许显式启用 fake runtime；生产 profile 固定为 `fake-runtime-enabled=false`、`agentscope-enabled=true`。
+
+阶段3只提供同步单轮运行，不应把部署就绪解释为已经支持多轮会话持久化、流式 REST、HITL 或手动取消。工具每次调用都会重新授权，endpoint 元数据不会被自动执行。对具有外部副作用的工具，部署前必须确认下游支持幂等键；模型或工具 timeout、中断以及 AgentScope 2.0.0 的通用取消信号均不能证明外部副作用已回滚。
