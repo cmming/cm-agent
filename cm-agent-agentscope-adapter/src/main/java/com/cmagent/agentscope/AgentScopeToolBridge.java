@@ -131,6 +131,8 @@ public class AgentScopeToolBridge implements AgentTool {
                     tool.id(), tool.name(), inputSummary, "", status,
                     duration, result.authorized(), result.errorMessage()));
             return ToolResultBlock.error(result.errorMessage()).withState(ToolResultState.ERROR);
+        } catch (AgentScopeRunGate.RunAbortedException aborted) {
+            throw aborted;
         } catch (ToolInvocationInfrastructureException infrastructureFailure) {
             throw infrastructureFailure;
         } catch (Exception exception) {

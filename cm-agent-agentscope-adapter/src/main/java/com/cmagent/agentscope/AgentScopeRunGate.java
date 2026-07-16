@@ -19,6 +19,7 @@ final class AgentScopeRunGate {
     ToolInvocationResult invoke(ToolInvocationGateway gateway, ToolInvocationRequest request) {
         synchronized (invocationLock) {
             throwIfInfrastructureFailure();
+            throwIfToolTimedOut();
             try {
                 return gateway.invoke(request);
             } catch (ToolInvocationInfrastructureException failure) {
@@ -43,9 +44,18 @@ final class AgentScopeRunGate {
         return toolTimedOut.get();
     }
 
+    private void throwIfToolTimedOut() {
+        if (toolTimedOut.get()) {
+            throw new RunAbortedException();
+        }
+    }
+
     void interruptOnce(Runnable interruptAction) {
         if (interrupted.compareAndSet(false, true)) {
             interruptAction.run();
         }
+    }
+
+    static final class RunAbortedException extends RuntimeException {
     }
 }

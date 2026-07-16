@@ -458,6 +458,43 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    void stopsWaitingParallelToolCallAfterFirstToolTimesOut() throws Exception {
+        AtomicInteger gatewayCount = new AtomicInteger();
+        CountDownLatch secondGatewayEntered = new CountDownLatch(1);
+        AtomicInteger interruptCount = new AtomicInteger();
+        AtomicInteger closeCount = new AtomicInteger();
+        AgentScopeRuntimeOptions timeoutOptions =
+                new AgentScopeRuntimeOptions(Duration.ofSeconds(2), Duration.ofMillis(50), 1);
+        AgentRuntime runtime = runtime(invocation -> {
+            int current = gatewayCount.incrementAndGet();
+            if (current > 1) {
+                secondGatewayEntered.countDown();
+                return ToolInvocationResult.succeeded("不应执行");
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("本地并行慢网关被取消", interruptedException);
+            }
+            return ToolInvocationResult.succeeded("late");
+        }, timeoutOptions, trackingLifecycle(interruptCount, closeCount));
+
+        AgentRunResult result = runtime.run(request(List.of(tool()), "并行工具超时"));
+        boolean laterGatewayExecuted = secondGatewayEntered.await(300, TimeUnit.MILLISECONDS);
+
+        assertAll(
+                () -> assertThat(result.status()).isEqualTo(RunStatus.FAILED),
+                () -> assertThat(result.errorMessage()).isEqualTo("Agent 运行超时"),
+                () -> assertThat(requestCount).hasValue(1),
+                () -> assertThat(gatewayCount).hasValue(1),
+                () -> assertThat(laterGatewayExecuted).isFalse(),
+                () -> assertThat(interruptCount).hasValue(1),
+                () -> assertThat(closeCount).hasValue(1)
+        );
+    }
+
+    @Test
     void interruptsAndClosesWhenTimeoutFollowsDeniedRecord() {
         AtomicInteger interruptCount = new AtomicInteger();
         AtomicInteger closeCount = new AtomicInteger();
@@ -586,6 +623,11 @@ class AgentScopeRuntimeContractTest {
     }
 
     private String responseFor(int current, String requestBody) {
+        if (requestBody.contains("并行工具超时")) {
+            return requestBody.contains("\"role\":\"tool\"")
+                    ? TOOL_FINAL_RESPONSE
+                    : PARALLEL_TOOL_CALL_RESPONSE;
+        }
         if (requestBody.contains("并发请求甲")) {
             return requestBody.contains("\"role\":\"tool\"")
                     ? TOOL_FINAL_RESPONSE.replace("工具运行后的最终回答", "并发回答甲")
