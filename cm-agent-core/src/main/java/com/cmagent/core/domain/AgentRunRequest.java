@@ -31,6 +31,9 @@ public record AgentRunRequest(
         if (!tenantId.equals(modelConfig.tenantId())) {
             throw new IllegalArgumentException("模型配置不属于当前租户");
         }
+        if (!agent.modelProviderId().equals(modelConfig.id())) {
+            throw new IllegalArgumentException("模型配置与 Agent 绑定不一致");
+        }
         if (!tenantId.equals(principal.tenantId())) {
             throw new IllegalArgumentException("调用主体不属于当前租户");
         }

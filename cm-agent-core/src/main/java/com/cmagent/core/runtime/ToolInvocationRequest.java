@@ -25,6 +25,12 @@ public record ToolInvocationRequest(
         Objects.requireNonNull(toolId, "toolId 不能为空");
         Objects.requireNonNull(toolName, "toolName 不能为空");
         Objects.requireNonNull(inputJson, "inputJson 不能为空");
+        if (toolCallId.isBlank()) {
+            throw new IllegalArgumentException("toolCallId 不能为空");
+        }
+        if (toolName.isBlank()) {
+            throw new IllegalArgumentException("toolName 不能为空");
+        }
         if (!tenantId.equals(principal.tenantId())) {
             throw new IllegalArgumentException("调用主体不属于当前租户");
         }

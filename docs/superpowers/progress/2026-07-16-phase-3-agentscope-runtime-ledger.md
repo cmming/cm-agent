@@ -2,7 +2,7 @@
 
 | 计划项 | 状态 | 证据 | 发现的问题 | 修复结果 |
 |---|---|---|---|---|
-| Task 1：Core 运行契约 | 已完成 | JDK 21.0.11、Maven 3.9.4；`mvn -q -Dsurefire.failIfNoSpecifiedTests=false -pl cm-agent-core -am -Dtest=AgentRunRequestTest,ModelCredentialTest,ToolInvocationRequestTest,InMemoryToolRegistryTest,FakeAgentRuntimeTest test` 通过 15 个测试；Core 全量 45 个测试通过 | RED 阶段缺少模型凭据、工具调用请求、完整运行请求和工具运行上下文契约 | 已补齐 Core 契约、租户校验、敏感凭据脱敏和旧工具请求构造器，GREEN 与 Core 全量回归均通过 |
+| Task 1：Core 运行契约 | 已完成 | JDK 21.0.11、Maven 3.9.4；审查修复后 Core 指定 22 个、Core 全量 52 个、Adapter 全量 2 个、Server 指定 30 个测试通过；Server `clean compile` 与全部测试源码编译通过；`git diff --check` 通过 | 独立审查发现 Adapter/Server 旧构造调用断裂、Agent 与模型 ID 未绑定、工具调用空白标识及部分上下文可绕过校验、Fake Runtime 未复用 runId；最终回归发现同时间戳审计事件的首项断言不稳定 | 已前移最小 `ModelConfigRepository` memory 契约和运行加载链路，修复全部上下文不变量与调用点；审计测试改为验证目标事件存在；JDBC Repository 仍留给 Task 2 |
 | Task 2：模型配置仓储 | 进行中 | 尚无 | 尚无 | 尚无 |
 | Task 3：外部模型凭据 | 未开始 | 尚无 | 尚无 | 尚无 |
 | Task 4：工具治理网关 | 未开始 | 尚无 | 尚无 | 尚无 |

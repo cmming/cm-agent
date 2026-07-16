@@ -1,8 +1,11 @@
 package com.cmagent.agentscope;
 
 import com.cmagent.api.PrincipalRef;
+import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
+import com.cmagent.core.domain.ModelConfig;
+import com.cmagent.core.domain.ModelProviderType;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.runtime.AgentRuntime;
 import org.junit.jupiter.api.Test;
@@ -49,9 +52,19 @@ class AgentScopeRuntimeAdapterTest {
     }
 
     private static AgentRunRequest request(UUID tenantId, UUID agentId) {
+        UUID runId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+        UUID modelId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        AgentDefinition agent = new AgentDefinition(
+                agentId, tenantId, "企业助手", "", "你是企业助手", modelId,
+                "agent-model", 0.2, 5, true, List.of(), "tester", "tester");
+        ModelConfig modelConfig = new ModelConfig(
+                modelId, tenantId, ModelProviderType.OPENAI_COMPATIBLE,
+                "测试模型", "https://example.invalid/v1", "default-model", true);
         return new AgentRunRequest(
+                runId,
                 tenantId,
-                agentId,
+                agent,
+                modelConfig,
                 new PrincipalRef(tenantId, "admin", "系统管理员", Set.of("agent:run")),
                 "查询客户状态",
                 List.of()

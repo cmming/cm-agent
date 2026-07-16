@@ -4,11 +4,13 @@ import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
+import com.cmagent.core.domain.ModelConfig;
 import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.ToolCallRecord;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.repository.AgentDefinitionRepository;
+import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.core.runtime.AgentRuntime;
@@ -38,6 +40,7 @@ public class RunExecutionService {
 
     private final AgentRuntime runtime;
     private final AgentDefinitionRepository agentRepository;
+    private final ModelConfigRepository modelConfigRepository;
     private final ToolDefinitionRepository toolRepository;
     private final ToolGrantRepository grantRepository;
     private final ToolAuthorizationPolicy toolAuthorizationPolicy;
@@ -48,6 +51,7 @@ public class RunExecutionService {
     public RunExecutionService(
             AgentRuntime runtime,
             AgentDefinitionRepository agentRepository,
+            ModelConfigRepository modelConfigRepository,
             ToolDefinitionRepository toolRepository,
             ToolGrantRepository grantRepository,
             ToolAuthorizationPolicy toolAuthorizationPolicy,
@@ -56,6 +60,7 @@ public class RunExecutionService {
     ) {
         this.runtime = Objects.requireNonNull(runtime, "runtime 不能为空");
         this.agentRepository = Objects.requireNonNull(agentRepository, "agentRepository 不能为空");
+        this.modelConfigRepository = Objects.requireNonNull(modelConfigRepository, "modelConfigRepository 不能为空");
         this.toolRepository = Objects.requireNonNull(toolRepository, "toolRepository 不能为空");
         this.grantRepository = Objects.requireNonNull(grantRepository, "grantRepository 不能为空");
         this.toolAuthorizationPolicy = Objects.requireNonNull(toolAuthorizationPolicy, "toolAuthorizationPolicy 不能为空");
@@ -69,13 +74,17 @@ public class RunExecutionService {
         if (!agent.enabled()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Agent 已禁用");
         }
+        ModelConfig modelConfig = modelConfigRepository
+                .findByTenantAndId(principal.tenantId(), agent.modelProviderId())
+                .filter(ModelConfig::enabled)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "模型配置不可用"));
         List<ToolDefinition> authorizedTools = authorizedTools(principal, agent);
         RunRecord runningRun = persistenceService.start(principal, agent.id(), input);
 
         AgentRunResult runtimeResult;
         try {
             runtimeResult = runtime.run(new AgentRunRequest(
-                    principal.tenantId(), agent.id(), principal, input, authorizedTools
+                    runningRun.id(), principal.tenantId(), agent, modelConfig, principal, input, authorizedTools
             ));
         } catch (AuditPersistenceException auditFailure) {
             bestEffortFailureClosure(principal, runningRun);

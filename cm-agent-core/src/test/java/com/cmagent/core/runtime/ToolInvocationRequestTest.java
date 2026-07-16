@@ -29,6 +29,28 @@ class ToolInvocationRequestTest {
     }
 
     @Test
+    void rejectsBlankToolCallId() {
+        PrincipalRef principal = new PrincipalRef(
+                TENANT_ID, "principal", "测试主体", Set.of("agent:run"));
+
+        assertThatThrownBy(() -> new ToolInvocationRequest(
+                TENANT_ID, AGENT_ID, principal, RUN_ID, "  ", TOOL_ID, "echo", "{}"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("toolCallId 不能为空");
+    }
+
+    @Test
+    void rejectsBlankToolName() {
+        PrincipalRef principal = new PrincipalRef(
+                TENANT_ID, "principal", "测试主体", Set.of("agent:run"));
+
+        assertThatThrownBy(() -> new ToolInvocationRequest(
+                TENANT_ID, AGENT_ID, principal, RUN_ID, "tool-call-1", TOOL_ID, "  ", "{}"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("toolName 不能为空");
+    }
+
+    @Test
     void retainsCompleteInvocationContext() {
         PrincipalRef principal = new PrincipalRef(
                 TENANT_ID, "principal", "测试主体", Set.of("agent:run"));

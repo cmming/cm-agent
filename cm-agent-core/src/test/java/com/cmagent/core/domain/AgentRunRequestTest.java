@@ -49,6 +49,19 @@ class AgentRunRequestTest {
     }
 
     @Test
+    void rejectsModelConfigNotBoundToAgent() {
+        UUID anotherModelId = UUID.fromString("00000000-0000-0000-0000-000000000402");
+        ModelConfig anotherModel = new ModelConfig(
+                anotherModelId, TENANT_ID, ModelProviderType.OPENAI_COMPATIBLE,
+                "其他模型", "https://example.invalid/v1", "other-model", true);
+
+        assertThatThrownBy(() -> new AgentRunRequest(
+                RUN_ID, TENANT_ID, agent(TENANT_ID), anotherModel, principal(TENANT_ID), "你好", List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("模型配置与 Agent 绑定不一致");
+    }
+
+    @Test
     void rejectsCrossTenantPrincipal() {
         UUID anotherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 

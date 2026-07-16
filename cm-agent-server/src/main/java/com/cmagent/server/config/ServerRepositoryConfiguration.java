@@ -1,9 +1,12 @@
 package com.cmagent.server.config;
 
 import com.cmagent.core.domain.AgentDefinition;
+import com.cmagent.core.domain.ModelConfig;
+import com.cmagent.core.domain.ModelProviderType;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.repository.AgentDefinitionRepository;
+import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.RunRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolCallRepository;
@@ -25,11 +28,31 @@ import java.util.UUID;
 @EnableConfigurationProperties(CmAgentPersistenceProperties.class)
 public class ServerRepositoryConfiguration {
 
+    private static final UUID DEFAULT_MODEL_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
+    private static final UUID DEFAULT_TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
     public InMemoryPlatformStore inMemoryPlatformStore() {
-        return new InMemoryPlatformStore();
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        store.saveModelConfig(new ModelConfig(
+                DEFAULT_MODEL_ID,
+                DEFAULT_TENANT_ID,
+                ModelProviderType.OPENAI_COMPATIBLE,
+                "默认模型",
+                "https://example.invalid",
+                "qwen-max",
+                true
+        ));
+        return store;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(ModelConfigRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    public ModelConfigRepository memoryModelConfigRepository(InMemoryPlatformStore store) {
+        return store::findModelConfig;
     }
 
     @Bean

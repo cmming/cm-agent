@@ -5,10 +5,12 @@ import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.RunToolCall;
 import com.cmagent.core.domain.RunToolCallBatch;
+import com.cmagent.core.domain.ModelConfig;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.repository.RunRepository;
+import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.ToolCallRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,25 @@ class ServerRepositoryConfigurationTest {
     private static final UUID RUN_A = UUID.fromString("30000000-0000-0000-0000-000000000001");
     private static final UUID RUN_B = UUID.fromString("30000000-0000-0000-0000-000000000002");
     private static final UUID TOOL_A = UUID.fromString("20000000-0000-0000-0000-000000000001");
+    private static final UUID DEFAULT_TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID DEFAULT_MODEL_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
+
+    @Test
+    void memoryModeProvidesTenantScopedDefaultModelConfig() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ServerRepositoryConfiguration.class)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(ModelConfigRepository.class);
+                    ModelConfigRepository repository = context.getBean(ModelConfigRepository.class);
+
+                    ModelConfig model = repository.findByTenantAndId(DEFAULT_TENANT_ID, DEFAULT_MODEL_ID)
+                            .orElseThrow();
+                    assertThat(model.id()).isEqualTo(DEFAULT_MODEL_ID);
+                    assertThat(model.tenantId()).isEqualTo(DEFAULT_TENANT_ID);
+                    assertThat(repository.findByTenantAndId(TENANT_B, DEFAULT_MODEL_ID)).isEmpty();
+                });
+    }
 
     @Test
     void memoryModeProvidesTenantScopedRuntimeRepositories() {

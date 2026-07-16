@@ -27,8 +27,9 @@ class FakeAgentRuntimeTest {
         ModelConfig modelConfig = new ModelConfig(
                 modelId, tenantId, ModelProviderType.OPENAI_COMPATIBLE,
                 "测试模型", "https://example.invalid/v1", "default-model", true);
+        UUID runId = UUID.fromString("00000000-0000-0000-0000-000000000301");
         AgentRunRequest request = new AgentRunRequest(
-                UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                runId,
                 tenantId,
                 agent,
                 modelConfig,
@@ -39,7 +40,7 @@ class FakeAgentRuntimeTest {
 
         var result = new FakeAgentRuntime().run(request);
 
-        assertThat(result.runId()).isNotNull();
+        assertThat(result.runId()).isEqualTo(runId);
         assertThat(result.status()).isEqualTo(RunStatus.SUCCEEDED);
         assertThat(result.output()).isEqualTo("fake-runtime: 请查询今天日程");
         assertThat(result.toolCalls()).isEmpty();
