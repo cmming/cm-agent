@@ -2,6 +2,7 @@ package com.cmagent.server.audit;
 
 import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.core.audit.AuditEventRepository;
+import com.cmagent.core.runtime.ToolInvocationInfrastructureException;
 import com.cmagent.server.security.SensitiveDataRedactor;
 import org.junit.jupiter.api.Test;
 
@@ -54,6 +55,7 @@ class AuditAppenderTest {
         assertThatThrownBy(() -> new AuditAppender(repository, new SensitiveDataRedactor()).append(
                 UUID.randomUUID(), "user", "EVENT", "RESOURCE", "id", "FAILED", "message"))
                 .isInstanceOf(AuditPersistenceException.class)
+                .isInstanceOf(ToolInvocationInfrastructureException.class)
                 .hasMessage("审计写入失败")
                 .hasCause(cause);
     }

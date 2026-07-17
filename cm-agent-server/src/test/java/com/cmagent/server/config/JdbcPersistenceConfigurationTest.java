@@ -2,9 +2,11 @@ package com.cmagent.server.config;
 
 import com.cmagent.core.audit.AuditEventRepository;
 import com.cmagent.core.repository.RunRepository;
+import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.ToolCallRepository;
 import com.cmagent.persistence.JdbcAuditEventRepository;
 import com.cmagent.persistence.JdbcRunRepository;
+import com.cmagent.persistence.JdbcModelConfigRepository;
 import com.cmagent.persistence.JdbcToolCallRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import org.flywaydb.core.Flyway;
@@ -50,6 +52,9 @@ class JdbcPersistenceConfigurationTest {
         assertThat(configuration.jdbcRunRepository(jdbcClient))
                 .isInstanceOf(JdbcRunRepository.class)
                 .isInstanceOf(RunRepository.class);
+        assertThat(configuration.jdbcModelConfigRepository(jdbcClient))
+                .isInstanceOf(JdbcModelConfigRepository.class)
+                .isInstanceOf(ModelConfigRepository.class);
         assertThat(configuration.jdbcToolCallRepository(jdbcClient, transactionTemplate))
                 .isInstanceOf(JdbcToolCallRepository.class)
                 .isInstanceOf(ToolCallRepository.class);

@@ -4,6 +4,7 @@ import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.core.audit.AuditPageRequest;
 import com.cmagent.core.audit.AuditEventRepository;
 import com.cmagent.core.domain.AgentDefinition;
+import com.cmagent.core.domain.ModelConfig;
 import com.cmagent.core.domain.RunPageRequest;
 import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.RunStatus;
@@ -29,11 +30,25 @@ import java.util.concurrent.atomic.AtomicReference;
 public class InMemoryPlatformStore implements AuditEventRepository, RunRepository, ToolCallRepository {
 
     private final ConcurrentHashMap<UUID, AgentDefinition> agents = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, ModelConfig> modelConfigs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, ToolDefinition> tools = new ConcurrentHashMap<>();
     private final List<ToolGrant> grants = Collections.synchronizedList(new ArrayList<>());
     private final List<AuditEvent> auditEvents = Collections.synchronizedList(new ArrayList<>());
     private final ConcurrentHashMap<UUID, RunRecord> runs = new ConcurrentHashMap<>();
     private final List<RunToolCall> toolCalls = Collections.synchronizedList(new ArrayList<>());
+
+    public ModelConfig saveModelConfig(ModelConfig modelConfig) {
+        modelConfigs.put(modelConfig.id(), modelConfig);
+        return modelConfig;
+    }
+
+    public Optional<ModelConfig> findModelConfig(UUID tenantId, UUID modelConfigId) {
+        ModelConfig modelConfig = modelConfigs.get(modelConfigId);
+        if (modelConfig == null || !tenantId.equals(modelConfig.tenantId())) {
+            return Optional.empty();
+        }
+        return Optional.of(modelConfig);
+    }
 
     public AgentDefinition saveAgent(AgentDefinition agent) {
         agents.put(agent.id(), agent);

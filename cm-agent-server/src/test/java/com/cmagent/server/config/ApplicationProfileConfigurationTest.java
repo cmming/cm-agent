@@ -1,6 +1,9 @@
 package com.cmagent.server.config;
 
+import com.cmagent.agentscope.AgentScopeRuntimeAdapter;
 import com.cmagent.core.runtime.AgentRuntime;
+import com.cmagent.core.runtime.ToolInvocationGateway;
+import com.cmagent.core.runtime.ToolInvocationResult;
 import com.cmagent.server.security.BootstrapAdminConfiguration;
 import com.cmagent.server.security.BootstrapAdminProperties;
 import com.cmagent.server.security.JwtSecurityConfiguration;
@@ -64,6 +67,12 @@ class ApplicationProfileConfigurationTest {
             )
             .withInitializer(new ConfigDataApplicationContextInitializer());
 
+    private final ApplicationContextRunner realRuntimeProfileContextRunner = new ApplicationContextRunner()
+            .withUserConfiguration(AgentScopeRuntimeConfiguration.class, ProfileSafetyValidator.class)
+            .withBean(ToolInvocationGateway.class,
+                    () -> request -> ToolInvocationResult.succeeded("测试结果"))
+            .withInitializer(new ConfigDataApplicationContextInitializer());
+
     @Test
     void defaultConfigurationRejectsStartupWithoutExplicitProfile() {
         contextRunner
@@ -116,12 +125,28 @@ class ApplicationProfileConfigurationTest {
 
                     assertThat(environment.getProperty("cm-agent.config.persistence-mode")).isEqualTo("jdbc");
                     assertThat(environment.getProperty("cm-agent.fake-runtime-enabled", Boolean.class)).isFalse();
+                    assertThat(environment.getProperty("cm-agent.agentscope.enabled", Boolean.class)).isTrue();
                     assertThat(environment.getProperty("cm-agent.config.jwt-secret")).isEqualTo(EXTERNAL_JWT_SECRET);
                     assertThat(environment.getProperty("cm-agent.config.jdbc-url")).isEqualTo(EXTERNAL_JDBC_URL);
                     assertThat(environment.getProperty("cm-agent.config.jdbc-username"))
                             .isEqualTo(EXTERNAL_JDBC_USERNAME);
                     assertThat(environment.getProperty("cm-agent.config.jdbc-password"))
                             .isEqualTo(EXTERNAL_JDBC_PASSWORD);
+                });
+    }
+
+    @Test
+    void localProfileRejectsFakeAndAgentScopeRuntimeTogether() {
+        contextRunner
+                .withUserConfiguration(ProfileSafetyValidator.class, TestAgentRuntimeConfiguration.class)
+                .withPropertyValues(
+                        "spring.profiles.active=local",
+                        "cm-agent.fake-runtime-enabled=true",
+                        "cm-agent.agentscope.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("AgentScope 真实运行时与 fake runtime 不能同时启用");
                 });
     }
 
@@ -178,6 +203,24 @@ class ApplicationProfileConfigurationTest {
 
                     assertThat(environment.getActiveProfiles()).contains("prod", "production");
                     assertThat(environment.getProperty("cm-agent.config.persistence-mode")).isEqualTo("jdbc");
+                });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"production", "prod", "supabase"})
+    void strictProfileProvidesRealAgentScopeRuntimeWithoutTestRuntime(String profile) {
+        realRuntimeProfileContextRunner
+                .withPropertyValues(externalConfigProperties("spring.profiles.active=" + profile))
+                .withPropertyValues(
+                        "cm-agent.agentscope.credentials[0].tenant-id=00000000-0000-0000-0000-000000000001",
+                        "cm-agent.agentscope.credentials[0].model-config-id=00000000-0000-0000-0000-000000000301",
+                        "cm-agent.agentscope.credentials[0].api-key=unit-test-profile-key")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getEnvironment()
+                            .getProperty("cm-agent.agentscope.enabled", Boolean.class)).isTrue();
+                    assertThat(context).hasSingleBean(AgentRuntime.class);
+                    assertThat(context).hasSingleBean(AgentScopeRuntimeAdapter.class);
                 });
     }
 

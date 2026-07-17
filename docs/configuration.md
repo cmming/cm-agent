@@ -1,6 +1,6 @@
 # 配置说明
 
-本文档说明阶段2服务端的 profile、持久化、安全和敏感信息配置。`local`/`test` 可显式使用 fake runtime；生产 profile 必须关闭 fake runtime，并使用外部签发、受控验证的 JWT。
+本文档说明阶段3服务端的 profile、真实 AgentScope Runtime、持久化、安全和敏感信息配置。`local`/`test` 可显式使用 fake runtime；生产 profile 必须关闭 fake runtime、启用 AgentScope Runtime，并使用外部签发、受控验证的 JWT。
 
 ## Profile 选择
 
@@ -30,6 +30,10 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 | `spring.profiles.active` | 空 | 运行环境选择器；推荐显式设置 |
 | `CM_AGENT_PROFILE` | 空 | profile 兼容选择器；仅在未通过 Spring 配置选择时使用 |
 | `cm-agent.fake-runtime-enabled` | `false` | fake runtime 开关；仅 `local`/`test` 可按需设为 `true`，strict profile 必须为 `false` |
+| `cm-agent.agentscope.enabled` | `false` | AgentScope 真实 Runtime 开关；生产 profile 必须为 `true`，并与 fake runtime 互斥 |
+| `cm-agent.agentscope.model-timeout` | `60s` | 单次模型阶段超时时间，必须为正数 |
+| `cm-agent.agentscope.tool-timeout` | `30s` | AgentScope 工具执行超时时间，必须为正数 |
+| `cm-agent.agentscope.model-max-attempts` | `2` | 模型最大尝试次数，范围为 1 到 5 |
 | `cm-agent.persistence.mode` | `memory` | `memory` 只允许本地开发和测试；生产 profile 必须为 `jdbc` |
 | `cm-agent.default-tenant-code` | `default` | 默认租户标识 |
 
@@ -45,9 +49,34 @@ cm-agent:
     jdbc-password: <secret-manager-db-password>
     jdbc-driver-class-name: org.postgresql.Driver
     fake-runtime-enabled: false
+    agentscope-enabled: true
 ```
 
 不要把上面的占位符替换后的值提交到 Git、镜像层、日志、审计消息或 API 响应。敏感配置不应通过文档中的固定值传播。
+
+## AgentScope 真实 Runtime
+
+阶段3使用 AgentScope Java `2.0.0`，支持 `OPENAI_COMPATIBLE` 和 `DASHSCOPE_NATIVE` 两种 Provider，分别由 AgentScope OpenAI 与 DashScope 扩展提供。启用真实 Runtime 必须满足：
+
+```yaml
+cm-agent:
+  fake-runtime-enabled: false
+  agentscope:
+    enabled: true
+    model-timeout: 60s
+    tool-timeout: 30s
+    model-max-attempts: 2
+    credentials:
+      - tenant-id: <tenant-id>
+        model-config-id: <model-config-id>
+        api-key: ${MODEL_API_KEY}
+```
+
+默认 `ExternalModelCredentialProvider` 以 `tenantId + modelConfigId` 复合键查找外部凭据。启用真实 Runtime 且未配置任何凭据时会 fail-fast，错误信息不会包含 API Key；若部署平台使用 secret manager，可提供自定义 `ModelCredentialProvider` Bean，此时不需要把凭据列表写入应用配置。
+
+`model_configs` 表保存模型 Provider、`baseUrl`、`modelName` 和启用状态。历史数据库兼容字段不能作为明文密钥使用，API Key 只能经外部 Secret 或自定义 `ModelCredentialProvider` 注入，也不得进入 DTO、日志、审计或异常。
+
+真实运行目前只提供同步单轮调用。多轮会话持久化、流式 REST、HITL 和手动取消均未在阶段3交付。
 
 ## JDBC 与 Flyway
 
@@ -88,4 +117,7 @@ Run 与 ToolCall 使用当前认证主体的 tenant 条件读写；Run 列表和
 
 - `memory` 仅限开发和测试，进程重启会丢失运行、工具调用和审计状态。
 - JDBC 模式已接通 Run、ToolCall、Audit 的持久化与查询；`local`/`test` 的运行执行器可以由 fake runtime 提供结果。
-- 生产 profile 不提供 fake runtime，部署时必须提供真实 AgentScope runtime 或对应适配器 Bean；metrics、集中式日志/追踪、备份治理和 CI/CD 不应在当前配置文档中被视为已交付能力，对应工作列入[中文路线图](roadmap.md)的阶段3-5。
+- 真实 Runtime 的每次工具调用都通过治理网关重新读取定义并授权；工具定义中的 endpoint 只是元数据，不会被 Adapter 自动联网执行。
+- 模型 timeout 或 Provider 故障会把运行收口为失败；授权拒绝优先映射为拒绝；审计失败保持严格语义并传播。AgentScope 2.0.0 的工具层只暴露通用取消信号，系统仅根据其明确生成的超时结果判定工具 timeout，不能把该信号视为通用手动取消能力。
+- 工具可能产生外部副作用。超时、中断或 Provider 重试不能证明外部系统已经回滚，工具实现与下游接口必须使用 `runId`、`toolCallId` 或业务幂等键实现去重。
+- metrics、集中式日志/追踪、备份治理和 CI/CD 不应在当前配置文档中被视为已交付能力，对应工作列入[中文路线图](roadmap.md)的阶段4-5。

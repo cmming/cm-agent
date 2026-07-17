@@ -5,6 +5,8 @@ import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
+import com.cmagent.core.domain.ModelConfig;
+import com.cmagent.core.domain.ModelProviderType;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolRiskLevel;
@@ -100,7 +102,7 @@ class RunControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.granted").value(true));
 
-        mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
+        String runResponse = mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
                         .header("Authorization", bearer(accessToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -108,20 +110,32 @@ class RunControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCEEDED"))
-                .andExpect(jsonPath("$.output").value("fake-runtime: 你好"));
+                .andExpect(jsonPath("$.output").value("fake-runtime: 你好"))
+                .andReturn().getResponse().getContentAsString();
 
         assertThat(agentRuntime.lastRequest()).isNotNull();
+        assertThat(agentRuntime.lastRequest().runId())
+                .isEqualTo(UUID.fromString(JsonPath.read(runResponse, "$.runId")));
+        assertThat(agentRuntime.lastRequest().tenantId()).isEqualTo(TENANT_ID);
+        assertThat(agentRuntime.lastRequest().agent().tenantId()).isEqualTo(TENANT_ID);
         assertThat(agentRuntime.lastRequest().tools()).hasSize(1);
         assertThat(agentRuntime.lastRequest().tools().getFirst().name()).isEqualTo("echo");
+        assertThat(agentRuntime.lastRequest().modelConfig())
+                .isEqualTo(store.findModelConfig(
+                        TENANT_ID, agentRuntime.lastRequest().agent().modelProviderId()).orElseThrow());
         assertThat(store.listAuditEvents(TENANT_ID))
                 .extracting(AuditEvent::eventType)
                 .contains("AGENT_CREATE", "TOOL_CREATE", "TOOL_GRANT", "AGENT_RUN");
 
-        mockMvc.perform(get("/api/audit-events")
+        String auditResponse = mockMvc.perform(get("/api/audit-events")
                         .header("Authorization", bearer(accessToken)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[0].eventType").value("AGENT_RUN"))
-                .andExpect(jsonPath("$.items[0].status").value("SUCCEEDED"));
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        List<String> runStatuses = JsonPath.read(
+                auditResponse, "$.items[?(@.eventType == 'AGENT_RUN')].status");
+        assertThat(runStatuses).contains("SUCCEEDED");
     }
 
     @Test
@@ -141,6 +155,45 @@ class RunControllerTest {
 
         assertThat(agentRuntime.lastRequest()).isNotNull();
         assertThat(agentRuntime.lastRequest().tools()).isEmpty();
+    }
+
+    @Test
+    void disabledModelConfigIsRejectedBeforeRuntimeInvocation() throws Exception {
+        String accessToken = loginToken();
+        String agentId = createAgent(accessToken);
+        UUID modelId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+        store.saveModelConfig(new ModelConfig(
+                modelId, TENANT_ID, ModelProviderType.OPENAI_COMPATIBLE,
+                "已禁用模型", "https://example.invalid", "qwen-max", false));
+
+        mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"input\":\"你好\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("请求参数不合法"));
+
+        assertThat(agentRuntime.lastRequest()).isNull();
+    }
+
+    @Test
+    void crossTenantModelConfigIsRejectedBeforeRuntimeInvocation() throws Exception {
+        String accessToken = loginToken();
+        String agentId = createAgent(accessToken);
+        UUID modelId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+        UUID otherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        store.saveModelConfig(new ModelConfig(
+                modelId, otherTenantId, ModelProviderType.OPENAI_COMPATIBLE,
+                "其他租户模型", "https://example.invalid", "qwen-max", true));
+
+        mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"input\":\"你好\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("请求参数不合法"));
+
+        assertThat(agentRuntime.lastRequest()).isNull();
     }
 
     @Test
@@ -457,12 +510,15 @@ class RunControllerTest {
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
 
-        mockMvc.perform(get("/api/audit-events")
+        String auditResponse = mockMvc.perform(get("/api/audit-events")
                         .header("Authorization", bearer(accessToken)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[0].eventType").value("AGENT_RUN"))
-                .andExpect(jsonPath("$.items[0].status").value("FAILED"))
-                .andExpect(jsonPath("$.items[0].message").value("Agent 运行失败"));
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        List<String> failureMessages = JsonPath.read(
+                auditResponse, "$.items[?(@.eventType == 'AGENT_RUN' && @.status == 'FAILED')].message");
+        assertThat(failureMessages).contains("Agent 运行失败");
 
         assertThat(store.listByTenantAndAgent(
                 TENANT_ID,

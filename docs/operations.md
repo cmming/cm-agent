@@ -1,6 +1,6 @@
 # 运维说明
 
-本文档说明阶段2服务的健康检查、审计严格语义、Run 查询、Flyway 和敏感日志边界。备份恢复、容量治理和自动归档属于阶段4，当前不由应用自动完成。
+本文档说明阶段3服务的健康检查、真实 AgentScope Runtime、审计严格语义、Run 查询、Flyway 和敏感日志边界。备份恢复、容量治理和自动归档属于阶段4，当前不由应用自动完成。
 
 ## 健康检查
 
@@ -19,6 +19,8 @@ GET /actuator/health
 `/api/auth/login` 仅用于本地 `bootstrap admin` 登录。只有 `local` profile 可以显式启用它，生产的 `production`、`prod`、`supabase` profile 必须保持 `bootstrap-admin-enabled=false`，因此生产调用该入口应被拒绝。生产排障应使用受控身份系统签发的临时权限和 Bearer JWT，不应临时打开 bootstrap admin。
 
 生产 profile 还必须设置 `fake-runtime-enabled=false`。本地和测试 profile 可按需启用 fake runtime，但不得把该开关带入生产配置或通过外部覆盖重新打开。
+
+生产还必须设置 `agentscope-enabled=true`，并提供 AgentScope Java 2.0.0 的 OpenAI Compatible 或 DashScope 模型配置。默认凭据按 `tenantId + modelConfigId` 从外部配置解析，也可由自定义 `ModelCredentialProvider` 对接 secret manager；默认凭据为空时启动会失败。`model_configs` 不保存明文 API Key。
 
 ## 审计严格失败语义
 
@@ -49,6 +51,14 @@ JDBC 模式下，运行启动阶段写入 `RUNNING` Run 和启动审计；运行
 
 当前没有应用自动删除、归档或 TTL 清理 Run、ToolCall、Audit。备份恢复演练、保留期、容量阈值、分区/归档策略属于阶段4的可观测性与运维工作，生产团队需要在交付前另行建立数据库级治理方案。
 
+## 真实运行故障与工具副作用
+
+- 每次工具调用都会重新读取租户工具定义并执行授权；运行中撤销授权或禁用工具后，后续调用必须被拒绝并审计。endpoint 字段只作为治理元数据，Adapter 不会据此自动访问网络。
+- 模型 timeout、Provider HTTP/传输故障会使运行失败；工具拒绝按拒绝状态收口；审计持久化失败保持严格语义，不能被普通 Provider 错误覆盖。
+- AgentScope 2.0.0 的工具 API 只提供通用取消信号，无法可靠区分所有取消来源。系统只把 AgentScope 明确生成且与当前工具超时配置匹配的结果识别为 timeout，不承诺手动取消。
+- timeout 或线程中断不等于外部副作用已停止。工具与下游系统必须以 `runId`、`toolCallId` 或业务键实现幂等；重试前先查询下游结果，避免重复扣款、通知或写入。
+- 当前仅支持同步单轮调用，不支持多轮会话持久化、流式 REST 或 HITL。调用方超时应保留运行 ID，并通过 Run 详情查询最终收口状态。
+
 ## Flyway 运维
 
 - 迁移文件位于 `cm-agent-persistence/src/main/resources/db/migration`。
@@ -65,7 +75,8 @@ JDBC 模式下，运行启动阶段写入 `RUNNING` Run 和启动审计；运行
 - Flyway 迁移失败、JDBC 写入失败和 Run 完成失败。
 - 审计写入失败及其返回的 `503` 数量。
 - JWT 缺失、认证失败激增、权限拒绝激增和运行失败激增。
+- 模型 Provider 不可用、模型/工具 timeout、模型凭据解析失败和工具授权拒绝激增。
 
 日志、审计响应和运维导出不得包含 JWT secret、数据库密码、模型 API Key、完整 JDBC URL、原始 prompt、工具输入输出或堆栈中的敏感配置。敏感字段只保留脱敏摘要和可关联的资源 ID。
 
-`memory` 仅限开发和测试；其运行、工具调用和审计数据会在进程重启后丢失，不得作为生产故障恢复方案。metrics、集中式追踪和自动化容量告警尚未在阶段2交付。
+`memory` 仅限开发和测试；其运行、工具调用和审计数据会在进程重启后丢失，不得作为生产故障恢复方案。metrics、集中式追踪和自动化容量告警尚未在阶段3交付。

@@ -1,6 +1,8 @@
 package com.cmagent.persistence;
 
 import com.cmagent.core.domain.RunPageRequest;
+import com.cmagent.core.domain.ModelConfig;
+import com.cmagent.core.domain.ModelProviderType;
 import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.RunToolCall;
@@ -44,6 +46,7 @@ class JdbcRuntimeRepositoryMySqlTest {
 
     private JdbcRunRepository runRepository;
     private JdbcToolCallRepository toolCallRepository;
+    private JdbcModelConfigRepository modelConfigRepository;
 
     @BeforeEach
     void setUp() {
@@ -53,9 +56,19 @@ class JdbcRuntimeRepositoryMySqlTest {
         seedData(dataSource);
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
         runRepository = new JdbcRunRepository(jdbcClient);
+        modelConfigRepository = new JdbcModelConfigRepository(jdbcClient);
         toolCallRepository = new JdbcToolCallRepository(
                 jdbcClient, new TransactionTemplate(new DataSourceTransactionManager(dataSource))
         );
+    }
+
+    @Test
+    void mysqlFindsOnlyModelConfigOwnedByTenant() {
+        ModelConfig own = modelConfigRepository.findByTenantAndId(TENANT_A, MODEL_A).orElseThrow();
+
+        assertThat(own.providerType()).isEqualTo(ModelProviderType.OPENAI_COMPATIBLE);
+        assertThat(own.baseUrl()).isEqualTo("https://example.invalid");
+        assertThat(modelConfigRepository.findByTenantAndId(TENANT_B, MODEL_A)).isEmpty();
     }
 
     @Test

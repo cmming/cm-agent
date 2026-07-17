@@ -6,7 +6,6 @@ import com.cmagent.core.domain.RunStatus;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 
 public class FakeAgentRuntime implements AgentRuntime {
 
@@ -14,7 +13,7 @@ public class FakeAgentRuntime implements AgentRuntime {
     public AgentRunResult run(AgentRunRequest request) {
         Instant now = Instant.now();
         return new AgentRunResult(
-                UUID.randomUUID(),
+                request.runId(),
                 RunStatus.SUCCEEDED,
                 "fake-runtime: " + request.input(),
                 List.of(),

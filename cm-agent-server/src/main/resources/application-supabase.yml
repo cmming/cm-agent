@@ -12,3 +12,4 @@ cm-agent:
     jdbc-password: ${cm-agent.config.external-jdbc-password}
     jdbc-driver-class-name: org.postgresql.Driver
     fake-runtime-enabled: false
+    agentscope-enabled: true

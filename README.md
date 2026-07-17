@@ -1,6 +1,6 @@
 # CM Agent
 
-CM Agent 是基于 AgentScope Java 的企业级智能体开源底座。第一阶段完成 Java SDK、Spring Boot Starter、独立服务端、轻量控制台、工具治理、多租户和 RBAC 基线；阶段2完成生产持久化与安全收口。
+CM Agent 是基于 AgentScope Java 的企业级智能体开源底座。第一阶段完成 Java SDK、Spring Boot Starter、独立服务端、轻量控制台、工具治理、多租户和 RBAC 基线；阶段2完成生产持久化与安全收口；阶段3已接入 AgentScope Java 2.0.0 真实运行时。
 
 ## 快速开始
 
@@ -31,13 +31,30 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.config.jwt-secret=<local-dev-only-jwt-secret> --cm-agent.config.bootstrap-admin-enabled=true --cm-agent.config.bootstrap-admin-password=<local-dev-only-password>"
 ```
 
+真实 Runtime 支持 AgentScope 2.0.0 的 OpenAI Compatible 与 DashScope Provider。启用时必须同时关闭 fake runtime，并按 `tenantId + modelConfigId` 从外部 Secret 映射模型凭据：
+
+```yaml
+cm-agent:
+  fake-runtime-enabled: false
+  agentscope:
+    enabled: true
+    credentials:
+      - tenant-id: <tenant-id>
+        model-config-id: <model-config-id>
+        api-key: ${MODEL_API_KEY}
+```
+
+默认外部凭据列表为空时，真实 Runtime 会启动失败；生产也可以提供自定义 `ModelCredentialProvider` 对接 secret manager。`model_configs` 只保存 Provider、`baseUrl`、`modelName` 等非敏感元数据，不保存明文 API Key。
+
 ## 当前状态
 
 - 第一阶段：已交付工程骨架、核心领域接口、Starter、控制台、工具治理、多租户/RBAC 基线和 fake runtime。
 - 阶段2：已交付 Run、ToolCall、Audit 的 JDBC Repository 与 Flyway V2/V3 查询索引，租户隔离、严格审计、JWT/profile/bootstrap/error/redaction 安全收口，以及运行启动/完成两段事务和 cursor 查询。
-- 阶段3：真实 AgentScope runtime 尚未交付，当前运行链路仍以 fake runtime 为边界。
+- 阶段3：已交付 AgentScope Java 2.0.0 真实同步单轮运行、OpenAI Compatible/DashScope 模型适配、外部模型凭据、受治理工具调用、超时中止与结果映射；工具每次调用都会重新授权，endpoint 元数据不会被自动执行。
 - 阶段4：可观测性与运维增强尚未交付。
 - 阶段5：交付与稳定性工程尚未交付。
+
+阶段3不承诺多轮会话持久化、流式 REST、HITL 或手动取消。模型与工具调用失败、审计严格失败以及外部副作用的重试/幂等边界见[配置说明](docs/configuration.md)和[运维说明](docs/operations.md)。
 
 完整范围和后续依赖见[中文路线图](docs/roadmap.md)。
 
