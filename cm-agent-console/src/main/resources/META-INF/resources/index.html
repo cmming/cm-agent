@@ -3,80 +3,175 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CM Agent 控制台</title>
+    <title>CM Agent 控制台 | 管理后台</title>
     <link rel="stylesheet" href="/assets/styles.css">
 </head>
 <body>
-<main class="shell">
-    <header class="topbar">
-        <div>
-            <h1>CM Agent 控制台</h1>
-            <p class="subtitle">用于登录、创建 Agent 和 Tool、执行运行以及查看审计日志。</p>
+<section id="loginView" class="login-view" aria-labelledby="loginTitle">
+    <div class="login-intro">
+        <p class="eyebrow">CM AGENT</p>
+        <h2>让企业智能体能力<br>清晰、可控、可追溯</h2>
+        <p>集中管理 Agent、工具授权、运行记录与安全审计。</p>
+    </div>
+    <form id="loginForm" class="login-card">
+        <div class="brand-mark" aria-hidden="true">CM</div>
+        <p class="eyebrow">企业智能体管理控制台</p>
+        <h1 id="loginTitle">欢迎登录</h1>
+        <p class="muted">使用管理员凭据进入当前租户工作区。</p>
+
+        <label for="loginUsername">用户名</label>
+        <input id="loginUsername" name="username" type="text" autocomplete="username" required>
+
+        <label for="loginPassword">密码</label>
+        <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+
+        <button id="loginBtn" class="button primary full-width" type="submit">登录控制台</button>
+        <p id="loginStatus" class="form-status" aria-live="polite">请输入用户名和密码。</p>
+    </form>
+</section>
+
+<div id="consoleView" class="console-layout" hidden>
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="brand-mark small" aria-hidden="true">CM</div>
+            <div><strong>CM Agent</strong><span>管理控制台</span></div>
         </div>
-        <div class="toolbar">
-            <div class="login-controls">
-                <label for="loginUsername">用户名</label>
-                <input id="loginUsername" type="text" value="admin" autocomplete="username">
-                <label for="loginPassword">密码</label>
-                <input id="loginPassword" type="password" placeholder="输入本地 bootstrap admin 密码" autocomplete="current-password">
-            </div>
-            <button id="loginBtn" class="primary">登录</button>
-            <div id="status" class="status" aria-live="polite">未登录</div>
+        <nav id="sidebarNav" aria-label="控制台导航">
+            <button class="nav-item active" type="button" data-page="overviewPage" aria-current="page"><span aria-hidden="true">▦</span>能力总览</button>
+            <button class="nav-item" type="button" data-page="agentsPage"><span aria-hidden="true">◇</span>Agent 管理</button>
+            <button class="nav-item" type="button" data-page="toolsPage"><span aria-hidden="true">⬡</span>工具治理</button>
+            <button class="nav-item" type="button" data-page="runsPage"><span aria-hidden="true">▷</span>运行记录</button>
+            <button class="nav-item" type="button" data-page="auditPage"><span aria-hidden="true">≡</span>审计日志</button>
+        </nav>
+        <div class="sidebar-links">
+            <span>API 与系统</span>
+            <a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI <b aria-hidden="true">↗</b></a>
+            <a href="/actuator/health" target="_blank" rel="noreferrer">健康检查 <b aria-hidden="true">↗</b></a>
         </div>
-    </header>
+    </aside>
 
-    <section class="grid">
-        <article class="panel">
-            <h2>Agent 管理</h2>
-            <label for="agentName">Agent 名称</label>
-            <input id="agentName" type="text" value="企业助手">
-
-            <label for="systemPrompt">System Prompt</label>
-            <textarea id="systemPrompt" rows="5">你是企业内部的 CM Agent 助手，负责回答问题、调用工具并产出简洁可靠的结果。</textarea>
-
-            <div class="actions">
-                <button id="createAgentBtn" class="primary">创建 Agent</button>
+    <main class="workspace">
+        <header class="workspace-header">
+            <div>
+                <p class="eyebrow">当前工作区</p>
+                <h1 id="pageTitle">能力总览</h1>
+                <p id="pageSubtitle" class="muted">查看当前租户已交付的 Agent 能力与最近活动。</p>
             </div>
-
-            <pre id="agentOutput" class="output" aria-live="polite">等待创建 Agent。</pre>
-        </article>
-
-        <article class="panel">
-            <h2>工具治理</h2>
-            <label for="toolName">Tool 名称</label>
-            <input id="toolName" type="text" value="echo">
-
-            <div class="hint">创建后会自动授予当前 Agent。</div>
-
-            <div class="actions">
-                <button id="createToolBtn">创建并授权 Tool</button>
+            <div class="user-actions">
+                <span class="online-dot" aria-label="已登录"></span>
+                <span id="currentUser">—</span>
+                <button id="logoutBtn" class="button ghost" type="button">退出</button>
             </div>
+        </header>
+        <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
 
-            <pre id="toolOutput" class="output" aria-live="polite">等待创建 Tool。</pre>
-        </article>
-
-        <article class="panel">
-            <h2>聊天调试</h2>
-            <label for="runInput">输入</label>
-            <textarea id="runInput" rows="5">你好，帮我总结今天的重点。</textarea>
-
-            <div class="actions">
-                <button id="runBtn">执行运行</button>
+        <section id="overviewPage" class="page-view" aria-labelledby="pageTitle">
+            <div class="stats-grid">
+                <article class="stat-card"><span>Agent 总数</span><strong id="overviewAgentCount">0</strong><button type="button" data-navigate="agentsPage">管理 Agent →</button></article>
+                <article class="stat-card"><span>Tool 总数</span><strong id="overviewToolCount">0</strong><button type="button" data-navigate="toolsPage">管理工具 →</button></article>
+                <article class="stat-card"><span>最近运行</span><strong id="overviewRunStatus">暂无</strong><small id="overviewRunTime">尚无运行记录</small></article>
             </div>
-
-            <pre id="runOutput" class="output" aria-live="polite">等待运行结果。</pre>
-        </article>
-
-        <article class="panel">
-            <h2>审计日志</h2>
-            <div class="actions">
-                <button id="auditBtn">刷新审计日志</button>
+            <div class="overview-grid">
+                <article class="panel">
+                    <div class="panel-heading"><div><p class="eyebrow">活动</p><h2>最近运行</h2></div><button class="text-button" type="button" data-navigate="runsPage">查看全部 →</button></div>
+                    <div id="overviewRuns" class="list-region"><p class="empty-state">选择或创建 Agent 后查看运行记录。</p></div>
+                </article>
+                <article class="panel quick-actions">
+                    <div class="panel-heading"><div><p class="eyebrow">开始使用</p><h2>快捷操作</h2></div></div>
+                    <button class="button primary" type="button" data-navigate="agentsPage">＋ 创建 Agent</button>
+                    <button class="button" type="button" data-navigate="toolsPage">＋ 注册 Tool</button>
+                    <button class="button" type="button" data-navigate="runsPage">▷ 执行 Agent</button>
+                </article>
             </div>
+        </section>
 
-            <pre id="auditOutput" class="output" aria-live="polite">等待查询审计日志。</pre>
-        </article>
-    </section>
-</main>
+        <section id="agentsPage" class="page-view" hidden>
+            <div class="management-grid">
+                <article class="panel">
+                    <div class="panel-heading"><div><p class="eyebrow">资源</p><h2>Agent 列表</h2></div><button id="refreshAgentsBtn" class="button ghost" type="button">刷新</button></div>
+                    <div id="agentList" class="resource-list"><p class="empty-state">暂无 Agent。</p></div>
+                </article>
+                <article id="agentDetail" class="panel detail-panel"><p class="empty-state">选择 Agent 查看详情。</p></article>
+                <article class="panel form-panel">
+                    <div class="panel-heading"><div><p class="eyebrow">新建</p><h2>创建 Agent</h2></div></div>
+                    <form id="agentForm">
+                        <label for="agentName">Agent 名称</label>
+                        <input id="agentName" name="name" required>
+                        <label for="agentModelName">模型名称</label>
+                        <input id="agentModelName" name="modelName" value="qwen-max" required>
+                        <label for="systemPrompt">System Prompt</label>
+                        <textarea id="systemPrompt" name="systemPrompt" rows="5" required>你是企业内部的 CM Agent 助手，负责回答问题、调用工具并产出简洁可靠的结果。</textarea>
+                        <button id="createAgentBtn" class="button primary" type="submit">创建 Agent</button>
+                        <p id="agentFormStatus" class="form-status" aria-live="polite"></p>
+                    </form>
+                </article>
+            </div>
+        </section>
+
+        <section id="toolsPage" class="page-view" hidden>
+            <div class="management-grid">
+                <article class="panel">
+                    <div class="panel-heading"><div><p class="eyebrow">资源</p><h2>Tool 列表</h2></div><button id="refreshToolsBtn" class="button ghost" type="button">刷新</button></div>
+                    <div id="toolList" class="resource-list"><p class="empty-state">暂无 Tool。</p></div>
+                </article>
+                <article class="panel form-panel">
+                    <div class="panel-heading"><div><p class="eyebrow">新建</p><h2>注册 Tool</h2></div></div>
+                    <form id="toolForm">
+                        <label for="toolName">Tool 名称</label><input id="toolName" name="name" required>
+                        <label for="toolDescription">描述</label><textarea id="toolDescription" name="description" rows="3" required></textarea>
+                        <div class="form-row">
+                            <div><label for="toolType">类型</label><select id="toolType" name="type"><option value="LOCAL">LOCAL</option><option value="MCP">MCP</option><option value="A2A">A2A</option></select></div>
+                            <div><label for="toolRiskLevel">风险级别</label><select id="toolRiskLevel" name="riskLevel"><option value="LOW">LOW</option><option value="MEDIUM">MEDIUM</option><option value="HIGH">HIGH</option></select></div>
+                        </div>
+                        <button id="createToolBtn" class="button primary" type="submit">注册 Tool</button>
+                        <p id="toolFormStatus" class="form-status" aria-live="polite"></p>
+                    </form>
+                </article>
+                <article class="panel form-panel">
+                    <div class="panel-heading"><div><p class="eyebrow">授权</p><h2>授予 Agent 使用权</h2></div></div>
+                    <form id="grantForm">
+                        <label for="grantToolSelect">Tool</label><select id="grantToolSelect" required></select>
+                        <label for="grantAgentSelect">Agent</label><select id="grantAgentSelect" required></select>
+                        <button id="grantToolBtn" class="button" type="submit">确认授权</button>
+                        <p id="grantFormStatus" class="form-status" aria-live="polite"></p>
+                    </form>
+                </article>
+            </div>
+        </section>
+
+        <section id="runsPage" class="page-view" hidden>
+            <div class="run-toolbar panel">
+                <div><label for="runAgentSelect">选择 Agent</label><select id="runAgentSelect"></select></div>
+                <form id="runForm">
+                    <label for="runInput">调试输入</label>
+                    <div class="inline-form"><textarea id="runInput" rows="2" required></textarea><button id="runBtn" class="button primary" type="submit">执行运行</button></div>
+                    <p id="runFormStatus" class="form-status" aria-live="polite"></p>
+                </form>
+            </div>
+            <div class="split-grid">
+                <article class="panel">
+                    <div class="panel-heading"><div><p class="eyebrow">历史</p><h2>运行记录</h2></div><button id="refreshRunsBtn" class="button ghost" type="button">刷新</button></div>
+                    <div id="runList" class="resource-list"><p class="empty-state">请选择 Agent。</p></div>
+                    <div class="load-more"><button id="loadMoreRunsBtn" class="button ghost" type="button" hidden>加载更多</button><span id="runsEndStatus"></span></div>
+                </article>
+                <article id="runDetail" class="panel detail-panel">
+                    <p class="empty-state">选择一条运行记录查看详情。</p>
+                    <div id="runToolCalls"></div>
+                </article>
+            </div>
+        </section>
+
+        <section id="auditPage" class="page-view" hidden>
+            <article class="panel">
+                <div class="panel-heading"><div><p class="eyebrow">安全</p><h2>审计事件</h2></div><button id="refreshAuditBtn" class="button ghost" type="button">刷新</button></div>
+                <div class="table-scroll"><table class="data-table"><thead><tr><th>事件</th><th>资源</th><th>状态</th><th>主体</th><th>消息</th><th>时间</th></tr></thead><tbody id="auditList"></tbody></table></div>
+                <p id="auditEmpty" class="empty-state">暂无审计事件。</p>
+                <div class="load-more"><button id="loadMoreAuditBtn" class="button ghost" type="button" hidden>加载更多</button><span id="auditEndStatus"></span></div>
+            </article>
+        </section>
+    </main>
+</div>
+<script src="/assets/console-core.js"></script>
 <script src="/assets/app.js"></script>
 </body>
 </html>
