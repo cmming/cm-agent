@@ -15,6 +15,7 @@ class ConsoleResourceTest {
         String html = resource("META-INF/resources/index.html");
 
         assertThat(html)
+                .contains("CM Agent 控制台")
                 .contains("id=\"loginView\"", "id=\"consoleView\"", "id=\"loginForm\"")
                 .contains("id=\"overviewPage\"", "id=\"agentsPage\"", "id=\"toolsPage\"")
                 .contains("id=\"runsPage\"", "id=\"auditPage\"", "id=\"sidebarNav\"")

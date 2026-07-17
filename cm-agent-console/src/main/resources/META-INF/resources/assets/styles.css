@@ -49,7 +49,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
         linear-gradient(135deg, #edf3fb 0%, #f8fafc 55%, #e9eff7 100%);
 }
 
-.login-intro h2 { margin: 10px 0 18px; max-width: 700px; font-size: clamp(34px, 5vw, 64px); line-height: 1.08; letter-spacing: -0.04em; }
+.login-intro h2 { margin: 10px 0 18px; max-width: 700px; font-size: clamp(34px, 4vw, 52px); line-height: 1.08; letter-spacing: -0.04em; }
 .login-intro > p:last-child { max-width: 560px; color: var(--muted); font-size: 18px; }
 .login-card { width: min(100%, 460px); justify-self: end; padding: clamp(28px, 5vw, 48px); background: rgba(255,255,255,.94); border: 1px solid rgba(200,210,223,.8); border-radius: 20px; box-shadow: var(--shadow); backdrop-filter: blur(12px); }
 .login-card h1 { margin: 4px 0; font-size: 30px; }
@@ -159,9 +159,10 @@ textarea { resize: vertical; min-height: 90px; }
     .login-intro { display: none; }
     .login-card { justify-self: center; }
     .console-layout { grid-template-columns: 1fr; }
-    .sidebar { position: static; width: 100%; height: auto; padding: 14px; }
+    .sidebar { position: static; width: 100%; min-width: 0; height: auto; padding: 14px; overflow: hidden; }
     .sidebar-brand { padding: 0 4px 13px; }
-    #sidebarNav { display: flex; overflow-x: auto; padding-bottom: 4px; }
+    #sidebarNav { min-width: 0; max-width: 100%; display: flex; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+    #sidebarNav::-webkit-scrollbar { display: none; }
     .nav-item { width: auto; flex: 0 0 auto; }
     .sidebar-links { display: none; }
     .workspace-header { min-height: 78px; padding: 14px 18px; }
