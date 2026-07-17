@@ -35,6 +35,8 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 - 控制台：`http://localhost:8080/`
 - OpenAPI：`http://localhost:8080/swagger-ui/index.html`
 
+控制台面向平台使用者提供独立登录、能力总览、Agent 列表/详情/创建、Tool 列表/创建/授权、Agent 运行调试、运行历史与工具调用详情，以及审计日志游标分页。页面只展示当前已经交付的后端能力，不提供编辑、删除、手动取消或流式运行。JWT 仅保存在当前页面内存中，刷新页面或关闭标签页后需要重新登录。
+
 临时覆盖本地配置时，请使用占位符并确保只在本地调试范围内生效：
 
 ```powershell
