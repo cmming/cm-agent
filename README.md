@@ -17,6 +17,16 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=test"
 ```
 
+## 导出指定提交文件
+
+需要将某个提交的文件以覆盖方式应用到其他工作区时，可执行：
+
+```powershell
+.\scripts\export-commit-files.ps1 -Commit <提交哈希> -OutputDirectory <导出目录>
+```
+
+脚本会导出该提交相对首个父提交新增、修改和重命名后的文件，并保留仓库目录结构。导出内容取自该提交版本，可复制到目标工作区覆盖。`exported-files.txt` 会记录已导出的文件；已删除文件不会复制，而会列在 `deleted-files.txt` 中，覆盖前必须人工复核并处理这些删除项。导出目录必须不存在或为空，以避免混入旧的导出结果。
+
 本地和测试 profile 的 bootstrap admin 凭据只由代码/CI 注入或使用本地专用占位配置，不能复制到生产。生产和类生产环境必须使用受控外部 YAML 或 secret manager 提供 JWT secret 和 JDBC 凭据。
 
 服务启动后访问：
