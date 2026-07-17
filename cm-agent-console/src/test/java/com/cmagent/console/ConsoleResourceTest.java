@@ -40,6 +40,22 @@ class ConsoleResourceTest {
                 .doesNotContain("localStorage", "sessionStorage");
     }
 
+    @Test
+    void 控制台编排认证和资源管理且安全渲染动态文本() throws IOException {
+        String html = resource("META-INF/resources/index.html");
+        String script = resource("META-INF/resources/assets/app.js");
+
+        assertThat(html).contains(
+                "id=\"agentForm\"", "id=\"agentList\"", "id=\"agentDetail\"",
+                "id=\"toolForm\"", "id=\"toolList\"", "id=\"grantForm\"",
+                "id=\"overviewAgentCount\"", "id=\"overviewToolCount\""
+        );
+        assertThat(script)
+                .contains("/api/auth/login", "/api/auth/me", "/api/agents", "/api/tools")
+                .contains("loadInitialData", "logout", "textContent")
+                .doesNotContain("localStorage", "sessionStorage", ".innerHTML");
+    }
+
     private String resource(String path) throws IOException {
         try (InputStream input = getClass().getClassLoader().getResourceAsStream(path)) {
             assertThat(input).as("资源应存在：%s", path).isNotNull();
