@@ -31,6 +31,15 @@ class ConsoleResourceTest {
                 .contains("@media (max-width: 900px)");
     }
 
+    @Test
+    void 控制台核心脚本可独立发布且不持久化令牌() throws IOException {
+        String script = resource("META-INF/resources/assets/console-core.js");
+
+        assertThat(script)
+                .contains("CmAgentConsoleCore", "createApiClient", "appendCursorPage")
+                .doesNotContain("localStorage", "sessionStorage");
+    }
+
     private String resource(String path) throws IOException {
         try (InputStream input = getClass().getClassLoader().getResourceAsStream(path)) {
             assertThat(input).as("资源应存在：%s", path).isNotNull();
