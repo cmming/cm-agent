@@ -125,10 +125,18 @@ textarea { resize: vertical; min-height: 90px; }
 .resource-item.active { border-color: var(--accent); background: #eef4ff; }
 .resource-item strong, .resource-item span { display: block; }
 .resource-item span { margin-top: 3px; color: var(--muted); font-size: 12px; }
+.resource-heading { display: flex !important; justify-content: space-between; align-items: center; gap: 10px; }
+.resource-heading strong, .resource-heading .status-badge { display: inline-flex; margin: 0; }
+.overview-run { width: 100%; display: grid; grid-template-columns: minmax(120px, 1fr) auto minmax(150px, auto); align-items: center; gap: 12px; border: 0; border-bottom: 1px solid var(--border); padding: 12px 4px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.overview-run:last-child { border-bottom: 0; }
+.overview-run > span:last-child { color: var(--muted); font-size: 12px; text-align: right; }
 .detail-panel dl { display: grid; grid-template-columns: 120px 1fr; gap: 9px 16px; margin: 0; }
 .detail-panel dt { color: var(--muted); font-size: 12px; }
 .detail-panel dd { margin: 0; overflow-wrap: anywhere; }
 .detail-section { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.detail-section h3 { margin: 0 0 12px; font-size: 15px; }
+.tool-call { margin-top: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
+.tool-call dl { margin-top: 12px; }
 .empty-state { margin: 0; padding: 28px 16px; border: 1px dashed var(--border-strong); border-radius: 9px; color: var(--muted); text-align: center; }
 .status-badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 3px 8px; background: #edf1f6; color: #56657a; font-size: 11px; font-weight: 700; }
 .status-badge[data-tone="success"] { background: #e8f7f0; color: var(--success); }

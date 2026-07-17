@@ -45,6 +45,21 @@ test("日期和运行状态转换为可读中文", () => {
     assert.deepEqual(core.statusMeta("FAILED"), {label: "失败", tone: "error"});
 });
 
+test("游标请求路径会编码不安全字符", () => {
+    assert.equal(
+        core.buildCursorPath("/api/audit-events", 20, "a+b/="),
+        "/api/audit-events?limit=20&cursor=a%2Bb%2F%3D"
+    );
+    assert.equal(core.buildCursorPath("/api/audit-events", 20, ""), "/api/audit-events?limit=20");
+});
+
+test("缺少分页条目时保留已有数据", () => {
+    assert.deepEqual(core.appendCursorPage([{id: "1"}], {nextCursor: null}), {
+        items: [{id: "1"}],
+        nextCursor: ""
+    });
+});
+
 function response(status, body) {
     return {
         ok: status >= 200 && status < 300,

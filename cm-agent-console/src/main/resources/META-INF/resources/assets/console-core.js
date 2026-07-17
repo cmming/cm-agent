@@ -28,6 +28,13 @@
         };
     }
 
+    function buildCursorPath(basePath, limit, cursor) {
+        const separator = basePath.includes("?") ? "&" : "?";
+        const limitParameter = `limit=${encodeURIComponent(String(limit))}`;
+        const cursorParameter = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+        return `${basePath}${separator}${limitParameter}${cursorParameter}`;
+    }
+
     function createApiClient({fetchImpl, getToken, onUnauthorized}) {
         if (typeof fetchImpl !== "function" || typeof getToken !== "function" || typeof onUnauthorized !== "function") {
             throw new TypeError("请求客户端依赖不完整");
@@ -97,6 +104,7 @@
         formatError,
         createApiClient,
         appendCursorPage,
+        buildCursorPath,
         formatDateTime,
         statusMeta
     };

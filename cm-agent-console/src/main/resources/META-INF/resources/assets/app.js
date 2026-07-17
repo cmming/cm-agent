@@ -12,7 +12,12 @@
         agents: [],
         tools: [],
         selectedAgentId: "",
-        selectedToolId: ""
+        selectedToolId: "",
+        runs: [],
+        runCursor: "",
+        selectedRunId: "",
+        auditEvents: [],
+        auditCursor: ""
     };
 
     const pageInfo = {
@@ -94,6 +99,11 @@
         state.tools = [];
         state.selectedAgentId = "";
         state.selectedToolId = "";
+        state.runs = [];
+        state.runCursor = "";
+        state.selectedRunId = "";
+        state.auditEvents = [];
+        state.auditCursor = "";
         $("loginPassword").value = "";
         $("consoleView").hidden = true;
         $("loginView").hidden = false;
@@ -101,9 +111,18 @@
         renderAgents();
         renderTools();
         updateAgentOptions();
+        renderRuns();
+        renderAudit();
         updateOverview();
+        resetSessionViews();
         setStatus($("globalStatus"));
         setStatus($("loginStatus"), message, "neutral");
+    }
+
+    function resetSessionViews() {
+        $("runInput").value = "";
+        renderMessage($("runDetail"), "选择一条运行记录查看详情。");
+        ["agentFormStatus", "toolFormStatus", "grantFormStatus", "runFormStatus"].forEach((id) => setStatus($(id)));
     }
 
     function showConsole() {
@@ -128,12 +147,19 @@
         });
         $("pageTitle").textContent = info[0];
         $("pageSubtitle").textContent = info[1];
+        if (pageId === "runsPage" && state.selectedAgentId && !state.runs.length) {
+            loadRuns({append: false}).catch((error) => setStatus($("runFormStatus"), error.message, "error"));
+        }
+        if (pageId === "auditPage" && !state.auditEvents.length) {
+            loadAudit({append: false}).catch((error) => setStatus($("globalStatus"), error.message, "error"));
+        }
     }
 
     async function loadInitialData() {
         setStatus($("globalStatus"), "正在加载当前租户资源…");
         try {
             await Promise.all([loadAgents(), loadTools()]);
+            if (state.selectedAgentId) await loadRuns({append: false});
             setStatus($("globalStatus"));
         } catch (error) {
             setStatus($("globalStatus"), error.message, "error");
@@ -328,9 +354,199 @@
     function updateOverview() {
         $("overviewAgentCount").textContent = String(state.agents.length);
         $("overviewToolCount").textContent = String(state.tools.length);
-        $("overviewRunStatus").textContent = "暂无";
-        $("overviewRunTime").textContent = state.agents.length ? "进入运行记录加载数据" : "尚无 Agent";
-        $("overviewRuns").replaceChildren(emptyState(state.agents.length ? "进入运行记录查看最近活动。" : "选择或创建 Agent 后查看运行记录。"));
+        const latestRun = state.runs[0];
+        const meta = core.statusMeta(latestRun?.status);
+        $("overviewRunStatus").textContent = latestRun ? meta.label : "暂无";
+        $("overviewRunTime").textContent = latestRun ? core.formatDateTime(latestRun.startedAt) : (state.agents.length ? "暂无运行记录" : "尚无 Agent");
+        const container = $("overviewRuns");
+        container.replaceChildren();
+        if (!state.runs.length) {
+            container.append(emptyState(state.agents.length ? "当前 Agent 暂无运行记录。" : "选择或创建 Agent 后查看运行记录。"));
+            return;
+        }
+        state.runs.slice(0, 5).forEach((run) => {
+            const row = element("button", {className: "overview-run", type: "button"});
+            const agent = state.agents.find((item) => item.id === run.agentId);
+            row.append(element("strong", {text: agent?.name || "Agent"}));
+            row.append(statusBadge(run.status));
+            row.append(element("span", {text: core.formatDateTime(run.startedAt)}));
+            row.addEventListener("click", () => {
+                navigate("runsPage");
+                loadRunDetail(run.id);
+            });
+            container.append(row);
+        });
+    }
+
+    async function runAgent() {
+        const agentId = $("runAgentSelect").value;
+        const input = $("runInput").value.trim();
+        if (!agentId || !input) {
+            setStatus($("runFormStatus"), "请选择 Agent 并输入调试内容。", "error");
+            return;
+        }
+        try {
+            await withSubmitState($("runBtn"), async () => {
+                const result = await api.request(`/api/agents/${encodeURIComponent(agentId)}/runs`, {
+                    method: "POST",
+                    body: JSON.stringify({input})
+                });
+                state.selectedAgentId = agentId;
+                await loadRuns({append: false});
+                if (result?.runId) await loadRunDetail(result.runId);
+                const meta = core.statusMeta(result?.status);
+                setStatus($("runFormStatus"), `运行已结束：${meta.label}。`, result?.status === "SUCCEEDED" ? "success" : "error");
+            });
+        } catch (error) {
+            setStatus($("runFormStatus"), error.message, "error");
+        }
+    }
+
+    async function loadRuns({append = false} = {}) {
+        const agentId = $("runAgentSelect").value || state.selectedAgentId;
+        if (!agentId) {
+            state.runs = [];
+            state.runCursor = "";
+            renderRuns();
+            updateOverview();
+            return;
+        }
+        if (!append) {
+            state.selectedAgentId = agentId;
+            state.selectedRunId = "";
+            renderMessage($("runDetail"), "选择一条运行记录查看详情。");
+        }
+        const basePath = `/api/agents/${encodeURIComponent(agentId)}/runs`;
+        const path = core.buildCursorPath(basePath, 20, append ? state.runCursor : "");
+        const page = await api.request(path);
+        const merged = core.appendCursorPage(append ? state.runs : [], page);
+        state.runs = merged.items;
+        state.runCursor = merged.nextCursor;
+        renderRuns();
+        updateOverview();
+    }
+
+    function renderRuns() {
+        const container = $("runList");
+        container.replaceChildren();
+        if (!state.runs.length) {
+            container.append(emptyState(state.selectedAgentId ? "当前 Agent 暂无运行记录。" : "请选择 Agent。"));
+        } else {
+            state.runs.forEach((run) => {
+                const item = element("button", {className: "resource-item", type: "button"});
+                item.classList.toggle("active", run.id === state.selectedRunId);
+                const heading = element("span", {className: "resource-heading"});
+                heading.append(statusBadge(run.status));
+                heading.append(element("strong", {text: core.formatDateTime(run.startedAt)}));
+                item.append(heading);
+                item.append(element("span", {text: compactText(run.input, 90) || "无输入"}));
+                item.addEventListener("click", () => loadRunDetail(run.id));
+                container.append(item);
+            });
+        }
+        $("loadMoreRunsBtn").hidden = !state.runCursor;
+        $("runsEndStatus").textContent = state.runs.length && !state.runCursor ? "已加载全部" : "";
+    }
+
+    async function loadRunDetail(runId) {
+        const agentId = $("runAgentSelect").value || state.selectedAgentId;
+        if (!agentId || !runId) return;
+        state.selectedRunId = runId;
+        renderRuns();
+        try {
+            const detail = await api.request(`/api/agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}`);
+            renderRunDetail(detail);
+        } catch (error) {
+            renderMessage($("runDetail"), error.message, true);
+        }
+    }
+
+    function renderRunDetail(detail) {
+        const run = detail?.run || {};
+        const container = $("runDetail");
+        const heading = element("div", {className: "panel-heading"});
+        const titleGroup = element("div");
+        titleGroup.append(element("p", {className: "eyebrow", text: "运行详情"}));
+        titleGroup.append(element("h2", {text: `运行 ${run.id || "—"}`}));
+        heading.append(titleGroup, statusBadge(run.status));
+        const dl = definitionList([
+            ["输入", run.input],
+            ["输出", run.output],
+            ["错误", run.errorMessage],
+            ["执行主体", run.principalId],
+            ["开始时间", core.formatDateTime(run.startedAt)],
+            ["结束时间", core.formatDateTime(run.finishedAt)]
+        ]);
+        const callsSection = element("section", {className: "detail-section"});
+        callsSection.id = "runToolCalls";
+        callsSection.append(element("h3", {text: "工具调用"}));
+        const toolCalls = Array.isArray(detail?.toolCalls) ? detail.toolCalls : [];
+        if (!toolCalls.length) {
+            callsSection.append(emptyState("本次运行未产生工具调用。"));
+        } else {
+            toolCalls.forEach((call) => callsSection.append(renderToolCall(call)));
+        }
+        container.replaceChildren(heading, dl, callsSection);
+    }
+
+    function renderToolCall(call) {
+        const article = element("article", {className: "tool-call"});
+        const heading = element("div", {className: "resource-heading"});
+        heading.append(element("strong", {text: call.toolName || "未命名 Tool"}), statusBadge(call.status));
+        article.append(heading);
+        article.append(definitionList([
+            ["已授权", call.authorized ? "是" : "否"],
+            ["耗时", call.durationMillis === null || call.durationMillis === undefined ? "—" : `${call.durationMillis} ms`],
+            ["输入摘要", call.inputSummary],
+            ["输出摘要", call.outputSummary],
+            ["错误", call.errorMessage]
+        ]));
+        return article;
+    }
+
+    async function loadAudit({append = false} = {}) {
+        const path = core.buildCursorPath("/api/audit-events", 20, append ? state.auditCursor : "");
+        const page = await api.request(path);
+        const merged = core.appendCursorPage(append ? state.auditEvents : [], page);
+        state.auditEvents = merged.items;
+        state.auditCursor = merged.nextCursor;
+        renderAudit();
+    }
+
+    function renderAudit() {
+        const container = $("auditList");
+        container.replaceChildren();
+        state.auditEvents.forEach((event) => {
+            const row = document.createElement("tr");
+            row.append(tableCell(event.eventType));
+            row.append(tableCell(`${event.resourceType || "—"} / ${event.resourceId || "—"}`));
+            const statusCell = document.createElement("td");
+            statusCell.append(statusBadge(event.status));
+            row.append(statusCell);
+            row.append(tableCell(event.principalId));
+            row.append(tableCell(event.message));
+            row.append(tableCell(core.formatDateTime(event.createdAt)));
+            container.append(row);
+        });
+        $("auditEmpty").hidden = state.auditEvents.length > 0;
+        $("loadMoreAuditBtn").hidden = !state.auditCursor;
+        $("auditEndStatus").textContent = state.auditEvents.length && !state.auditCursor ? "已加载全部" : "";
+    }
+
+    function statusBadge(status) {
+        const meta = core.statusMeta(status);
+        const badge = element("span", {className: "status-badge", text: meta.label});
+        badge.dataset.tone = meta.tone;
+        return badge;
+    }
+
+    function tableCell(value) {
+        return element("td", {text: value === null || value === undefined || value === "" ? "—" : value});
+    }
+
+    function compactText(value, limit) {
+        const text = value ? String(value).trim() : "";
+        return text.length > limit ? `${text.slice(0, limit)}…` : text;
     }
 
     function option(value, label) {
@@ -367,8 +583,14 @@
     $("agentForm").addEventListener("submit", (event) => { event.preventDefault(); createAgent(); });
     $("toolForm").addEventListener("submit", (event) => { event.preventDefault(); createTool(); });
     $("grantForm").addEventListener("submit", (event) => { event.preventDefault(); grantTool(); });
+    $("runForm").addEventListener("submit", (event) => { event.preventDefault(); runAgent(); });
     $("refreshAgentsBtn").addEventListener("click", () => loadAgents().catch((error) => setStatus($("globalStatus"), error.message, "error")));
     $("refreshToolsBtn").addEventListener("click", () => loadTools().catch((error) => setStatus($("globalStatus"), error.message, "error")));
+    $("refreshRunsBtn").addEventListener("click", () => loadRuns({append: false}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
+    $("loadMoreRunsBtn").addEventListener("click", () => loadRuns({append: true}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
+    $("runAgentSelect").addEventListener("change", () => loadRuns({append: false}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
+    $("refreshAuditBtn").addEventListener("click", () => loadAudit({append: false}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
+    $("loadMoreAuditBtn").addEventListener("click", () => loadAudit({append: true}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
     document.querySelectorAll("[data-page]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));
     document.querySelectorAll("[data-navigate]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.navigate)));
 
