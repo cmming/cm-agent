@@ -510,6 +510,20 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    void textRedactionRemovesExceptionDetailsThroughSharedToolOutputSanitizer() {
+        String response = """
+                {"access_token":"token-value","client_secret":"secret-value"}
+                endpoint=https://private.example.test/a
+                Caused by: java.lang.IllegalStateException: hidden
+                """;
+        server.createContext("/stack-redaction", exchange -> respond(exchange, 200, "text/plain", response));
+
+        ToolExecutionResult result = executeGet("/stack-redaction", Duration.ofSeconds(1));
+
+        assertThat(result.outputSummary()).doesNotContain("token-value", "secret-value", "https://", "Caused by", "IllegalStateException");
+    }
+
+    @Test
     void invalidJsonResponseUsesFixedFailure() {
         server.createContext("/invalid-json", exchange -> respond(
                 exchange, 200, "application/json", "{\"token\":\"不得泄露\""));

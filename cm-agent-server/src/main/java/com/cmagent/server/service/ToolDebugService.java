@@ -8,38 +8,39 @@ import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.tool.ToolExecutionRequest;
 import com.cmagent.core.tool.ToolExecutionResult;
 import com.cmagent.core.tool.ToolInvocationSource;
-import com.cmagent.core.tool.ToolRegistry;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.runtime.GovernedToolExecutionService;
-import com.cmagent.server.security.SensitiveDataRedactor;
+import com.cmagent.server.runtime.http.HttpToolProperties;
+import com.cmagent.server.security.ToolOutputSanitizer;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Objects;
+import java.util.List;
 import java.util.UUID;
 
 @Service
 public class ToolDebugService {
     private final ToolDefinitionRepository toolRepository;
     private final GovernedToolExecutionService executionService;
-    private final ToolRegistry registry;
     private final AuditAppender auditAppender;
-    private final SensitiveDataRedactor redactor;
+    private final ToolOutputSanitizer sanitizer;
+    private final HttpToolProperties httpToolProperties;
 
     public ToolDebugService(
             ToolDefinitionRepository toolRepository,
             GovernedToolExecutionService executionService,
-            ToolRegistry registry,
             AuditAppender auditAppender,
-            SensitiveDataRedactor redactor
+            ToolOutputSanitizer sanitizer,
+            HttpToolProperties httpToolProperties
     ) {
         this.toolRepository = Objects.requireNonNull(toolRepository, "toolRepository 不能为空");
         this.executionService = Objects.requireNonNull(executionService, "executionService 不能为空");
-        this.registry = Objects.requireNonNull(registry, "registry 不能为空");
         this.auditAppender = Objects.requireNonNull(auditAppender, "auditAppender 不能为空");
-        this.redactor = Objects.requireNonNull(redactor, "redactor 不能为空");
+        this.sanitizer = Objects.requireNonNull(sanitizer, "sanitizer 不能为空");
+        this.httpToolProperties = Objects.requireNonNull(httpToolProperties, "httpToolProperties 不能为空");
     }
 
     public ToolDebugResponse debug(PrincipalRef principal, UUID toolId, String inputJson, String confirmedToolName) {
@@ -55,16 +56,17 @@ public class ToolDebugService {
         ToolExecutionRequest request = new ToolExecutionRequest(
                 principal.tenantId(), null, principal, null, toolCallId, tool.id(), inputJson, ToolInvocationSource.DEBUG
         );
-        auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_DEBUG_STARTED", "TOOL",
-                tool.id().toString(), "RUNNING", "工具调试已开始");
         long startedAt = System.nanoTime();
         try {
-            ToolExecutionResult result = executionService.execute(tool, request);
+            ToolExecutionResult result = executionService.executeWhenReady(tool, request, () ->
+                    auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_DEBUG_STARTED", "TOOL",
+                            tool.id().toString(), "RUNNING", "工具调试已开始")
+            );
             long durationMillis = elapsedMillis(startedAt);
             if (result.success()) {
                 auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_DEBUG_COMPLETED", "TOOL",
                         tool.id().toString(), "SUCCEEDED", "工具调试完成");
-                return new ToolDebugResponse(true, result.statusCode(), redactor.redact(result.outputSummary()), "", durationMillis);
+                return new ToolDebugResponse(true, result.statusCode(), safeOutput(result.outputSummary()), "", durationMillis);
             }
             auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_DEBUG_FAILED", "TOOL",
                     tool.id().toString(), "FAILED", "工具调试失败");
@@ -83,9 +85,6 @@ public class ToolDebugService {
     }
 
     private void validateDebugScope(ToolDefinition tool, String confirmedToolName) {
-        if (tool.type() == ToolType.LOCAL && !isSameRegistration(tool)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "本地工具未注册或定义不一致");
-        }
         if (tool.type() != ToolType.HTTP && tool.type() != ToolType.LOCAL) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "工具类型不支持调试");
         }
@@ -94,13 +93,11 @@ public class ToolDebugService {
         }
     }
 
-    private boolean isSameRegistration(ToolDefinition tool) {
-        return registry.snapshot(tool.id())
-                .map(ToolRegistry.ToolRegistrationSnapshot::definition)
-                .map(registered -> tool.tenantId().equals(registered.tenantId())
-                        && tool.id().equals(registered.id())
-                        && tool.name().equals(registered.name()))
-                .orElse(false);
+    private String safeOutput(String output) {
+        String sanitized = sanitizer.sanitize(output, List.of());
+        return sanitizer.exceedsByteLimit(sanitized, httpToolProperties.getMaxResponseBytes())
+                ? "工具输出超过安全大小限制"
+                : sanitized;
     }
 
     private long elapsedMillis(long startedAt) {

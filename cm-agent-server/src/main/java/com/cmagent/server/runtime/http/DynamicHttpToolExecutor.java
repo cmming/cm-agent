@@ -5,13 +5,11 @@ import com.cmagent.core.domain.HttpToolMethod;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.tool.ToolExecutionRequest;
 import com.cmagent.core.tool.ToolExecutionResult;
+import com.cmagent.server.security.ToolOutputSanitizer;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.databind.node.TextNode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Component;
@@ -51,29 +49,13 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
             "proxy-authorization", "upgrade"
     );
     private static final Pattern HEADER_NAME = Pattern.compile("[!#$%&'*+.^_`|~0-9A-Za-z-]+");
-    private static final Pattern URL = Pattern.compile("(?i)https?://[^\\s\\\"'<>]+");
-    private static final Pattern AUTH_CREDENTIAL = Pattern.compile(
-            "(?i)(?:Basic|Bearer|Digest|Negotiate)\\s+[^\\s\\\"',;}]+"
-    );
-    private static final Pattern SECRET_ASSIGNMENT = Pattern.compile(
-            "(?i)([\\\"']?(?:authorization|set[-_.\\s]?cookie|cookie|access[-_.\\s]?token|" +
-                    "refresh[-_.\\s]?token|api[-_.\\s]?key|client[-_.\\s]?secret|jwt[-_.\\s]?secret|" +
-                    "password|passwd|secret|token)[\\\"']?\\s*[:=]\\s*)" +
-                    "(?:\\\"[^\\\"]*\\\"|'[^']*'|[^\\s,;}\\]]+)"
-    );
-    private static final Pattern SENSITIVE_HEADER = Pattern.compile(
-            "(?im)^(?:authorization|cookie|set-cookie)\\s*[:=][^\\r\\n]*$"
-    );
-    private static final Set<String> SENSITIVE_JSON_KEYS = Set.of(
-            "authorization", "cookie", "setcookie", "token", "accesstoken", "refreshtoken",
-            "apikey", "secret", "clientsecret", "password", "passwd", "jwtsecret"
-    );
 
     private final HttpToolProperties properties;
     private final HttpToolSecretProvider secretProvider;
     private final HttpToolUrlPolicy urlPolicy;
     private final HttpToolInputMapper inputMapper;
     private final ObjectMapper objectMapper;
+    private final ToolOutputSanitizer sanitizer;
     private final HttpTransport httpTransport;
     private final ExecutorService blockingExecutor;
 
@@ -83,9 +65,21 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
             HttpToolSecretProvider secretProvider,
             HttpToolUrlPolicy urlPolicy,
             HttpToolInputMapper inputMapper,
+            ObjectMapper objectMapper,
+            ToolOutputSanitizer sanitizer
+    ) {
+        this(properties, secretProvider, urlPolicy, inputMapper, objectMapper, createTransport(properties), sanitizer);
+    }
+
+    public DynamicHttpToolExecutor(
+            HttpToolProperties properties,
+            HttpToolSecretProvider secretProvider,
+            HttpToolUrlPolicy urlPolicy,
+            HttpToolInputMapper inputMapper,
             ObjectMapper objectMapper
     ) {
-        this(properties, secretProvider, urlPolicy, inputMapper, objectMapper, createTransport(properties));
+        this(properties, secretProvider, urlPolicy, inputMapper, objectMapper, createTransport(properties),
+                new ToolOutputSanitizer(objectMapper));
     }
 
     DynamicHttpToolExecutor(
@@ -96,11 +90,25 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
             ObjectMapper objectMapper,
             HttpTransport httpTransport
     ) {
+        this(properties, secretProvider, urlPolicy, inputMapper, objectMapper, httpTransport,
+                new ToolOutputSanitizer(objectMapper));
+    }
+
+    DynamicHttpToolExecutor(
+            HttpToolProperties properties,
+            HttpToolSecretProvider secretProvider,
+            HttpToolUrlPolicy urlPolicy,
+            HttpToolInputMapper inputMapper,
+            ObjectMapper objectMapper,
+            HttpTransport httpTransport,
+            ToolOutputSanitizer sanitizer
+    ) {
         this.properties = Objects.requireNonNull(properties, "properties 不能为空");
         this.secretProvider = Objects.requireNonNull(secretProvider, "secretProvider 不能为空");
         this.urlPolicy = Objects.requireNonNull(urlPolicy, "urlPolicy 不能为空");
         this.inputMapper = Objects.requireNonNull(inputMapper, "inputMapper 不能为空");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
+        this.sanitizer = Objects.requireNonNull(sanitizer, "sanitizer 不能为空");
         this.httpTransport = Objects.requireNonNull(httpTransport, "httpTransport 不能为空");
         this.blockingExecutor = Executors.newThreadPerTaskExecutor(
                 Thread.ofVirtual().name("cm-agent-http-", 0).factory());
@@ -390,20 +398,18 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
                 String output;
                 if (isJsonContentType(contentType)) {
                     try {
-                        JsonNode json = objectMapper.reader()
-                                .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-                                .readTree(decoded);
+                        JsonNode json = objectMapper.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(decoded);
                         if (json == null || json.isMissingNode()) {
                             return ToolExecutionResult.failed("HTTP JSON 响应无效", status);
                         }
-                        output = objectMapper.writeValueAsString(redactJson(json, secretValues));
+                        output = sanitizer.sanitize(decoded, secretValues);
                     } catch (JsonProcessingException exception) {
                         return ToolExecutionResult.failed("HTTP JSON 响应无效", status);
                     }
                 } else {
-                    output = redactText(decoded, secretValues);
+                    output = sanitizer.sanitize(decoded, secretValues);
                 }
-                if (output.getBytes(StandardCharsets.UTF_8).length > properties.getMaxResponseBytes()) {
+                if (sanitizer.exceedsByteLimit(output, properties.getMaxResponseBytes())) {
                     return ToolExecutionResult.failed("HTTP 响应超过大小限制", status);
                 }
                 return ToolExecutionResult.succeeded(output, status);
@@ -489,46 +495,6 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         String mediaType = value.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
         return "application/json".equals(mediaType)
                 || (mediaType.startsWith("application/") && mediaType.endsWith("+json"));
-    }
-
-    private JsonNode redactJson(JsonNode node, List<String> secretValues) {
-        if (node.isObject()) {
-            List<String> fieldNames = new ArrayList<>();
-            node.fieldNames().forEachRemaining(fieldNames::add);
-            for (String fieldName : fieldNames) {
-                if (SENSITIVE_JSON_KEYS.contains(normalizeSensitiveKey(fieldName))) {
-                    ((ObjectNode) node).set(fieldName, TextNode.valueOf("<已脱敏>"));
-                } else {
-                    ((ObjectNode) node).set(fieldName, redactJson(node.get(fieldName), secretValues));
-                }
-            }
-            return node;
-        }
-        if (node.isArray()) {
-            for (int index = 0; index < node.size(); index++) {
-                ((ArrayNode) node).set(index, redactJson(node.get(index), secretValues));
-            }
-            return node;
-        }
-        if (node.isTextual()) {
-            return TextNode.valueOf(redactText(node.textValue(), secretValues));
-        }
-        return node;
-    }
-
-    private String normalizeSensitiveKey(String key) {
-        return key.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
-    }
-
-    private String redactText(String value, List<String> secretValues) {
-        String redacted = value;
-        for (String secret : secretValues) {
-            redacted = redacted.replace(secret, "<已脱敏>");
-        }
-        redacted = URL.matcher(redacted).replaceAll("<已脱敏URL>");
-        redacted = SENSITIVE_HEADER.matcher(redacted).replaceAll("<已脱敏>");
-        redacted = AUTH_CREDENTIAL.matcher(redacted).replaceAll("<已脱敏认证>");
-        return SECRET_ASSIGNMENT.matcher(redacted).replaceAll("$1<已脱敏>");
     }
 
     private static void closeQuietly(InputStream body) {

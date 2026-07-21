@@ -33,7 +33,21 @@ public class GovernedToolExecutionService {
     }
 
     public ToolExecutionResult execute(ToolDefinition tool, ToolExecutionRequest request) {
-        return prepare(tool, request).execute();
+        return executeWhenReady(tool, request, () -> { });
+    }
+
+    public ToolExecutionResult executeWhenReady(
+            ToolDefinition tool,
+            ToolExecutionRequest request,
+            Runnable beforeExecution
+    ) {
+        Objects.requireNonNull(beforeExecution, "beforeExecution 不能为空");
+        PreparedToolExecution prepared = prepare(tool, request);
+        if (!prepared.ready()) {
+            return prepared.execute();
+        }
+        beforeExecution.run();
+        return prepared.execute();
     }
 
     PreparedToolExecution prepare(ToolDefinition tool, ToolExecutionRequest request) {

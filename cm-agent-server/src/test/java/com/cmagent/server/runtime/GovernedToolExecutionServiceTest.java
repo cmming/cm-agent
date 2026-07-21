@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -172,6 +173,59 @@ class GovernedToolExecutionServiceTest {
             assertThat(result.get()).isEqualTo(ToolExecutionResult.succeeded("原始执行器", null));
         }
 
+        assertThat(originalExecutions).hasValue(1);
+        assertThat(replacementExecutions).hasValue(0);
+    }
+
+    @Test
+    void unavailableExecutionNeverRunsBeforeExecutionHook() {
+        ToolDefinition tool = tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "echo", true, "");
+        AtomicInteger hooks = new AtomicInteger();
+
+        ToolExecutionResult result = service.executeWhenReady(tool, request(ToolInvocationSource.DEBUG), hooks::incrementAndGet);
+
+        assertUnavailable(result);
+        assertThat(hooks).hasValue(0);
+    }
+
+    @Test
+    void failedBeforeExecutionHookDoesNotConsumePreparedExecution() {
+        ToolDefinition tool = tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "echo", true, "");
+        AtomicInteger executions = new AtomicInteger();
+        ToolRegistry.ToolRegistrationSnapshot snapshot = new ToolRegistry.ToolRegistrationSnapshot(tool, ignored -> {
+            executions.incrementAndGet();
+            return ToolExecutionResult.succeeded("已执行", null);
+        });
+        when(registry.snapshot(TOOL_ID)).thenReturn(Optional.of(snapshot));
+
+        assertThatThrownBy(() -> service.executeWhenReady(tool, request(ToolInvocationSource.DEBUG), () -> {
+            throw new IllegalStateException("审计失败");
+        })).isInstanceOf(IllegalStateException.class);
+
+        assertThat(executions).hasValue(0);
+    }
+
+    @Test
+    void executeWhenReadyUsesTheLocalSnapshotCapturedBeforeHook() {
+        InMemoryToolRegistry localRegistry = new InMemoryToolRegistry();
+        GovernedToolExecutionService localService = new GovernedToolExecutionService(configs, http, localRegistry);
+        ToolDefinition original = tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "echo", true, "");
+        ToolDefinition replacement = tool(ToolType.LOCAL, OTHER_TENANT_ID, TOOL_ID, "replacement", true, "");
+        AtomicInteger originalExecutions = new AtomicInteger();
+        AtomicInteger replacementExecutions = new AtomicInteger();
+        localRegistry.register(original, ignored -> {
+            originalExecutions.incrementAndGet();
+            return ToolExecutionResult.succeeded("原始执行器", null);
+        });
+
+        ToolExecutionResult result = localService.executeWhenReady(original, request(ToolInvocationSource.DEBUG), () ->
+                localRegistry.register(replacement, ignored -> {
+                    replacementExecutions.incrementAndGet();
+                    return ToolExecutionResult.succeeded("替换执行器", null);
+                })
+        );
+
+        assertThat(result).isEqualTo(ToolExecutionResult.succeeded("原始执行器", null));
         assertThat(originalExecutions).hasValue(1);
         assertThat(replacementExecutions).hasValue(0);
     }

@@ -8,7 +8,6 @@ import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.tool.ToolExecutionRequest;
 import com.cmagent.core.tool.ToolExecutionResult;
 import com.cmagent.core.tool.ToolInvocationSource;
-import com.cmagent.core.tool.ToolRegistry;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.runtime.GovernedToolExecutionService;
@@ -47,8 +46,6 @@ class ToolDebugServiceTest {
     @Mock
     private GovernedToolExecutionService executionService;
     @Mock
-    private ToolRegistry registry;
-    @Mock
     private AuditAppender auditAppender;
 
     private ToolDebugService service;
@@ -56,8 +53,9 @@ class ToolDebugServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ToolDebugService(toolRepository, executionService, registry, auditAppender,
-                new com.cmagent.server.security.SensitiveDataRedactor());
+        service = new ToolDebugService(toolRepository, executionService, auditAppender,
+                new com.cmagent.server.security.ToolOutputSanitizer(new com.fasterxml.jackson.databind.ObjectMapper()),
+                new com.cmagent.server.runtime.http.HttpToolProperties());
         principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:debug"));
     }
 
@@ -65,14 +63,17 @@ class ToolDebugServiceTest {
     void httpDebugUsesDebugSourceWithoutAgentOrRunAndWritesStrictAudits() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "http-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
-        when(executionService.execute(eq(tool), any())).thenReturn(ToolExecutionResult.succeeded("结果 https://internal.example.test/secret", 200));
+        when(executionService.executeWhenReady(eq(tool), any(), any())).thenAnswer(invocation -> {
+            invocation.getArgument(2, Runnable.class).run();
+            return ToolExecutionResult.succeeded("结果 https://internal.example.test/secret", 200);
+        });
 
         ToolDebugResponse response = service.debug(principal, TOOL_ID, "{\"name\":\"value\"}", null);
 
         assertThat(response.success()).isTrue();
-        assertThat(response.output()).isEqualTo("结果 <已脱敏>");
+        assertThat(response.output()).isEqualTo("结果 <已脱敏URL>");
         ArgumentCaptor<ToolExecutionRequest> request = ArgumentCaptor.forClass(ToolExecutionRequest.class);
-        verify(executionService).execute(eq(tool), request.capture());
+        verify(executionService).executeWhenReady(eq(tool), request.capture(), any());
         assertThat(request.getValue().source()).isEqualTo(ToolInvocationSource.DEBUG);
         assertThat(request.getValue().tenantId()).isEqualTo(TENANT_ID);
         assertThat(request.getValue().principal()).isEqualTo(principal);
@@ -95,16 +96,18 @@ class ToolDebugServiceTest {
     }
 
     @Test
-    void unregisteredLocalToolIsRejectedBeforeStartAudit() {
+    void unavailableLocalToolWritesFailureAuditWithoutStartedAudit() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.LOCAL, ToolRiskLevel.LOW, "local-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
-        when(registry.snapshot(TOOL_ID)).thenReturn(Optional.empty());
+        when(executionService.executeWhenReady(eq(tool), any(), any())).thenReturn(ToolExecutionResult.failed("工具不可用", null));
 
-        assertThatThrownBy(() -> service.debug(principal, TOOL_ID, "{}", null))
-                .isInstanceOfSatisfying(ResponseStatusException.class,
-                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+        ToolDebugResponse response = service.debug(principal, TOOL_ID, "{}", null);
 
-        verifyNoInteractions(executionService, auditAppender);
+        assertThat(response.success()).isFalse();
+        verify(auditAppender, never()).append(TENANT_ID, "admin", "TOOL_DEBUG_STARTED", "TOOL",
+                TOOL_ID.toString(), "RUNNING", "工具调试已开始");
+        verify(auditAppender).append(TENANT_ID, "admin", "TOOL_DEBUG_FAILED", "TOOL",
+                TOOL_ID.toString(), "FAILED", "工具调试失败");
     }
 
     @Test
@@ -123,40 +126,68 @@ class ToolDebugServiceTest {
     void failedStartAuditPreventsExecution() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "http-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
+        when(executionService.executeWhenReady(eq(tool), any(), any())).thenAnswer(invocation -> {
+            invocation.getArgument(2, Runnable.class).run();
+            return ToolExecutionResult.succeeded("不应执行", 200);
+        });
         AuditPersistenceException failure = new AuditPersistenceException("审计写入失败", new IllegalStateException());
         doThrow(failure).when(auditAppender).append(TENANT_ID, "admin", "TOOL_DEBUG_STARTED", "TOOL", TOOL_ID.toString(), "RUNNING", "工具调试已开始");
 
         assertThatThrownBy(() -> service.debug(principal, TOOL_ID, "{}", null)).isSameAs(failure);
 
-        verify(executionService, never()).execute(eq(tool), any());
+        verify(executionService).executeWhenReady(eq(tool), any(), any());
     }
 
     @Test
     void failedCompletionAuditIsPropagatedAfterExecution() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "http-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
-        when(executionService.execute(eq(tool), any())).thenReturn(ToolExecutionResult.succeeded("结果", 200));
+        when(executionService.executeWhenReady(eq(tool), any(), any())).thenAnswer(invocation -> {
+            invocation.getArgument(2, Runnable.class).run();
+            return ToolExecutionResult.succeeded("结果", 200);
+        });
         AuditPersistenceException failure = new AuditPersistenceException("审计写入失败", new IllegalStateException());
         doNothing().doThrow(failure).when(auditAppender).append(any(), any(), any(), any(), any(), any(), any());
 
         assertThatThrownBy(() -> service.debug(principal, TOOL_ID, "{}", null)).isSameAs(failure);
 
-        verify(executionService).execute(eq(tool), any());
+        verify(executionService).executeWhenReady(eq(tool), any(), any());
     }
 
     @Test
     void failedDebugNeverExposesToolErrorOrStackTrace() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "http-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
-        when(executionService.execute(eq(tool), any())).thenReturn(
-                ToolExecutionResult.failed("java.lang.IllegalStateException: https://internal.example.test/secret", 502)
-        );
+        when(executionService.executeWhenReady(eq(tool), any(), any())).thenAnswer(invocation -> {
+            invocation.getArgument(2, Runnable.class).run();
+            return ToolExecutionResult.failed("java.lang.IllegalStateException: https://internal.example.test/secret", 502);
+        });
 
         ToolDebugResponse response = service.debug(principal, TOOL_ID, "{}", null);
 
         assertThat(response.success()).isFalse();
         assertThat(response.errorMessage()).isEqualTo("工具调试失败");
         assertThat(response.errorMessage()).doesNotContain("https://", "Exception");
+    }
+
+    @Test
+    void localDebugOutputNeverExposesJsonSecretsUrlsOrStackTrace() {
+        ToolDefinition tool = tool(TENANT_ID, ToolType.LOCAL, ToolRiskLevel.LOW, "local-tool");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
+        when(executionService.executeWhenReady(eq(tool), any(), any())).thenAnswer(invocation -> {
+            invocation.getArgument(2, Runnable.class).run();
+            return ToolExecutionResult.succeeded("""
+                    {"access_token":"local-token","nested":{"client_secret":"local-secret"},
+                    "url":"https://internal.example.test/private","stack":"java.lang.IllegalStateException: detail"}
+                    """, 200);
+        });
+
+        ToolDebugResponse response = service.debug(principal, TOOL_ID, "{}", null);
+
+        assertThat(response.success()).isTrue();
+        assertThat(response.output()).doesNotContain("local-token", "local-secret", "https://", "IllegalStateException");
+        verify(auditAppender).append(TENANT_ID, "admin", "TOOL_DEBUG_COMPLETED", "TOOL",
+                TOOL_ID.toString(), "SUCCEEDED", "工具调试完成");
     }
 
     private static ToolDefinition tool(UUID tenantId, ToolType type, ToolRiskLevel riskLevel, String name) {
