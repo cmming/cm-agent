@@ -12,6 +12,8 @@ import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.repository.RunRepository;
 import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.ToolCallRepository;
+import com.cmagent.core.repository.HttpToolConfigRepository;
+import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -99,6 +101,32 @@ class ServerRepositoryConfigurationTest {
                     assertThatThrownBy(() -> toolCallRepository.saveAll(TENANT_B, batch))
                             .isInstanceOf(IllegalArgumentException.class)
                             .hasMessage("tenantId 与 toolCalls 批次不匹配");
+                });
+    }
+
+    @Test
+    void memoryModeProvidesTenantScopedHttpToolConfigurationRepositories() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ServerRepositoryConfiguration.class)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(HttpToolConfigRepository.class);
+                    assertThat(context).hasSingleBean(McpToolPublicationRepository.class);
+                    HttpToolConfigRepository configurations = context.getBean(HttpToolConfigRepository.class);
+                    McpToolPublicationRepository publications = context.getBean(McpToolPublicationRepository.class);
+                    com.cmagent.core.domain.HttpToolConfig configuration = new com.cmagent.core.domain.HttpToolConfig(
+                            TENANT_A, TOOL_A, com.cmagent.core.domain.HttpToolMethod.GET, "https://api.invalid/items",
+                            "{}", List.of(), java.util.Map.of("X-Api-Key", "secret/http/tenant-a"), java.time.Duration.ofSeconds(1));
+                    com.cmagent.core.domain.McpToolPublication publication = new com.cmagent.core.domain.McpToolPublication(
+                            TENANT_A, TOOL_A, true, "tester");
+
+                    configurations.save(configuration);
+                    publications.save(publication);
+
+                    assertThat(configurations.findByTenantAndToolId(TENANT_A, TOOL_A)).contains(configuration);
+                    assertThat(configurations.findByTenantAndToolId(TENANT_B, TOOL_A)).isEmpty();
+                    assertThat(publications.listEnabledByTenant(TENANT_A)).containsExactly(publication);
+                    assertThat(publications.listEnabledByTenant(TENANT_B)).isEmpty();
                 });
     }
 

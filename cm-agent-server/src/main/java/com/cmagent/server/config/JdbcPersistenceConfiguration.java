@@ -7,6 +7,8 @@ import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolCallRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
+import com.cmagent.core.repository.HttpToolConfigRepository;
+import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.persistence.JdbcAuditEventRepository;
 import com.cmagent.persistence.JdbcAgentDefinitionRepository;
 import com.cmagent.persistence.JdbcRunRepository;
@@ -14,6 +16,8 @@ import com.cmagent.persistence.JdbcModelConfigRepository;
 import com.cmagent.persistence.JdbcToolDefinitionRepository;
 import com.cmagent.persistence.JdbcToolCallRepository;
 import com.cmagent.persistence.JdbcToolGrantRepository;
+import com.cmagent.persistence.JdbcHttpToolConfigRepository;
+import com.cmagent.persistence.JdbcMcpToolPublicationRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import org.flywaydb.core.Flyway;
@@ -110,6 +114,16 @@ public class JdbcPersistenceConfiguration {
             TransactionTemplate cmAgentTransactionTemplate
     ) {
         return new JdbcToolCallRepository(cmAgentJdbcClient, cmAgentTransactionTemplate);
+    }
+
+    @Bean
+    HttpToolConfigRepository jdbcHttpToolConfigRepository(JdbcClient cmAgentJdbcClient, ObjectMapper objectMapper) {
+        return new JdbcHttpToolConfigRepository(cmAgentJdbcClient, objectMapper);
+    }
+
+    @Bean
+    McpToolPublicationRepository jdbcMcpToolPublicationRepository(JdbcClient cmAgentJdbcClient, ObjectMapper objectMapper) {
+        return new JdbcMcpToolPublicationRepository(cmAgentJdbcClient, objectMapper);
     }
 
     @Bean

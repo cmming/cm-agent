@@ -104,6 +104,17 @@ JWT 验证密钥、数据库凭据和模型 API Key 不得写入 Git、镜像层
 
 升级前先备份数据库并记录当前迁移版本；迁移失败时停止发布、保留错误上下文并按回滚预案处理，不修改历史 V1 文件“修复”问题。
 
+后续 V4 会为 `tool_definitions` 增加同一租户内的名称唯一索引，并新增 HTTP 工具配置和 MCP 发布配置表。应用 V4 前必须先执行以下只读检查并处理结果中的重复记录，否则唯一索引会使迁移失败：
+
+```sql
+SELECT tenant_id, name, COUNT(*) AS duplicate_count
+FROM tool_definitions
+GROUP BY tenant_id, name
+HAVING COUNT(*) > 1;
+```
+
+V4 的复合外键引用 V1 已存在的 `tool_definitions (id, tenant_id)` 唯一键，兼容 PostgreSQL 16 与 MySQL 8.4。HTTP 请求头配置只保存 Secret 引用，实际值必须由受控 Secret Provider 在运行时解析，不得写入数据库。
+
 ## 两段式运行持久化
 
 每次 Agent 运行分为两个持久化阶段：

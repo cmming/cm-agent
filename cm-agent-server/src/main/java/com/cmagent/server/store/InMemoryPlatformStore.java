@@ -12,6 +12,8 @@ import com.cmagent.core.domain.RunToolCall;
 import com.cmagent.core.domain.RunToolCallBatch;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
+import com.cmagent.core.domain.HttpToolConfig;
+import com.cmagent.core.domain.McpToolPublication;
 import com.cmagent.core.repository.RunRepository;
 import com.cmagent.core.repository.ToolCallRepository;
 
@@ -36,6 +38,43 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     private final List<AuditEvent> auditEvents = Collections.synchronizedList(new ArrayList<>());
     private final ConcurrentHashMap<UUID, RunRecord> runs = new ConcurrentHashMap<>();
     private final List<RunToolCall> toolCalls = Collections.synchronizedList(new ArrayList<>());
+    private final ConcurrentHashMap<String, HttpToolConfig> httpToolConfigs = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, McpToolPublication> mcpToolPublications = new ConcurrentHashMap<>();
+
+    public HttpToolConfig saveHttpToolConfig(HttpToolConfig config) {
+        httpToolConfigs.put(toolKey(config.tenantId(), config.toolId()), config);
+        return config;
+    }
+
+    public Optional<HttpToolConfig> findHttpToolConfig(UUID tenantId, UUID toolId) {
+        return Optional.ofNullable(httpToolConfigs.get(toolKey(tenantId, toolId)))
+                .filter(config -> tenantId.equals(config.tenantId()) && toolId.equals(config.toolId()));
+    }
+
+    public void deleteHttpToolConfig(UUID tenantId, UUID toolId) {
+        httpToolConfigs.remove(toolKey(tenantId, toolId));
+    }
+
+    public McpToolPublication saveMcpToolPublication(McpToolPublication publication) {
+        mcpToolPublications.put(toolKey(publication.tenantId(), publication.toolId()), publication);
+        return publication;
+    }
+
+    public Optional<McpToolPublication> findMcpToolPublication(UUID tenantId, UUID toolId) {
+        return Optional.ofNullable(mcpToolPublications.get(toolKey(tenantId, toolId)))
+                .filter(publication -> tenantId.equals(publication.tenantId()) && toolId.equals(publication.toolId()));
+    }
+
+    public List<McpToolPublication> listEnabledMcpToolPublications(UUID tenantId) {
+        return mcpToolPublications.values().stream()
+                .filter(publication -> tenantId.equals(publication.tenantId()) && publication.enabled())
+                .sorted(Comparator.comparing(publication -> publication.toolId().toString()))
+                .toList();
+    }
+
+    private static String toolKey(UUID tenantId, UUID toolId) {
+        return tenantId + ":" + toolId;
+    }
 
     public ModelConfig saveModelConfig(ModelConfig modelConfig) {
         modelConfigs.put(modelConfig.id(), modelConfig);

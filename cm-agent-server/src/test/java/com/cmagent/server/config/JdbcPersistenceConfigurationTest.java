@@ -4,10 +4,15 @@ import com.cmagent.core.audit.AuditEventRepository;
 import com.cmagent.core.repository.RunRepository;
 import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.ToolCallRepository;
+import com.cmagent.core.repository.HttpToolConfigRepository;
+import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.persistence.JdbcAuditEventRepository;
 import com.cmagent.persistence.JdbcRunRepository;
 import com.cmagent.persistence.JdbcModelConfigRepository;
 import com.cmagent.persistence.JdbcToolCallRepository;
+import com.cmagent.persistence.JdbcHttpToolConfigRepository;
+import com.cmagent.persistence.JdbcMcpToolPublicationRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
@@ -58,6 +63,12 @@ class JdbcPersistenceConfigurationTest {
         assertThat(configuration.jdbcToolCallRepository(jdbcClient, transactionTemplate))
                 .isInstanceOf(JdbcToolCallRepository.class)
                 .isInstanceOf(ToolCallRepository.class);
+        assertThat(configuration.jdbcHttpToolConfigRepository(jdbcClient, new ObjectMapper()))
+                .isInstanceOf(JdbcHttpToolConfigRepository.class)
+                .isInstanceOf(HttpToolConfigRepository.class);
+        assertThat(configuration.jdbcMcpToolPublicationRepository(jdbcClient, new ObjectMapper()))
+                .isInstanceOf(JdbcMcpToolPublicationRepository.class)
+                .isInstanceOf(McpToolPublicationRepository.class);
     }
 
     @Test
