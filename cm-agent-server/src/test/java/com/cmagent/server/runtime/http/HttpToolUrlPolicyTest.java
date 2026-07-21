@@ -4,12 +4,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -48,6 +50,31 @@ class HttpToolUrlPolicyTest {
 
         assertThat(canonical.getHost()).isEqualTo("xn--bcher-kva.example");
         assertThat(canonical.toASCIIString()).doesNotContain("BÜCHER").doesNotContain("中文");
+    }
+
+    @Test
+    void comparesCanonicalSchemeHostAndEffectivePortForRedirectOrigin() {
+        properties.setAllowHttp(true);
+        HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, publicResolver);
+
+        assertThat(policy.hasSameOrigin(
+                URI.create("https://API.EXAMPLE.COM./start"),
+                URI.create("https://api.example.com:443/final"))).isTrue();
+        assertThat(policy.hasSameOrigin(
+                URI.create("http://api.example.com/start"),
+                URI.create("http://API.EXAMPLE.COM.:80/final"))).isTrue();
+        assertThat(policy.hasSameOrigin(
+                URI.create("https://api.example.com/start"),
+                URI.create("https://child.trusted.example/final"))).isFalse();
+        assertThat(policy.hasSameOrigin(
+                URI.create("https://api.example.com/start"),
+                URI.create("https://other.example.com/final"))).isFalse();
+        assertThat(policy.hasSameOrigin(
+                URI.create("http://api.example.com:8080/start"),
+                URI.create("http://api.example.com:8081/final"))).isFalse();
+        assertThat(policy.hasSameOrigin(
+                URI.create("http://api.example.com:80/start"),
+                URI.create("https://api.example.com:443/final"))).isFalse();
     }
 
     @ParameterizedTest
@@ -116,6 +143,23 @@ class HttpToolUrlPolicyTest {
         assertRejected(policy, "https://api.example.com/orders");
     }
 
+    @ParameterizedTest
+    @MethodSource("specialIpv6Bytes")
+    void rejectsSpecialUseIpv6UsingRawPrefixBytes(byte[] rawAddress) throws Exception {
+        HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, ignored -> List.of(
+                InetAddress.getByAddress(rawAddress)));
+
+        assertRejected(policy, "https://api.example.com/orders");
+    }
+
+    @Test
+    void allowsExplicitGlobalUnicastIpv6OutsideSpecialRanges() throws Exception {
+        HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, ignored -> List.of(
+                InetAddress.getByAddress(hex("26064700000000000000000000001111"))));
+
+        assertThat(policy.validate(URI.create("https://api.example.com/orders"))).isNotNull();
+    }
+
     @Test
     void rejectsDnsAnswerWhenAnyAddressIsNotPublic() throws Exception {
         HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, ignored -> List.of(
@@ -146,5 +190,32 @@ class HttpToolUrlPolicyTest {
 
     private static InetAddress address(String value) throws UnknownHostException {
         return InetAddress.getByName(value);
+    }
+
+    private static Stream<byte[]> specialIpv6Bytes() {
+        return Stream.of(
+                hex("00000000000000000000ffffc0000201"),
+                hex("0064ff9b000000000000000000000001"),
+                hex("0064ff9b000100000000000000000001"),
+                hex("01000000000000000000000000000001"),
+                hex("20010000000000000000000000000001"),
+                hex("20010002000000000000000000000001"),
+                hex("20010020000000000000000000000001"),
+                hex("20010db8000000000000000000000001"),
+                hex("20020000000000000000000000000001"),
+                hex("3fff0000000000000000000000000001"),
+                hex("fc000000000000000000000000000001"),
+                hex("fe800000000000000000000000000001"),
+                hex("ff020000000000000000000000000001"),
+                hex("00000000000000000000000000000000")
+        );
+    }
+
+    private static byte[] hex(String value) {
+        byte[] bytes = new byte[value.length() / 2];
+        for (int index = 0; index < bytes.length; index++) {
+            bytes[index] = (byte) Integer.parseInt(value.substring(index * 2, index * 2 + 2), 16);
+        }
+        return bytes;
     }
 }

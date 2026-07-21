@@ -11,12 +11,15 @@ import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.tool.ToolExecutionRequest;
 import com.cmagent.core.tool.ToolExecutionResult;
 import com.cmagent.core.tool.ToolInvocationSource;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.net.ConnectException;
@@ -142,10 +145,12 @@ class DynamicHttpToolExecutorTest {
         AtomicInteger hits = new AtomicInteger();
         AtomicReference<String> body = new AtomicReference<>();
         AtomicReference<String> contentType = new AtomicReference<>();
+        AtomicInteger contentTypeCount = new AtomicInteger();
         server.createContext("/orders", exchange -> {
             hits.incrementAndGet();
             body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             contentType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
+            contentTypeCount.set(exchange.getRequestHeaders().get("Content-Type").size());
             respond(exchange, 201, "text/plain; charset=utf-8", "已创建");
         });
         HttpParameterMapping bodyMapping = mapping(
@@ -161,6 +166,7 @@ class DynamicHttpToolExecutorTest {
         assertThat(result.outputSummary()).isEqualTo("已创建");
         assertThat(body.get()).isEqualTo("{\"customer\":{\"name\":\"张三\"}}");
         assertThat(contentType.get()).startsWith("application/json");
+        assertThat(contentTypeCount.get()).isOne();
         assertThat(hits.get()).isOne();
     }
 
@@ -197,6 +203,106 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    void requestsIdentityEncodingAndRejectsEncodedOrAmbiguousResponseHeaders() {
+        AtomicReference<String> acceptEncoding = new AtomicReference<>();
+        server.createContext("/identity", exchange -> {
+            acceptEncoding.set(exchange.getRequestHeaders().getFirst("Accept-Encoding"));
+            respond(exchange, 200, "text/plain", "identity");
+        });
+        server.createContext("/gzip", exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "text/plain");
+            exchange.getResponseHeaders().set("Content-Encoding", "gzip");
+            respondWithoutContentType(exchange, 200, "compressed");
+        });
+        server.createContext("/multi-encoding", exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "text/plain");
+            exchange.getResponseHeaders().add("Content-Encoding", "identity");
+            exchange.getResponseHeaders().add("Content-Encoding", "identity");
+            respondWithoutContentType(exchange, 200, "ambiguous");
+        });
+        server.createContext("/multi-content-type", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "text/plain");
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            respondWithoutContentType(exchange, 200, "ambiguous");
+        });
+
+        assertThat(executeGet("/identity", Duration.ofSeconds(2)).success()).isTrue();
+        assertThat(acceptEncoding.get()).isEqualTo("identity");
+        assertThat(executeGet("/gzip", Duration.ofSeconds(2)))
+                .isEqualTo(ToolExecutionResult.failed("HTTP 响应编码不受支持", 200));
+        assertThat(executeGet("/multi-encoding", Duration.ofSeconds(2)))
+                .isEqualTo(ToolExecutionResult.failed("HTTP 响应编码不受支持", 200));
+        assertThat(executeGet("/multi-content-type", Duration.ofSeconds(2)))
+                .isEqualTo(ToolExecutionResult.failed("HTTP 响应头不安全", 200));
+    }
+
+    @Test
+    void rejectsMultipleLocationValuesWithoutFollowingRedirect() {
+        AtomicInteger finalHits = new AtomicInteger();
+        server.createContext("/multi-location", exchange -> {
+            exchange.getResponseHeaders().add("Location", "/final-one");
+            exchange.getResponseHeaders().add("Location", "/final-two");
+            exchange.sendResponseHeaders(302, -1);
+            exchange.close();
+        });
+        server.createContext("/final-one", exchange -> {
+            finalHits.incrementAndGet();
+            respond(exchange, 200, "text/plain", "one");
+        });
+
+        ToolExecutionResult result = executeGet("/multi-location", Duration.ofSeconds(2));
+
+        assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP 重定向响应头无效", 302));
+        assertThat(finalHits.get()).isZero();
+    }
+
+    @Test
+    void contentTypeAndAcceptEncodingAreReservedRequestHeaders() {
+        HttpParameterMapping dynamicContentType = mapping(
+                "/name", HttpParameterLocation.HEADER, "Content-Type", "", true);
+        HttpToolConfig dynamicConfig = config(HttpToolMethod.POST, url("/reserved"),
+                List.of(dynamicContentType), Map.of(), Duration.ofSeconds(1));
+        HttpToolConfig secretConfig = config(HttpToolMethod.POST, url("/reserved"), List.of(),
+                Map.of("Accept-Encoding", SECRET_REF), Duration.ofSeconds(1));
+
+        ToolExecutionResult dynamic = executor(secretProvider()).execute(
+                tool(dynamicConfig.urlTemplate()), dynamicConfig, request("{\"name\":\"text/plain\"}"));
+        ToolExecutionResult secret = executor(secretProvider()).execute(
+                tool(secretConfig.urlTemplate()), secretConfig, request("{}"));
+
+        assertThat(dynamic).isEqualTo(ToolExecutionResult.failed("HTTP 请求头配置不安全", null));
+        assertThat(secret).isEqualTo(ToolExecutionResult.failed("HTTP 请求头配置不安全", null));
+    }
+
+    @Test
+    void rejectsCrlfInDynamicAndSecretRequestHeaderValuesBeforeNetwork() {
+        AtomicInteger hits = new AtomicInteger();
+        server.createContext("/header-injection", exchange -> {
+            hits.incrementAndGet();
+            respond(exchange, 200, "text/plain", "不应访问");
+        });
+        HttpParameterMapping headerMapping = mapping(
+                "/name", HttpParameterLocation.HEADER, "X-Request-Id", "", true);
+        HttpToolConfig dynamicConfig = config(HttpToolMethod.GET, url("/header-injection"),
+                List.of(headerMapping), Map.of(), Duration.ofSeconds(1));
+        HttpToolConfig secretConfig = config(HttpToolMethod.GET, url("/header-injection"),
+                List.of(), Map.of("Authorization", SECRET_REF), Duration.ofSeconds(1));
+        HttpToolSecretProvider unsafeSecretProvider = (tenantId, secretRef) ->
+                java.util.Optional.of("安全值\r\nX-Evil: 注入");
+
+        ToolExecutionResult dynamic = executor(secretProvider()).execute(
+                tool(dynamicConfig.urlTemplate()), dynamicConfig,
+                request("{\"name\":\"安全值\\r\\nX-Evil: 注入\"}"));
+        ToolExecutionResult secret = executor(unsafeSecretProvider).execute(
+                tool(secretConfig.urlTemplate()), secretConfig, request("{}"));
+
+        assertThat(dynamic).isEqualTo(ToolExecutionResult.failed("HTTP 请求头配置不安全", null));
+        assertThat(secret).isEqualTo(ToolExecutionResult.failed("HTTP 请求头配置不安全", null));
+        assertThat(dnsResolutions.get()).isZero();
+        assertThat(hits.get()).isZero();
+    }
+
+    @Test
     void resultRedactionRemovesAuthorizationCookieSensitiveQueryAndCompleteUrl() {
         String response = """
                 Authorization: Bearer response-auth-value
@@ -216,6 +322,88 @@ class DynamicHttpToolExecutorTest {
                 .doesNotContain("response-cookie-value")
                 .doesNotContain("response-query-value")
                 .doesNotContain("https://api.example.com");
+    }
+
+    @Test
+    void jsonRedactionRecursivelyNormalizesSensitiveKeys() throws Exception {
+        String response = """
+                {
+                  "Authorization":"Basic json-authorization",
+                  "ACCESS-TOKEN":"json-access-token",
+                  "refresh_token":"json-refresh-token",
+                  "Api.Key":"json-api-key",
+                  "nested":{"PaSs_Word":"json-password","safe":"可见内容"},
+                  "items":[
+                    {"cookie":"json-cookie"},
+                    {"set-cookie":"json-set-cookie"},
+                    {"jwt_secret":"json-jwt-secret"},
+                    {"client.secret":"json-client-secret"}
+                  ]
+                }
+                """;
+        server.createContext("/json-redaction", exchange -> respond(
+                exchange, 200, "application/json; charset=utf-8", response));
+
+        ToolExecutionResult result = executeGet("/json-redaction", Duration.ofSeconds(1));
+
+        assertThat(result.success()).isTrue();
+        JsonNode redacted = objectMapper.readTree(result.outputSummary());
+        assertThat(redacted.path("Authorization").asText()).isEqualTo("<已脱敏>");
+        assertThat(redacted.path("ACCESS-TOKEN").asText()).isEqualTo("<已脱敏>");
+        assertThat(redacted.path("refresh_token").asText()).isEqualTo("<已脱敏>");
+        assertThat(redacted.path("Api.Key").asText()).isEqualTo("<已脱敏>");
+        assertThat(redacted.path("nested").path("PaSs_Word").asText()).isEqualTo("<已脱敏>");
+        assertThat(redacted.path("nested").path("safe").asText()).isEqualTo("可见内容");
+        assertThat(redacted.path("items").get(0).path("cookie").asText()).isEqualTo("<已脱敏>");
+        assertThat(redacted.path("items").get(1).path("set-cookie").asText()).isEqualTo("<已脱敏>");
+        assertThat(redacted.path("items").get(2).path("jwt_secret").asText()).isEqualTo("<已脱敏>");
+        assertThat(redacted.path("items").get(3).path("client.secret").asText()).isEqualTo("<已脱敏>");
+        assertThat(result.outputSummary())
+                .doesNotContain("json-authorization", "json-access-token", "json-refresh-token",
+                        "json-api-key", "json-password", "json-cookie", "json-set-cookie",
+                        "json-jwt-secret", "json-client-secret", "Basic");
+    }
+
+    @Test
+    void textRedactionHandlesQuotedKeysAndNonBearerAuthorization() {
+        String response = """
+                payload={"access_token":"text-access-token","Api-Key"='text-api-key'}
+                Authorization: Basic dGV4dC1hdXRob3JpemF0aW9u
+                """;
+        server.createContext("/text-redaction", exchange -> respond(
+                exchange, 200, "text/plain", response));
+
+        ToolExecutionResult result = executeGet("/text-redaction", Duration.ofSeconds(1));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.outputSummary())
+                .doesNotContain("text-access-token", "text-api-key", "dGV4dC1hdXRob3JpemF0aW9u", "Basic");
+    }
+
+    @Test
+    void invalidJsonResponseUsesFixedFailure() {
+        server.createContext("/invalid-json", exchange -> respond(
+                exchange, 200, "application/json", "{\"token\":\"不得泄露\""));
+
+        ToolExecutionResult result = executeGet("/invalid-json", Duration.ofSeconds(1));
+
+        assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP JSON 响应无效", 200));
+        assertThat(result.toString()).doesNotContain("不得泄露");
+    }
+
+    @Test
+    void serializedRedactedJsonStillHonorsResponseSizeLimit() {
+        properties.setMaxResponseBytes(12);
+        server.createContext("/serialized-limit", exchange -> respond(
+                exchange, 200, "application/json", "{\"safe\":\"x\"}"));
+        HttpToolConfig config = config(HttpToolMethod.GET, url("/serialized-limit"), List.of(),
+                Map.of("Authorization", SECRET_REF), Duration.ofSeconds(1));
+        HttpToolSecretProvider shortSecretProvider = (tenantId, secretRef) -> java.util.Optional.of("x");
+
+        ToolExecutionResult result = executor(shortSecretProvider).execute(
+                tool(config.urlTemplate()), config, request("{}"));
+
+        assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP 响应超过大小限制", 200));
     }
 
     @Test
@@ -255,6 +443,81 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    void singleDeadlineIncludesSlowDnsResolution() throws Exception {
+        HttpToolUrlPolicy urlPolicy = new HttpToolUrlPolicy(properties, host -> {
+            try {
+                Thread.sleep(250);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new java.net.UnknownHostException("解析被中断");
+            }
+            return List.of(InetAddress.getByName("93.184.216.34"));
+        });
+        DynamicHttpToolExecutor executor = executor(secretProvider(), urlPolicy);
+        HttpToolConfig config = config(HttpToolMethod.GET, url("/slow-dns"), List.of(), Map.of(),
+                Duration.ofMillis(100));
+        long started = System.nanoTime();
+
+        ToolExecutionResult result = executor.execute(tool(config.urlTemplate()), config, request("{}"));
+
+        assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP 请求超时", null));
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofMillis(220));
+    }
+
+    @Test
+    void singleDeadlineIsSharedAcrossMultipleSlowRedirects() {
+        server.createContext("/deadline-r0", exchange -> slowRedirect(exchange, "/deadline-r1", 70));
+        server.createContext("/deadline-r1", exchange -> slowRedirect(exchange, "/deadline-r2", 70));
+        server.createContext("/deadline-r2", exchange -> slowRedirect(exchange, "/deadline-final", 70));
+        server.createContext("/deadline-final", exchange -> respond(exchange, 200, "text/plain", "太晚"));
+
+        ToolExecutionResult result = executeGet("/deadline-r0", Duration.ofMillis(160));
+
+        assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP 请求超时", null));
+    }
+
+    @Test
+    void singleDeadlineClosesBodyWhenHeadersAreFastButBodyIsSlow() {
+        server.createContext("/slow-body", exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "text/plain");
+            exchange.sendResponseHeaders(200, 0);
+            exchange.getResponseBody().write('a');
+            exchange.getResponseBody().flush();
+            try {
+                Thread.sleep(300);
+                exchange.getResponseBody().write('b');
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            } catch (IOException ignored) {
+                // 客户端超时关闭流是预期行为。
+            } finally {
+                exchange.close();
+            }
+        });
+
+        ToolExecutionResult result = executeGet("/slow-body", Duration.ofMillis(100));
+
+        assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP 请求超时", null));
+    }
+
+    @Test
+    void requestCompletesWhenAllPhasesStayWithinSingleDeadline() {
+        server.createContext("/within-deadline", exchange -> {
+            try {
+                Thread.sleep(50);
+                respond(exchange, 200, "text/plain", "按时完成");
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                exchange.close();
+            }
+        });
+
+        ToolExecutionResult result = executeGet("/within-deadline", Duration.ofSeconds(2));
+
+        assertThat(result).isEqualTo(ToolExecutionResult.succeeded("按时完成", 200));
+    }
+
+    @Test
     void followsRelativeRedirectsAndRevalidatesEveryHop() {
         server.createContext("/redirect", exchange -> redirect(exchange, 302, "/final"));
         server.createContext("/final", exchange -> respond(exchange, 200, "text/plain", "完成"));
@@ -266,8 +529,73 @@ class DynamicHttpToolExecutorTest {
         assertThat(dnsResolutions.get()).isEqualTo(2);
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {302, 303, 307, 308})
+    void sameOriginPostRedirectUsesDefinedMethodAndBodySemantics(int status) {
+        AtomicReference<String> finalMethod = new AtomicReference<>();
+        AtomicReference<String> finalBody = new AtomicReference<>();
+        AtomicReference<String> finalAuthorization = new AtomicReference<>();
+        server.createContext("/post-redirect", exchange -> redirect(exchange, status, "/post-final"));
+        server.createContext("/post-final", exchange -> {
+            finalMethod.set(exchange.getRequestMethod());
+            finalBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            finalAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            respond(exchange, 200, "text/plain", "完成");
+        });
+        HttpParameterMapping bodyMapping = mapping(
+                "/name", HttpParameterLocation.BODY, "", "/name", true);
+        HttpToolConfig config = config(HttpToolMethod.POST, url("/post-redirect"), List.of(bodyMapping),
+                Map.of("Authorization", SECRET_REF), Duration.ofSeconds(1));
+
+        ToolExecutionResult result = executor(secretProvider()).execute(
+                tool(config.urlTemplate()), config, request("{\"name\":\"张三\"}"));
+
+        assertThat(result.success()).isTrue();
+        assertThat(finalAuthorization.get()).isEqualTo(SECRET_VALUE);
+        if (status == 302 || status == 303) {
+            assertThat(finalMethod.get()).isEqualTo("GET");
+            assertThat(finalBody.get()).isEmpty();
+        } else {
+            assertThat(finalMethod.get()).isEqualTo("POST");
+            assertThat(finalBody.get()).isEqualTo("{\"name\":\"张三\"}");
+        }
+    }
+
     @Test
-    void blockedRedirectTargetIsNeverRequested() {
+    void crossOriginRedirectNeverForwardsHeadersSecretsOrPostBody() throws Exception {
+        HttpServer other = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        AtomicInteger targetHits = new AtomicInteger();
+        AtomicReference<String> targetAuthorization = new AtomicReference<>();
+        AtomicReference<String> targetBody = new AtomicReference<>();
+        other.createContext("/target", exchange -> {
+            targetHits.incrementAndGet();
+            targetAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            targetBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            respond(exchange, 200, "text/plain", "不应访问");
+        });
+        other.start();
+        try {
+            String location = "http://127.0.0.1:" + other.getAddress().getPort() + "/target";
+            server.createContext("/cross-origin", exchange -> redirect(exchange, 307, location));
+            HttpParameterMapping bodyMapping = mapping(
+                    "/name", HttpParameterLocation.BODY, "", "/name", true);
+            HttpToolConfig config = config(HttpToolMethod.POST, url("/cross-origin"), List.of(bodyMapping),
+                    Map.of("Authorization", SECRET_REF), Duration.ofSeconds(1));
+
+            ToolExecutionResult result = executor(secretProvider()).execute(
+                    tool(config.urlTemplate()), config, request("{\"name\":\"敏感正文\"}"));
+
+            assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP 重定向跨源被拒绝", 307));
+            assertThat(targetHits.get()).isZero();
+            assertThat(targetAuthorization.get()).isNull();
+            assertThat(targetBody.get()).isNull();
+        } finally {
+            other.stop(0);
+        }
+    }
+
+    @Test
+    void crossOriginBlockedRedirectTargetIsNeverRequested() {
         AtomicInteger privateHits = new AtomicInteger();
         server.createContext("/redirect", exchange -> redirect(
                 exchange, 302, "http://localhost:" + port + "/private"));
@@ -278,7 +606,7 @@ class DynamicHttpToolExecutorTest {
 
         ToolExecutionResult result = executeGet("/redirect", Duration.ofSeconds(1));
 
-        assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP 目标地址不允许", null));
+        assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP 重定向跨源被拒绝", 302));
         assertThat(privateHits.get()).isZero();
     }
 
@@ -384,6 +712,11 @@ class DynamicHttpToolExecutorTest {
             return List.of(InetAddress.getByName("93.184.216.34"));
         };
         HttpToolUrlPolicy urlPolicy = new HttpToolUrlPolicy(properties, resolver);
+        return executor(secretProvider, urlPolicy);
+    }
+
+    private DynamicHttpToolExecutor executor(
+            HttpToolSecretProvider secretProvider, HttpToolUrlPolicy urlPolicy) {
         HttpToolInputMapper inputMapper = new HttpToolInputMapper(
                 objectMapper, new HttpToolConfigValidator(objectMapper));
         return new DynamicHttpToolExecutor(properties, secretProvider, urlPolicy, inputMapper, objectMapper);
@@ -424,10 +757,28 @@ class DynamicHttpToolExecutorTest {
         exchange.close();
     }
 
+    private static void slowRedirect(HttpExchange exchange, String location, long delayMillis) throws IOException {
+        try {
+            Thread.sleep(delayMillis);
+            redirect(exchange, 302, location);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            exchange.close();
+        }
+    }
+
     private static void respond(HttpExchange exchange, int status, String contentType, String body)
             throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", contentType);
+        exchange.sendResponseHeaders(status, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
+    }
+
+    private static void respondWithoutContentType(HttpExchange exchange, int status, String body)
+            throws IOException {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.sendResponseHeaders(status, bytes.length);
         exchange.getResponseBody().write(bytes);
         exchange.close();

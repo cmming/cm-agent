@@ -23,6 +23,7 @@ public class ProfileSafetyValidator implements InitializingBean {
     private final boolean devJwtFallbackEnabled;
     private final boolean fakeRuntimeEnabled;
     private final boolean agentScopeRuntimeEnabled;
+    private final boolean httpAllowed;
     private final ObjectProvider<AgentRuntime> agentRuntimeProvider;
 
     public ProfileSafetyValidator(
@@ -32,6 +33,7 @@ public class ProfileSafetyValidator implements InitializingBean {
             @Value("${cm-agent.security.allow-dev-jwt-fallback:false}") boolean devJwtFallbackEnabled,
             @Value("${cm-agent.fake-runtime-enabled:false}") boolean fakeRuntimeEnabled,
             @Value("${cm-agent.agentscope.enabled:false}") boolean agentScopeRuntimeEnabled,
+            @Value("${cm-agent.http-tools.allow-http:false}") boolean httpAllowed,
             ObjectProvider<AgentRuntime> agentRuntimeProvider
     ) {
         this.environment = environment;
@@ -40,6 +42,7 @@ public class ProfileSafetyValidator implements InitializingBean {
         this.devJwtFallbackEnabled = devJwtFallbackEnabled;
         this.fakeRuntimeEnabled = fakeRuntimeEnabled;
         this.agentScopeRuntimeEnabled = agentScopeRuntimeEnabled;
+        this.httpAllowed = httpAllowed;
         this.agentRuntimeProvider = agentRuntimeProvider;
     }
 
@@ -60,6 +63,9 @@ public class ProfileSafetyValidator implements InitializingBean {
         }
         if (activeProfiles.stream().anyMatch(NON_PRODUCTION_PROFILES::contains)) {
             throw new IllegalStateException("production/prod/supabase profile 禁止与 local/test/postgres/mysql profile 同时启用");
+        }
+        if (httpAllowed) {
+            throw new IllegalStateException("production/prod/supabase profile 禁止启用 HTTP 明文协议");
         }
         if (!"jdbc".equalsIgnoreCase(persistenceMode)) {
             throw new IllegalStateException("production/prod/supabase profile 必须使用 jdbc 持久化模式");

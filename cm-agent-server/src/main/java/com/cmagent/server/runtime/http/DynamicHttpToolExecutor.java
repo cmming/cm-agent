@@ -6,9 +6,14 @@ import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.tool.ToolExecutionRequest;
 import com.cmagent.core.tool.ToolExecutionResult;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Component;
 
 import javax.net.ssl.SSLException;
@@ -31,22 +36,37 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Component
-public class DynamicHttpToolExecutor {
+public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     private static final Set<Integer> REDIRECT_STATUSES = Set.of(301, 302, 303, 307, 308);
     private static final Set<String> FORBIDDEN_REQUEST_HEADERS = Set.of(
-            "host", "content-length", "connection", "transfer-encoding", "proxy-authorization", "upgrade"
+            "host", "content-length", "content-type", "accept-encoding", "connection", "transfer-encoding",
+            "proxy-authorization", "upgrade"
     );
     private static final Pattern HEADER_NAME = Pattern.compile("[!#$%&'*+.^_`|~0-9A-Za-z-]+");
     private static final Pattern URL = Pattern.compile("(?i)https?://[^\\s\\\"'<>]+");
-    private static final Pattern BEARER = Pattern.compile("(?i)Bearer\\s+[^\\s\\\"',;}]+");
+    private static final Pattern AUTH_CREDENTIAL = Pattern.compile(
+            "(?i)(?:Basic|Bearer|Digest|Negotiate)\\s+[^\\s\\\"',;}]+"
+    );
     private static final Pattern SECRET_ASSIGNMENT = Pattern.compile(
-            "(?i)(password|passwd|api[-_]?key|jwt[-_]?secret|secret|token)\\s*[:=]\\s*" +
-                    "(?:\\\"[^\\\"]*\\\"|'[^']*'|[^\\s,;}]*)"
+            "(?i)([\\\"']?(?:authorization|set[-_.\\s]?cookie|cookie|access[-_.\\s]?token|" +
+                    "refresh[-_.\\s]?token|api[-_.\\s]?key|client[-_.\\s]?secret|jwt[-_.\\s]?secret|" +
+                    "password|passwd|secret|token)[\\\"']?\\s*[:=]\\s*)" +
+                    "(?:\\\"[^\\\"]*\\\"|'[^']*'|[^\\s,;}\\]]+)"
     );
     private static final Pattern SENSITIVE_HEADER = Pattern.compile(
             "(?im)^(?:authorization|cookie|set-cookie)\\s*[:=][^\\r\\n]*$"
+    );
+    private static final Set<String> SENSITIVE_JSON_KEYS = Set.of(
+            "authorization", "cookie", "setcookie", "token", "accesstoken", "refreshtoken",
+            "apikey", "secret", "clientsecret", "password", "passwd", "jwtsecret"
     );
 
     private final HttpToolProperties properties;
@@ -55,6 +75,7 @@ public class DynamicHttpToolExecutor {
     private final HttpToolInputMapper inputMapper;
     private final ObjectMapper objectMapper;
     private final HttpTransport httpTransport;
+    private final ExecutorService blockingExecutor;
 
     @Autowired
     public DynamicHttpToolExecutor(
@@ -81,6 +102,8 @@ public class DynamicHttpToolExecutor {
         this.inputMapper = Objects.requireNonNull(inputMapper, "inputMapper 不能为空");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
         this.httpTransport = Objects.requireNonNull(httpTransport, "httpTransport 不能为空");
+        this.blockingExecutor = Executors.newThreadPerTaskExecutor(
+                Thread.ofVirtual().name("cm-agent-http-", 0).factory());
     }
 
     private static HttpTransport createTransport(HttpToolProperties properties) {
@@ -88,7 +111,17 @@ public class DynamicHttpToolExecutor {
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .connectTimeout(properties.getMaxTimeout())
                 .build();
-        return request -> client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        return new HttpTransport() {
+            @Override
+            public HttpResponse<InputStream> send(HttpRequest request) throws IOException, InterruptedException {
+                return client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            }
+
+            @Override
+            public void close() {
+                client.shutdownNow();
+            }
+        };
     }
 
     public ToolExecutionResult execute(
@@ -105,9 +138,13 @@ public class DynamicHttpToolExecutor {
         if (!isAllowedTimeout(config.timeout())) {
             return ToolExecutionResult.failed("HTTP 超时配置不允许", null);
         }
+        Deadline deadline = Deadline.start(config.timeout());
         ResolvedHeaders secretHeaders = resolveSecretHeaders(config);
         if (secretHeaders.failure() != null) {
             return secretHeaders.failure();
+        }
+        if (deadline.expired()) {
+            return ToolExecutionResult.failed("HTTP 请求超时", null);
         }
 
         PreparedHttpToolRequest prepared;
@@ -116,6 +153,9 @@ public class DynamicHttpToolExecutor {
             prepared = inputMapper.map(config, input);
         } catch (JsonProcessingException | IllegalArgumentException exception) {
             return ToolExecutionResult.failed("HTTP 工具输入无效", null);
+        }
+        if (deadline.expired()) {
+            return ToolExecutionResult.failed("HTTP 请求超时", null);
         }
 
         Map<String, String> headers = mergeHeaders(prepared.headers(), secretHeaders.values());
@@ -129,7 +169,7 @@ public class DynamicHttpToolExecutor {
         } catch (IllegalArgumentException exception) {
             return ToolExecutionResult.failed("HTTP 请求地址无效", null);
         }
-        return send(config.method(), initialUri, prepared.body(), headers, config.timeout(),
+        return send(config.method(), initialUri, prepared.body(), headers, deadline,
                 secretHeaders.secretValues());
     }
 
@@ -253,7 +293,7 @@ public class DynamicHttpToolExecutor {
             URI initialUri,
             JsonNode body,
             Map<String, String> headers,
-            Duration timeout,
+            Deadline deadline,
             List<String> secretValues
     ) {
         HttpToolMethod method = initialMethod;
@@ -262,21 +302,28 @@ public class DynamicHttpToolExecutor {
         int redirects = 0;
         while (true) {
             try {
-                currentUri = urlPolicy.validate(currentUri);
-                HttpRequest request = buildRequest(method, currentUri, currentBody, headers, timeout);
-                HttpResponse<InputStream> response = httpTransport.send(request);
+                URI uriToValidate = currentUri;
+                currentUri = runWithinDeadline(() -> urlPolicy.validate(uriToValidate), deadline, () -> { });
+                HttpRequest request = buildRequest(method, currentUri, currentBody, headers, deadline.remaining());
+                HttpResponse<InputStream> response = runWithinDeadline(
+                        () -> httpTransport.send(request), deadline, () -> { });
                 int status = response.statusCode();
                 if (REDIRECT_STATUSES.contains(status)) {
                     closeQuietly(response.body());
                     if (redirects >= properties.getMaxRedirects()) {
                         return ToolExecutionResult.failed("HTTP 重定向次数超限", status);
                     }
-                    String location = response.headers().firstValue("Location").orElse(null);
-                    if (location == null || location.isBlank()) {
-                        return ToolExecutionResult.failed("HTTP 重定向地址无效", status);
+                    List<String> locations = response.headers().allValues("Location");
+                    if (locations.size() != 1 || locations.getFirst().isBlank()) {
+                        return ToolExecutionResult.failed("HTTP 重定向响应头无效", status);
                     }
+                    String location = locations.getFirst();
                     try {
-                        currentUri = currentUri.resolve(URI.create(location));
+                        URI redirectUri = currentUri.resolve(URI.create(location));
+                        if (!urlPolicy.hasSameOrigin(currentUri, redirectUri)) {
+                            return ToolExecutionResult.failed("HTTP 重定向跨源被拒绝", status);
+                        }
+                        currentUri = redirectUri;
                     } catch (IllegalArgumentException exception) {
                         return ToolExecutionResult.failed("HTTP 重定向地址无效", status);
                     }
@@ -291,19 +338,52 @@ public class DynamicHttpToolExecutor {
                     closeQuietly(response.body());
                     return ToolExecutionResult.failed("HTTP 服务返回非成功状态", status);
                 }
-                String contentType = response.headers().firstValue("Content-Type").orElse("");
+                List<String> contentEncodings = response.headers().allValues("Content-Encoding");
+                if (contentEncodings.size() > 1 || (contentEncodings.size() == 1
+                        && !"identity".equalsIgnoreCase(contentEncodings.getFirst().trim()))) {
+                    closeQuietly(response.body());
+                    return ToolExecutionResult.failed("HTTP 响应编码不受支持", status);
+                }
+                List<String> contentTypes = response.headers().allValues("Content-Type");
+                if (contentTypes.size() != 1) {
+                    closeQuietly(response.body());
+                    return ToolExecutionResult.failed("HTTP 响应头不安全", status);
+                }
+                String contentType = contentTypes.getFirst();
                 if (!isSupportedContentType(contentType)) {
                     closeQuietly(response.body());
                     return ToolExecutionResult.failed("HTTP 响应类型不受支持", status);
                 }
                 byte[] bytes;
-                try (InputStream stream = response.body()) {
-                    bytes = stream.readNBytes(properties.getMaxResponseBytes() + 1);
-                }
+                InputStream stream = response.body();
+                bytes = runWithinDeadline(() -> {
+                    try (stream) {
+                        return stream.readNBytes(properties.getMaxResponseBytes() + 1);
+                    }
+                }, deadline, () -> closeQuietly(stream));
                 if (bytes.length > properties.getMaxResponseBytes()) {
                     return ToolExecutionResult.failed("HTTP 响应超过大小限制", status);
                 }
-                String output = redact(new String(bytes, StandardCharsets.UTF_8), secretValues);
+                String decoded = new String(bytes, StandardCharsets.UTF_8);
+                String output;
+                if (isJsonContentType(contentType)) {
+                    try {
+                        JsonNode json = objectMapper.reader()
+                                .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                                .readTree(decoded);
+                        if (json == null || json.isMissingNode()) {
+                            return ToolExecutionResult.failed("HTTP JSON 响应无效", status);
+                        }
+                        output = objectMapper.writeValueAsString(redactJson(json, secretValues));
+                    } catch (JsonProcessingException exception) {
+                        return ToolExecutionResult.failed("HTTP JSON 响应无效", status);
+                    }
+                } else {
+                    output = redactText(decoded, secretValues);
+                }
+                if (output.getBytes(StandardCharsets.UTF_8).length > properties.getMaxResponseBytes()) {
+                    return ToolExecutionResult.failed("HTTP 响应超过大小限制", status);
+                }
                 return ToolExecutionResult.succeeded(output, status);
             } catch (IllegalArgumentException exception) {
                 return ToolExecutionResult.failed("HTTP 目标地址不允许", null);
@@ -318,7 +398,42 @@ public class DynamicHttpToolExecutor {
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 return ToolExecutionResult.failed("HTTP 请求中断", null);
+            } catch (Exception exception) {
+                return ToolExecutionResult.failed("HTTP 连接失败", null);
             }
+        }
+    }
+
+    private <T> T runWithinDeadline(
+            CheckedSupplier<T> supplier,
+            Deadline deadline,
+            Runnable timeoutCleanup
+    ) throws Exception {
+        long remainingNanos = deadline.remainingNanos();
+        if (remainingNanos <= 0) {
+            timeoutCleanup.run();
+            throw new HttpTimeoutException("HTTP deadline exceeded");
+        }
+        Future<T> future = blockingExecutor.submit(supplier::get);
+        try {
+            return future.get(remainingNanos, TimeUnit.NANOSECONDS);
+        } catch (TimeoutException exception) {
+            timeoutCleanup.run();
+            future.cancel(true);
+            throw new HttpTimeoutException("HTTP deadline exceeded");
+        } catch (InterruptedException exception) {
+            timeoutCleanup.run();
+            future.cancel(true);
+            throw exception;
+        } catch (ExecutionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof Exception checked) {
+                throw checked;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new IOException("HTTP 执行失败");
         }
     }
 
@@ -330,6 +445,7 @@ public class DynamicHttpToolExecutor {
             Duration timeout
     ) throws JsonProcessingException {
         HttpRequest.Builder builder = HttpRequest.newBuilder(uri).timeout(timeout);
+        builder.header("Accept-Encoding", "identity");
         headers.forEach(builder::header);
         if (method == HttpToolMethod.POST) {
             String json = body == null || body.isNull() ? "{}" : objectMapper.writeValueAsString(body);
@@ -347,15 +463,50 @@ public class DynamicHttpToolExecutor {
                 || (mediaType.startsWith("application/") && mediaType.endsWith("+json"));
     }
 
-    private String redact(String value, List<String> secretValues) {
+    private boolean isJsonContentType(String value) {
+        String mediaType = value.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        return "application/json".equals(mediaType)
+                || (mediaType.startsWith("application/") && mediaType.endsWith("+json"));
+    }
+
+    private JsonNode redactJson(JsonNode node, List<String> secretValues) {
+        if (node.isObject()) {
+            List<String> fieldNames = new ArrayList<>();
+            node.fieldNames().forEachRemaining(fieldNames::add);
+            for (String fieldName : fieldNames) {
+                if (SENSITIVE_JSON_KEYS.contains(normalizeSensitiveKey(fieldName))) {
+                    ((ObjectNode) node).set(fieldName, TextNode.valueOf("<已脱敏>"));
+                } else {
+                    ((ObjectNode) node).set(fieldName, redactJson(node.get(fieldName), secretValues));
+                }
+            }
+            return node;
+        }
+        if (node.isArray()) {
+            for (int index = 0; index < node.size(); index++) {
+                ((ArrayNode) node).set(index, redactJson(node.get(index), secretValues));
+            }
+            return node;
+        }
+        if (node.isTextual()) {
+            return TextNode.valueOf(redactText(node.textValue(), secretValues));
+        }
+        return node;
+    }
+
+    private String normalizeSensitiveKey(String key) {
+        return key.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+    }
+
+    private String redactText(String value, List<String> secretValues) {
         String redacted = value;
         for (String secret : secretValues) {
             redacted = redacted.replace(secret, "<已脱敏>");
         }
         redacted = URL.matcher(redacted).replaceAll("<已脱敏URL>");
         redacted = SENSITIVE_HEADER.matcher(redacted).replaceAll("<已脱敏>");
-        redacted = BEARER.matcher(redacted).replaceAll("Bearer <已脱敏>");
-        return SECRET_ASSIGNMENT.matcher(redacted).replaceAll("$1=<已脱敏>");
+        redacted = AUTH_CREDENTIAL.matcher(redacted).replaceAll("<已脱敏认证>");
+        return SECRET_ASSIGNMENT.matcher(redacted).replaceAll("$1<已脱敏>");
     }
 
     private static void closeQuietly(InputStream body) {
@@ -369,6 +520,17 @@ public class DynamicHttpToolExecutor {
         }
     }
 
+    @Override
+    public void destroy() {
+        close();
+    }
+
+    @Override
+    public void close() {
+        httpTransport.close();
+        blockingExecutor.shutdownNow();
+    }
+
     private record ResolvedHeaders(
             Map<String, String> values,
             List<String> secretValues,
@@ -380,7 +542,42 @@ public class DynamicHttpToolExecutor {
     }
 
     @FunctionalInterface
-    interface HttpTransport {
+    interface HttpTransport extends AutoCloseable {
         HttpResponse<InputStream> send(HttpRequest request) throws IOException, InterruptedException;
+
+        @Override
+        default void close() {
+            // 测试传输默认没有独立资源，生产传输会覆盖并关闭 HttpClient。
+        }
+    }
+
+    @FunctionalInterface
+    private interface CheckedSupplier<T> {
+        T get() throws Exception;
+    }
+
+    private record Deadline(long deadlineNanos) {
+        private static Deadline start(Duration timeout) {
+            long now = System.nanoTime();
+            long durationNanos = timeout.toNanos();
+            long deadline = durationNanos > Long.MAX_VALUE - now ? Long.MAX_VALUE : now + durationNanos;
+            return new Deadline(deadline);
+        }
+
+        private long remainingNanos() {
+            return deadlineNanos - System.nanoTime();
+        }
+
+        private Duration remaining() throws HttpTimeoutException {
+            long nanos = remainingNanos();
+            if (nanos <= 0) {
+                throw new HttpTimeoutException("HTTP deadline exceeded");
+            }
+            return Duration.ofNanos(nanos);
+        }
+
+        private boolean expired() {
+            return remainingNanos() <= 0;
+        }
     }
 }

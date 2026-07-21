@@ -226,6 +226,21 @@ class ApplicationProfileConfigurationTest {
                 });
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"production", "prod", "supabase"})
+    void strictProfileRejectsAllowHttpEvenWhenHttpExecutorIsDisabled(String profile) {
+        productionGuardContextRunner
+                .withPropertyValues(externalConfigProperties("spring.profiles.active=" + profile))
+                .withPropertyValues(
+                        "cm-agent.http-tools.enabled=false",
+                        "cm-agent.http-tools.allow-http=true")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod/supabase profile 禁止启用 HTTP 明文协议");
+                });
+    }
+
     @Test
     void postgresProfileLoadsJdbcConfigurationWithExternalPlaceholders() {
         contextRunner

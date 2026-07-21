@@ -9,7 +9,6 @@ import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -47,6 +46,24 @@ public class HttpToolUrlPolicy {
             throw rejected();
         }
         return canonicalUri(uri, scheme, host);
+    }
+
+    public boolean hasSameOrigin(URI first, URI second) {
+        try {
+            return origin(first).equals(origin(second));
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
+    private Origin origin(URI uri) {
+        if (uri == null || uri.isOpaque() || uri.getRawUserInfo() != null || uri.getRawFragment() != null) {
+            throw rejected();
+        }
+        String scheme = normalizeScheme(uri.getScheme());
+        validateSchemeAndPort(scheme, uri.getPort());
+        int effectivePort = uri.getPort() == -1 ? ("https".equals(scheme) ? 443 : 80) : uri.getPort();
+        return new Origin(scheme, canonicalHost(uri), effectivePort);
     }
 
     private String normalizeScheme(String scheme) {
@@ -208,8 +225,25 @@ public class HttpToolUrlPolicy {
         if ((bytes[0] & 0xe0) != 0x20) {
             return false;
         }
-        return !Arrays.equals(Arrays.copyOf(bytes, IPV6_DOCUMENTATION_PREFIX.length),
-                IPV6_DOCUMENTATION_PREFIX);
+        return !hasIpv6Prefix(bytes, new byte[]{0x20, 0x01, 0x00}, 23)
+                && !hasIpv6Prefix(bytes, new byte[]{0x20, 0x02}, 16)
+                && !hasIpv6Prefix(bytes, IPV6_DOCUMENTATION_PREFIX, 32)
+                && !hasIpv6Prefix(bytes, new byte[]{0x3f, (byte) 0xff, 0x00}, 20);
+    }
+
+    private static boolean hasIpv6Prefix(byte[] address, byte[] prefix, int prefixLength) {
+        int fullBytes = prefixLength / 8;
+        for (int index = 0; index < fullBytes; index++) {
+            if (address[index] != prefix[index]) {
+                return false;
+            }
+        }
+        int remainingBits = prefixLength % 8;
+        if (remainingBits == 0) {
+            return true;
+        }
+        int mask = 0xff << (8 - remainingBits) & 0xff;
+        return (address[fullBytes] & mask) == (prefix[fullBytes] & mask);
     }
 
     private static boolean inIpv4Range(long value, String networkAddress, int prefixLength) {
@@ -227,5 +261,8 @@ public class HttpToolUrlPolicy {
 
     private static IllegalArgumentException rejected() {
         return new IllegalArgumentException(REJECTED_MESSAGE);
+    }
+
+    private record Origin(String scheme, String host, int port) {
     }
 }
