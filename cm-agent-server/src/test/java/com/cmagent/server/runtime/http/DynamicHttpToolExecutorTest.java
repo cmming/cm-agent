@@ -144,6 +144,44 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    void interruptedSecretProviderReturnDoesNotContinueWithAnotherReference() throws Exception {
+        AtomicInteger hits = new AtomicInteger();
+        AtomicInteger lookups = new AtomicInteger();
+        CountDownLatch interrupted = new CountDownLatch(1);
+        CountDownLatch subsequentLookup = new CountDownLatch(1);
+        server.createContext("/interrupted-secret-loop", exchange -> {
+            hits.incrementAndGet();
+            respond(exchange, 200, "text/plain", "不应访问");
+        });
+        HttpToolSecretProvider interruptRestoringProvider = (tenantId, secretRef) -> {
+            if (lookups.incrementAndGet() > 1) {
+                subsequentLookup.countDown();
+                return java.util.Optional.of("不应查询");
+            }
+            try {
+                new CountDownLatch(1).await(1, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                interrupted.countDown();
+            }
+            return java.util.Optional.of("首个值");
+        };
+        HttpToolConfig config = config(HttpToolMethod.GET, url("/interrupted-secret-loop"), List.of(),
+                Map.of("Authorization", "secret/first", "X-Api-Key", "secret/second"),
+                Duration.ofMillis(100));
+
+        ToolExecutionResult result = executor(interruptRestoringProvider).execute(
+                tool(config.urlTemplate()), config, request("{}"));
+
+        assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP 工具调用超时", null));
+        assertThat(interrupted.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(subsequentLookup.await(250, TimeUnit.MILLISECONDS)).isFalse();
+        assertThat(lookups.get()).isOne();
+        assertThat(dnsResolutions.get()).isZero();
+        assertThat(hits.get()).isZero();
+    }
+
+    @Test
     void multipleSecretLookupsShareOneCallDeadline() throws Exception {
         AtomicInteger hits = new AtomicInteger();
         AtomicInteger lookups = new AtomicInteger();

@@ -150,6 +150,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         } catch (Exception exception) {
             return ToolExecutionResult.failed("HTTP Secret 不可用", null);
         }
+        if (secretHeaders.cancelled()) {
+            return ToolExecutionResult.failed("HTTP 请求中断", null);
+        }
         if (secretHeaders.failure() != null) {
             return secretHeaders.failure();
         }
@@ -209,11 +212,20 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
             if (!isSafeHeader(name) || !normalizedNames.add(name.toLowerCase(Locale.ROOT))) {
                 return ResolvedHeaders.failed(ToolExecutionResult.failed("HTTP 请求头配置不安全", null));
             }
+            if (Thread.currentThread().isInterrupted()) {
+                return ResolvedHeaders.cancelledResult();
+            }
             String value;
             try {
                 value = secretProvider.resolve(config.tenantId(), entry.getValue()).orElse(null);
             } catch (RuntimeException exception) {
+                if (Thread.currentThread().isInterrupted()) {
+                    return ResolvedHeaders.cancelledResult();
+                }
                 return ResolvedHeaders.failed(ToolExecutionResult.failed("HTTP Secret 不可用", null));
+            }
+            if (Thread.currentThread().isInterrupted()) {
+                return ResolvedHeaders.cancelledResult();
             }
             if (value == null || value.isBlank()) {
                 return ResolvedHeaders.failed(ToolExecutionResult.failed("HTTP Secret 不可用", null));
@@ -224,7 +236,7 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
             headers.put(name, value);
             secretValues.add(value);
         }
-        return new ResolvedHeaders(Map.copyOf(headers), List.copyOf(secretValues), null);
+        return new ResolvedHeaders(Map.copyOf(headers), List.copyOf(secretValues), null, false);
     }
 
     private Map<String, String> mergeHeaders(Map<String, String> dynamic, Map<String, String> secrets) {
@@ -544,10 +556,15 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     private record ResolvedHeaders(
             Map<String, String> values,
             List<String> secretValues,
-            ToolExecutionResult failure
+            ToolExecutionResult failure,
+            boolean cancelled
     ) {
         private static ResolvedHeaders failed(ToolExecutionResult failure) {
-            return new ResolvedHeaders(Map.of(), List.of(), failure);
+            return new ResolvedHeaders(Map.of(), List.of(), failure, false);
+        }
+
+        private static ResolvedHeaders cancelledResult() {
+            return new ResolvedHeaders(Map.of(), List.of(), null, true);
         }
     }
 
