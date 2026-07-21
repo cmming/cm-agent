@@ -11,6 +11,7 @@ import com.cmagent.core.tool.ToolInvocationSource;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.runtime.GovernedToolExecutionService;
+import com.cmagent.server.runtime.ToolPreparationDataAccessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -197,13 +198,34 @@ class ToolDebugServiceTest {
         ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "http-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
         DataAccessResourceFailureException failure = new DataAccessResourceFailureException("数据库连接失败");
-        when(executionService.executeWhenReady(eq(tool), any(), any())).thenThrow(failure);
+        when(executionService.executeWhenReady(eq(tool), any(), any()))
+                .thenThrow(new ToolPreparationDataAccessException(failure));
         lenient().doThrow(new AuditPersistenceException("审计写入失败", new IllegalStateException())).when(auditAppender).append(
                 any(), any(), any(), any(), any(), any(), any());
 
         assertThatThrownBy(() -> service.debug(principal, TOOL_ID, "{}", null)).isSameAs(failure);
 
         verify(auditAppender, never()).append(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void localExecutionDataAccessFailureAfterStartedAuditReturnsControlledFailure() {
+        ToolDefinition tool = tool(TENANT_ID, ToolType.LOCAL, ToolRiskLevel.LOW, "local-tool");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
+        DataAccessResourceFailureException failure = new DataAccessResourceFailureException("本地执行器连接失败");
+        when(executionService.executeWhenReady(eq(tool), any(), any())).thenAnswer(invocation -> {
+            invocation.getArgument(2, Runnable.class).run();
+            throw failure;
+        });
+
+        ToolDebugResponse response = service.debug(principal, TOOL_ID, "{}", null);
+
+        assertThat(response.success()).isFalse();
+        assertThat(response.errorMessage()).isEqualTo("工具调试失败");
+        verify(auditAppender).append(TENANT_ID, "admin", "TOOL_DEBUG_STARTED", "TOOL",
+                TOOL_ID.toString(), "RUNNING", "工具调试已开始");
+        verify(auditAppender).append(TENANT_ID, "admin", "TOOL_DEBUG_FAILED", "TOOL",
+                TOOL_ID.toString(), "FAILED", "工具调试失败");
     }
 
     private static ToolDefinition tool(UUID tenantId, ToolType type, ToolRiskLevel riskLevel, String name) {

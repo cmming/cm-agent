@@ -8,6 +8,7 @@ import com.cmagent.core.tool.ToolExecutionRequest;
 import com.cmagent.core.tool.ToolExecutionResult;
 import com.cmagent.core.tool.ToolRegistry;
 import com.cmagent.server.runtime.http.DynamicHttpToolExecutor;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
@@ -33,7 +34,7 @@ public class GovernedToolExecutionService {
     }
 
     public ToolExecutionResult execute(ToolDefinition tool, ToolExecutionRequest request) {
-        return executeWhenReady(tool, request, () -> { });
+        return prepare(tool, request).execute();
     }
 
     public ToolExecutionResult executeWhenReady(
@@ -42,7 +43,12 @@ public class GovernedToolExecutionService {
             Runnable beforeExecution
     ) {
         Objects.requireNonNull(beforeExecution, "beforeExecution 不能为空");
-        PreparedToolExecution prepared = prepare(tool, request);
+        PreparedToolExecution prepared;
+        try {
+            prepared = prepare(tool, request);
+        } catch (DataAccessException dataAccessFailure) {
+            throw new ToolPreparationDataAccessException(dataAccessFailure);
+        }
         if (!prepared.ready()) {
             return prepared.execute();
         }

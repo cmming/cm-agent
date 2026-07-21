@@ -197,10 +197,38 @@ class GovernedToolExecutionServiceTest {
         AtomicInteger hooks = new AtomicInteger();
 
         assertThatThrownBy(() -> service.executeWhenReady(tool, request(ToolInvocationSource.DEBUG), hooks::incrementAndGet))
-                .isSameAs(failure);
+                .isInstanceOfSatisfying(ToolPreparationDataAccessException.class,
+                        exception -> assertThat(exception.dataAccessException()).isSameAs(failure));
 
         assertThat(hooks).hasValue(0);
         verifyNoInteractions(http, registry);
+    }
+
+    @Test
+    void publicExecuteKeepsPreparationDataAccessExceptionUnwrapped() {
+        ToolDefinition tool = tool(ToolType.HTTP, TENANT_ID, TOOL_ID, "http-tool", true, "https://example.invalid/items");
+        DataAccessResourceFailureException failure = new DataAccessResourceFailureException("数据库连接失败");
+        when(configs.findByTenantAndToolId(TENANT_ID, TOOL_ID)).thenThrow(failure);
+
+        assertThatThrownBy(() -> service.execute(tool, request(ToolInvocationSource.DEBUG))).isSameAs(failure);
+
+        verifyNoInteractions(http, registry);
+    }
+
+    @Test
+    void localExecutionDataAccessFailureAfterHookIsNotPreparationWrapper() {
+        ToolDefinition tool = tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "echo", true, "");
+        DataAccessResourceFailureException failure = new DataAccessResourceFailureException("本地执行器连接失败");
+        when(registry.snapshot(TOOL_ID)).thenReturn(Optional.of(new ToolRegistry.ToolRegistrationSnapshot(tool, ignored -> {
+            throw failure;
+        })));
+        AtomicInteger hooks = new AtomicInteger();
+
+        assertThatThrownBy(() -> service.executeWhenReady(tool, request(ToolInvocationSource.DEBUG), hooks::incrementAndGet))
+                .isSameAs(failure)
+                .isNotInstanceOf(ToolPreparationDataAccessException.class);
+
+        assertThat(hooks).hasValue(1);
     }
 
     @Test
