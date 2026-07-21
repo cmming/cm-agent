@@ -140,4 +140,54 @@ class InMemoryToolRegistryTest {
         assertThat(result.success()).isFalse();
         assertThat(result.outputSummary()).isEqualTo("工具未注册 " + toolId);
     }
+
+    @Test
+    void agent请求要求完整运行上下文且结果工厂保留状态信息() {
+        UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID toolId = UUID.fromString("00000000-0000-0000-0000-000000000108");
+        PrincipalRef principal = new PrincipalRef(
+                tenantId, "principal", "测试主体", Set.of("agent:run"));
+
+        ToolExecutionRequest request = new ToolExecutionRequest(
+                tenantId,
+                UUID.fromString("00000000-0000-0000-0000-000000000201"),
+                principal,
+                UUID.fromString("00000000-0000-0000-0000-000000000301"),
+                "tool-call-1",
+                toolId,
+                "{}",
+                ToolInvocationSource.AGENT);
+
+        ToolExecutionResult result = ToolExecutionResult.succeeded("工具输出", 200);
+        ToolExecutionResult failure = ToolExecutionResult.failed("工具调用失败", 502);
+
+        assertThat(request.hasRuntimeContext()).isTrue();
+        assertThat(request.source()).isEqualTo(ToolInvocationSource.AGENT);
+        assertThat(result.success()).isTrue();
+        assertThat(result.statusCode()).isEqualTo(200);
+        assertThat(result.errorMessage()).isEmpty();
+        assertThat(failure.success()).isFalse();
+        assertThat(failure.statusCode()).isEqualTo(502);
+        assertThat(failure.errorMessage()).isEqualTo("工具调用失败");
+        assertThat(ToolType.valueOf("HTTP")).isEqualTo(ToolType.HTTP);
+    }
+
+    @Test
+    void MCP请求禁止绑定伪造运行上下文() {
+        UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        PrincipalRef principal = new PrincipalRef(
+                tenantId, "principal", "测试主体", Set.of("tool:mcp:invoke"));
+
+        assertThatThrownBy(() -> new ToolExecutionRequest(
+                tenantId,
+                UUID.fromString("00000000-0000-0000-0000-000000000201"),
+                principal,
+                null,
+                "tool-call-1",
+                UUID.fromString("00000000-0000-0000-0000-000000000109"),
+                "{}",
+                ToolInvocationSource.MCP))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("MCP 调用不能绑定 agentId 或 runId");
+    }
 }

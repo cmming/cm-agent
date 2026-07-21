@@ -12,33 +12,46 @@ public record ToolExecutionRequest(
         UUID runId,
         String toolCallId,
         UUID toolId,
-        String inputJson
+        String inputJson,
+        ToolInvocationSource source
 ) {
 
     public ToolExecutionRequest {
         Objects.requireNonNull(toolId, "toolId 不能为空");
         Objects.requireNonNull(inputJson, "inputJson 不能为空");
-        boolean hasAnyRuntimeContext = tenantId != null || agentId != null || principal != null
-                || runId != null || toolCallId != null;
-        boolean hasCompleteRuntimeContext = tenantId != null && agentId != null && principal != null
-                && runId != null && toolCallId != null;
-        if (hasAnyRuntimeContext && !hasCompleteRuntimeContext) {
-            throw new IllegalArgumentException("工具执行上下文必须全部提供或全部省略");
+        source = Objects.requireNonNull(source, "source 不能为空");
+        if (source != ToolInvocationSource.LEGACY) {
+            if (toolCallId != null && toolCallId.isBlank()) {
+                throw new IllegalArgumentException("toolCallId 不能为空");
+            }
+            if (tenantId == null || principal == null || toolCallId == null) {
+                throw new IllegalArgumentException("工具执行上下文必须全部提供或全部省略");
+            }
+            if (!tenantId.equals(principal.tenantId())) {
+                throw new IllegalArgumentException("调用主体不属于当前租户");
+            }
+            if (source == ToolInvocationSource.AGENT && (agentId == null || runId == null)) {
+                throw new IllegalArgumentException("AGENT 调用必须提供 agentId 和 runId");
+            }
+            if ((source == ToolInvocationSource.DEBUG || source == ToolInvocationSource.MCP)
+                    && (agentId != null || runId != null)) {
+                throw new IllegalArgumentException(source + " 调用不能绑定 agentId 或 runId");
+            }
         }
-        if (hasCompleteRuntimeContext && toolCallId.isBlank()) {
-            throw new IllegalArgumentException("toolCallId 不能为空");
-        }
-        if (hasCompleteRuntimeContext && !tenantId.equals(principal.tenantId())) {
-            throw new IllegalArgumentException("调用主体不属于当前租户");
-        }
+    }
+
+    public ToolExecutionRequest(UUID tenantId, UUID agentId, PrincipalRef principal, UUID runId,
+                                String toolCallId, UUID toolId, String inputJson) {
+        this(tenantId, agentId, principal, runId, toolCallId, toolId, inputJson,
+                ToolInvocationSource.AGENT);
     }
 
     public ToolExecutionRequest(UUID toolId, String inputJson) {
-        this(null, null, null, null, null, toolId, inputJson);
+        this(null, null, null, null, null, toolId, inputJson, ToolInvocationSource.LEGACY);
     }
 
     public boolean hasRuntimeContext() {
-        return tenantId != null && agentId != null && principal != null && runId != null
-                && toolCallId != null && !toolCallId.isBlank();
+        return source == ToolInvocationSource.AGENT && tenantId != null && agentId != null
+                && principal != null && runId != null && toolCallId != null && !toolCallId.isBlank();
     }
 }
