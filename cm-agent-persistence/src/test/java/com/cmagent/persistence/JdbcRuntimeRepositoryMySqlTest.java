@@ -7,6 +7,8 @@ import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.RunToolCall;
 import com.cmagent.core.domain.RunToolCallBatch;
+import com.cmagent.core.domain.HttpToolConfig;
+import com.cmagent.core.domain.McpToolPublication;
 import org.flywaydb.core.Flyway;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import javax.sql.DataSource;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -47,6 +50,8 @@ class JdbcRuntimeRepositoryMySqlTest {
     private JdbcRunRepository runRepository;
     private JdbcToolCallRepository toolCallRepository;
     private JdbcModelConfigRepository modelConfigRepository;
+    private JdbcHttpToolConfigRepository httpToolConfigRepository;
+    private JdbcMcpToolPublicationRepository mcpToolPublicationRepository;
 
     @BeforeEach
     void setUp() {
@@ -60,6 +65,8 @@ class JdbcRuntimeRepositoryMySqlTest {
         toolCallRepository = new JdbcToolCallRepository(
                 jdbcClient, new TransactionTemplate(new DataSourceTransactionManager(dataSource))
         );
+        httpToolConfigRepository = new JdbcHttpToolConfigRepository(jdbcClient, new com.fasterxml.jackson.databind.ObjectMapper());
+        mcpToolPublicationRepository = new JdbcMcpToolPublicationRepository(jdbcClient, new com.fasterxml.jackson.databind.ObjectMapper());
     }
 
     @Test
@@ -101,6 +108,21 @@ class JdbcRuntimeRepositoryMySqlTest {
         toolCallRepository.saveAll(TENANT_A, new RunToolCallBatch(TENANT_A, List.of(valid)));
         assertThat(toolCallRepository.listByTenantAndRun(TENANT_A, RUN_A)).containsExactly(valid);
         assertThat(toolCallRepository.listByTenantAndRun(TENANT_B, RUN_A)).isEmpty();
+    }
+
+    @Test
+    void mysqlHttpConfigAndMcpPublicationKeepTenantIsolation() {
+        HttpToolConfig config = JdbcHttpToolConfigRepositoryTest.config(
+                TENANT_A, TOOL_A, "https://api-a.invalid/v1/{customerId}", Duration.ofSeconds(3));
+        McpToolPublication publication = new McpToolPublication(TENANT_A, TOOL_A, true, "tester");
+
+        httpToolConfigRepository.save(config);
+        mcpToolPublicationRepository.save(publication);
+
+        assertThat(httpToolConfigRepository.findByTenantAndToolId(TENANT_A, TOOL_A)).contains(config);
+        assertThat(httpToolConfigRepository.findByTenantAndToolId(TENANT_B, TOOL_A)).isEmpty();
+        assertThat(mcpToolPublicationRepository.listEnabledByTenant(TENANT_A)).containsExactly(publication);
+        assertThat(mcpToolPublicationRepository.listEnabledByTenant(TENANT_B)).isEmpty();
     }
 
     private static RunToolCall toolCall(UUID id, UUID runId, UUID toolId) {
