@@ -17,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -31,6 +32,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -188,6 +190,20 @@ class ToolDebugServiceTest {
         assertThat(response.output()).doesNotContain("local-token", "local-secret", "https://", "IllegalStateException");
         verify(auditAppender).append(TENANT_ID, "admin", "TOOL_DEBUG_COMPLETED", "TOOL",
                 TOOL_ID.toString(), "SUCCEEDED", "工具调试完成");
+    }
+
+    @Test
+    void preparationPersistenceFailurePropagatesWithoutAnyDebugAudit() {
+        ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "http-tool");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
+        DataAccessResourceFailureException failure = new DataAccessResourceFailureException("数据库连接失败");
+        when(executionService.executeWhenReady(eq(tool), any(), any())).thenThrow(failure);
+        lenient().doThrow(new AuditPersistenceException("审计写入失败", new IllegalStateException())).when(auditAppender).append(
+                any(), any(), any(), any(), any(), any(), any());
+
+        assertThatThrownBy(() -> service.debug(principal, TOOL_ID, "{}", null)).isSameAs(failure);
+
+        verify(auditAppender, never()).append(any(), any(), any(), any(), any(), any(), any());
     }
 
     private static ToolDefinition tool(UUID tenantId, ToolType type, ToolRiskLevel riskLevel, String name) {

@@ -14,6 +14,7 @@ import com.cmagent.server.runtime.GovernedToolExecutionService;
 import com.cmagent.server.runtime.http.HttpToolProperties;
 import com.cmagent.server.security.ToolOutputSanitizer;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -73,6 +74,8 @@ public class ToolDebugService {
             return new ToolDebugResponse(false, result.statusCode(), "", "工具调试失败", durationMillis);
         } catch (AuditPersistenceException auditFailure) {
             throw auditFailure;
+        } catch (DataAccessException dataAccessFailure) {
+            throw dataAccessFailure;
         } catch (RuntimeException executionFailure) {
             auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_DEBUG_FAILED", "TOOL",
                     tool.id().toString(), "FAILED", "工具调试失败");

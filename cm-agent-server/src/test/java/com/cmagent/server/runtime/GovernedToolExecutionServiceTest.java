@@ -20,6 +20,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 import java.time.Duration;
 import java.util.List;
@@ -186,6 +187,20 @@ class GovernedToolExecutionServiceTest {
 
         assertUnavailable(result);
         assertThat(hooks).hasValue(0);
+    }
+
+    @Test
+    void httpPreparationPersistenceFailurePropagatesWithoutHookOrExecutor() {
+        ToolDefinition tool = tool(ToolType.HTTP, TENANT_ID, TOOL_ID, "http-tool", true, "https://example.invalid/items");
+        DataAccessResourceFailureException failure = new DataAccessResourceFailureException("数据库连接失败");
+        when(configs.findByTenantAndToolId(TENANT_ID, TOOL_ID)).thenThrow(failure);
+        AtomicInteger hooks = new AtomicInteger();
+
+        assertThatThrownBy(() -> service.executeWhenReady(tool, request(ToolInvocationSource.DEBUG), hooks::incrementAndGet))
+                .isSameAs(failure);
+
+        assertThat(hooks).hasValue(0);
+        verifyNoInteractions(http, registry);
     }
 
     @Test
