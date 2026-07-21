@@ -191,6 +191,40 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    void rejectsOversizedBodyArrayIndexBeforePadding() throws Exception {
+        String schema = """
+                {"type":"object","properties":{"value":{"type":"string"}}}
+                """;
+        HttpToolConfig config = config(schema, List.of(
+                mapping("/value", HttpParameterLocation.BODY, "", "/items/10001", true, "")
+        ));
+
+        assertThatThrownBy(() -> mapper.map(config, objectMapper.readTree("{\"value\":\"x\"}")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("JSON Pointer 数组索引无效或超过安全上限");
+    }
+
+    @Test
+    void keepsRootOneOfValidationAfterApplyingProjectedDefault() throws Exception {
+        String schema = """
+                {"type":"object","oneOf":[
+                  {"properties":{"kind":{"const":"a"},"id":{"type":"string"}},"required":["kind","id"]},
+                  {"properties":{"kind":{"const":"b"},"id":{"type":"string"}},"required":["kind","id"]}
+                ]}
+                """;
+        HttpToolConfig config = config(schema, List.of(
+                mapping("/id", HttpParameterLocation.QUERY, "id", "", false, "\"x\"")
+        ));
+
+        PreparedHttpToolRequest request = mapper.map(config, objectMapper.readTree("{\"kind\":\"a\"}"));
+        assertThat(request.queryValues()).containsEntry("id", List.of("x"));
+
+        assertThatThrownBy(() -> mapper.map(config, objectMapper.readTree("{\"kind\":\"c\"}")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("工具输入不符合 inputSchema");
+    }
+
+    @Test
     void treatsNumericPointerTokenAsPropertyWhenSchemaNodeIsObject() throws Exception {
         String schema = """
                 {"type":"object","properties":{"container":{"type":"object","properties":{

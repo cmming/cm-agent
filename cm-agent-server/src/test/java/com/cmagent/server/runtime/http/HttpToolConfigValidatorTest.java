@@ -238,7 +238,7 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
-    void preservesAncestorOneOfAndAnyOfSemanticsWhenValidatingDefaults() {
+    void validatesDefaultsAgainstAnyProjectedCombinationBranch() {
         String oneOf = """
                 {"type":"object","oneOf":[
                   {"properties":{"id":{"type":"string"}}},
@@ -258,21 +258,53 @@ class HttpToolConfigValidatorTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("defaultValueJson");
 
-        String exclusive = """
+        String overlapping = """
                 {"type":"object","oneOf":[
                   {"properties":{"id":{"type":"string"}}},
                   {"properties":{"id":{"type":"string","minLength":1}}}
                 ]}
                 """;
-        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
-                "https://api.example.test/items", exclusive, List.of(stringDefault))))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("defaultValueJson");
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", overlapping, List.of(stringDefault))))
+                .doesNotThrowAnyException();
 
-        String union = exclusive.replace("\"oneOf\"", "\"anyOf\"");
+        String union = overlapping.replace("\"oneOf\"", "\"anyOf\"");
         assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
                 "https://api.example.test/items", union, List.of(stringDefault))))
                 .doesNotThrowAnyException();
+
+        String discriminated = """
+                {"type":"object","oneOf":[
+                  {"properties":{"kind":{"const":"a"},"id":{"type":"string"}},"required":["kind","id"]},
+                  {"properties":{"kind":{"const":"b"},"id":{"type":"string"}},"required":["kind","id"]}
+                ]}
+                """;
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", discriminated, List.of(stringDefault))))
+                .doesNotThrowAnyException();
+
+        String singleCandidate = """
+                {"type":"object","oneOf":[
+                  {"properties":{"id":{"type":"string"}}},
+                  {"properties":{"kind":{"const":"b"}}}
+                ]}
+                """;
+        HttpParameterMapping bodyStringDefault = mapping("/id", HttpParameterLocation.BODY,
+                "", "/id", false, "\"x\"");
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", singleCandidate, List.of(bodyStringDefault))))
+                .doesNotThrowAnyException();
+
+        String noCandidateAccepts = """
+                {"type":"object","oneOf":[
+                  {"properties":{"id":{"type":"integer"}}},
+                  {"properties":{"id":{"type":"boolean"}}}
+                ]}
+                """;
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", noCandidateAccepts, List.of(stringDefault))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("defaultValueJson");
     }
 
     @Test
@@ -366,6 +398,109 @@ class HttpToolConfigValidatorTest {
                 "https://api.example.test/items", circular, List.of(body))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("JSON Schema 本地引用存在循环");
+    }
+
+    @Test
+    void eagerlyValidatesLocalReferencesInsideTerminalSchemaSubtree() {
+        HttpParameterMapping body = mapping("/items", HttpParameterLocation.BODY,
+                "", "/items", false, "");
+        String missingItemsReference = """
+                {"type":"object","properties":{"items":{
+                  "type":"array","items":{"$ref":"#/$defs/missing"}
+                }}}
+                """;
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", missingItemsReference, List.of(body))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("JSON Schema 本地引用无效")
+                .hasMessageNotContaining("missing");
+
+        String missingNestedPropertyReference = """
+                {"type":"object","properties":{"items":{"type":"object","properties":{
+                  "nested":{"$ref":"#/$defs/private-value"}
+                }}}}
+                """;
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", missingNestedPropertyReference, List.of(body))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("JSON Schema 本地引用无效")
+                .hasMessageNotContaining("private-value");
+
+        String recursive = """
+                {"type":"object","$defs":{"node":{"type":"object","properties":{
+                  "next":{"$ref":"#/$defs/node"}
+                }}},"properties":{"items":{"type":"array","items":{"$ref":"#/$defs/node"}}}}
+                """;
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", recursive, List.of(body))))
+                .doesNotThrowAnyException();
+
+        String instanceReferenceText = """
+                {"type":"object","properties":{"items":{"type":"object",
+                  "default":{"$ref":"#/$defs/missing"},
+                  "examples":[{"$ref":"#/$defs/also-missing"}]
+                }}}
+                """;
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", instanceReferenceText, List.of(body))))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void enforcesArrayIndexSafetyLimitWithoutRejectingNumericObjectProperties() {
+        String arraySchema = """
+                {"type":"object","properties":{"items":{"type":"array","items":{"type":"string"}}}}
+                """;
+        HttpParameterMapping boundary = mapping("/items/10000", HttpParameterLocation.QUERY,
+                "value", "", false, "");
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", arraySchema, List.of(boundary))))
+                .doesNotThrowAnyException();
+
+        HttpParameterMapping overLimit = mapping("/items/10001", HttpParameterLocation.QUERY,
+                "value", "", false, "");
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", arraySchema, List.of(overLimit))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("JSON Pointer 数组索引无效或超过安全上限");
+
+        HttpParameterMapping huge = mapping("/items/999999999999999999999999", HttpParameterLocation.QUERY,
+                "value", "", false, "");
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", arraySchema, List.of(huge))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("JSON Pointer 数组索引无效或超过安全上限")
+                .hasMessageNotContaining("999999");
+
+        String objectSchema = """
+                {"type":"object","properties":{"items":{"type":"object","properties":{
+                  "10001":{"type":"string"},"999999999999999999999999":{"type":"string"}
+                }}}}
+                """;
+        List<HttpParameterMapping> numericProperties = List.of(
+                mapping("/items/10001", HttpParameterLocation.QUERY, "first", "", false, ""),
+                mapping("/items/999999999999999999999999", HttpParameterLocation.QUERY,
+                        "second", "", false, "")
+        );
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", objectSchema, numericProperties)))
+                .doesNotThrowAnyException();
+
+        String bodySchema = """
+                {"type":"object","properties":{"value":{"type":"string"}}}
+                """;
+        HttpParameterMapping bodyBoundary = mapping("/value", HttpParameterLocation.BODY,
+                "", "/items/10000", false, "");
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", bodySchema, List.of(bodyBoundary))))
+                .doesNotThrowAnyException();
+
+        HttpParameterMapping bodyOverLimit = mapping("/value", HttpParameterLocation.BODY,
+                "", "/items/10001", false, "");
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", bodySchema, List.of(bodyOverLimit))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("JSON Pointer 数组索引无效或超过安全上限");
     }
 
     @Test

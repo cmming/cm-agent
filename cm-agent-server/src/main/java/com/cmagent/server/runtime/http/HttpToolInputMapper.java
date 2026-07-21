@@ -129,7 +129,7 @@ public class HttpToolInputMapper {
                 }
                 JsonNode child = objectNode.get(token);
                 if (child == null || child.isNull()) {
-                    child = isArrayIndex(tokens.get(index + 1))
+                    child = HttpToolArrayIndex.parse(tokens.get(index + 1)).requiresArrayContainer()
                             ? objectNode.putArray(token) : objectNode.putObject(token);
                 }
                 if (!(child instanceof ContainerNode<?> container)) {
@@ -139,7 +139,7 @@ public class HttpToolInputMapper {
                 continue;
             }
             ArrayNode arrayNode = (ArrayNode) current;
-            int arrayIndex = parseArrayIndex(token);
+            int arrayIndex = HttpToolArrayIndex.parse(token).requireValue();
             while (arrayNode.size() <= arrayIndex) {
                 arrayNode.addNull();
             }
@@ -149,7 +149,7 @@ public class HttpToolInputMapper {
             }
             JsonNode child = arrayNode.get(arrayIndex);
             if (child == null || child.isNull()) {
-                child = isArrayIndex(tokens.get(index + 1))
+                child = HttpToolArrayIndex.parse(tokens.get(index + 1)).requiresArrayContainer()
                         ? objectMapperArrayNode(arrayNode) : objectMapperObjectNode(arrayNode);
                 arrayNode.set(arrayIndex, child);
             }
@@ -185,7 +185,7 @@ public class HttpToolInputMapper {
                 continue;
             }
             ArrayNode arrayNode = (ArrayNode) current;
-            int arrayIndex = parseArrayIndex(token);
+            int arrayIndex = HttpToolArrayIndex.parse(token).requireValue();
             while (arrayNode.size() <= arrayIndex) {
                 arrayNode.addNull();
             }
@@ -222,26 +222,4 @@ public class HttpToolInputMapper {
         return parent.objectNode();
     }
 
-    private static boolean isArrayIndex(String token) {
-        if (token.isEmpty() || (token.length() > 1 && token.charAt(0) == '0')) {
-            return false;
-        }
-        for (int index = 0; index < token.length(); index++) {
-            if (!Character.isDigit(token.charAt(index))) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static int parseArrayIndex(String token) {
-        if (!isArrayIndex(token)) {
-            throw new IllegalArgumentException("JSON Pointer 数组索引无效");
-        }
-        try {
-            return Integer.parseInt(token);
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException("JSON Pointer 数组索引无效");
-        }
-    }
 }

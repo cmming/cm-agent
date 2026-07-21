@@ -58,7 +58,9 @@ final class HttpToolSchemaNavigator {
 
     void validateTerminalLocalReferences(JsonNode rootSchema, String sourcePointer) {
         for (SchemaNode sourceNode : resolveSourceNodes(rootSchema, sourcePointer)) {
-            validateTerminalLocalReferences(rootSchema, sourceNode, new LinkedHashSet<>(), new HashSet<>());
+            validateTerminalLocalReferences(
+                    rootSchema, sourceNode, new LinkedHashSet<>(), new LinkedHashSet<>(), new HashSet<>()
+            );
         }
     }
 
@@ -99,8 +101,9 @@ final class HttpToolSchemaNavigator {
                 directAlternatives.add(property.schema());
             }
         }
-        if (parentTypes.contains(ValueType.ARRAY) && isArrayIndex(token)) {
-            SchemaNode itemNode = resolveArrayItem(current, Integer.parseInt(token));
+        HttpToolArrayIndex.ParseResult arrayIndex = parseArrayIndexForParent(parentTypes, token);
+        if (arrayIndex.isValid()) {
+            SchemaNode itemNode = resolveArrayItem(current, arrayIndex.requireValue());
             if (itemNode != null) {
                 Projection item = projectSourceSchema(
                         rootSchema, itemNode, tokens, tokenIndex + 1, ALL_TYPES, new HashSet<>(visited)
@@ -160,10 +163,10 @@ final class HttpToolSchemaNavigator {
             }
             if (compositionFound) {
                 List<JsonNode> alternatives = projectedBranches.stream()
-                        .map(branch -> branch.found()
-                                ? branch.schema() : objectMapper.getNodeFactory().booleanNode(true))
+                        .filter(Projection::found)
+                        .map(Projection::schema)
                         .toList();
-                cumulative.add(alternativeSchema(keyword, alternatives));
+                cumulative.add(alternativeSchema("anyOf", alternatives));
             }
         }
         if (cumulative.isEmpty()) {
@@ -232,8 +235,9 @@ final class HttpToolSchemaNavigator {
                 found = true;
             }
         }
-        if (parentTypes.contains(ValueType.ARRAY) && isArrayIndex(token)) {
-            SchemaNode itemNode = resolveArrayItem(current, Integer.parseInt(token));
+        HttpToolArrayIndex.ParseResult arrayIndex = parseArrayIndexForParent(parentTypes, token);
+        if (arrayIndex.isValid()) {
+            SchemaNode itemNode = resolveArrayItem(current, arrayIndex.requireValue());
             if (itemNode != null) {
                 PathShape direct = analyzePathShape(
                         rootSchema, itemNode, tokens, tokenIndex + 1, ALL_TYPES, new HashSet<>(visited)
@@ -343,8 +347,9 @@ final class HttpToolSchemaNavigator {
             SchemaNode property = current.append("properties", properties).append(token, properties.get(token));
             matches.put(property.schemaPath(), property);
         }
-        if (parentTypes.contains(ValueType.ARRAY) && isArrayIndex(token)) {
-            SchemaNode item = resolveArrayItem(current, Integer.parseInt(token));
+        HttpToolArrayIndex.ParseResult arrayIndex = parseArrayIndexForParent(parentTypes, token);
+        if (arrayIndex.isValid()) {
+            SchemaNode item = resolveArrayItem(current, arrayIndex.requireValue());
             if (item != null) {
                 matches.put(item.schemaPath(), item);
             }
@@ -381,6 +386,20 @@ final class HttpToolSchemaNavigator {
             return current.append("items", items);
         }
         return null;
+    }
+
+    private static HttpToolArrayIndex.ParseResult parseArrayIndexForParent(
+            Set<ValueType> parentTypes,
+            String token
+    ) {
+        if (!parentTypes.contains(ValueType.ARRAY)) {
+            return HttpToolArrayIndex.ParseResult.nonNumeric();
+        }
+        HttpToolArrayIndex.ParseResult result = HttpToolArrayIndex.parse(token);
+        if (result.isInvalid()) {
+            throw HttpToolArrayIndex.invalidException();
+        }
+        return result;
     }
 
     private SchemaShape analyzeShape(JsonNode rootSchema, SchemaNode schemaNode, Set<List<Object>> visited) {
@@ -484,10 +503,11 @@ final class HttpToolSchemaNavigator {
         List<Object> schemaPath = new ArrayList<>();
         for (String token : tokens) {
             if (current.isArray()) {
-                if (!isArrayIndex(token)) {
+                HttpToolArrayIndex.ParseResult result = HttpToolArrayIndex.parse(token);
+                if (!result.isValid()) {
                     return null;
                 }
-                int index = Integer.parseInt(token);
+                int index = result.requireValue();
                 if (index >= current.size()) {
                     return null;
                 }
@@ -506,40 +526,110 @@ final class HttpToolSchemaNavigator {
     private void validateTerminalLocalReferences(
             JsonNode rootSchema,
             SchemaNode current,
-            Set<List<Object>> activePaths,
+            Set<List<Object>> directReferenceChain,
+            Set<List<Object>> visitingPaths,
             Set<List<Object>> validatedPaths
     ) {
         if (!current.node().isObject() || validatedPaths.contains(current.schemaPath())) {
             return;
         }
-        if (!activePaths.add(current.schemaPath())) {
-            throw new IllegalArgumentException("JSON Schema 本地引用存在循环");
+        if (!visitingPaths.add(current.schemaPath())) {
+            return;
         }
-        JsonNode referenceNode = current.node().get("$ref");
-        if (referenceNode != null && referenceNode.isTextual() && referenceNode.asText().startsWith("#")) {
-            SchemaNode referenced = resolveRequiredLocalReference(rootSchema, referenceNode.asText());
-            if (activePaths.contains(referenced.schemaPath())) {
-                throw new IllegalArgumentException("JSON Schema 本地引用存在循环");
-            }
-            validateTerminalLocalReferences(
-                    rootSchema, referenced, new LinkedHashSet<>(activePaths), validatedPaths
-            );
-        }
-        for (String keyword : List.of("allOf", "anyOf", "oneOf")) {
-            JsonNode branches = current.node().get(keyword);
-            if (branches == null || !branches.isArray()) {
-                continue;
-            }
-            for (int index = 0; index < branches.size(); index++) {
+        try {
+            JsonNode referenceNode = current.node().get("$ref");
+            if (referenceNode != null && referenceNode.isTextual() && referenceNode.asText().startsWith("#")) {
+                SchemaNode referenced = resolveRequiredLocalReference(rootSchema, referenceNode.asText());
+                Set<List<Object>> nextReferenceChain = new LinkedHashSet<>(directReferenceChain);
+                nextReferenceChain.add(current.schemaPath());
+                if (nextReferenceChain.contains(referenced.schemaPath())) {
+                    throw new IllegalArgumentException("JSON Schema 本地引用存在循环");
+                }
                 validateTerminalLocalReferences(
-                        rootSchema,
-                        current.append(keyword, branches).append(index, branches.get(index)),
-                        new LinkedHashSet<>(activePaths),
-                        validatedPaths
+                        rootSchema, referenced, nextReferenceChain, visitingPaths, validatedPaths
                 );
             }
+
+            for (String keyword : List.of(
+                    "properties", "patternProperties", "dependentSchemas", "$defs", "definitions"
+            )) {
+                validateSchemaMapChildren(rootSchema, current, keyword, visitingPaths, validatedPaths);
+            }
+            for (String keyword : List.of(
+                    "additionalProperties", "unevaluatedProperties", "propertyNames", "items", "contains",
+                    "not", "if", "then", "else"
+            )) {
+                validateSchemaChild(rootSchema, current, keyword, visitingPaths, validatedPaths);
+            }
+            for (String keyword : List.of("prefixItems", "allOf", "anyOf", "oneOf")) {
+                validateSchemaArrayChildren(rootSchema, current, keyword, visitingPaths, validatedPaths);
+            }
+            validatedPaths.add(current.schemaPath());
+        } finally {
+            visitingPaths.remove(current.schemaPath());
         }
-        validatedPaths.add(current.schemaPath());
+    }
+
+    private void validateSchemaMapChildren(
+            JsonNode rootSchema,
+            SchemaNode current,
+            String keyword,
+            Set<List<Object>> visitingPaths,
+            Set<List<Object>> validatedPaths
+    ) {
+        JsonNode children = current.node().get(keyword);
+        if (children == null || !children.isObject()) {
+            return;
+        }
+        children.fields().forEachRemaining(entry -> validateTerminalLocalReferences(
+                rootSchema,
+                current.append(keyword, children).append(entry.getKey(), entry.getValue()),
+                new LinkedHashSet<>(),
+                visitingPaths,
+                validatedPaths
+        ));
+    }
+
+    private void validateSchemaChild(
+            JsonNode rootSchema,
+            SchemaNode current,
+            String keyword,
+            Set<List<Object>> visitingPaths,
+            Set<List<Object>> validatedPaths
+    ) {
+        JsonNode child = current.node().get(keyword);
+        if (child == null || !child.isContainerNode() && !child.isBoolean()) {
+            return;
+        }
+        validateTerminalLocalReferences(
+                rootSchema,
+                current.append(keyword, child),
+                new LinkedHashSet<>(),
+                visitingPaths,
+                validatedPaths
+        );
+    }
+
+    private void validateSchemaArrayChildren(
+            JsonNode rootSchema,
+            SchemaNode current,
+            String keyword,
+            Set<List<Object>> visitingPaths,
+            Set<List<Object>> validatedPaths
+    ) {
+        JsonNode children = current.node().get(keyword);
+        if (children == null || !children.isArray()) {
+            return;
+        }
+        for (int index = 0; index < children.size(); index++) {
+            validateTerminalLocalReferences(
+                    rootSchema,
+                    current.append(keyword, children).append(index, children.get(index)),
+                    new LinkedHashSet<>(),
+                    visitingPaths,
+                    validatedPaths
+            );
+        }
     }
 
     private SchemaNode resolveRequiredLocalReference(JsonNode rootSchema, String reference) {
@@ -552,8 +642,12 @@ final class HttpToolSchemaNavigator {
         JsonNode current = rootSchema;
         List<Object> schemaPath = new ArrayList<>();
         for (String token : tokens) {
-            if (current.isArray() && isArrayIndex(token)) {
-                int index = Integer.parseInt(token);
+            if (current.isArray()) {
+                HttpToolArrayIndex.ParseResult result = HttpToolArrayIndex.parse(token);
+                if (!result.isValid()) {
+                    throw new IllegalArgumentException("JSON Schema 本地引用无效");
+                }
+                int index = result.requireValue();
                 if (index >= current.size()) {
                     throw new IllegalArgumentException("JSON Schema 本地引用无效");
                 }
@@ -640,23 +734,6 @@ final class HttpToolSchemaNavigator {
         result.addAll(left);
         result.retainAll(right);
         return Set.copyOf(result);
-    }
-
-    private static boolean isArrayIndex(String token) {
-        if (token.isEmpty() || (token.length() > 1 && token.charAt(0) == '0')) {
-            return false;
-        }
-        for (int index = 0; index < token.length(); index++) {
-            if (!Character.isDigit(token.charAt(index))) {
-                return false;
-            }
-        }
-        try {
-            Integer.parseInt(token);
-            return true;
-        } catch (NumberFormatException exception) {
-            return false;
-        }
     }
 
     private static IllegalArgumentException sourceMissing() {

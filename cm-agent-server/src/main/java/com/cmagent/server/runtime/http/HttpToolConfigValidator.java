@@ -256,7 +256,8 @@ public class HttpToolConfigValidator {
     ) {
         for (int index = 0; index < target.size() - 1; index++) {
             List<String> prefix = List.copyOf(target.subList(0, index + 1));
-            ContainerShape required = isArrayIndex(target.get(index + 1))
+            HttpToolArrayIndex.ParseResult arrayIndex = HttpToolArrayIndex.parse(target.get(index + 1));
+            ContainerShape required = arrayIndex.requiresArrayContainer()
                     ? ContainerShape.ARRAY : ContainerShape.OBJECT;
             ContainerShape existing = bodyContainerShapes.putIfAbsent(prefix, required);
             if (existing != null && existing != required) {
@@ -276,23 +277,6 @@ public class HttpToolConfigValidator {
 
     private static boolean isPrefix(List<String> prefix, List<String> value) {
         return prefix.size() <= value.size() && value.subList(0, prefix.size()).equals(prefix);
-    }
-
-    private static boolean isArrayIndex(String token) {
-        if (token.isEmpty() || (token.length() > 1 && token.charAt(0) == '0')) {
-            return false;
-        }
-        for (int index = 0; index < token.length(); index++) {
-            if (!Character.isDigit(token.charAt(index))) {
-                return false;
-            }
-        }
-        try {
-            Integer.parseInt(token);
-            return true;
-        } catch (NumberFormatException exception) {
-            return false;
-        }
     }
 
     private enum ContainerShape {
