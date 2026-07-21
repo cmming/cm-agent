@@ -19,6 +19,7 @@ import java.util.Set;
  * 负责 HTTP 工具输入 Schema 的路径导航、局部投影、引用解析与类型域推导。
  */
 final class HttpToolSchemaNavigator {
+    private static final int MAX_REFERENCE_TRAVERSAL_DEPTH = 256;
     private static final int MAX_REFERENCE_TRAVERSAL_STATES = 10_000;
     private static final Set<ValueType> SCALAR_TYPES = Set.of(
             ValueType.STRING, ValueType.INTEGER, ValueType.NUMBER, ValueType.BOOLEAN
@@ -547,6 +548,7 @@ final class HttpToolSchemaNavigator {
         }
         boolean completed = false;
         try {
+            context.enterTraversalDepth();
             context.recordTraversalState();
             JsonNode referenceNode = current.node().get("$ref");
             if (referenceNode != null && referenceNode.isTextual() && referenceNode.asText().startsWith("#")) {
@@ -593,6 +595,7 @@ final class HttpToolSchemaNavigator {
             }
             completed = true;
         } finally {
+            context.exitTraversalDepth();
             context.exit(current.schemaPath());
             if (completed) {
                 context.complete(state);
@@ -901,6 +904,7 @@ final class HttpToolSchemaNavigator {
     private static final class ReferenceTraversalContext {
         private final Set<List<Object>> visitingPaths = new HashSet<>();
         private final Set<ReferenceTraversalState> completedStates = new HashSet<>();
+        private int traversalDepth;
         private int traversedStates;
 
         private boolean isCompleted(ReferenceTraversalState state) {
@@ -917,6 +921,17 @@ final class HttpToolSchemaNavigator {
 
         private void complete(ReferenceTraversalState state) {
             completedStates.add(state);
+        }
+
+        private void enterTraversalDepth() {
+            traversalDepth++;
+            if (traversalDepth > MAX_REFERENCE_TRAVERSAL_DEPTH) {
+                throw new IllegalArgumentException("JSON Schema 递归深度超过安全上限");
+            }
+        }
+
+        private void exitTraversalDepth() {
+            traversalDepth--;
         }
 
         private void recordTraversalState() {

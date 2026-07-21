@@ -540,6 +540,52 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    void rejectsReferenceTraversalBeyondDepthLimit() {
+        HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
+                "", "/payload", false, "");
+        String schema = linearReferenceSchema(257);
+
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", schema, List.of(body))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("JSON Schema 递归深度超过安全上限");
+    }
+
+    @Test
+    void rejectsStructuralTraversalBeyondDepthLimit() {
+        HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
+                "", "/payload", false, "");
+        String schema = deepStructuralSchema(257);
+
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", schema, List.of(body))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("JSON Schema 递归深度超过安全上限");
+    }
+
+    @Test
+    void acceptsReferenceTraversalAtDepthLimit() {
+        HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
+                "", "/payload", false, "");
+        String schema = linearReferenceSchema(256);
+
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", schema, List.of(body))))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void acceptsStructuralTraversalAtDepthLimit() {
+        HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
+                "", "/payload", false, "");
+        String schema = deepStructuralSchema(256);
+
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", schema, List.of(body))))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void enforcesArrayIndexSafetyLimitWithoutRejectingNumericObjectProperties() {
         String arraySchema = """
                 {"type":"object","properties":{"items":{"type":"array","items":{"type":"string"}}}}
@@ -727,6 +773,29 @@ class HttpToolConfigValidatorTest {
         }
         return "{\"type\":\"object\",\"properties\":{\"payload\":{\"allOf\":["
                 + branches + "]}}}";
+    }
+
+    private static String linearReferenceSchema(int traversalDepth) {
+        StringBuilder definitions = new StringBuilder("\"n0\":{\"type\":\"string\"}");
+        for (int index = 1; index < traversalDepth - 1; index++) {
+            definitions.append(",\"n").append(index).append("\":{\"$ref\":\"#/$defs/n")
+                    .append(index - 1).append("\"}");
+        }
+        return "{\"type\":\"object\",\"$defs\":{" + definitions
+                + "},\"properties\":{\"payload\":{\"$ref\":\"#/$defs/n"
+                + (traversalDepth - 2) + "\"}}}";
+    }
+
+    private static String deepStructuralSchema(int traversalDepth) {
+        String nested = "{\"type\":\"string\"}";
+        for (int depth = 1; depth < traversalDepth; depth++) {
+            if (depth % 2 == 0) {
+                nested = "{\"type\":\"array\",\"items\":" + nested + "}";
+            } else {
+                nested = "{\"type\":\"object\",\"properties\":{\"next\":" + nested + "}}";
+            }
+        }
+        return "{\"type\":\"object\",\"properties\":{\"payload\":" + nested + "}}";
     }
 
     private static HttpParameterMapping mapping(
