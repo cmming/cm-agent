@@ -127,6 +127,12 @@ class ServerRepositoryConfigurationTest {
                     assertThat(configurations.findByTenantAndToolId(TENANT_B, TOOL_A)).isEmpty();
                     assertThat(publications.listEnabledByTenant(TENANT_A)).containsExactly(publication);
                     assertThat(publications.listEnabledByTenant(TENANT_B)).isEmpty();
+
+                    configurations.delete(TENANT_A, TOOL_A);
+                    publications.delete(TENANT_A, TOOL_A);
+
+                    assertThat(configurations.findByTenantAndToolId(TENANT_A, TOOL_A)).isEmpty();
+                    assertThat(publications.findByTenantAndToolId(TENANT_A, TOOL_A)).isEmpty();
                 });
     }
 
