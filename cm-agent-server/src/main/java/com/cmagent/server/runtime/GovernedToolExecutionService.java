@@ -11,6 +11,7 @@ import com.cmagent.server.runtime.http.DynamicHttpToolExecutor;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
+import java.util.function.Supplier;
 
 @Service
 public class GovernedToolExecutionService {
@@ -31,27 +32,31 @@ public class GovernedToolExecutionService {
     }
 
     public ToolExecutionResult execute(ToolDefinition tool, ToolExecutionRequest request) {
+        return prepare(tool, request).execute();
+    }
+
+    public PreparedToolExecution prepare(ToolDefinition tool, ToolExecutionRequest request) {
         Objects.requireNonNull(tool, "tool 不能为空");
         Objects.requireNonNull(request, "request 不能为空");
         if (!tool.enabled()
                 || !tool.tenantId().equals(request.tenantId())
                 || !tool.id().equals(request.toolId())) {
-            return unavailable();
+            return PreparedToolExecution.unavailable();
         }
         if (tool.type() == ToolType.HTTP) {
             return configs.findByTenantAndToolId(tool.tenantId(), tool.id())
                     .filter(config -> isMatchingHttpConfiguration(tool, config))
-                    .map(config -> http.execute(tool, config, request))
-                    .orElseGet(this::unavailable);
+                    .map(config -> PreparedToolExecution.ready(() -> http.execute(tool, config, request)))
+                    .orElseGet(PreparedToolExecution::unavailable);
         }
         if (tool.type() == ToolType.LOCAL) {
             ToolDefinition registered = registry.find(tool.id()).orElse(null);
             if (!isSameRegistration(tool, registered)) {
-                return unavailable();
+                return PreparedToolExecution.unavailable();
             }
-            return registry.execute(request);
+            return PreparedToolExecution.ready(() -> registry.execute(request));
         }
-        return unavailable();
+        return PreparedToolExecution.unavailable();
     }
 
     private boolean isMatchingHttpConfiguration(ToolDefinition tool, HttpToolConfig config) {
@@ -65,7 +70,29 @@ public class GovernedToolExecutionService {
                 && tool.name().equals(registered.name());
     }
 
-    private ToolExecutionResult unavailable() {
-        return ToolExecutionResult.failed(TOOL_UNAVAILABLE, null);
+    public static final class PreparedToolExecution {
+        private final Supplier<ToolExecutionResult> execution;
+        private final ToolExecutionResult unavailableResult;
+
+        private PreparedToolExecution(Supplier<ToolExecutionResult> execution, ToolExecutionResult unavailableResult) {
+            this.execution = execution;
+            this.unavailableResult = unavailableResult;
+        }
+
+        public static PreparedToolExecution ready(Supplier<ToolExecutionResult> execution) {
+            return new PreparedToolExecution(Objects.requireNonNull(execution, "execution 不能为空"), null);
+        }
+
+        public static PreparedToolExecution unavailable() {
+            return new PreparedToolExecution(null, ToolExecutionResult.failed(TOOL_UNAVAILABLE, null));
+        }
+
+        public boolean ready() {
+            return execution != null;
+        }
+
+        public ToolExecutionResult execute() {
+            return ready() ? execution.get() : unavailableResult;
+        }
     }
 }

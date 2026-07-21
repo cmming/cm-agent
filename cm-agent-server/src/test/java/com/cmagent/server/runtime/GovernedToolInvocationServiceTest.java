@@ -17,6 +17,7 @@ import com.cmagent.core.tool.ToolInvocationSource;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.security.SensitiveDataRedactor;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +30,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -157,6 +159,36 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    void unavailablePreparationWritesFailureAuditWithoutStartedOrExecution() {
+        arrangeAuthorizedTool();
+        when(executionService.prepare(eq(tool), any())).thenReturn(unavailablePreparation());
+
+        ToolInvocationResult result = service.invoke(request());
+
+        assertUnavailable(result);
+        InOrder order = inOrder(executionService, auditAppender);
+        order.verify(executionService).prepare(eq(tool), any());
+        order.verify(auditAppender).append(TENANT_ID, "principal", "TOOL_CALL_FAILED",
+                "TOOL", TOOL_ID.toString(), "FAILED", "工具调用失败");
+        verify(auditAppender, never()).append(
+                any(), any(), eq("TOOL_CALL_STARTED"), any(), any(), any(), any()
+        );
+    }
+
+    @Test
+    void preparationRepositoryFailurePropagatesWithoutStartingOrConvertingToToolFailure() {
+        arrangeAuthorizedTool();
+        DataAccessResourceFailureException failure = new DataAccessResourceFailureException("数据库连接失败");
+        when(executionService.prepare(eq(tool), any())).thenThrow(failure);
+
+        assertThatThrownBy(() -> service.invoke(request())).isSameAs(failure);
+
+        verify(auditAppender, never()).append(
+                any(), any(), any(), any(), any(), any(), any()
+        );
+    }
+
+    @Test
     void eachInvocationReloadsAuthorizationAndRevocationPreventsSecondExecution() {
         List<ToolGrant> granted = List.of(grant);
         List<ToolGrant> revoked = List.of(new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, false));
@@ -165,7 +197,7 @@ class GovernedToolInvocationServiceTest {
         when(policy.check(principal, AGENT_ID, tool, granted)).thenReturn(AuthorizationDecision.allow());
         when(policy.check(principal, AGENT_ID, tool, revoked))
                 .thenReturn(AuthorizationDecision.deny("Agent 未获得工具授权 echo"));
-        when(executionService.execute(eq(tool), any())).thenReturn(new ToolExecutionResult("工具输出", true));
+        when(executionService.prepare(eq(tool), any())).thenReturn(prepared(new ToolExecutionResult("工具输出", true)));
 
         ToolInvocationResult first = service.invoke(request());
         ToolInvocationResult second = service.invoke(request());
@@ -176,7 +208,7 @@ class GovernedToolInvocationServiceTest {
         verify(grantRepository, times(2)).listByTenantAndAgent(TENANT_ID, AGENT_ID);
         verify(policy).check(principal, AGENT_ID, tool, granted);
         verify(policy).check(principal, AGENT_ID, tool, revoked);
-        verify(executionService, times(1)).execute(eq(tool), any());
+        verify(executionService, times(1)).prepare(eq(tool), any());
         verify(auditAppender).accessDenied(
                 principal, "TOOL", TOOL_ID.toString(), "tool:invoke", "Agent 未获得工具授权 echo"
         );
@@ -185,7 +217,7 @@ class GovernedToolInvocationServiceTest {
     @Test
     void successfulInvocationUsesCompleteContextAndWritesAuditsInGovernedOrder() {
         arrangeAllowedTool();
-        when(executionService.execute(eq(tool), any())).thenReturn(new ToolExecutionResult("工具输出", true));
+        when(executionService.prepare(eq(tool), any())).thenReturn(prepared(new ToolExecutionResult("工具输出", true)));
 
         ToolInvocationResult result = service.invoke(request());
 
@@ -195,9 +227,9 @@ class GovernedToolInvocationServiceTest {
         order.verify(toolRepository).findByTenantAndId(TENANT_ID, TOOL_ID);
         order.verify(grantRepository).listByTenantAndAgent(TENANT_ID, AGENT_ID);
         order.verify(policy).check(principal, AGENT_ID, tool, List.of(grant));
+        order.verify(executionService).prepare(eq(tool), executionRequest.capture());
         order.verify(auditAppender).append(TENANT_ID, "principal", "TOOL_CALL_STARTED",
                 "TOOL", TOOL_ID.toString(), "RUNNING", "工具调用已开始");
-        order.verify(executionService).execute(eq(tool), executionRequest.capture());
         order.verify(auditAppender).append(TENANT_ID, "principal", "TOOL_CALL_COMPLETED",
                 "TOOL", TOOL_ID.toString(), "SUCCEEDED", "工具调用完成");
         assertThat(executionRequest.getValue()).isEqualTo(new ToolExecutionRequest(
@@ -209,7 +241,9 @@ class GovernedToolInvocationServiceTest {
     @Test
     void executorReturnedFailureWritesFixedFailureAuditAndReturnsControlledError() {
         arrangeAllowedTool();
-        when(executionService.execute(eq(tool), any())).thenReturn(new ToolExecutionResult("password=tool-secret", false));
+        when(executionService.prepare(eq(tool), any())).thenReturn(
+                prepared(new ToolExecutionResult("password=tool-secret", false))
+        );
 
         ToolInvocationResult result = service.invoke(request());
 
@@ -222,7 +256,9 @@ class GovernedToolInvocationServiceTest {
     void executorExceptionIsRedactedBeforeLoggingAndWritesFixedFailureAudit() {
         arrangeAllowedTool();
         IllegalStateException failure = new IllegalStateException("password=tool-secret");
-        when(executionService.execute(eq(tool), any())).thenThrow(failure);
+        when(executionService.prepare(eq(tool), any())).thenReturn(
+                preparedFailure(failure)
+        );
         when(redactor.redact(failure.getMessage())).thenReturn("password=<已脱敏>");
 
         ToolInvocationResult result = service.invoke(request());
@@ -236,6 +272,11 @@ class GovernedToolInvocationServiceTest {
     @Test
     void auditFailureBeforeInvocationPreventsSideEffect() {
         arrangeAllowedTool();
+        AtomicBoolean executed = new AtomicBoolean();
+        when(executionService.prepare(eq(tool), any())).thenReturn(prepared(() -> {
+            executed.set(true);
+            return new ToolExecutionResult("工具输出", true);
+        }));
         AuditPersistenceException failure = new AuditPersistenceException(
                 "审计写入失败", new IllegalStateException()
         );
@@ -244,13 +285,13 @@ class GovernedToolInvocationServiceTest {
         );
 
         assertThatThrownBy(() -> service.invoke(request())).isSameAs(failure);
-        verify(executionService, never()).execute(any(), any());
+        assertThat(executed).isFalse();
     }
 
     @Test
     void completionAuditFailureIsRethrownUnchanged() {
         arrangeAllowedTool();
-        when(executionService.execute(eq(tool), any())).thenReturn(new ToolExecutionResult("工具输出", true));
+        when(executionService.prepare(eq(tool), any())).thenReturn(prepared(new ToolExecutionResult("工具输出", true)));
         AuditPersistenceException failure = new AuditPersistenceException(
                 "审计写入失败", new IllegalStateException()
         );
@@ -269,6 +310,26 @@ class GovernedToolInvocationServiceTest {
 
     private void arrangeAllowedTool() {
         arrangeAuthorizedTool();
+    }
+
+    private static GovernedToolExecutionService.PreparedToolExecution prepared(ToolExecutionResult result) {
+        return prepared(() -> result);
+    }
+
+    private static GovernedToolExecutionService.PreparedToolExecution prepared(
+            java.util.function.Supplier<ToolExecutionResult> execution
+    ) {
+        return GovernedToolExecutionService.PreparedToolExecution.ready(execution);
+    }
+
+    private static GovernedToolExecutionService.PreparedToolExecution preparedFailure(RuntimeException failure) {
+        return prepared(() -> {
+            throw failure;
+        });
+    }
+
+    private static GovernedToolExecutionService.PreparedToolExecution unavailablePreparation() {
+        return GovernedToolExecutionService.PreparedToolExecution.unavailable();
     }
 
     private ToolInvocationRequest request() {

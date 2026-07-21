@@ -71,12 +71,19 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
             return ToolInvocationResult.denied(decision.reason());
         }
 
+        ToolExecutionRequest executionRequest = new ToolExecutionRequest(
+                request.tenantId(), request.agentId(), request.principal(), request.runId(),
+                request.toolCallId(), request.toolId(), request.inputJson()
+        );
+        GovernedToolExecutionService.PreparedToolExecution prepared = executionService.prepare(tool, executionRequest);
+        if (!prepared.ready()) {
+            appendAudit(request, "TOOL_CALL_FAILED", "FAILED", "工具调用失败");
+            return ToolInvocationResult.failed(TOOL_UNAVAILABLE);
+        }
+
         appendAudit(request, "TOOL_CALL_STARTED", "RUNNING", "工具调用已开始");
         try {
-            ToolExecutionResult executionResult = executionService.execute(tool, new ToolExecutionRequest(
-                    request.tenantId(), request.agentId(), request.principal(), request.runId(),
-                    request.toolCallId(), request.toolId(), request.inputJson()
-            ));
+            ToolExecutionResult executionResult = prepared.execute();
             if (executionResult.success()) {
                 appendAudit(request, "TOOL_CALL_COMPLETED", "SUCCEEDED", "工具调用完成");
                 return ToolInvocationResult.succeeded(executionResult.outputSummary());
