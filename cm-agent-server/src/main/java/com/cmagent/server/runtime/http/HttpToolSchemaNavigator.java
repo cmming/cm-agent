@@ -556,13 +556,26 @@ final class HttpToolSchemaNavigator {
                 validateSchemaMapChildren(rootSchema, current, keyword, visitingPaths, validatedPaths);
             }
             for (String keyword : List.of(
-                    "additionalProperties", "unevaluatedProperties", "propertyNames", "items", "contains",
-                    "not", "if", "then", "else"
+                    "additionalProperties", "unevaluatedProperties", "propertyNames", "items", "contains"
             )) {
-                validateSchemaChild(rootSchema, current, keyword, visitingPaths, validatedPaths);
+                validateSchemaChild(
+                        rootSchema, current, keyword, Set.of(), visitingPaths, validatedPaths
+                );
             }
-            for (String keyword : List.of("prefixItems", "allOf", "anyOf", "oneOf")) {
-                validateSchemaArrayChildren(rootSchema, current, keyword, visitingPaths, validatedPaths);
+            Set<List<Object>> sameInstanceReferenceChain = new LinkedHashSet<>(directReferenceChain);
+            sameInstanceReferenceChain.add(current.schemaPath());
+            for (String keyword : List.of("not", "if", "then", "else")) {
+                validateSchemaChild(
+                        rootSchema, current, keyword, sameInstanceReferenceChain, visitingPaths, validatedPaths
+                );
+            }
+            validateSchemaArrayChildren(
+                    rootSchema, current, "prefixItems", Set.of(), visitingPaths, validatedPaths
+            );
+            for (String keyword : List.of("allOf", "anyOf", "oneOf")) {
+                validateSchemaArrayChildren(
+                        rootSchema, current, keyword, sameInstanceReferenceChain, visitingPaths, validatedPaths
+                );
             }
             validatedPaths.add(current.schemaPath());
         } finally {
@@ -594,6 +607,7 @@ final class HttpToolSchemaNavigator {
             JsonNode rootSchema,
             SchemaNode current,
             String keyword,
+            Set<List<Object>> directReferenceChain,
             Set<List<Object>> visitingPaths,
             Set<List<Object>> validatedPaths
     ) {
@@ -604,7 +618,7 @@ final class HttpToolSchemaNavigator {
         validateTerminalLocalReferences(
                 rootSchema,
                 current.append(keyword, child),
-                new LinkedHashSet<>(),
+                new LinkedHashSet<>(directReferenceChain),
                 visitingPaths,
                 validatedPaths
         );
@@ -614,6 +628,7 @@ final class HttpToolSchemaNavigator {
             JsonNode rootSchema,
             SchemaNode current,
             String keyword,
+            Set<List<Object>> directReferenceChain,
             Set<List<Object>> visitingPaths,
             Set<List<Object>> validatedPaths
     ) {
@@ -625,7 +640,7 @@ final class HttpToolSchemaNavigator {
             validateTerminalLocalReferences(
                     rootSchema,
                     current.append(keyword, children).append(index, children.get(index)),
-                    new LinkedHashSet<>(),
+                    new LinkedHashSet<>(directReferenceChain),
                     visitingPaths,
                     validatedPaths
             );

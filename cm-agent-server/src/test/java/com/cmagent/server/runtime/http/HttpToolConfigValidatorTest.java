@@ -447,6 +447,31 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    void rejectsPureReferenceCyclesWrappedBySameInstanceApplicators() {
+        HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
+                "", "/payload", false, "");
+        Map<String, String> wrappedLoops = Map.of(
+                "allOf", "{\"allOf\":[{\"$ref\":\"#/$defs/loop\"}]}",
+                "anyOf", "{\"anyOf\":[{\"$ref\":\"#/$defs/loop\"}]}",
+                "oneOf", "{\"oneOf\":[{\"$ref\":\"#/$defs/loop\"}]}",
+                "not", "{\"not\":{\"$ref\":\"#/$defs/loop\"}}"
+        );
+
+        wrappedLoops.forEach((keyword, loopSchema) -> {
+            String schema = """
+                    {"type":"object","$defs":{"loop":%s},"properties":{
+                      "payload":{"$ref":"#/$defs/loop"}
+                    }}
+                    """.formatted(loopSchema);
+            assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                    "https://api.example.test/items", schema, List.of(body))))
+                    .as(keyword)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("JSON Schema 本地引用存在循环");
+        });
+    }
+
+    @Test
     void enforcesArrayIndexSafetyLimitWithoutRejectingNumericObjectProperties() {
         String arraySchema = """
                 {"type":"object","properties":{"items":{"type":"array","items":{"type":"string"}}}}
