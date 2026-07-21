@@ -13,6 +13,8 @@ import com.cmagent.server.security.JwtService;
 import com.cmagent.server.service.ManagementCommandService;
 import com.cmagent.server.service.ToolQueryService;
 import com.cmagent.server.service.ToolSummary;
+import com.cmagent.server.service.ToolDebugService;
+import com.cmagent.server.service.McpPublicationService;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
@@ -41,7 +43,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -196,11 +200,45 @@ class ToolControllerTest {
     }
 
     @Test
+    void debugPermissionDeniedWritesAuditBeforeAnyToolExecution() throws Exception {
+        String token = token(TENANT_A, "reader");
+        String toolId = createLocal(token, "debug-target");
+
+        mockMvc.perform(post("/api/tools/{id}/debug", toolId)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"input\":{}}"))
+                .andExpect(status().isForbidden());
+
+        assertThat(store.listAuditEvents(TENANT_A)).anySatisfy(event -> {
+            assertThat(event.eventType()).isEqualTo("ACCESS_DENIED");
+            assertThat(event.resourceId()).isEqualTo(toolId);
+            assertThat(event.message()).contains("tool:debug");
+        });
+    }
+
+    @Test
+    void publicationEndpointsUseManagementPermissionAndDeleteIsIdempotent() throws Exception {
+        String token = token(TENANT_A, "admin");
+        String toolId = createLocal(token, "local_publish_target");
+
+        mockMvc.perform(put("/api/tools/{id}/mcp-publication", toolId)
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(delete("/api/tools/{id}/mcp-publication", toolId)
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
     void createReturnsTheToolCreatedByCommandInsteadOfAnotherSameNameSummary() {
         PermissionEvaluator permissionEvaluator = mock(PermissionEvaluator.class);
         AuditAppender controllerAuditAppender = mock(AuditAppender.class);
         ManagementCommandService managementCommandService = mock(ManagementCommandService.class);
         ToolQueryService toolQueryService = mock(ToolQueryService.class);
+        ToolDebugService toolDebugService = mock(ToolDebugService.class);
+        McpPublicationService mcpPublicationService = mock(McpPublicationService.class);
         ToolDefinition created = localTool(UUID.fromString("20000000-0000-0000-0000-000000000001"), "same-name");
         when(permissionEvaluator.check(any(), anyString())).thenReturn(AuthorizationDecision.allow());
         when(managementCommandService.createTool(any(), anyString(), anyString(), any(), any(), isNull(), anyBoolean()))
@@ -211,7 +249,8 @@ class ToolControllerTest {
         when(authentication.isAuthenticated()).thenReturn(true);
         when(authentication.getPrincipal()).thenReturn(new JwtService.JwtSession(TENANT_A, "admin", "管理员", List.of("tool:grant")));
         ToolController controller = new ToolController(
-                permissionEvaluator, controllerAuditAppender, managementCommandService, new ObjectMapper(), toolQueryService
+                permissionEvaluator, controllerAuditAppender, managementCommandService, new ObjectMapper(), toolQueryService,
+                toolDebugService, mcpPublicationService
         );
 
         ToolController.ToolSummaryResponse response = controller.create(

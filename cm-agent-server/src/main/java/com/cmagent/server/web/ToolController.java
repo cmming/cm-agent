@@ -16,6 +16,9 @@ import com.cmagent.server.service.ManagementCommandService;
 import com.cmagent.server.service.HttpToolCreateSpec;
 import com.cmagent.server.service.ToolQueryService;
 import com.cmagent.server.service.ToolSummary;
+import com.cmagent.server.service.ToolDebugResponse;
+import com.cmagent.server.service.ToolDebugService;
+import com.cmagent.server.service.McpPublicationService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,10 +30,13 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -50,19 +56,25 @@ public class ToolController {
     private final ManagementCommandService managementCommandService;
     private final ObjectMapper objectMapper;
     private final ToolQueryService toolQueryService;
+    private final ToolDebugService toolDebugService;
+    private final McpPublicationService mcpPublicationService;
 
     public ToolController(
             PermissionEvaluator permissionEvaluator,
             AuditAppender auditAppender,
             ManagementCommandService managementCommandService,
             ObjectMapper objectMapper,
-            ToolQueryService toolQueryService
+            ToolQueryService toolQueryService,
+            ToolDebugService toolDebugService,
+            McpPublicationService mcpPublicationService
     ) {
         this.permissionEvaluator = permissionEvaluator;
         this.auditAppender = auditAppender;
         this.managementCommandService = managementCommandService;
         this.objectMapper = objectMapper;
         this.toolQueryService = toolQueryService;
+        this.toolDebugService = toolDebugService;
+        this.mcpPublicationService = mcpPublicationService;
     }
 
     @GetMapping
@@ -101,6 +113,35 @@ public class ToolController {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", "TOOL", id.toString());
         return managementCommandService.grantTool(principal, id, request.agentId());
+    }
+
+    @PostMapping("/{id}/debug")
+    public ToolDebugResponse debug(
+            @PathVariable("id") UUID id,
+            @Valid @RequestBody ToolDebugRequest request,
+            Authentication authentication
+    ) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "tool:debug", "TOOL", id.toString());
+        return toolDebugService.debug(principal, id, canonicalJson(request.input()), request.confirmedToolName());
+    }
+
+    @PutMapping("/{id}/mcp-publication")
+    public com.cmagent.core.domain.McpToolPublication publishMcpTool(
+            @PathVariable("id") UUID id,
+            Authentication authentication
+    ) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "tool:grant", "TOOL", id.toString());
+        return mcpPublicationService.publish(principal, id);
+    }
+
+    @DeleteMapping("/{id}/mcp-publication")
+    public ResponseEntity<Void> unpublishMcpTool(@PathVariable("id") UUID id, Authentication authentication) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "tool:grant", "TOOL", id.toString());
+        mcpPublicationService.unpublish(principal, id);
+        return ResponseEntity.noContent().build();
     }
 
     private PrincipalRef principal(Authentication authentication) {
@@ -241,5 +282,8 @@ public class ToolController {
     }
 
     public record ToolGrantRequest(@NotNull UUID agentId) {
+    }
+
+    public record ToolDebugRequest(@NotNull JsonNode input, String confirmedToolName) {
     }
 }
