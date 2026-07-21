@@ -65,6 +65,10 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                 .filter(publication -> tenantId.equals(publication.tenantId()) && toolId.equals(publication.toolId()));
     }
 
+    public void deleteMcpToolPublication(UUID tenantId, UUID toolId) {
+        mcpToolPublications.remove(toolKey(tenantId, toolId));
+    }
+
     public List<McpToolPublication> listEnabledMcpToolPublications(UUID tenantId) {
         return mcpToolPublications.values().stream()
                 .filter(publication -> tenantId.equals(publication.tenantId()) && publication.enabled())
