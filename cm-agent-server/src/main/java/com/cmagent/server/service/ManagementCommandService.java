@@ -14,6 +14,7 @@ import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.server.audit.AuditAppender;
+import com.cmagent.server.runtime.http.HttpToolConfigValidator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -36,6 +37,7 @@ public class ManagementCommandService {
     private final McpToolPublicationRepository mcpToolPublicationRepository;
     private final ToolGrantRepository grantRepository;
     private final AuditAppender auditAppender;
+    private final HttpToolConfigValidator httpToolConfigValidator;
     private final TransactionTemplate transactionTemplate;
 
     @Autowired
@@ -46,6 +48,7 @@ public class ManagementCommandService {
             McpToolPublicationRepository mcpToolPublicationRepository,
             ToolGrantRepository grantRepository,
             AuditAppender auditAppender,
+            HttpToolConfigValidator httpToolConfigValidator,
             @Nullable TransactionTemplate transactionTemplate
     ) {
         this.agentRepository = Objects.requireNonNull(agentRepository, "agentRepository 不能为空");
@@ -54,6 +57,8 @@ public class ManagementCommandService {
         this.mcpToolPublicationRepository = Objects.requireNonNull(mcpToolPublicationRepository, "mcpToolPublicationRepository 不能为空");
         this.grantRepository = Objects.requireNonNull(grantRepository, "grantRepository 不能为空");
         this.auditAppender = Objects.requireNonNull(auditAppender, "auditAppender 不能为空");
+        this.httpToolConfigValidator = Objects.requireNonNull(httpToolConfigValidator,
+                "httpToolConfigValidator 不能为空");
         this.transactionTemplate = transactionTemplate;
     }
 
@@ -131,6 +136,7 @@ public class ManagementCommandService {
                 httpToolCreateSpec.inputSchema(), httpToolCreateSpec.parameterMappings(), httpToolCreateSpec.secretHeaders(),
                 httpToolCreateSpec.timeout()
         );
+        httpToolConfigValidator.validate(configuration);
         McpToolPublication publication = mcpPublished
                 ? new McpToolPublication(principal.tenantId(), tool.id(), true, principal.principalId())
                 : null;

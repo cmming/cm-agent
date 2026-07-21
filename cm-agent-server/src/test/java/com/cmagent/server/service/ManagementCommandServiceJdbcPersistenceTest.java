@@ -19,6 +19,7 @@ import com.cmagent.persistence.JdbcHttpToolConfigRepository;
 import com.cmagent.persistence.JdbcMcpToolPublicationRepository;
 import com.cmagent.persistence.JdbcToolDefinitionRepository;
 import com.cmagent.server.audit.AuditAppender;
+import com.cmagent.server.runtime.http.HttpToolConfigValidator;
 import com.cmagent.server.audit.AuditPersistenceException;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
@@ -187,6 +188,7 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 new JdbcMcpToolPublicationRepository(jdbcClient, transactionTemplate),
                 emptyGrantRepository(),
                 auditAppender,
+                new HttpToolConfigValidator(new com.fasterxml.jackson.databind.ObjectMapper()),
                 transactionTemplate
         );
     }

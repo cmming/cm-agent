@@ -15,7 +15,9 @@ import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
+import com.cmagent.server.runtime.http.HttpToolConfigValidator;
 import com.cmagent.server.store.InMemoryPlatformStore;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -94,6 +96,7 @@ class ManagementCommandServiceTest {
                 mcpToolPublicationRepository,
                 grantRepository,
                 auditAppender,
+                httpToolConfigValidator(),
                 null
         );
         PrincipalRef principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("agent:write"));
@@ -129,6 +132,29 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    void httpCreationValidatesSchemaBeforeAnyPersistence() {
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        ManagementCommandService service = memoryBackedService(store);
+        PrincipalRef principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant"));
+        HttpToolCreateSpec invalidSpec = new HttpToolCreateSpec(
+                HttpToolMethod.POST,
+                "https://api.example.test/orders",
+                "{\"type\":\"array\"}",
+                List.of(),
+                java.util.Map.of(),
+                Duration.ofSeconds(1)
+        );
+
+        assertThatThrownBy(() -> service.createTool(
+                principal, "invalid-schema", "无效 Schema", ToolType.HTTP, ToolRiskLevel.LOW, invalidSpec, false
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("object");
+
+        assertThat(store.listTools(TENANT_ID)).isEmpty();
+        assertThat(store.listAuditEvents(TENANT_ID)).isEmpty();
+    }
+
+    @Test
     void duplicateNameConstraintIsMappedToConflict() {
         when(toolRepository.listByTenant(TENANT_ID)).thenReturn(List.of());
         when(toolRepository.save(any())).thenThrow(new DuplicateKeyException(
@@ -136,7 +162,7 @@ class ManagementCommandServiceTest {
         ));
         ManagementCommandService service = new ManagementCommandService(
                 emptyAgentRepository(), toolRepository, httpToolConfigRepository, mcpToolPublicationRepository,
-                grantRepository, auditAppender, null
+                grantRepository, auditAppender, httpToolConfigValidator(), null
         );
         PrincipalRef principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant"));
 
@@ -241,8 +267,12 @@ class ManagementCommandServiceTest {
         };
         return new ManagementCommandService(
                 emptyAgentRepository(), memoryTools, memoryHttpConfigs, memoryPublications, grantRepository,
-                new AuditAppender(store), null
+                new AuditAppender(store), httpToolConfigValidator(), null
         );
+    }
+
+    private static HttpToolConfigValidator httpToolConfigValidator() {
+        return new HttpToolConfigValidator(new ObjectMapper());
     }
 
     private static ToolDefinitionRepository memoryToolRepository(InMemoryPlatformStore store) {

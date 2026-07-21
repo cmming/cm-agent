@@ -98,10 +98,10 @@ class ToolControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.type").value("HTTP"))
                 .andExpect(jsonPath("$.endpoint").value("https://api.example.test/orders/{id}"))
-                .andExpect(jsonPath("$.inputSchema").value("{\"properties\":{\"items\":{\"items\":{\"type\":\"object\"},\"type\":\"array\"}},\"type\":\"object\"}"))
+                .andExpect(jsonPath("$.inputSchema").value("{\"properties\":{\"id\":{\"type\":\"string\"},\"items\":{\"items\":{\"properties\":{\"name\":{\"type\":\"object\"}},\"type\":\"object\"},\"type\":\"array\"}},\"type\":\"object\"}"))
                 .andExpect(jsonPath("$.httpConfig.method").value("POST"))
                 .andExpect(jsonPath("$.httpConfig.urlTemplate").value("https://api.example.test/orders/{id}"))
-                .andExpect(jsonPath("$.httpConfig.inputSchema").value("{\"properties\":{\"items\":{\"items\":{\"type\":\"object\"},\"type\":\"array\"}},\"type\":\"object\"}"))
+                .andExpect(jsonPath("$.httpConfig.inputSchema").value("{\"properties\":{\"id\":{\"type\":\"string\"},\"items\":{\"items\":{\"properties\":{\"name\":{\"type\":\"object\"}},\"type\":\"object\"},\"type\":\"array\"}},\"type\":\"object\"}"))
                 .andExpect(jsonPath("$.httpConfig.parameterMappings[0].defaultValueJson").value("{\"kind\":\"primary\"}"))
                 .andExpect(jsonPath("$.httpConfig.secretHeaders.X-Api-Key").value("secret/integration/api-key"))
                 .andExpect(jsonPath("$.httpConfig.timeoutMillis").value(1000))
@@ -112,8 +112,8 @@ class ToolControllerTest {
         String toolId = JsonPath.read(response, "$.id");
 
         HttpToolConfig config = store.findHttpToolConfig(TENANT_A, UUID.fromString(toolId)).orElseThrow();
-        assertThat(config.inputSchema()).isEqualTo("{\"properties\":{\"items\":{\"items\":{\"type\":\"object\"},\"type\":\"array\"}},\"type\":\"object\"}");
-        assertThat(config.parameterMappings()).singleElement()
+        assertThat(config.inputSchema()).isEqualTo("{\"properties\":{\"id\":{\"type\":\"string\"},\"items\":{\"items\":{\"properties\":{\"name\":{\"type\":\"object\"}},\"type\":\"object\"},\"type\":\"array\"}},\"type\":\"object\"}");
+        assertThat(config.parameterMappings()).hasSize(2).first()
                 .extracting(mapping -> mapping.defaultValueJson())
                 .isEqualTo("{\"kind\":\"primary\"}");
         assertThat(store.findMcpToolPublication(TENANT_A, UUID.fromString(toolId))).isPresent();
@@ -256,13 +256,19 @@ class ToolControllerTest {
                   "httpConfig":{
                     "method":"POST",
                     "urlTemplate":"https://api.example.test/orders/{id}",
-                    "inputSchema":{"type":"object","properties":{"items":{"type":"array","items":{"type":"object"}}}},
+                    "inputSchema":{"type":"object","properties":{"id":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"name":{"type":"object"}}}}}},
                     "parameterMappings":[{
                       "sourcePointer":"/items/0/name",
                       "location":"BODY",
                       "targetPointer":"/payload/items/0/name",
                       "required":true,
                       "defaultValue":{"kind":"primary"}
+                    },{
+                      "sourcePointer":"/id",
+                      "location":"PATH",
+                      "targetName":"id",
+                      "required":true,
+                      "defaultValue":"example"
                     }],
                     "secretHeaders":{"X-Api-Key":"secret/integration/api-key"},
                     "timeoutMillis":1000
