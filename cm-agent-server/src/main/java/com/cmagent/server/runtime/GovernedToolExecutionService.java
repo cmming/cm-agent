@@ -11,6 +11,7 @@ import com.cmagent.server.runtime.http.DynamicHttpToolExecutor;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 @Service
@@ -35,7 +36,7 @@ public class GovernedToolExecutionService {
         return prepare(tool, request).execute();
     }
 
-    public PreparedToolExecution prepare(ToolDefinition tool, ToolExecutionRequest request) {
+    PreparedToolExecution prepare(ToolDefinition tool, ToolExecutionRequest request) {
         Objects.requireNonNull(tool, "tool 不能为空");
         Objects.requireNonNull(request, "request 不能为空");
         if (!tool.enabled()
@@ -50,11 +51,12 @@ public class GovernedToolExecutionService {
                     .orElseGet(PreparedToolExecution::unavailable);
         }
         if (tool.type() == ToolType.LOCAL) {
-            ToolDefinition registered = registry.find(tool.id()).orElse(null);
+            ToolRegistry.ToolRegistrationSnapshot snapshot = registry.snapshot(tool.id()).orElse(null);
+            ToolDefinition registered = snapshot == null ? null : snapshot.definition();
             if (!isSameRegistration(tool, registered)) {
                 return PreparedToolExecution.unavailable();
             }
-            return PreparedToolExecution.ready(() -> registry.execute(request));
+            return PreparedToolExecution.ready(() -> snapshot.execute(request));
         }
         return PreparedToolExecution.unavailable();
     }
@@ -70,29 +72,37 @@ public class GovernedToolExecutionService {
                 && tool.name().equals(registered.name());
     }
 
-    public static final class PreparedToolExecution {
+    static final class PreparedToolExecution {
         private final Supplier<ToolExecutionResult> execution;
         private final ToolExecutionResult unavailableResult;
+        private final AtomicBoolean consumed;
 
         private PreparedToolExecution(Supplier<ToolExecutionResult> execution, ToolExecutionResult unavailableResult) {
             this.execution = execution;
             this.unavailableResult = unavailableResult;
+            this.consumed = execution == null ? null : new AtomicBoolean();
         }
 
-        public static PreparedToolExecution ready(Supplier<ToolExecutionResult> execution) {
+        static PreparedToolExecution ready(Supplier<ToolExecutionResult> execution) {
             return new PreparedToolExecution(Objects.requireNonNull(execution, "execution 不能为空"), null);
         }
 
-        public static PreparedToolExecution unavailable() {
+        static PreparedToolExecution unavailable() {
             return new PreparedToolExecution(null, ToolExecutionResult.failed(TOOL_UNAVAILABLE, null));
         }
 
-        public boolean ready() {
+        boolean ready() {
             return execution != null;
         }
 
-        public ToolExecutionResult execute() {
-            return ready() ? execution.get() : unavailableResult;
+        ToolExecutionResult execute() {
+            if (!ready()) {
+                return unavailableResult;
+            }
+            if (!consumed.compareAndSet(false, true)) {
+                return ToolExecutionResult.failed(TOOL_UNAVAILABLE, null);
+            }
+            return execution.get();
         }
     }
 }

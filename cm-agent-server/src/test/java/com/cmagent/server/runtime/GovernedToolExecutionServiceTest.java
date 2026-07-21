@@ -10,6 +10,7 @@ import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.tool.ToolExecutionRequest;
 import com.cmagent.core.tool.ToolExecutionResult;
 import com.cmagent.core.tool.ToolInvocationSource;
+import com.cmagent.core.tool.InMemoryToolRegistry;
 import com.cmagent.core.tool.ToolRegistry;
 import com.cmagent.server.runtime.http.DynamicHttpToolExecutor;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +26,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,6 +55,8 @@ class GovernedToolExecutionServiceTest {
     private DynamicHttpToolExecutor http;
     @Mock
     private ToolRegistry registry;
+    @Mock
+    private ToolRegistry.ToolRegistrationSnapshot registrationSnapshot;
 
     private GovernedToolExecutionService service;
 
@@ -91,14 +100,15 @@ class GovernedToolExecutionServiceTest {
     @Test
     void localExecutionRequiresSameTenantIdAndNameInRegistryBeforeExecution() {
         ToolDefinition tool = tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "echo", true, "");
-        when(registry.find(TOOL_ID)).thenReturn(Optional.of(tool));
+        when(registry.snapshot(TOOL_ID)).thenReturn(Optional.of(registrationSnapshot));
+        when(registrationSnapshot.definition()).thenReturn(tool);
         ToolExecutionRequest request = request(ToolInvocationSource.MCP);
-        when(registry.execute(request)).thenReturn(ToolExecutionResult.succeeded("已执行", null));
+        when(registrationSnapshot.execute(request)).thenReturn(ToolExecutionResult.succeeded("已执行", null));
 
         ToolExecutionResult result = service.execute(tool, request);
 
         assertThat(result).isEqualTo(ToolExecutionResult.succeeded("已执行", null));
-        verify(registry).execute(request);
+        verify(registrationSnapshot).execute(request);
         verifyNoInteractions(configs, http);
     }
 
@@ -114,19 +124,87 @@ class GovernedToolExecutionServiceTest {
     @Test
     void localExecutionRejectsMissingOrInconsistentRegistryDefinitions() {
         ToolDefinition tool = tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "echo", true, "");
-        when(registry.find(TOOL_ID)).thenReturn(
+        when(registry.snapshot(TOOL_ID)).thenReturn(
                 Optional.empty(),
-                Optional.of(tool(ToolType.LOCAL, OTHER_TENANT_ID, TOOL_ID, "echo", true, "")),
-                Optional.of(tool(ToolType.LOCAL, TENANT_ID, OTHER_TOOL_ID, "echo", true, "")),
-                Optional.of(tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "other", true, ""))
+                Optional.of(snapshot(tool(ToolType.LOCAL, OTHER_TENANT_ID, TOOL_ID, "echo", true, ""))),
+                Optional.of(snapshot(tool(ToolType.LOCAL, TENANT_ID, OTHER_TOOL_ID, "echo", true, ""))),
+                Optional.of(snapshot(tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "other", true, "")))
         );
 
         for (int ignored = 0; ignored < 4; ignored++) {
             assertUnavailable(service.execute(tool, request(ToolInvocationSource.DEBUG)));
         }
 
-        verify(registry, never()).execute(any());
+        verify(registrationSnapshot, never()).execute(any());
         verifyNoInteractions(configs, http);
+    }
+
+    @Test
+    void localPreparedExecutionUsesCapturedSnapshotAfterRegistrationReplacement() throws Exception {
+        InMemoryToolRegistry localRegistry = new InMemoryToolRegistry();
+        GovernedToolExecutionService localService = new GovernedToolExecutionService(configs, http, localRegistry);
+        ToolDefinition original = tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "echo", true, "");
+        ToolDefinition replacement = tool(ToolType.LOCAL, OTHER_TENANT_ID, TOOL_ID, "replacement", true, "");
+        AtomicInteger originalExecutions = new AtomicInteger();
+        AtomicInteger replacementExecutions = new AtomicInteger();
+        localRegistry.register(original, ignored -> {
+            originalExecutions.incrementAndGet();
+            return ToolExecutionResult.succeeded("原始执行器", null);
+        });
+        CountDownLatch prepared = new CountDownLatch(1);
+        CountDownLatch replacementComplete = new CountDownLatch(1);
+        AtomicReference<GovernedToolExecutionService.PreparedToolExecution> token = new AtomicReference<>();
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            Future<ToolExecutionResult> result = executor.submit(() -> {
+                token.set(localService.prepare(original, request(ToolInvocationSource.DEBUG)));
+                prepared.countDown();
+                replacementComplete.await();
+                return token.get().execute();
+            });
+            assertThat(prepared.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            localRegistry.register(replacement, ignored -> {
+                replacementExecutions.incrementAndGet();
+                return ToolExecutionResult.succeeded("替换执行器", null);
+            });
+            replacementComplete.countDown();
+
+            assertThat(result.get()).isEqualTo(ToolExecutionResult.succeeded("原始执行器", null));
+        }
+
+        assertThat(originalExecutions).hasValue(1);
+        assertThat(replacementExecutions).hasValue(0);
+    }
+
+    @Test
+    void preparedExecutionConsumesReadyTokenOnlyOnceAcrossConcurrentCalls() throws Exception {
+        AtomicInteger executions = new AtomicInteger();
+        GovernedToolExecutionService.PreparedToolExecution token =
+                GovernedToolExecutionService.PreparedToolExecution.ready(() -> {
+                    executions.incrementAndGet();
+                    return ToolExecutionResult.succeeded("已执行", null);
+                });
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<ToolExecutionResult> first = executor.submit(() -> {
+                start.await();
+                return token.execute();
+            });
+            Future<ToolExecutionResult> second = executor.submit(() -> {
+                start.await();
+                return token.execute();
+            });
+            start.countDown();
+
+            assertThat(List.of(first.get(), second.get()))
+                    .containsExactlyInAnyOrder(
+                            ToolExecutionResult.succeeded("已执行", null),
+                            ToolExecutionResult.failed("工具不可用", null)
+                    );
+        }
+
+        assertThat(executions).hasValue(1);
     }
 
     private static Stream<ToolDefinition> unavailableTools() {
@@ -151,6 +229,12 @@ class GovernedToolExecutionServiceTest {
     private static HttpToolConfig config(UUID tenantId, UUID toolId, String urlTemplate) {
         return new HttpToolConfig(
                 tenantId, toolId, HttpToolMethod.GET, urlTemplate, "{}", List.of(), java.util.Map.of(), Duration.ofSeconds(1)
+        );
+    }
+
+    private static ToolRegistry.ToolRegistrationSnapshot snapshot(ToolDefinition definition) {
+        return new ToolRegistry.ToolRegistrationSnapshot(
+                definition, ignored -> ToolExecutionResult.succeeded("不应执行", null)
         );
     }
 

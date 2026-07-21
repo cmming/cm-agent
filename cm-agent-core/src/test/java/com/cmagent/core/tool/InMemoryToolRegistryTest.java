@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -139,6 +140,39 @@ class InMemoryToolRegistryTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.outputSummary()).isEqualTo("工具未注册 " + toolId);
+    }
+
+    @Test
+    void snapshotCapturesOriginalRegistrationAcrossSameIdReplacement() {
+        UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID otherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        UUID toolId = UUID.fromString("00000000-0000-0000-0000-000000000110");
+        ToolDefinition original = new ToolDefinition(
+                toolId, tenantId, "echo", "原始工具", ToolType.LOCAL,
+                "{}", ToolRiskLevel.LOW, true, "", "tester", "tester");
+        ToolDefinition replacement = new ToolDefinition(
+                toolId, otherTenantId, "replacement", "替换工具", ToolType.LOCAL,
+                "{}", ToolRiskLevel.LOW, true, "", "tester", "tester");
+        AtomicInteger originalExecutions = new AtomicInteger();
+        AtomicInteger replacementExecutions = new AtomicInteger();
+        InMemoryToolRegistry registry = new InMemoryToolRegistry();
+        registry.register(original, request -> {
+            originalExecutions.incrementAndGet();
+            return ToolExecutionResult.succeeded("原始执行器", null);
+        });
+
+        ToolRegistry.ToolRegistrationSnapshot snapshot = registry.snapshot(toolId).orElseThrow();
+        registry.register(replacement, request -> {
+            replacementExecutions.incrementAndGet();
+            return ToolExecutionResult.succeeded("替换执行器", null);
+        });
+
+        ToolExecutionResult result = snapshot.execute(new ToolExecutionRequest(toolId, "{}"));
+
+        assertThat(snapshot.definition()).isEqualTo(original);
+        assertThat(result).isEqualTo(ToolExecutionResult.succeeded("原始执行器", null));
+        assertThat(originalExecutions).hasValue(1);
+        assertThat(replacementExecutions).hasValue(0);
     }
 
     @Test

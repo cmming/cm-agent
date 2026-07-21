@@ -31,6 +31,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -217,7 +218,11 @@ class GovernedToolInvocationServiceTest {
     @Test
     void successfulInvocationUsesCompleteContextAndWritesAuditsInGovernedOrder() {
         arrangeAllowedTool();
-        when(executionService.prepare(eq(tool), any())).thenReturn(prepared(new ToolExecutionResult("工具输出", true)));
+        AtomicInteger executions = new AtomicInteger();
+        when(executionService.prepare(eq(tool), any())).thenReturn(prepared(() -> {
+            executions.incrementAndGet();
+            return new ToolExecutionResult("工具输出", true);
+        }));
 
         ToolInvocationResult result = service.invoke(request());
 
@@ -236,6 +241,7 @@ class GovernedToolInvocationServiceTest {
                 TENANT_ID, AGENT_ID, principal, RUN_ID, TOOL_CALL_ID, TOOL_ID, "{\"text\":\"hello\"}"
         ));
         assertThat(executionRequest.getValue().source()).isEqualTo(ToolInvocationSource.AGENT);
+        assertThat(executions).hasValue(1);
     }
 
     @Test
