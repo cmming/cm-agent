@@ -59,7 +59,7 @@ final class HttpToolSchemaNavigator {
     void validateTerminalLocalReferences(JsonNode rootSchema, String sourcePointer) {
         for (SchemaNode sourceNode : resolveSourceNodes(rootSchema, sourcePointer)) {
             validateTerminalLocalReferences(
-                    rootSchema, sourceNode, new LinkedHashSet<>(), new LinkedHashSet<>(), new HashSet<>()
+                    rootSchema, sourceNode, new LinkedHashSet<>(), new LinkedHashSet<>()
             );
         }
     }
@@ -527,10 +527,9 @@ final class HttpToolSchemaNavigator {
             JsonNode rootSchema,
             SchemaNode current,
             Set<List<Object>> directReferenceChain,
-            Set<List<Object>> visitingPaths,
-            Set<List<Object>> validatedPaths
+            Set<List<Object>> visitingPaths
     ) {
-        if (!current.node().isObject() || validatedPaths.contains(current.schemaPath())) {
+        if (!current.node().isObject()) {
             return;
         }
         if (!visitingPaths.add(current.schemaPath())) {
@@ -546,38 +545,40 @@ final class HttpToolSchemaNavigator {
                     throw new IllegalArgumentException("JSON Schema 本地引用存在循环");
                 }
                 validateTerminalLocalReferences(
-                        rootSchema, referenced, nextReferenceChain, visitingPaths, validatedPaths
+                        rootSchema, referenced, nextReferenceChain, visitingPaths
                 );
             }
 
             for (String keyword : List.of(
-                    "properties", "patternProperties", "dependentSchemas", "$defs", "definitions"
+                    "properties", "patternProperties", "$defs", "definitions"
             )) {
-                validateSchemaMapChildren(rootSchema, current, keyword, visitingPaths, validatedPaths);
+                validateSchemaMapChildren(rootSchema, current, keyword, Set.of(), visitingPaths);
             }
             for (String keyword : List.of(
                     "additionalProperties", "unevaluatedProperties", "propertyNames", "items", "contains"
             )) {
                 validateSchemaChild(
-                        rootSchema, current, keyword, Set.of(), visitingPaths, validatedPaths
+                        rootSchema, current, keyword, Set.of(), visitingPaths
                 );
             }
             Set<List<Object>> sameInstanceReferenceChain = new LinkedHashSet<>(directReferenceChain);
             sameInstanceReferenceChain.add(current.schemaPath());
+            validateSchemaMapChildren(
+                    rootSchema, current, "dependentSchemas", sameInstanceReferenceChain, visitingPaths
+            );
             for (String keyword : List.of("not", "if", "then", "else")) {
                 validateSchemaChild(
-                        rootSchema, current, keyword, sameInstanceReferenceChain, visitingPaths, validatedPaths
+                        rootSchema, current, keyword, sameInstanceReferenceChain, visitingPaths
                 );
             }
             validateSchemaArrayChildren(
-                    rootSchema, current, "prefixItems", Set.of(), visitingPaths, validatedPaths
+                    rootSchema, current, "prefixItems", Set.of(), visitingPaths
             );
             for (String keyword : List.of("allOf", "anyOf", "oneOf")) {
                 validateSchemaArrayChildren(
-                        rootSchema, current, keyword, sameInstanceReferenceChain, visitingPaths, validatedPaths
+                        rootSchema, current, keyword, sameInstanceReferenceChain, visitingPaths
                 );
             }
-            validatedPaths.add(current.schemaPath());
         } finally {
             visitingPaths.remove(current.schemaPath());
         }
@@ -587,8 +588,8 @@ final class HttpToolSchemaNavigator {
             JsonNode rootSchema,
             SchemaNode current,
             String keyword,
-            Set<List<Object>> visitingPaths,
-            Set<List<Object>> validatedPaths
+            Set<List<Object>> directReferenceChain,
+            Set<List<Object>> visitingPaths
     ) {
         JsonNode children = current.node().get(keyword);
         if (children == null || !children.isObject()) {
@@ -597,9 +598,8 @@ final class HttpToolSchemaNavigator {
         children.fields().forEachRemaining(entry -> validateTerminalLocalReferences(
                 rootSchema,
                 current.append(keyword, children).append(entry.getKey(), entry.getValue()),
-                new LinkedHashSet<>(),
-                visitingPaths,
-                validatedPaths
+                new LinkedHashSet<>(directReferenceChain),
+                visitingPaths
         ));
     }
 
@@ -608,8 +608,7 @@ final class HttpToolSchemaNavigator {
             SchemaNode current,
             String keyword,
             Set<List<Object>> directReferenceChain,
-            Set<List<Object>> visitingPaths,
-            Set<List<Object>> validatedPaths
+            Set<List<Object>> visitingPaths
     ) {
         JsonNode child = current.node().get(keyword);
         if (child == null || !child.isContainerNode() && !child.isBoolean()) {
@@ -619,8 +618,7 @@ final class HttpToolSchemaNavigator {
                 rootSchema,
                 current.append(keyword, child),
                 new LinkedHashSet<>(directReferenceChain),
-                visitingPaths,
-                validatedPaths
+                visitingPaths
         );
     }
 
@@ -629,8 +627,7 @@ final class HttpToolSchemaNavigator {
             SchemaNode current,
             String keyword,
             Set<List<Object>> directReferenceChain,
-            Set<List<Object>> visitingPaths,
-            Set<List<Object>> validatedPaths
+            Set<List<Object>> visitingPaths
     ) {
         JsonNode children = current.node().get(keyword);
         if (children == null || !children.isArray()) {
@@ -641,8 +638,7 @@ final class HttpToolSchemaNavigator {
                     rootSchema,
                     current.append(keyword, children).append(index, children.get(index)),
                     new LinkedHashSet<>(directReferenceChain),
-                    visitingPaths,
-                    validatedPaths
+                    visitingPaths
             );
         }
     }

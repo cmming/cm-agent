@@ -454,7 +454,10 @@ class HttpToolConfigValidatorTest {
                 "allOf", "{\"allOf\":[{\"$ref\":\"#/$defs/loop\"}]}",
                 "anyOf", "{\"anyOf\":[{\"$ref\":\"#/$defs/loop\"}]}",
                 "oneOf", "{\"oneOf\":[{\"$ref\":\"#/$defs/loop\"}]}",
-                "not", "{\"not\":{\"$ref\":\"#/$defs/loop\"}}"
+                "not", "{\"not\":{\"$ref\":\"#/$defs/loop\"}}",
+                "if", "{\"if\":{\"$ref\":\"#/$defs/loop\"}}",
+                "then", "{\"then\":{\"$ref\":\"#/$defs/loop\"}}",
+                "else", "{\"else\":{\"$ref\":\"#/$defs/loop\"}}"
         );
 
         wrappedLoops.forEach((keyword, loopSchema) -> {
@@ -469,6 +472,47 @@ class HttpToolConfigValidatorTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("JSON Schema 本地引用存在循环");
         });
+    }
+
+    @Test
+    void treatsDependentSchemasAsSameInstanceApplicator() {
+        HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
+                "", "/payload", false, "");
+        String dependentLoop = """
+                {"type":"object","$defs":{"loop":{"dependentSchemas":{
+                  "x":{"$ref":"#/$defs/loop"}
+                }}},"properties":{"payload":{"$ref":"#/$defs/loop"}}}
+                """;
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", dependentLoop, List.of(body))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("JSON Schema 本地引用存在循环");
+
+        String legalDependentSchema = """
+                {"type":"object","$defs":{"rule":{"type":"object","dependentSchemas":{
+                  "x":{"required":["y"]}
+                }}},"properties":{"payload":{"$ref":"#/$defs/rule"}}}
+                """;
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", legalDependentSchema, List.of(body))))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void doesNotReuseValidatedReferencePathAcrossDifferentChainContexts() {
+        HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
+                "", "/payload", false, "");
+        String mixedPathLoop = """
+                {"type":"object","$defs":{
+                  "loop":{"properties":{"child":{"$ref":"#/$defs/next"}},
+                          "allOf":[{"$ref":"#/$defs/next"}]},
+                  "next":{"$ref":"#/$defs/loop"}
+                },"properties":{"payload":{"$ref":"#/$defs/loop"}}}
+                """;
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", mixedPathLoop, List.of(body))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("JSON Schema 本地引用存在循环");
     }
 
     @Test
