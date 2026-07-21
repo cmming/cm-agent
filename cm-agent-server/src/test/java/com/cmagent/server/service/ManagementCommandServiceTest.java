@@ -3,6 +3,8 @@ package com.cmagent.server.service;
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.repository.AgentDefinitionRepository;
+import com.cmagent.core.repository.HttpToolConfigRepository;
+import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.server.audit.AuditAppender;
@@ -33,6 +35,12 @@ class ManagementCommandServiceTest {
 
     @Mock
     private ToolGrantRepository grantRepository;
+
+    @Mock
+    private HttpToolConfigRepository httpToolConfigRepository;
+
+    @Mock
+    private McpToolPublicationRepository mcpToolPublicationRepository;
 
     @Mock
     private AuditAppender auditAppender;
@@ -66,7 +74,13 @@ class ManagementCommandServiceTest {
                 .append(any(), any(), any(), any(), any(), any(), any());
 
         ManagementCommandService service = new ManagementCommandService(
-                agentRepository, toolRepository, grantRepository, auditAppender, null
+                agentRepository,
+                toolRepository,
+                httpToolConfigRepository,
+                mcpToolPublicationRepository,
+                grantRepository,
+                auditAppender,
+                null
         );
         PrincipalRef principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("agent:write"));
 
