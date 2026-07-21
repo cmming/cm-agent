@@ -196,9 +196,9 @@ class JdbcRuntimeRepositoryMySqlTest {
             McpToolPublication publication,
             CountDownLatch ready,
             CountDownLatch start
-    ) throws InterruptedException {
+    ) {
         ready.countDown();
-        start.await();
+        awaitStart(start);
         repository.save(publication);
     }
 
@@ -207,10 +207,19 @@ class JdbcRuntimeRepositoryMySqlTest {
             HttpToolConfig config,
             CountDownLatch ready,
             CountDownLatch start
-    ) throws InterruptedException {
+    ) {
         ready.countDown();
-        start.await();
+        awaitStart(start);
         repository.save(config);
+    }
+
+    private static void awaitStart(CountDownLatch start) {
+        try {
+            start.await();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("并发保存测试被中断", exception);
+        }
     }
 
     private static RunToolCall toolCall(UUID id, UUID runId, UUID toolId) {

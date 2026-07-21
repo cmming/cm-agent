@@ -113,10 +113,19 @@ class JdbcMcpToolPublicationRepositoryTest {
             McpToolPublication publication,
             CountDownLatch ready,
             CountDownLatch start
-    ) throws InterruptedException {
+    ) {
         ready.countDown();
-        start.await();
+        awaitStart(start);
         repository.save(publication);
+    }
+
+    private static void awaitStart(CountDownLatch start) {
+        try {
+            start.await();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("并发保存测试被中断", exception);
+        }
     }
 
     private static JdbcMcpToolPublicationRepository repository(DataSource dataSource) {
