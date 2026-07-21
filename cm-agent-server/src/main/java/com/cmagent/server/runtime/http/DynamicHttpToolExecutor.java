@@ -139,12 +139,22 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
             return ToolExecutionResult.failed("HTTP 超时配置不允许", null);
         }
         Deadline deadline = Deadline.start(config.timeout());
-        ResolvedHeaders secretHeaders = resolveSecretHeaders(config);
+        ResolvedHeaders secretHeaders;
+        try {
+            secretHeaders = runWithinDeadline(() -> resolveSecretHeaders(config), deadline, () -> { });
+        } catch (HttpTimeoutException exception) {
+            return ToolExecutionResult.failed("HTTP 工具调用超时", null);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return ToolExecutionResult.failed("HTTP 请求中断", null);
+        } catch (Exception exception) {
+            return ToolExecutionResult.failed("HTTP Secret 不可用", null);
+        }
         if (secretHeaders.failure() != null) {
             return secretHeaders.failure();
         }
         if (deadline.expired()) {
-            return ToolExecutionResult.failed("HTTP 请求超时", null);
+            return ToolExecutionResult.failed("HTTP 工具调用超时", null);
         }
 
         PreparedHttpToolRequest prepared;

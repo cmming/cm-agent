@@ -32,7 +32,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -105,6 +107,95 @@ class DynamicHttpToolExecutorTest {
         ToolExecutionResult result = executor.execute(tool(config.urlTemplate()), config, request("{}"));
 
         assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP Secret 不可用", null));
+        assertThat(dnsResolutions.get()).isZero();
+        assertThat(hits.get()).isZero();
+    }
+
+    @Test
+    void blockingSecretProviderUsesCallDeadlineWithoutDnsOrNetwork() throws Exception {
+        AtomicInteger hits = new AtomicInteger();
+        CountDownLatch interrupted = new CountDownLatch(1);
+        server.createContext("/blocking-secret", exchange -> {
+            hits.incrementAndGet();
+            respond(exchange, 200, "text/plain", "不应访问");
+        });
+        HttpToolSecretProvider blockingProvider = (tenantId, secretRef) -> {
+            try {
+                new CountDownLatch(1).await(1, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                interrupted.countDown();
+                Thread.currentThread().interrupt();
+            }
+            return java.util.Optional.of("不得发送");
+        };
+        HttpToolConfig config = config(HttpToolMethod.GET, url("/blocking-secret"), List.of(),
+                Map.of("Authorization", "secret/blocking-provider-ref"), Duration.ofMillis(100));
+        long started = System.nanoTime();
+
+        ToolExecutionResult result = executor(blockingProvider).execute(
+                tool(config.urlTemplate()), config, request("{}"));
+
+        assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP 工具调用超时", null));
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofMillis(500));
+        assertThat(interrupted.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(result.toString()).doesNotContain("blocking-provider-ref", "不得发送");
+        assertThat(dnsResolutions.get()).isZero();
+        assertThat(hits.get()).isZero();
+    }
+
+    @Test
+    void multipleSecretLookupsShareOneCallDeadline() throws Exception {
+        AtomicInteger hits = new AtomicInteger();
+        AtomicInteger lookups = new AtomicInteger();
+        CountDownLatch interrupted = new CountDownLatch(1);
+        server.createContext("/multiple-secrets", exchange -> {
+            hits.incrementAndGet();
+            respond(exchange, 200, "text/plain", "不应访问");
+        });
+        HttpToolSecretProvider cumulativeProvider = (tenantId, secretRef) -> {
+            lookups.incrementAndGet();
+            try {
+                Thread.sleep(120);
+            } catch (InterruptedException exception) {
+                interrupted.countDown();
+                Thread.currentThread().interrupt();
+            }
+            return java.util.Optional.of("不得发送");
+        };
+        HttpToolConfig config = config(HttpToolMethod.GET, url("/multiple-secrets"), List.of(),
+                Map.of("Authorization", "secret/first", "X-Api-Key", "secret/second"),
+                Duration.ofMillis(200));
+        long started = System.nanoTime();
+
+        ToolExecutionResult result = executor(cumulativeProvider).execute(
+                tool(config.urlTemplate()), config, request("{}"));
+
+        assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP 工具调用超时", null));
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofMillis(450));
+        assertThat(lookups.get()).isEqualTo(2);
+        assertThat(interrupted.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(dnsResolutions.get()).isZero();
+        assertThat(hits.get()).isZero();
+    }
+
+    @Test
+    void secretProviderExceptionUsesFixedFailureWithoutLeakingDetails() {
+        AtomicInteger hits = new AtomicInteger();
+        server.createContext("/secret-exception", exchange -> {
+            hits.incrementAndGet();
+            respond(exchange, 200, "text/plain", "不应访问");
+        });
+        HttpToolSecretProvider failingProvider = (tenantId, secretRef) -> {
+            throw new IllegalStateException("provider 异常包含 secret/provider-exception-ref");
+        };
+        HttpToolConfig config = config(HttpToolMethod.GET, url("/secret-exception"), List.of(),
+                Map.of("Authorization", "secret/provider-exception-ref"), Duration.ofSeconds(1));
+
+        ToolExecutionResult result = executor(failingProvider).execute(
+                tool(config.urlTemplate()), config, request("{}"));
+
+        assertThat(result).isEqualTo(ToolExecutionResult.failed("HTTP Secret 不可用", null));
+        assertThat(result.toString()).doesNotContain("provider-exception-ref", "provider 异常");
         assertThat(dnsResolutions.get()).isZero();
         assertThat(hits.get()).isZero();
     }
