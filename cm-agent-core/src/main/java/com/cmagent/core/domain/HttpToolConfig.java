@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 public record HttpToolConfig(
         UUID tenantId,
@@ -16,6 +17,9 @@ public record HttpToolConfig(
         Map<String, String> secretHeaders,
         Duration timeout
 ) {
+    private static final Pattern SECRET_REFERENCE = Pattern.compile(
+            "secret/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*"
+    );
 
     public HttpToolConfig {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
@@ -29,6 +33,9 @@ public record HttpToolConfig(
         }
         parameterMappings = List.copyOf(parameterMappings == null ? List.of() : parameterMappings);
         secretHeaders = Map.copyOf(secretHeaders == null ? Map.of() : secretHeaders);
+        if (secretHeaders.values().stream().anyMatch(value -> !SECRET_REFERENCE.matcher(value).matches())) {
+            throw new IllegalArgumentException("secretHeaders 必须使用 secret/ 开头的引用");
+        }
         if (timeout == null || timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException("timeout 必须为正数");
         }

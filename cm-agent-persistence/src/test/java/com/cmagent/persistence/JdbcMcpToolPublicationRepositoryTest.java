@@ -6,12 +6,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -27,10 +33,11 @@ class JdbcMcpToolPublicationRepositoryTest {
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
     private JdbcMcpToolPublicationRepository repository;
+    private DataSource dataSource;
 
     @BeforeEach
     void setUp() {
-        DataSource dataSource = new DriverManagerDataSource(
+        dataSource = new DriverManagerDataSource(
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
                 .cleanDisabled(false).load().clean();
@@ -39,7 +46,7 @@ class JdbcMcpToolPublicationRepositoryTest {
         JdbcClient jdbc = JdbcClient.create(dataSource);
         JdbcHttpToolConfigRepositoryTest.insertTool(jdbc, TOOL_A_DISABLED, TENANT_A, "http-a-disabled",
                 new java.sql.Timestamp(java.time.Instant.parse("2026-07-21T00:00:00Z").toEpochMilli()));
-        repository = new JdbcMcpToolPublicationRepository(JdbcClient.create(dataSource));
+        repository = repository(dataSource);
     }
 
     @Test
@@ -75,5 +82,46 @@ class JdbcMcpToolPublicationRepositoryTest {
 
         assertThat(repository.findByTenantAndToolId(TENANT_A, TOOL_A)).isEmpty();
         assertThat(repository.findByTenantAndToolId(TENANT_B, TOOL_B)).contains(otherTenant);
+    }
+
+    @Test
+    void concurrentFirstSavesAreIdempotent() throws Exception {
+        McpToolPublication enabled = new McpToolPublication(TENANT_A, TOOL_A, true, "admin-a");
+        McpToolPublication disabled = new McpToolPublication(TENANT_A, TOOL_A, false, "admin-b");
+        JdbcMcpToolPublicationRepository firstRepository = repository(dataSource);
+        JdbcMcpToolPublicationRepository secondRepository = repository(dataSource);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            var firstSave = executor.submit(() -> saveAfterStart(firstRepository, enabled, ready, start));
+            var secondSave = executor.submit(() -> saveAfterStart(secondRepository, disabled, ready, start));
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            firstSave.get(20, TimeUnit.SECONDS);
+            secondSave.get(20, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(repository.findByTenantAndToolId(TENANT_A, TOOL_A)).get().isIn(enabled, disabled);
+    }
+
+    private static void saveAfterStart(
+            JdbcMcpToolPublicationRepository repository,
+            McpToolPublication publication,
+            CountDownLatch ready,
+            CountDownLatch start
+    ) throws InterruptedException {
+        ready.countDown();
+        start.await();
+        repository.save(publication);
+    }
+
+    private static JdbcMcpToolPublicationRepository repository(DataSource dataSource) {
+        return new JdbcMcpToolPublicationRepository(
+                JdbcClient.create(dataSource), new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+        );
     }
 }

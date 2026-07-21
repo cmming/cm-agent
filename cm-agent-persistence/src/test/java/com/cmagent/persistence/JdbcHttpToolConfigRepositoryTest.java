@@ -121,7 +121,7 @@ class JdbcHttpToolConfigRepositoryTest {
             executor.shutdownNow();
         }
 
-        assertThat(repository.findByTenantAndToolId(TENANT_A, TOOL_A)).containsAnyOf(first, second);
+        assertThat(repository.findByTenantAndToolId(TENANT_A, TOOL_A)).get().isIn(first, second);
     }
 
     private static void saveAfterStart(

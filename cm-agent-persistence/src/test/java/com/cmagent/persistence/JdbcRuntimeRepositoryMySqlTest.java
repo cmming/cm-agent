@@ -74,7 +74,9 @@ class JdbcRuntimeRepositoryMySqlTest {
                 jdbcClient, new com.fasterxml.jackson.databind.ObjectMapper(),
                 new TransactionTemplate(new DataSourceTransactionManager(dataSource))
         );
-        mcpToolPublicationRepository = new JdbcMcpToolPublicationRepository(jdbcClient);
+        mcpToolPublicationRepository = new JdbcMcpToolPublicationRepository(
+                jdbcClient, new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+        );
     }
 
     @Test
@@ -160,7 +162,44 @@ class JdbcRuntimeRepositoryMySqlTest {
             executor.shutdownNow();
         }
 
-        assertThat(httpToolConfigRepository.findByTenantAndToolId(TENANT_A, TOOL_A)).containsAnyOf(first, second);
+        assertThat(httpToolConfigRepository.findByTenantAndToolId(TENANT_A, TOOL_A)).get().isIn(first, second);
+    }
+
+    @Test
+    void mysqlConcurrentFirstPublicationSavesAreIdempotent() throws Exception {
+        McpToolPublication enabled = new McpToolPublication(TENANT_A, TOOL_A, true, "tester-a");
+        McpToolPublication disabled = new McpToolPublication(TENANT_A, TOOL_A, false, "tester-b");
+        JdbcMcpToolPublicationRepository firstRepository = new JdbcMcpToolPublicationRepository(
+                JdbcClient.create(dataSource), new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+        JdbcMcpToolPublicationRepository secondRepository = new JdbcMcpToolPublicationRepository(
+                JdbcClient.create(dataSource), new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            var firstSave = executor.submit(() -> savePublicationAfterStart(firstRepository, enabled, ready, start));
+            var secondSave = executor.submit(() -> savePublicationAfterStart(secondRepository, disabled, ready, start));
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            firstSave.get(20, TimeUnit.SECONDS);
+            secondSave.get(20, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(mcpToolPublicationRepository.findByTenantAndToolId(TENANT_A, TOOL_A)).get().isIn(enabled, disabled);
+    }
+
+    private static void savePublicationAfterStart(
+            JdbcMcpToolPublicationRepository repository,
+            McpToolPublication publication,
+            CountDownLatch ready,
+            CountDownLatch start
+    ) throws InterruptedException {
+        ready.countDown();
+        start.await();
+        repository.save(publication);
     }
 
     private static void saveAfterStart(

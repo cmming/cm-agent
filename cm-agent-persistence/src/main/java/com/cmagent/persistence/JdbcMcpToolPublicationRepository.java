@@ -2,8 +2,8 @@ package com.cmagent.persistence;
 
 import com.cmagent.core.domain.McpToolPublication;
 import com.cmagent.core.repository.McpToolPublicationRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -16,14 +16,20 @@ import java.util.UUID;
 
 public class JdbcMcpToolPublicationRepository implements McpToolPublicationRepository {
     private final JdbcClient jdbcClient;
+    private final TransactionTemplate transactionTemplate;
 
-    public JdbcMcpToolPublicationRepository(JdbcClient jdbcClient, ObjectMapper objectMapper) {
+    public JdbcMcpToolPublicationRepository(JdbcClient jdbcClient, TransactionTemplate transactionTemplate) {
         this.jdbcClient = Objects.requireNonNull(jdbcClient, "jdbcClient 不能为空");
-        Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
+        this.transactionTemplate = Objects.requireNonNull(transactionTemplate, "transactionTemplate 不能为空");
     }
 
     @Override
     public McpToolPublication save(McpToolPublication publication) {
+        return transactionTemplate.execute(status -> saveWithinTransaction(publication));
+    }
+
+    private McpToolPublication saveWithinTransaction(McpToolPublication publication) {
+        lockToolDefinition(publication.tenantId(), publication.toolId());
         Timestamp now = Timestamp.from(Instant.now());
         int updated = jdbcClient.sql("""
                         UPDATE tool_mcp_publications
@@ -55,6 +61,23 @@ public class JdbcMcpToolPublicationRepository implements McpToolPublicationRepos
                     .update();
         }
         return publication;
+    }
+
+    private void lockToolDefinition(UUID tenantId, UUID toolId) {
+        boolean exists = jdbcClient.sql("""
+                        SELECT id
+                        FROM tool_definitions
+                        WHERE tenant_id = :tenantId AND id = :toolId
+                        FOR UPDATE
+                        """)
+                .param("tenantId", tenantId.toString())
+                .param("toolId", toolId.toString())
+                .query((resultSet, rowNum) -> resultSet.getString("id"))
+                .optional()
+                .isPresent();
+        if (!exists) {
+            throw new IllegalArgumentException("MCP 工具不存在或不属于当前租户");
+        }
     }
 
     @Override

@@ -8,6 +8,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -26,14 +27,25 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
 
     private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
 
-    public JdbcHttpToolConfigRepository(JdbcClient jdbcClient, ObjectMapper objectMapper) {
+    public JdbcHttpToolConfigRepository(
+            JdbcClient jdbcClient,
+            ObjectMapper objectMapper,
+            TransactionTemplate transactionTemplate
+    ) {
         this.jdbcClient = Objects.requireNonNull(jdbcClient, "jdbcClient 不能为空");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
+        this.transactionTemplate = Objects.requireNonNull(transactionTemplate, "transactionTemplate 不能为空");
     }
 
     @Override
     public HttpToolConfig save(HttpToolConfig config) {
+        return transactionTemplate.execute(status -> saveWithinTransaction(config));
+    }
+
+    private HttpToolConfig saveWithinTransaction(HttpToolConfig config) {
+        lockToolDefinition(config.tenantId(), config.toolId());
         Timestamp now = Timestamp.from(Instant.now());
         int updated = jdbcClient.sql("""
                         UPDATE tool_http_configs
@@ -79,6 +91,23 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
                     .update();
         }
         return config;
+    }
+
+    private void lockToolDefinition(UUID tenantId, UUID toolId) {
+        boolean exists = jdbcClient.sql("""
+                        SELECT id
+                        FROM tool_definitions
+                        WHERE tenant_id = :tenantId AND id = :toolId
+                        FOR UPDATE
+                        """)
+                .param("tenantId", tenantId.toString())
+                .param("toolId", toolId.toString())
+                .query((resultSet, rowNum) -> resultSet.getString("id"))
+                .optional()
+                .isPresent();
+        if (!exists) {
+            throw new IllegalArgumentException("HTTP 工具不存在或不属于当前租户");
+        }
     }
 
     @Override

@@ -117,13 +117,20 @@ public class JdbcPersistenceConfiguration {
     }
 
     @Bean
-    HttpToolConfigRepository jdbcHttpToolConfigRepository(JdbcClient cmAgentJdbcClient, ObjectMapper objectMapper) {
-        return new JdbcHttpToolConfigRepository(cmAgentJdbcClient, objectMapper);
+    HttpToolConfigRepository jdbcHttpToolConfigRepository(
+            JdbcClient cmAgentJdbcClient,
+            ObjectMapper objectMapper,
+            TransactionTemplate cmAgentTransactionTemplate
+    ) {
+        return new JdbcHttpToolConfigRepository(cmAgentJdbcClient, objectMapper, cmAgentTransactionTemplate);
     }
 
     @Bean
-    McpToolPublicationRepository jdbcMcpToolPublicationRepository(JdbcClient cmAgentJdbcClient, ObjectMapper objectMapper) {
-        return new JdbcMcpToolPublicationRepository(cmAgentJdbcClient, objectMapper);
+    McpToolPublicationRepository jdbcMcpToolPublicationRepository(
+            JdbcClient cmAgentJdbcClient,
+            TransactionTemplate cmAgentTransactionTemplate
+    ) {
+        return new JdbcMcpToolPublicationRepository(cmAgentJdbcClient, cmAgentTransactionTemplate);
     }
 
     @Bean
