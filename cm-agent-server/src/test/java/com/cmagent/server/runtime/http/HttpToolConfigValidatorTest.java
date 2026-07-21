@@ -14,6 +14,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 class HttpToolConfigValidatorTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -516,6 +517,29 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    void reusesCompletedReferenceTraversalForRepeatedDag() {
+        HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
+                "", "/payload", false, "");
+        String schema = repeatedReferenceDag(20);
+
+        assertTimeoutPreemptively(Duration.ofSeconds(3), () -> validator.validate(config(
+                HttpToolMethod.POST, "https://api.example.test/items", schema, List.of(body)
+        )));
+    }
+
+    @Test
+    void rejectsSchemaTraversalThatExceedsComplexityBudget() {
+        HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
+                "", "/payload", false, "");
+        String schema = wideSchema(10_001);
+
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", schema, List.of(body))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("JSON Schema 遍历复杂度超过安全上限");
+    }
+
+    @Test
     void enforcesArrayIndexSafetyLimitWithoutRejectingNumericObjectProperties() {
         String arraySchema = """
                 {"type":"object","properties":{"items":{"type":"array","items":{"type":"string"}}}}
@@ -680,6 +704,29 @@ class HttpToolConfigValidatorTest {
     ) {
         return new HttpToolConfig(TENANT_ID, TOOL_ID, method, urlTemplate, schema, mappings, Map.of(),
                 Duration.ofSeconds(5));
+    }
+
+    private static String repeatedReferenceDag(int depth) {
+        StringBuilder definitions = new StringBuilder("\"n0\":{\"type\":\"string\"}");
+        for (int index = 1; index <= depth; index++) {
+            definitions.append(",\"n").append(index).append("\":{\"allOf\":[")
+                    .append("{\"$ref\":\"#/$defs/n").append(index - 1).append("\"},")
+                    .append("{\"$ref\":\"#/$defs/n").append(index - 1).append("\"}]}");
+        }
+        return "{\"type\":\"object\",\"$defs\":{" + definitions
+                + "},\"properties\":{\"payload\":{\"$ref\":\"#/$defs/n" + depth + "\"}}}";
+    }
+
+    private static String wideSchema(int width) {
+        StringBuilder branches = new StringBuilder();
+        for (int index = 0; index < width; index++) {
+            if (index > 0) {
+                branches.append(',');
+            }
+            branches.append("{\"type\":\"string\"}");
+        }
+        return "{\"type\":\"object\",\"properties\":{\"payload\":{\"allOf\":["
+                + branches + "]}}}";
     }
 
     private static HttpParameterMapping mapping(

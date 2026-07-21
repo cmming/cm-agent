@@ -152,8 +152,11 @@ public class HttpToolConfigValidator {
         Map<List<String>, ContainerShape> bodyContainerShapes = new LinkedHashMap<>();
         Set<String> pathTargets = new LinkedHashSet<>();
 
+        schemaNavigator.validateTerminalLocalReferences(
+                rootSchema,
+                config.parameterMappings().stream().map(HttpParameterMapping::sourcePointer).toList()
+        );
         for (HttpParameterMapping mapping : config.parameterMappings()) {
-            schemaNavigator.validateTerminalLocalReferences(rootSchema, mapping.sourcePointer());
             validateDefault(mapping, rootSchema);
             validateLocationType(mapping, rootSchema);
             validateTarget(mapping, targets, bodyTargets, bodyContainerShapes, pathTargets);

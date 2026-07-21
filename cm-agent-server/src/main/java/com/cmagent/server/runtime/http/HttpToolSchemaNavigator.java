@@ -19,6 +19,7 @@ import java.util.Set;
  * 负责 HTTP 工具输入 Schema 的路径导航、局部投影、引用解析与类型域推导。
  */
 final class HttpToolSchemaNavigator {
+    private static final int MAX_REFERENCE_TRAVERSAL_STATES = 10_000;
     private static final Set<ValueType> SCALAR_TYPES = Set.of(
             ValueType.STRING, ValueType.INTEGER, ValueType.NUMBER, ValueType.BOOLEAN
     );
@@ -56,11 +57,14 @@ final class HttpToolSchemaNavigator {
         return result.shape();
     }
 
-    void validateTerminalLocalReferences(JsonNode rootSchema, String sourcePointer) {
-        for (SchemaNode sourceNode : resolveSourceNodes(rootSchema, sourcePointer)) {
-            validateTerminalLocalReferences(
-                    rootSchema, sourceNode, new LinkedHashSet<>(), new LinkedHashSet<>()
-            );
+    void validateTerminalLocalReferences(JsonNode rootSchema, List<String> sourcePointers) {
+        ReferenceTraversalContext context = new ReferenceTraversalContext();
+        for (String sourcePointer : sourcePointers) {
+            for (SchemaNode sourceNode : resolveSourceNodes(rootSchema, sourcePointer)) {
+                validateTerminalLocalReferences(
+                        rootSchema, sourceNode, new LinkedHashSet<>(), context
+                );
+            }
         }
     }
 
@@ -527,60 +531,72 @@ final class HttpToolSchemaNavigator {
             JsonNode rootSchema,
             SchemaNode current,
             Set<List<Object>> directReferenceChain,
-            Set<List<Object>> visitingPaths
+            ReferenceTraversalContext context
     ) {
         if (!current.node().isObject()) {
             return;
         }
-        if (!visitingPaths.add(current.schemaPath())) {
+        ReferenceTraversalState state = new ReferenceTraversalState(
+                current.schemaPath(), directReferenceChain
+        );
+        if (context.isCompleted(state)) {
             return;
         }
+        if (!context.enter(current.schemaPath())) {
+            return;
+        }
+        boolean completed = false;
         try {
+            context.recordTraversalState();
             JsonNode referenceNode = current.node().get("$ref");
             if (referenceNode != null && referenceNode.isTextual() && referenceNode.asText().startsWith("#")) {
                 SchemaNode referenced = resolveRequiredLocalReference(rootSchema, referenceNode.asText());
                 Set<List<Object>> nextReferenceChain = new LinkedHashSet<>(directReferenceChain);
-                nextReferenceChain.add(current.schemaPath());
                 if (nextReferenceChain.contains(referenced.schemaPath())) {
                     throw new IllegalArgumentException("JSON Schema 本地引用存在循环");
                 }
+                nextReferenceChain.add(referenced.schemaPath());
                 validateTerminalLocalReferences(
-                        rootSchema, referenced, nextReferenceChain, visitingPaths
+                        rootSchema, referenced, nextReferenceChain, context
                 );
             }
 
             for (String keyword : List.of(
                     "properties", "patternProperties", "$defs", "definitions"
             )) {
-                validateSchemaMapChildren(rootSchema, current, keyword, Set.of(), visitingPaths);
+                validateSchemaMapChildren(rootSchema, current, keyword, Set.of(), context);
             }
             for (String keyword : List.of(
                     "additionalProperties", "unevaluatedProperties", "propertyNames", "items", "contains"
             )) {
                 validateSchemaChild(
-                        rootSchema, current, keyword, Set.of(), visitingPaths
+                        rootSchema, current, keyword, Set.of(), context
                 );
             }
             Set<List<Object>> sameInstanceReferenceChain = new LinkedHashSet<>(directReferenceChain);
             sameInstanceReferenceChain.add(current.schemaPath());
             validateSchemaMapChildren(
-                    rootSchema, current, "dependentSchemas", sameInstanceReferenceChain, visitingPaths
+                    rootSchema, current, "dependentSchemas", sameInstanceReferenceChain, context
             );
             for (String keyword : List.of("not", "if", "then", "else")) {
                 validateSchemaChild(
-                        rootSchema, current, keyword, sameInstanceReferenceChain, visitingPaths
+                        rootSchema, current, keyword, sameInstanceReferenceChain, context
                 );
             }
             validateSchemaArrayChildren(
-                    rootSchema, current, "prefixItems", Set.of(), visitingPaths
+                    rootSchema, current, "prefixItems", Set.of(), context
             );
             for (String keyword : List.of("allOf", "anyOf", "oneOf")) {
                 validateSchemaArrayChildren(
-                        rootSchema, current, keyword, sameInstanceReferenceChain, visitingPaths
+                        rootSchema, current, keyword, sameInstanceReferenceChain, context
                 );
             }
+            completed = true;
         } finally {
-            visitingPaths.remove(current.schemaPath());
+            context.exit(current.schemaPath());
+            if (completed) {
+                context.complete(state);
+            }
         }
     }
 
@@ -589,7 +605,7 @@ final class HttpToolSchemaNavigator {
             SchemaNode current,
             String keyword,
             Set<List<Object>> directReferenceChain,
-            Set<List<Object>> visitingPaths
+            ReferenceTraversalContext context
     ) {
         JsonNode children = current.node().get(keyword);
         if (children == null || !children.isObject()) {
@@ -599,7 +615,7 @@ final class HttpToolSchemaNavigator {
                 rootSchema,
                 current.append(keyword, children).append(entry.getKey(), entry.getValue()),
                 new LinkedHashSet<>(directReferenceChain),
-                visitingPaths
+                context
         ));
     }
 
@@ -608,7 +624,7 @@ final class HttpToolSchemaNavigator {
             SchemaNode current,
             String keyword,
             Set<List<Object>> directReferenceChain,
-            Set<List<Object>> visitingPaths
+            ReferenceTraversalContext context
     ) {
         JsonNode child = current.node().get(keyword);
         if (child == null || !child.isContainerNode() && !child.isBoolean()) {
@@ -618,7 +634,7 @@ final class HttpToolSchemaNavigator {
                 rootSchema,
                 current.append(keyword, child),
                 new LinkedHashSet<>(directReferenceChain),
-                visitingPaths
+                context
         );
     }
 
@@ -627,7 +643,7 @@ final class HttpToolSchemaNavigator {
             SchemaNode current,
             String keyword,
             Set<List<Object>> directReferenceChain,
-            Set<List<Object>> visitingPaths
+            ReferenceTraversalContext context
     ) {
         JsonNode children = current.node().get(keyword);
         if (children == null || !children.isArray()) {
@@ -638,7 +654,7 @@ final class HttpToolSchemaNavigator {
                     rootSchema,
                     current.append(keyword, children).append(index, children.get(index)),
                     new LinkedHashSet<>(directReferenceChain),
-                    visitingPaths
+                    context
             );
         }
     }
@@ -869,6 +885,45 @@ final class HttpToolSchemaNavigator {
     private record PathShape(boolean found, SchemaShape shape) {
         private static PathShape missing() {
             return new PathShape(false, SchemaShape.all());
+        }
+    }
+
+    private record ReferenceTraversalState(
+            List<Object> schemaPath,
+            Set<List<Object>> directReferenceChain
+    ) {
+        private ReferenceTraversalState {
+            schemaPath = List.copyOf(schemaPath);
+            directReferenceChain = Set.copyOf(directReferenceChain);
+        }
+    }
+
+    private static final class ReferenceTraversalContext {
+        private final Set<List<Object>> visitingPaths = new HashSet<>();
+        private final Set<ReferenceTraversalState> completedStates = new HashSet<>();
+        private int traversedStates;
+
+        private boolean isCompleted(ReferenceTraversalState state) {
+            return completedStates.contains(state);
+        }
+
+        private boolean enter(List<Object> schemaPath) {
+            return visitingPaths.add(schemaPath);
+        }
+
+        private void exit(List<Object> schemaPath) {
+            visitingPaths.remove(schemaPath);
+        }
+
+        private void complete(ReferenceTraversalState state) {
+            completedStates.add(state);
+        }
+
+        private void recordTraversalState() {
+            traversedStates++;
+            if (traversedStates > MAX_REFERENCE_TRAVERSAL_STATES) {
+                throw new IllegalArgumentException("JSON Schema 遍历复杂度超过安全上限");
+            }
         }
     }
 }
