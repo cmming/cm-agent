@@ -160,6 +160,22 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    void appliesDefaultValidatedThroughAllOfRootDefinition() throws Exception {
+        String schema = """
+                {"type":"object","$defs":{"positive":{"type":"integer","minimum":1}},"properties":{
+                  "count":{"allOf":[{"$ref":"#/$defs/positive"}]}
+                }}
+                """;
+        HttpToolConfig config = config(schema, List.of(
+                mapping("/count", HttpParameterLocation.QUERY, "count", "", true, "2")
+        ));
+
+        PreparedHttpToolRequest request = mapper.map(config, objectMapper.readTree("{}"));
+
+        assertThat(request.queryValues()).containsEntry("count", List.of("2"));
+    }
+
+    @Test
     void treatsNumericPointerTokenAsPropertyWhenSchemaNodeIsObject() throws Exception {
         String schema = """
                 {"type":"object","properties":{"container":{"type":"object","properties":{

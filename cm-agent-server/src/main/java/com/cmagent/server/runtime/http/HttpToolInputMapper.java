@@ -208,7 +208,7 @@ public class HttpToolInputMapper {
         for (int index = 0; index <= inclusiveIndex; index++) {
             pointer.append('/').append(tokens.get(index).replace("~", "~0").replace("/", "~1"));
         }
-        return configValidator.isArrayNode(configValidator.schemaAt(rootSchema, pointer.toString()));
+        return configValidator.isArrayAt(rootSchema, pointer.toString());
     }
 
     private static ArrayNode objectMapperArrayNode(ArrayNode parent) {

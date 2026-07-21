@@ -107,6 +107,137 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    void validatesDefaultWithRefSiblingAndRootDefinitionsContext() {
+        String refSiblingSchema = """
+                {"type":"object","$defs":{"text":{"type":"string"}},"properties":{
+                  "name":{"$ref":"#/$defs/text","maxLength":3}
+                }}
+                """;
+        HttpParameterMapping tooLong = mapping("/name", HttpParameterLocation.QUERY,
+                "name", "", false, "\"long\"");
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", refSiblingSchema, List.of(tooLong))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("defaultValueJson");
+
+        String allOfSchema = """
+                {"type":"object","$defs":{"positive":{"type":"integer","minimum":1}},"properties":{
+                  "count":{"allOf":[{"$ref":"#/$defs/positive"}]}
+                }}
+                """;
+        HttpParameterMapping valid = mapping("/count", HttpParameterLocation.QUERY,
+                "count", "", false, "2");
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", allOfSchema, List.of(valid))))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void resolvesPropertiesInAllOfAndInfersConservativeCompositionTypes() {
+        String allOfProperties = """
+                {"type":"object","allOf":[
+                  {"properties":{"code":{"type":"string"}}},
+                  {"properties":{"code":{"maxLength":10}}}
+                ]}
+                """;
+        HttpParameterMapping code = mapping("/code", HttpParameterLocation.HEADER,
+                "X-Code", "", false, "");
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", allOfProperties, List.of(code))))
+                .doesNotThrowAnyException();
+
+        String scalarCompositions = """
+                {"type":"object","properties":{
+                  "choice":{"oneOf":[{"type":"string"},{"type":"integer"}]},
+                  "status":{"enum":["ready",2]},
+                  "enabled":{"const":true},
+                  "query":{"anyOf":[{"type":"string"},{"type":"array","items":{"type":"integer"}}]}
+                }}
+                """;
+        List<HttpParameterMapping> scalarMappings = List.of(
+                mapping("/choice", HttpParameterLocation.HEADER, "X-Choice", "", false, ""),
+                mapping("/status", HttpParameterLocation.QUERY, "status", "", false, ""),
+                mapping("/enabled", HttpParameterLocation.HEADER, "X-Enabled", "", false, ""),
+                mapping("/query", HttpParameterLocation.QUERY, "query", "", false, "")
+        );
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", scalarCompositions, scalarMappings)))
+                .doesNotThrowAnyException();
+
+        String unsafeComposition = """
+                {"type":"object","properties":{"value":{"anyOf":[
+                  {"type":"string"},{"type":"object"}
+                ]}}}
+                """;
+        HttpParameterMapping unsafe = mapping("/value", HttpParameterLocation.QUERY,
+                "value", "", false, "");
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", unsafeComposition, List.of(unsafe))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("BODY");
+    }
+
+    @Test
+    void rejectsBodyIntermediateContainerShapeConflictsInEitherOrder() {
+        HttpParameterMapping array = mapping("/first", HttpParameterLocation.BODY,
+                "", "/payload/0", false, "");
+        HttpParameterMapping object = mapping("/second", HttpParameterLocation.BODY,
+                "", "/payload/name", false, "");
+
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", twoPropertySchema(), List.of(array, object))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("BODY");
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", twoPropertySchema(), List.of(object, array))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("BODY");
+
+        List<HttpParameterMapping> compatible = List.of(
+                mapping("/first", HttpParameterLocation.BODY, "", "/payload/0/name", false, ""),
+                mapping("/second", HttpParameterLocation.BODY, "", "/payload/1/name", false, ""),
+                mapping("/first", HttpParameterLocation.BODY, "", "/metadata/name", false, ""),
+                mapping("/second", HttpParameterLocation.BODY, "", "/metadata/code", false, ""),
+                mapping("/first", HttpParameterLocation.BODY, "", "/a", false, ""),
+                mapping("/second", HttpParameterLocation.BODY, "", "/ab", false, "")
+        );
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", twoPropertySchema(), compatible)))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void rejectsTrailingJsonTokensWithoutEchoingValues() {
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", "{\"type\":\"object\"} {}", List.of())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("inputSchema 不是合法 JSON")
+                .hasMessageNotContaining("type");
+
+        HttpParameterMapping trailingDefault = mapping("/limit", HttpParameterLocation.QUERY,
+                "limit", "", false, "1 2");
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", objectSchema("limit", "integer"), List.of(trailingDefault))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("defaultValueJson 必须是合法 JSON 值")
+                .hasMessageNotContaining("1 2");
+    }
+
+    @Test
+    void rejectsNullDefaultEvenWhenSchemaIsNullable() {
+        String schema = """
+                {"type":"object","properties":{"value":{"type":["string","null"]}}}
+                """;
+        HttpParameterMapping mapping = mapping("/value", HttpParameterLocation.QUERY,
+                "value", "", false, "null");
+
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", schema, List.of(mapping))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("defaultValueJson 不能为 null");
+    }
+
+    @Test
     void requiresPathMappingsToExactlyMatchRequiredUrlPlaceholders() {
         HttpParameterMapping path = mapping("/id", HttpParameterLocation.PATH,
                 "id", "", true, "");
