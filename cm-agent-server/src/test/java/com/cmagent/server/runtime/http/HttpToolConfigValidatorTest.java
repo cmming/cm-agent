@@ -238,6 +238,137 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    void preservesAncestorOneOfAndAnyOfSemanticsWhenValidatingDefaults() {
+        String oneOf = """
+                {"type":"object","oneOf":[
+                  {"properties":{"id":{"type":"string"}}},
+                  {"properties":{"id":{"type":"integer"}}}
+                ]}
+                """;
+        HttpParameterMapping stringDefault = mapping("/id", HttpParameterLocation.QUERY,
+                "id", "", false, "\"x\"");
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", oneOf, List.of(stringDefault))))
+                .doesNotThrowAnyException();
+
+        HttpParameterMapping booleanDefault = mapping("/id", HttpParameterLocation.QUERY,
+                "id", "", false, "true");
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", oneOf, List.of(booleanDefault))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("defaultValueJson");
+
+        String exclusive = """
+                {"type":"object","oneOf":[
+                  {"properties":{"id":{"type":"string"}}},
+                  {"properties":{"id":{"type":"string","minLength":1}}}
+                ]}
+                """;
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", exclusive, List.of(stringDefault))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("defaultValueJson");
+
+        String union = exclusive.replace("\"oneOf\"", "\"anyOf\"");
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", union, List.of(stringDefault))))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void derivesQueryArrayItemsFromPrefixItemsConstAndEnum() {
+        String schema = """
+                {"type":"object","properties":{
+                  "tuple":{"type":"array","prefixItems":[{"type":"object"}],"items":false},
+                  "constant":{"const":["a","b"]},
+                  "choices":{"enum":[["a"],[1,2]]}
+                }}
+                """;
+        HttpParameterMapping tuple = mapping("/tuple", HttpParameterLocation.QUERY,
+                "tuple", "", false, "");
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", schema, List.of(tuple))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("标量数组");
+
+        List<HttpParameterMapping> safe = List.of(
+                mapping("/constant", HttpParameterLocation.QUERY, "constant", "", false, ""),
+                mapping("/choices", HttpParameterLocation.QUERY, "choices", "", false, "")
+        );
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", schema, safe)))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void interpretsNumericSourceTokenUsingPossibleParentContainerTypes() {
+        String objectParent = """
+                {"type":"object","properties":{"container":{
+                  "type":"object","properties":{"0":{"type":"string"}},"items":{"type":"object"}
+                }}}
+                """;
+        HttpParameterMapping numericProperty = mapping("/container/0", HttpParameterLocation.QUERY,
+                "value", "", false, "");
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", objectParent, List.of(numericProperty))))
+                .doesNotThrowAnyException();
+
+        String arrayParent = """
+                {"type":"object","properties":{"container":{
+                  "type":"array","prefixItems":[{"type":"string"}],"items":false,
+                  "properties":{"0":{"type":"object"}}
+                }}}
+                """;
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", arrayParent, List.of(numericProperty))))
+                .doesNotThrowAnyException();
+
+        String ambiguousParent = """
+                {"type":"object","properties":{"container":{"anyOf":[
+                  {"type":"object","properties":{"0":{"type":"string"}}},
+                  {"type":"array","items":{"type":"object"}}
+                ]}}}
+                """;
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", ambiguousParent, List.of(numericProperty))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("BODY");
+    }
+
+    @Test
+    void validatesTerminalLocalReferenceWithoutDefault() {
+        String existing = """
+                {"type":"object","$defs":{"payload":{"type":"object"}},"properties":{
+                  "payload":{"$ref":"#/$defs/payload"}
+                }}
+                """;
+        HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
+                "", "/payload", false, "");
+        assertThatCode(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", existing, List.of(body))))
+                .doesNotThrowAnyException();
+
+        String missing = """
+                {"type":"object","properties":{"payload":{"$ref":"#/$defs/missing"}}}
+                """;
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", missing, List.of(body))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("JSON Schema 本地引用无效")
+                .hasMessageNotContaining("missing");
+
+        String circular = """
+                {"type":"object","$defs":{"loop":{"$ref":"#/$defs/loop"}},"properties":{
+                  "payload":{"$ref":"#/$defs/loop"}
+                }}
+                """;
+        assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
+                "https://api.example.test/items", circular, List.of(body))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("JSON Schema 本地引用存在循环");
+    }
+
+    @Test
     void requiresPathMappingsToExactlyMatchRequiredUrlPlaceholders() {
         HttpParameterMapping path = mapping("/id", HttpParameterLocation.PATH,
                 "id", "", true, "");

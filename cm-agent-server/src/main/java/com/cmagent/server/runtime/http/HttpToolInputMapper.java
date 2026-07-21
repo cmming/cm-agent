@@ -99,6 +99,9 @@ public class HttpToolInputMapper {
     }
 
     private static String scalarText(JsonNode value) {
+        if (!value.isValueNode() || value.isNull()) {
+            throw new IllegalArgumentException("非 BODY 参数必须是标量值");
+        }
         return value.isTextual() ? value.textValue() : value.asText();
     }
 

@@ -176,6 +176,21 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    void mapsConstScalarArrayWithoutStringifyingObjects() throws Exception {
+        String schema = """
+                {"type":"object","properties":{"tags":{"const":["a","b"]}}}
+                """;
+        HttpToolConfig config = config(schema, List.of(
+                mapping("/tags", HttpParameterLocation.QUERY, "tag", "", true, "")
+        ));
+
+        PreparedHttpToolRequest request = mapper.map(config,
+                objectMapper.readTree("{\"tags\":[\"a\",\"b\"]}"));
+
+        assertThat(request.queryValues()).containsEntry("tag", List.of("a", "b"));
+    }
+
+    @Test
     void treatsNumericPointerTokenAsPropertyWhenSchemaNodeIsObject() throws Exception {
         String schema = """
                 {"type":"object","properties":{"container":{"type":"object","properties":{
