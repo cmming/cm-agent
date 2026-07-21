@@ -14,8 +14,10 @@ import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.ToolCallRepository;
 import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.repository.McpToolPublicationRepository;
+import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import java.time.Instant;
@@ -140,6 +142,40 @@ class ServerRepositoryConfigurationTest {
 
                     assertThat(configurations.findByTenantAndToolId(TENANT_A, TOOL_A)).isEmpty();
                     assertThat(publications.findByTenantAndToolId(TENANT_A, TOOL_A)).isEmpty();
+                });
+    }
+
+    @Test
+    void memoryToolRepositoryKeepsTenantNameIndexConsistentAfterDelete() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ServerRepositoryConfiguration.class)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    ToolDefinitionRepository repository = context.getBean(ToolDefinitionRepository.class);
+                    ToolDefinition original = new ToolDefinition(
+                            TOOL_A, TENANT_A, "unique-name", "", ToolType.LOCAL, "{}", ToolRiskLevel.LOW,
+                            true, "", "tester", "tester"
+                    );
+                    ToolDefinition duplicate = new ToolDefinition(
+                            UUID.fromString("20000000-0000-0000-0000-000000000002"), TENANT_A,
+                            "unique-name", "", ToolType.LOCAL, "{}", ToolRiskLevel.LOW,
+                            true, "", "tester", "tester"
+                    );
+                    ToolDefinition otherTenant = new ToolDefinition(
+                            UUID.fromString("20000000-0000-0000-0000-000000000003"), TENANT_B,
+                            "unique-name", "", ToolType.LOCAL, "{}", ToolRiskLevel.LOW,
+                            true, "", "tester", "tester"
+                    );
+
+                    repository.save(original);
+                    assertThatThrownBy(() -> repository.save(duplicate))
+                            .isInstanceOf(DuplicateKeyException.class);
+                    repository.save(otherTenant);
+                    repository.delete(TENANT_A, original.id());
+                    repository.save(duplicate);
+
+                    assertThat(repository.listByTenant(TENANT_A)).containsExactly(duplicate);
+                    assertThat(repository.listByTenant(TENANT_B)).containsExactly(otherTenant);
                 });
     }
 

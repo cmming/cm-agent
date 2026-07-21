@@ -28,6 +28,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -142,28 +146,40 @@ class ManagementCommandServiceTest {
                 assertThat(exception.getStatusCode().value()).isEqualTo(409));
     }
 
+    @Test
+    void concurrentMemoryCreatesWithSameTenantAndNameProduceOneConflict() throws Exception {
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        ToolDefinitionRepository tools = new BarrierToolDefinitionRepository(memoryToolRepository(store), 2);
+        ManagementCommandService first = memoryBackedService(store, tools);
+        ManagementCommandService second = memoryBackedService(store, tools);
+        PrincipalRef principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant"));
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            var firstResult = executor.submit(() -> createWithStatus(first, principal));
+            var secondResult = executor.submit(() -> createWithStatus(second, principal));
+
+            assertThat(List.of(firstResult.get(20, TimeUnit.SECONDS), secondResult.get(20, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(200, 409);
+        } finally {
+            executor.shutdownNow();
+        }
+        assertThat(store.listTools(TENANT_ID)).hasSize(1);
+    }
+
+    private static int createWithStatus(ManagementCommandService service, PrincipalRef principal) {
+        try {
+            service.createTool(principal, "concurrent-memory-name", "并发测试", ToolType.LOCAL, ToolRiskLevel.LOW);
+            return 200;
+        } catch (ResponseStatusException exception) {
+            return exception.getStatusCode().value();
+        }
+    }
+
     private ManagementCommandService memoryBackedService(InMemoryPlatformStore store) {
-        ToolDefinitionRepository memoryTools = new ToolDefinitionRepository() {
-            @Override
-            public ToolDefinition save(ToolDefinition tool) {
-                return store.saveTool(tool);
-            }
+        return memoryBackedService(store, memoryToolRepository(store));
+    }
 
-            @Override
-            public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
-                return store.findTool(tenantId, toolId);
-            }
-
-            @Override
-            public List<ToolDefinition> listByTenant(UUID tenantId) {
-                return store.listTools(tenantId);
-            }
-
-            @Override
-            public void delete(UUID tenantId, UUID toolId) {
-                store.deleteTool(tenantId, toolId);
-            }
-        };
+    private ManagementCommandService memoryBackedService(InMemoryPlatformStore store, ToolDefinitionRepository memoryTools) {
         HttpToolConfigRepository memoryHttpConfigs = new HttpToolConfigRepository() {
             @Override
             public com.cmagent.core.domain.HttpToolConfig save(com.cmagent.core.domain.HttpToolConfig config) {
@@ -227,6 +243,70 @@ class ManagementCommandServiceTest {
                 emptyAgentRepository(), memoryTools, memoryHttpConfigs, memoryPublications, grantRepository,
                 new AuditAppender(store), null
         );
+    }
+
+    private static ToolDefinitionRepository memoryToolRepository(InMemoryPlatformStore store) {
+        return new ToolDefinitionRepository() {
+            @Override
+            public ToolDefinition save(ToolDefinition tool) {
+                return store.saveTool(tool);
+            }
+
+            @Override
+            public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
+                return store.findTool(tenantId, toolId);
+            }
+
+            @Override
+            public List<ToolDefinition> listByTenant(UUID tenantId) {
+                return store.listTools(tenantId);
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID toolId) {
+                store.deleteTool(tenantId, toolId);
+            }
+        };
+    }
+
+    private static final class BarrierToolDefinitionRepository implements ToolDefinitionRepository {
+        private final ToolDefinitionRepository delegate;
+        private final CountDownLatch listBarrier;
+
+        private BarrierToolDefinitionRepository(ToolDefinitionRepository delegate, int callers) {
+            this.delegate = delegate;
+            this.listBarrier = new CountDownLatch(callers);
+        }
+
+        @Override
+        public ToolDefinition save(ToolDefinition tool) {
+            return delegate.save(tool);
+        }
+
+        @Override
+        public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
+            return delegate.findByTenantAndId(tenantId, toolId);
+        }
+
+        @Override
+        public List<ToolDefinition> listByTenant(UUID tenantId) {
+            List<ToolDefinition> tools = delegate.listByTenant(tenantId);
+            listBarrier.countDown();
+            try {
+                if (!listBarrier.await(20, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("并发名称检查未同时到达");
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("并发名称检查被中断", exception);
+            }
+            return tools;
+        }
+
+        @Override
+        public void delete(UUID tenantId, UUID toolId) {
+            delegate.delete(tenantId, toolId);
+        }
     }
 
     private AgentDefinitionRepository emptyAgentRepository() {

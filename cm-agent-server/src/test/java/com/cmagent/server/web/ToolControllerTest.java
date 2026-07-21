@@ -1,11 +1,20 @@
 package com.cmagent.server.web;
 
 import com.cmagent.core.domain.HttpToolConfig;
+import com.cmagent.core.domain.ToolDefinition;
+import com.cmagent.core.domain.ToolRiskLevel;
+import com.cmagent.core.domain.ToolType;
+import com.cmagent.core.security.AuthorizationDecision;
+import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.CmAgentServerApplication;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.security.JwtService;
+import com.cmagent.server.service.ManagementCommandService;
+import com.cmagent.server.service.ToolQueryService;
+import com.cmagent.server.service.ToolSummary;
 import com.cmagent.server.store.InMemoryPlatformStore;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,12 +27,19 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -177,6 +193,42 @@ class ToolControllerTest {
 
         assertThat(store.listTools(TENANT_A)).isEmpty();
         assertThat(store.listEnabledMcpToolPublications(TENANT_A)).isEmpty();
+    }
+
+    @Test
+    void createReturnsTheToolCreatedByCommandInsteadOfAnotherSameNameSummary() {
+        PermissionEvaluator permissionEvaluator = mock(PermissionEvaluator.class);
+        AuditAppender controllerAuditAppender = mock(AuditAppender.class);
+        ManagementCommandService managementCommandService = mock(ManagementCommandService.class);
+        ToolQueryService toolQueryService = mock(ToolQueryService.class);
+        ToolDefinition created = localTool(UUID.fromString("20000000-0000-0000-0000-000000000001"), "same-name");
+        when(permissionEvaluator.check(any(), anyString())).thenReturn(AuthorizationDecision.allow());
+        when(managementCommandService.createTool(any(), anyString(), anyString(), any(), any(), isNull(), anyBoolean()))
+                .thenReturn(created);
+        when(toolQueryService.findByTenantAndId(TENANT_A, created.id()))
+                .thenReturn(Optional.of(new ToolSummary(created, null, false)));
+        org.springframework.security.core.Authentication authentication = mock(org.springframework.security.core.Authentication.class);
+        when(authentication.isAuthenticated()).thenReturn(true);
+        when(authentication.getPrincipal()).thenReturn(new JwtService.JwtSession(TENANT_A, "admin", "管理员", List.of("tool:grant")));
+        ToolController controller = new ToolController(
+                permissionEvaluator, controllerAuditAppender, managementCommandService, new ObjectMapper(), toolQueryService
+        );
+
+        ToolController.ToolSummaryResponse response = controller.create(
+                new ToolController.ToolCreateRequest("same-name", "创建结果", ToolType.LOCAL, ToolRiskLevel.LOW, false, null),
+                authentication
+        );
+
+        assertThat(response.id()).isEqualTo(created.id());
+        verify(toolQueryService).findByTenantAndId(TENANT_A, created.id());
+        verify(toolQueryService, never()).listByTenant(TENANT_A);
+    }
+
+    private static ToolDefinition localTool(UUID id, String name) {
+        return new ToolDefinition(
+                id, TENANT_A, name, "", ToolType.LOCAL, "{\"type\":\"object\"}", ToolRiskLevel.LOW,
+                true, "", "admin", "admin"
+        );
     }
 
     private String createLocal(String token, String name) throws Exception {

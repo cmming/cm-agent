@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -43,5 +44,16 @@ public class ToolQueryService {
                         publications.containsKey(tool.id()) && publications.get(tool.id()).enabled()
                 ))
                 .toList();
+    }
+
+    public Optional<ToolSummary> findByTenantAndId(UUID tenantId, UUID toolId) {
+        return toolRepository.findByTenantAndId(tenantId, toolId)
+                .map(tool -> new ToolSummary(
+                        tool,
+                        httpToolConfigRepository.findByTenantAndToolId(tenantId, toolId).orElse(null),
+                        mcpToolPublicationRepository.findByTenantAndToolId(tenantId, toolId)
+                                .map(McpToolPublication::enabled)
+                                .orElse(false)
+                ));
     }
 }

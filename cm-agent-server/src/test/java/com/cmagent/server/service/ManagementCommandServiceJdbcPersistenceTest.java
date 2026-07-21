@@ -1,7 +1,12 @@
 package com.cmagent.server.service;
 
 import com.cmagent.api.PrincipalRef;
+import com.cmagent.core.audit.AuditEvent;
+import com.cmagent.core.audit.AuditEventRepository;
 import com.cmagent.core.domain.AgentDefinition;
+import com.cmagent.core.domain.HttpParameterLocation;
+import com.cmagent.core.domain.HttpParameterMapping;
+import com.cmagent.core.domain.HttpToolMethod;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.ToolRiskLevel;
@@ -14,6 +19,7 @@ import com.cmagent.persistence.JdbcHttpToolConfigRepository;
 import com.cmagent.persistence.JdbcMcpToolPublicationRepository;
 import com.cmagent.persistence.JdbcToolDefinitionRepository;
 import com.cmagent.server.audit.AuditAppender;
+import com.cmagent.server.audit.AuditPersistenceException;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -39,6 +45,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 class ManagementCommandServiceJdbcPersistenceTest {
@@ -58,6 +65,16 @@ class ManagementCommandServiceJdbcPersistenceTest {
     @Test
     void concurrentSameTenantNameMapsTheMySqlUniqueConstraintToConflict() throws Exception {
         assertConcurrentNameConflict(mysqlDataSource());
+    }
+
+    @Test
+    void auditWriteFailureRollsBackHttpToolDataInPostgreSql() {
+        assertAuditWriteFailureRollsBackHttpToolData(postgresDataSource());
+    }
+
+    @Test
+    void auditWriteFailureRollsBackHttpToolDataInMySql() {
+        assertAuditWriteFailureRollsBackHttpToolData(mysqlDataSource());
     }
 
     private void assertConcurrentNameConflict(DataSource dataSource) throws Exception {
@@ -82,6 +99,69 @@ class ManagementCommandServiceJdbcPersistenceTest {
             executor.shutdownNow();
         }
         assertThat(jdbcTools.listByTenant(TENANT_ID)).hasSize(1);
+    }
+
+    private void assertAuditWriteFailureRollsBackHttpToolData(DataSource dataSource) {
+        migrateAndSeedTenant(dataSource);
+        TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        JdbcClient jdbcClient = JdbcClient.create(dataSource);
+        ManagementCommandService service = service(
+                dataSource,
+                transactionTemplate,
+                new JdbcToolDefinitionRepository(jdbcClient),
+                failingDatabaseAuditAppender(jdbcClient)
+        );
+        PrincipalRef principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant"));
+
+        assertThatThrownBy(() -> service.createTool(
+                principal,
+                "audit-rollback",
+                "审计回滚",
+                ToolType.HTTP,
+                ToolRiskLevel.MEDIUM,
+                httpToolSpec(),
+                true
+        )).isInstanceOf(AuditPersistenceException.class);
+
+        assertThat(countRows(jdbcClient, "tool_definitions")).isZero();
+        assertThat(countRows(jdbcClient, "tool_http_configs")).isZero();
+        assertThat(countRows(jdbcClient, "tool_mcp_publications")).isZero();
+        assertThat(countRows(jdbcClient, "audit_events")).isZero();
+    }
+
+    private static AuditAppender failingDatabaseAuditAppender(JdbcClient jdbcClient) {
+        AuditEventRepository repository = new AuditEventRepository() {
+            @Override
+            public void append(AuditEvent event) {
+                jdbcClient.sql("INSERT INTO audit_events (id) VALUES (:id)")
+                        .param("id", UUID.randomUUID().toString())
+                        .update();
+            }
+
+            @Override
+            public List<AuditEvent> listByTenant(UUID tenantId, int limit) {
+                return List.of();
+            }
+        };
+        return new AuditAppender(repository);
+    }
+
+    private static int countRows(JdbcClient jdbcClient, String tableName) {
+        return jdbcClient.sql("SELECT COUNT(*) FROM " + tableName + " WHERE tenant_id = :tenantId")
+                .param("tenantId", TENANT_ID.toString())
+                .query(Integer.class)
+                .single();
+    }
+
+    private static HttpToolCreateSpec httpToolSpec() {
+        return new HttpToolCreateSpec(
+                HttpToolMethod.POST,
+                "https://api.example.test/orders",
+                "{\"type\":\"object\"}",
+                List.of(new HttpParameterMapping("/id", HttpParameterLocation.QUERY, "id", "", true, "")),
+                java.util.Map.of("X-Api-Key", "secret/integration/api-key"),
+                java.time.Duration.ofSeconds(1)
+        );
     }
 
     private static int createWithStatus(ManagementCommandService service, PrincipalRef principal) {

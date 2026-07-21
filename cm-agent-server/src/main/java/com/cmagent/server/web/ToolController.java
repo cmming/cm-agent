@@ -1,6 +1,7 @@
 package com.cmagent.server.web;
 
 import com.cmagent.api.PrincipalRef;
+import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.HttpParameterLocation;
 import com.cmagent.core.domain.HttpParameterMapping;
@@ -77,7 +78,7 @@ public class ToolController {
     public ToolSummaryResponse create(@Valid @RequestBody ToolCreateRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", "TOOL", "create");
-        managementCommandService.createTool(
+        ToolDefinition created = managementCommandService.createTool(
                 principal,
                 request.name(),
                 request.description(),
@@ -86,9 +87,7 @@ public class ToolController {
                 toHttpToolCreateSpec(request.httpConfig()),
                 Boolean.TRUE.equals(request.mcpPublished())
         );
-        return toolQueryService.listByTenant(principal.tenantId()).stream()
-                .filter(summary -> summary.tool().name().equals(request.name()))
-                .findFirst()
+        return toolQueryService.findByTenantAndId(principal.tenantId(), created.id())
                 .map(this::toSummary)
                 .orElseThrow(() -> new IllegalStateException("已创建工具未找到"));
     }

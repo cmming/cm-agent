@@ -16,6 +16,7 @@ import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.McpToolPublication;
 import com.cmagent.core.repository.RunRepository;
 import com.cmagent.core.repository.ToolCallRepository;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -34,6 +35,8 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     private final ConcurrentHashMap<UUID, AgentDefinition> agents = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, ModelConfig> modelConfigs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, ToolDefinition> tools = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<TenantToolName, UUID> toolIdsByTenantAndName = new ConcurrentHashMap<>();
+    private final Object toolLock = new Object();
     private final List<ToolGrant> grants = Collections.synchronizedList(new ArrayList<>());
     private final List<AuditEvent> auditEvents = Collections.synchronizedList(new ArrayList<>());
     private final ConcurrentHashMap<UUID, RunRecord> runs = new ConcurrentHashMap<>();
@@ -78,6 +81,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     private static String toolKey(UUID tenantId, UUID toolId) {
         return tenantId + ":" + toolId;
+    }
+
+    private record TenantToolName(UUID tenantId, String name) {
     }
 
     public ModelConfig saveModelConfig(ModelConfig modelConfig) {
@@ -152,8 +158,23 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     public ToolDefinition saveTool(ToolDefinition tool) {
-        tools.put(tool.id(), tool);
-        return tool;
+        Objects.requireNonNull(tool, "tool 不能为空");
+        TenantToolName name = new TenantToolName(tool.tenantId(), tool.name());
+        synchronized (toolLock) {
+            UUID existingToolId = toolIdsByTenantAndName.putIfAbsent(name, tool.id());
+            if (existingToolId != null && !existingToolId.equals(tool.id())) {
+                throw new DuplicateKeyException("duplicate key ux_tool_definitions_tenant_name");
+            }
+            ToolDefinition existing = tools.putIfAbsent(tool.id(), tool);
+            if (existing != null) {
+                if (!existing.tenantId().equals(tool.tenantId()) || !existing.name().equals(tool.name())) {
+                    toolIdsByTenantAndName.remove(name, tool.id());
+                    throw new DuplicateKeyException("duplicate key tool_definitions_pkey");
+                }
+                return existing;
+            }
+            return tool;
+        }
     }
 
     public Optional<ToolDefinition> findTool(UUID tenantId, UUID toolId) {
@@ -165,7 +186,14 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     public void deleteTool(UUID tenantId, UUID toolId) {
-        tools.computeIfPresent(toolId, (id, tool) -> tenantId.equals(tool.tenantId()) ? null : tool);
+        synchronized (toolLock) {
+            ToolDefinition tool = tools.get(toolId);
+            if (tool == null || !tenantId.equals(tool.tenantId())) {
+                return;
+            }
+            tools.remove(toolId, tool);
+            toolIdsByTenantAndName.remove(new TenantToolName(tenantId, tool.name()), toolId);
+        }
     }
 
     public List<ToolDefinition> listTools(UUID tenantId) {
