@@ -126,6 +126,8 @@ class ApplicationProfileConfigurationTest {
                     assertThat(environment.getProperty("cm-agent.config.persistence-mode")).isEqualTo("jdbc");
                     assertThat(environment.getProperty("cm-agent.fake-runtime-enabled", Boolean.class)).isFalse();
                     assertThat(environment.getProperty("cm-agent.agentscope.enabled", Boolean.class)).isTrue();
+                    assertThat(environment.getProperty("cm-agent.http-tools.enabled", Boolean.class)).isFalse();
+                    assertThat(environment.getProperty("cm-agent.http-tools.allow-http", Boolean.class)).isFalse();
                     assertThat(environment.getProperty("cm-agent.config.jwt-secret")).isEqualTo(EXTERNAL_JWT_SECRET);
                     assertThat(environment.getProperty("cm-agent.config.jdbc-url")).isEqualTo(EXTERNAL_JDBC_URL);
                     assertThat(environment.getProperty("cm-agent.config.jdbc-username"))
@@ -528,6 +530,8 @@ class ApplicationProfileConfigurationTest {
                 .isEqualTo("cm-agent-test-password-only");
         assertThat(environment.getProperty("cm-agent.security.bootstrap-admin-display-name")).isEqualTo("测试管理员");
         assertThat(environment.getProperty("cm-agent.fake-runtime-enabled", Boolean.class)).isTrue();
+        assertThat(environment.getProperty("cm-agent.http-tools.enabled", Boolean.class)).isFalse();
+        assertThat(environment.getProperty("cm-agent.http-tools.allow-http", Boolean.class)).isTrue();
     }
 
     @Configuration(proxyBeanMethods = false)
