@@ -11,7 +11,6 @@ import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.ToolAuthorizationPolicy;
 import com.cmagent.core.tool.ToolExecutionRequest;
 import com.cmagent.core.tool.ToolExecutionResult;
-import com.cmagent.core.tool.ToolRegistry;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.security.SensitiveDataRedactor;
@@ -32,7 +31,7 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
     private final ToolDefinitionRepository toolRepository;
     private final ToolGrantRepository grantRepository;
     private final ToolAuthorizationPolicy policy;
-    private final ToolRegistry toolRegistry;
+    private final GovernedToolExecutionService executionService;
     private final AuditAppender auditAppender;
     private final SensitiveDataRedactor redactor;
 
@@ -40,14 +39,14 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
             ToolDefinitionRepository toolRepository,
             ToolGrantRepository grantRepository,
             ToolAuthorizationPolicy policy,
-            ToolRegistry toolRegistry,
+            GovernedToolExecutionService executionService,
             AuditAppender auditAppender,
             SensitiveDataRedactor redactor
     ) {
         this.toolRepository = Objects.requireNonNull(toolRepository, "toolRepository 不能为空");
         this.grantRepository = Objects.requireNonNull(grantRepository, "grantRepository 不能为空");
         this.policy = Objects.requireNonNull(policy, "policy 不能为空");
-        this.toolRegistry = Objects.requireNonNull(toolRegistry, "toolRegistry 不能为空");
+        this.executionService = Objects.requireNonNull(executionService, "executionService 不能为空");
         this.auditAppender = Objects.requireNonNull(auditAppender, "auditAppender 不能为空");
         this.redactor = Objects.requireNonNull(redactor, "redactor 不能为空");
     }
@@ -72,15 +71,9 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
             return ToolInvocationResult.denied(decision.reason());
         }
 
-        ToolDefinition registeredTool = toolRegistry.find(request.toolId()).orElse(null);
-        if (!isSameRegistration(tool, registeredTool)) {
-            appendAudit(request, "TOOL_CALL_FAILED", "FAILED", "工具调用失败");
-            return ToolInvocationResult.failed(TOOL_UNAVAILABLE);
-        }
-
         appendAudit(request, "TOOL_CALL_STARTED", "RUNNING", "工具调用已开始");
         try {
-            ToolExecutionResult executionResult = toolRegistry.execute(new ToolExecutionRequest(
+            ToolExecutionResult executionResult = executionService.execute(tool, new ToolExecutionRequest(
                     request.tenantId(), request.agentId(), request.principal(), request.runId(),
                     request.toolCallId(), request.toolId(), request.inputJson()
             ));
@@ -105,13 +98,6 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
                 && request.tenantId().equals(definition.tenantId())
                 && request.toolId().equals(definition.id())
                 && request.toolName().equals(definition.name());
-    }
-
-    private boolean isSameRegistration(ToolDefinition tool, ToolDefinition registeredTool) {
-        return registeredTool != null
-                && tool.tenantId().equals(registeredTool.tenantId())
-                && tool.id().equals(registeredTool.id())
-                && tool.name().equals(registeredTool.name());
     }
 
     private void appendAudit(ToolInvocationRequest request, String eventType, String status, String message) {
