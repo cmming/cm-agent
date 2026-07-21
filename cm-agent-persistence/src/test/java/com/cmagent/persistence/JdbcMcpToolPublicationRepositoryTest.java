@@ -39,7 +39,7 @@ class JdbcMcpToolPublicationRepositoryTest {
         JdbcClient jdbc = JdbcClient.create(dataSource);
         JdbcHttpToolConfigRepositoryTest.insertTool(jdbc, TOOL_A_DISABLED, TENANT_A, "http-a-disabled",
                 new java.sql.Timestamp(java.time.Instant.parse("2026-07-21T00:00:00Z").toEpochMilli()));
-        repository = new JdbcMcpToolPublicationRepository(JdbcClient.create(dataSource), new com.fasterxml.jackson.databind.ObjectMapper());
+        repository = new JdbcMcpToolPublicationRepository(JdbcClient.create(dataSource));
     }
 
     @Test

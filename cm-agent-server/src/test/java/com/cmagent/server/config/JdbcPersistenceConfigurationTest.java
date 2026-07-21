@@ -63,10 +63,10 @@ class JdbcPersistenceConfigurationTest {
         assertThat(configuration.jdbcToolCallRepository(jdbcClient, transactionTemplate))
                 .isInstanceOf(JdbcToolCallRepository.class)
                 .isInstanceOf(ToolCallRepository.class);
-        assertThat(configuration.jdbcHttpToolConfigRepository(jdbcClient, new ObjectMapper()))
+        assertThat(configuration.jdbcHttpToolConfigRepository(jdbcClient, new ObjectMapper(), transactionTemplate))
                 .isInstanceOf(JdbcHttpToolConfigRepository.class)
                 .isInstanceOf(HttpToolConfigRepository.class);
-        assertThat(configuration.jdbcMcpToolPublicationRepository(jdbcClient, new ObjectMapper()))
+        assertThat(configuration.jdbcMcpToolPublicationRepository(jdbcClient)
                 .isInstanceOf(JdbcMcpToolPublicationRepository.class)
                 .isInstanceOf(McpToolPublicationRepository.class);
     }

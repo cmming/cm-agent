@@ -23,7 +23,7 @@ class HttpToolConfigTest {
                 "orderNo", "", true, "\"A100\""));
         var config = new HttpToolConfig(TENANT, TOOL, HttpToolMethod.GET,
                 "https://api.example.com/orders/{orderNo}", "{\"type\":\"object\"}",
-                mappings, Map.of("Authorization", "order-token"), Duration.ofSeconds(5));
+                mappings, Map.of("Authorization", "secret/order-token"), Duration.ofSeconds(5));
 
         mappings.clear();
 
@@ -49,5 +49,19 @@ class HttpToolConfigTest {
                 "body", "/body", false, ""))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("BODY 参数必须只提供 targetPointer");
+    }
+
+    @Test
+    void 静态敏感请求头必须使用受限Secret引用() {
+        assertThatThrownBy(() -> new HttpToolConfig(TENANT, TOOL, HttpToolMethod.POST,
+                "https://api.example.com", "{}", List.of(),
+                Map.of("Authorization", "实际密钥值"), Duration.ofSeconds(1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("secretHeaders 必须使用 secret/ 开头的引用");
+        assertThatThrownBy(() -> new HttpToolConfig(TENANT, TOOL, HttpToolMethod.POST,
+                "https://api.example.com", "{}", List.of(),
+                Map.of("Authorization", "secret/含中文"), Duration.ofSeconds(1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("secretHeaders 必须使用 secret/ 开头的引用");
     }
 }

@@ -9,6 +9,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -20,8 +22,13 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 class JdbcHttpToolConfigRepositoryTest {
@@ -34,16 +41,17 @@ class JdbcHttpToolConfigRepositoryTest {
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
     private JdbcHttpToolConfigRepository repository;
+    private DataSource dataSource;
 
     @BeforeEach
     void setUp() {
-        DataSource dataSource = new DriverManagerDataSource(
+        dataSource = new DriverManagerDataSource(
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
                 .cleanDisabled(false).load().clean();
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
         seedData(dataSource);
-        repository = new JdbcHttpToolConfigRepository(JdbcClient.create(dataSource), new com.fasterxml.jackson.databind.ObjectMapper());
+        repository = repository(dataSource);
     }
 
     @Test
@@ -81,6 +89,58 @@ class JdbcHttpToolConfigRepositoryTest {
 
         assertThat(repository.findByTenantAndToolId(TENANT_A, TOOL_A)).isEmpty();
         assertThat(repository.findByTenantAndToolId(TENANT_B, TOOL_B)).contains(otherTenant);
+    }
+
+    @Test
+    void rejectsSecretHeaderValuesThatAreNotReferencesBeforePersistence() {
+        assertThatThrownBy(() -> repository.save(new HttpToolConfig(
+                TENANT_A, TOOL_A, HttpToolMethod.POST, "https://api-a.invalid", "{}", List.of(),
+                Map.of("Authorization", "实际密钥值"), Duration.ofSeconds(1))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("secretHeaders 必须使用 secret/ 开头的引用");
+    }
+
+    @Test
+    void concurrentFirstSavesAreIdempotent() throws Exception {
+        HttpToolConfig first = config(TENANT_A, TOOL_A, "https://api-a.invalid/v1/{customerId}", Duration.ofSeconds(3));
+        HttpToolConfig second = config(TENANT_A, TOOL_A, "https://api-a.invalid/v2/{customerId}", Duration.ofSeconds(4));
+        JdbcHttpToolConfigRepository firstRepository = repository(dataSource);
+        JdbcHttpToolConfigRepository secondRepository = repository(dataSource);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            var firstSave = executor.submit(() -> saveAfterStart(firstRepository, first, ready, start));
+            var secondSave = executor.submit(() -> saveAfterStart(secondRepository, second, ready, start));
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            firstSave.get(20, TimeUnit.SECONDS);
+            secondSave.get(20, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(repository.findByTenantAndToolId(TENANT_A, TOOL_A)).containsAnyOf(first, second);
+    }
+
+    private static void saveAfterStart(
+            JdbcHttpToolConfigRepository repository,
+            HttpToolConfig config,
+            CountDownLatch ready,
+            CountDownLatch start
+    ) throws InterruptedException {
+        ready.countDown();
+        start.await();
+        repository.save(config);
+    }
+
+    private static JdbcHttpToolConfigRepository repository(DataSource dataSource) {
+        return new JdbcHttpToolConfigRepository(
+                JdbcClient.create(dataSource),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+        );
     }
 
     static HttpToolConfig config(UUID tenantId, UUID toolId, String urlTemplate, Duration timeout) {
