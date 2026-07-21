@@ -9,4 +9,5 @@ public interface ToolDefinitionRepository {
     ToolDefinition save(ToolDefinition tool);
     Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId);
     List<ToolDefinition> listByTenant(UUID tenantId);
+    void delete(UUID tenantId, UUID toolId);
 }

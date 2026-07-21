@@ -14,6 +14,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
 import java.util.UUID;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -82,6 +84,17 @@ class JdbcMcpToolPublicationRepositoryTest {
 
         assertThat(repository.findByTenantAndToolId(TENANT_A, TOOL_A)).isEmpty();
         assertThat(repository.findByTenantAndToolId(TENANT_B, TOOL_B)).contains(otherTenant);
+    }
+
+    @Test
+    void bulkFindUsesTenantScope() {
+        McpToolPublication publicationA = new McpToolPublication(TENANT_A, TOOL_A, true, "admin-a");
+        McpToolPublication publicationB = new McpToolPublication(TENANT_B, TOOL_B, true, "admin-b");
+        repository.save(publicationA);
+        repository.save(publicationB);
+
+        assertThat(repository.findByTenantAndToolIds(TENANT_A, List.of(TOOL_A, TOOL_B)))
+                .containsExactly(Map.entry(TOOL_A, publicationA));
     }
 
     @Test

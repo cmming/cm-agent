@@ -124,6 +124,21 @@ class ToolControllerTest {
     }
 
     @Test
+    void httpCreateRejectsNullParameterMapping() throws Exception {
+        String token = token(TENANT_A, "admin");
+
+        mockMvc.perform(post("/api/tools")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"null-mapping","description":"空映射","type":"HTTP","riskLevel":"LOW",
+                                 "httpConfig":{"method":"POST","urlTemplate":"https://api.example.test","inputSchema":{},
+                                 "parameterMappings":[null],"timeoutMillis":1000}}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void duplicateNameIsRejectedWithinTenantButAllowedAcrossTenants() throws Exception {
         String tenantAToken = token(TENANT_A, "admin-a");
         String tenantBToken = token(TENANT_B, "admin-b");

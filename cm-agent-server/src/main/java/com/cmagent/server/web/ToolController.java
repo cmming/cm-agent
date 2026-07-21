@@ -1,23 +1,20 @@
 package com.cmagent.server.web;
 
 import com.cmagent.api.PrincipalRef;
-import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.HttpParameterLocation;
 import com.cmagent.core.domain.HttpParameterMapping;
-import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.HttpToolMethod;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
-import com.cmagent.core.repository.ToolDefinitionRepository;
-import com.cmagent.core.repository.HttpToolConfigRepository;
-import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.service.ManagementCommandService;
 import com.cmagent.server.service.HttpToolCreateSpec;
+import com.cmagent.server.service.ToolQueryService;
+import com.cmagent.server.service.ToolSummary;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -47,38 +44,32 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/tools")
 public class ToolController {
-    private final ToolDefinitionRepository toolRepository;
-    private final HttpToolConfigRepository httpToolConfigRepository;
-    private final McpToolPublicationRepository mcpToolPublicationRepository;
     private final PermissionEvaluator permissionEvaluator;
     private final AuditAppender auditAppender;
     private final ManagementCommandService managementCommandService;
     private final ObjectMapper objectMapper;
+    private final ToolQueryService toolQueryService;
 
     public ToolController(
-            ToolDefinitionRepository toolRepository,
-            HttpToolConfigRepository httpToolConfigRepository,
-            McpToolPublicationRepository mcpToolPublicationRepository,
             PermissionEvaluator permissionEvaluator,
             AuditAppender auditAppender,
             ManagementCommandService managementCommandService,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ToolQueryService toolQueryService
     ) {
-        this.toolRepository = toolRepository;
-        this.httpToolConfigRepository = httpToolConfigRepository;
-        this.mcpToolPublicationRepository = mcpToolPublicationRepository;
         this.permissionEvaluator = permissionEvaluator;
         this.auditAppender = auditAppender;
         this.managementCommandService = managementCommandService;
         this.objectMapper = objectMapper;
+        this.toolQueryService = toolQueryService;
     }
 
     @GetMapping
     public List<ToolSummaryResponse> list(Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:read", "TOOL", "list");
-        return toolRepository.listByTenant(principal.tenantId()).stream()
-                .map(tool -> toSummary(principal, tool))
+        return toolQueryService.listByTenant(principal.tenantId()).stream()
+                .map(this::toSummary)
                 .toList();
     }
 
@@ -86,7 +77,7 @@ public class ToolController {
     public ToolSummaryResponse create(@Valid @RequestBody ToolCreateRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", "TOOL", "create");
-        ToolDefinition created = managementCommandService.createTool(
+        managementCommandService.createTool(
                 principal,
                 request.name(),
                 request.description(),
@@ -95,7 +86,11 @@ public class ToolController {
                 toHttpToolCreateSpec(request.httpConfig()),
                 Boolean.TRUE.equals(request.mcpPublished())
         );
-        return toSummary(principal, created);
+        return toolQueryService.listByTenant(principal.tenantId()).stream()
+                .filter(summary -> summary.tool().name().equals(request.name()))
+                .findFirst()
+                .map(this::toSummary)
+                .orElseThrow(() -> new IllegalStateException("已创建工具未找到"));
     }
 
     @PostMapping("/{id}/grants")
@@ -125,18 +120,12 @@ public class ToolController {
         }
     }
 
-    private ToolSummaryResponse toSummary(PrincipalRef principal, ToolDefinition tool) {
-        HttpToolConfigResponse httpConfig = httpToolConfigRepository
-                .findByTenantAndToolId(principal.tenantId(), tool.id())
-                .map(this::toHttpConfigResponse)
-                .orElse(null);
-        boolean mcpPublished = mcpToolPublicationRepository
-                .findByTenantAndToolId(principal.tenantId(), tool.id())
-                .map(publication -> publication.enabled())
-                .orElse(false);
+    private ToolSummaryResponse toSummary(ToolSummary summary) {
+        var tool = summary.tool();
         return new ToolSummaryResponse(
                 tool.id(), tool.tenantId(), tool.name(), tool.description(), tool.type(), tool.inputSchema(),
-                tool.riskLevel(), tool.enabled(), tool.endpoint(), tool.createdBy(), tool.updatedBy(), httpConfig, mcpPublished
+                tool.riskLevel(), tool.enabled(), tool.endpoint(), tool.createdBy(), tool.updatedBy(),
+                summary.httpConfig() == null ? null : toHttpConfigResponse(summary.httpConfig()), summary.mcpPublished()
         );
     }
 
@@ -164,7 +153,7 @@ public class ToolController {
         );
     }
 
-    private HttpToolConfigResponse toHttpConfigResponse(HttpToolConfig config) {
+    private HttpToolConfigResponse toHttpConfigResponse(com.cmagent.core.domain.HttpToolConfig config) {
         return new HttpToolConfigResponse(
                 config.method(), config.urlTemplate(), config.inputSchema(), config.parameterMappings(),
                 config.secretHeaders(), config.timeout().toMillis()
@@ -209,7 +198,7 @@ public class ToolController {
             @NotNull HttpToolMethod method,
             @NotBlank String urlTemplate,
             @NotNull JsonNode inputSchema,
-            @Valid List<HttpParameterMappingRequest> parameterMappings,
+            List<@NotNull @Valid HttpParameterMappingRequest> parameterMappings,
             Map<String, String> secretHeaders,
             @NotNull @Min(100) @Max(30000) Long timeoutMillis
     ) {

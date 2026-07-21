@@ -16,6 +16,7 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Objects;
@@ -122,6 +123,26 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
                 .param("toolId", toolId.toString())
                 .query(this::mapConfig)
                 .optional();
+    }
+
+    @Override
+    public Map<UUID, HttpToolConfig> findByTenantAndToolIds(UUID tenantId, List<UUID> toolIds) {
+        if (toolIds.isEmpty()) {
+            return Map.of();
+        }
+        List<HttpToolConfig> configurations = jdbcClient.sql("""
+                        SELECT tenant_id, tool_id, method, url_template, input_schema, parameter_mappings,
+                               secret_headers, timeout_ms
+                        FROM tool_http_configs
+                        WHERE tenant_id = :tenantId AND tool_id IN (:toolIds)
+                        """)
+                .param("tenantId", tenantId.toString())
+                .param("toolIds", toolIds.stream().map(UUID::toString).toList())
+                .query(this::mapConfig)
+                .list();
+        Map<UUID, HttpToolConfig> byToolId = new LinkedHashMap<>();
+        configurations.forEach(configuration -> byToolId.put(configuration.toolId(), configuration));
+        return Map.copyOf(byToolId);
     }
 
     @Override

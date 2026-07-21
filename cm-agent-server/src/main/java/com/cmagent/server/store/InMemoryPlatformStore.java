@@ -164,6 +164,10 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         return Optional.of(tool);
     }
 
+    public void deleteTool(UUID tenantId, UUID toolId) {
+        tools.computeIfPresent(toolId, (id, tool) -> tenantId.equals(tool.tenantId()) ? null : tool);
+    }
+
     public List<ToolDefinition> listTools(UUID tenantId) {
         return tools.values().stream()
                 .filter(tool -> tool.tenantId().equals(tenantId))

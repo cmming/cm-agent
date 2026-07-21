@@ -10,6 +10,8 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Objects;
 import java.util.UUID;
@@ -91,6 +93,25 @@ public class JdbcMcpToolPublicationRepository implements McpToolPublicationRepos
                 .param("toolId", toolId.toString())
                 .query(this::mapPublication)
                 .optional();
+    }
+
+    @Override
+    public Map<UUID, McpToolPublication> findByTenantAndToolIds(UUID tenantId, List<UUID> toolIds) {
+        if (toolIds.isEmpty()) {
+            return Map.of();
+        }
+        List<McpToolPublication> publications = jdbcClient.sql("""
+                        SELECT tenant_id, tool_id, enabled, published_by
+                        FROM tool_mcp_publications
+                        WHERE tenant_id = :tenantId AND tool_id IN (:toolIds)
+                        """)
+                .param("tenantId", tenantId.toString())
+                .param("toolIds", toolIds.stream().map(UUID::toString).toList())
+                .query(this::mapPublication)
+                .list();
+        Map<UUID, McpToolPublication> byToolId = new LinkedHashMap<>();
+        publications.forEach(publication -> byToolId.put(publication.toolId(), publication));
+        return Map.copyOf(byToolId);
     }
 
     @Override

@@ -92,6 +92,17 @@ class JdbcHttpToolConfigRepositoryTest {
     }
 
     @Test
+    void bulkFindUsesTenantScope() {
+        HttpToolConfig configA = config(TENANT_A, TOOL_A, "https://api-a.invalid/v1/{customerId}", Duration.ofSeconds(3));
+        HttpToolConfig configB = config(TENANT_B, TOOL_B, "https://api-b.invalid/v1/{customerId}", Duration.ofSeconds(5));
+        repository.save(configA);
+        repository.save(configB);
+
+        assertThat(repository.findByTenantAndToolIds(TENANT_A, List.of(TOOL_A, TOOL_B)))
+                .containsExactly(Map.entry(TOOL_A, configA));
+    }
+
+    @Test
     void rejectsSecretHeaderValuesThatAreNotReferencesBeforePersistence() {
         assertThatThrownBy(() -> repository.save(new HttpToolConfig(
                 TENANT_A, TOOL_A, HttpToolMethod.POST, "https://api-a.invalid", "{}", List.of(),

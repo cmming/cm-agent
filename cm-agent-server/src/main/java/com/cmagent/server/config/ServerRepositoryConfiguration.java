@@ -23,6 +23,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -87,6 +88,19 @@ public class ServerRepositoryConfiguration {
             }
 
             @Override
+            public Map<UUID, com.cmagent.core.domain.HttpToolConfig> findByTenantAndToolIds(
+                    UUID tenantId, List<UUID> toolIds
+            ) {
+                return toolIds.stream()
+                        .map(toolId -> store.findHttpToolConfig(tenantId, toolId))
+                        .flatMap(Optional::stream)
+                        .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                                com.cmagent.core.domain.HttpToolConfig::toolId,
+                                config -> config
+                        ));
+            }
+
+            @Override
             public void delete(UUID tenantId, UUID toolId) {
                 store.deleteHttpToolConfig(tenantId, toolId);
             }
@@ -106,6 +120,19 @@ public class ServerRepositoryConfiguration {
             @Override
             public Optional<com.cmagent.core.domain.McpToolPublication> findByTenantAndToolId(UUID tenantId, UUID toolId) {
                 return store.findMcpToolPublication(tenantId, toolId);
+            }
+
+            @Override
+            public Map<UUID, com.cmagent.core.domain.McpToolPublication> findByTenantAndToolIds(
+                    UUID tenantId, List<UUID> toolIds
+            ) {
+                return toolIds.stream()
+                        .map(toolId -> store.findMcpToolPublication(tenantId, toolId))
+                        .flatMap(Optional::stream)
+                        .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                                com.cmagent.core.domain.McpToolPublication::toolId,
+                                publication -> publication
+                        ));
             }
 
             @Override
@@ -173,6 +200,11 @@ public class ServerRepositoryConfiguration {
             @Override
             public List<ToolDefinition> listByTenant(UUID tenantId) {
                 return store.listTools(tenantId);
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID toolId) {
+                store.deleteTool(tenantId, toolId);
             }
         };
     }

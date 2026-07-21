@@ -20,6 +20,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -125,8 +126,14 @@ class ServerRepositoryConfigurationTest {
 
                     assertThat(configurations.findByTenantAndToolId(TENANT_A, TOOL_A)).contains(configuration);
                     assertThat(configurations.findByTenantAndToolId(TENANT_B, TOOL_A)).isEmpty();
+                    assertThat(configurations.findByTenantAndToolIds(TENANT_A, List.of(TOOL_A)))
+                            .containsExactly(Map.entry(TOOL_A, configuration));
+                    assertThat(configurations.findByTenantAndToolIds(TENANT_B, List.of(TOOL_A))).isEmpty();
                     assertThat(publications.listEnabledByTenant(TENANT_A)).containsExactly(publication);
                     assertThat(publications.listEnabledByTenant(TENANT_B)).isEmpty();
+                    assertThat(publications.findByTenantAndToolIds(TENANT_A, List.of(TOOL_A)))
+                            .containsExactly(Map.entry(TOOL_A, publication));
+                    assertThat(publications.findByTenantAndToolIds(TENANT_B, List.of(TOOL_A))).isEmpty();
 
                     configurations.delete(TENANT_A, TOOL_A);
                     publications.delete(TENANT_A, TOOL_A);

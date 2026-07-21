@@ -2,6 +2,12 @@ package com.cmagent.server.service;
 
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
+import com.cmagent.core.domain.HttpParameterLocation;
+import com.cmagent.core.domain.HttpParameterMapping;
+import com.cmagent.core.domain.HttpToolMethod;
+import com.cmagent.core.domain.ToolDefinition;
+import com.cmagent.core.domain.ToolRiskLevel;
+import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.repository.McpToolPublicationRepository;
@@ -14,7 +20,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -25,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ManagementCommandServiceTest {
@@ -89,5 +99,157 @@ class ManagementCommandServiceTest {
 
         assertThat(store.listAgents(TENANT_ID)).isEmpty();
         verify(auditAppender).append(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void memoryFallbackDoesNotPersistToolOrSuccessAuditWhenHttpConfigurationIsInvalid() {
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        ManagementCommandService service = memoryBackedService(store);
+        PrincipalRef principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant"));
+        HttpToolCreateSpec invalidSpec = new HttpToolCreateSpec(
+                HttpToolMethod.POST,
+                "https://api.example.test/orders",
+                "{}",
+                List.of(new HttpParameterMapping("", HttpParameterLocation.BODY, "", "/payload", true, "")),
+                java.util.Map.of("X-Api-Key", "not-a-secret-reference"),
+                Duration.ofSeconds(1)
+        );
+
+        assertThatThrownBy(() -> service.createTool(
+                principal, "invalid-http", "无效配置", ToolType.HTTP, ToolRiskLevel.LOW, invalidSpec, true
+        )).isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(store.listTools(TENANT_ID)).isEmpty();
+        assertThat(store.listAuditEvents(TENANT_ID)).isEmpty();
+        assertThat(store.listEnabledMcpToolPublications(TENANT_ID)).isEmpty();
+    }
+
+    @Test
+    void duplicateNameConstraintIsMappedToConflict() {
+        when(toolRepository.listByTenant(TENANT_ID)).thenReturn(List.of());
+        when(toolRepository.save(any())).thenThrow(new DuplicateKeyException(
+                "duplicate key value violates unique constraint ux_tool_definitions_tenant_name"
+        ));
+        ManagementCommandService service = new ManagementCommandService(
+                emptyAgentRepository(), toolRepository, httpToolConfigRepository, mcpToolPublicationRepository,
+                grantRepository, auditAppender, null
+        );
+        PrincipalRef principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant"));
+
+        assertThatThrownBy(() -> service.createTool(
+                principal, "duplicate", "重复", ToolType.LOCAL, ToolRiskLevel.LOW
+        )).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                assertThat(exception.getStatusCode().value()).isEqualTo(409));
+    }
+
+    private ManagementCommandService memoryBackedService(InMemoryPlatformStore store) {
+        ToolDefinitionRepository memoryTools = new ToolDefinitionRepository() {
+            @Override
+            public ToolDefinition save(ToolDefinition tool) {
+                return store.saveTool(tool);
+            }
+
+            @Override
+            public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
+                return store.findTool(tenantId, toolId);
+            }
+
+            @Override
+            public List<ToolDefinition> listByTenant(UUID tenantId) {
+                return store.listTools(tenantId);
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID toolId) {
+                store.deleteTool(tenantId, toolId);
+            }
+        };
+        HttpToolConfigRepository memoryHttpConfigs = new HttpToolConfigRepository() {
+            @Override
+            public com.cmagent.core.domain.HttpToolConfig save(com.cmagent.core.domain.HttpToolConfig config) {
+                return store.saveHttpToolConfig(config);
+            }
+
+            @Override
+            public Optional<com.cmagent.core.domain.HttpToolConfig> findByTenantAndToolId(UUID tenantId, UUID toolId) {
+                return store.findHttpToolConfig(tenantId, toolId);
+            }
+
+            @Override
+            public java.util.Map<UUID, com.cmagent.core.domain.HttpToolConfig> findByTenantAndToolIds(
+                    UUID tenantId, List<UUID> toolIds
+            ) {
+                return toolIds.stream().map(toolId -> store.findHttpToolConfig(tenantId, toolId))
+                        .flatMap(Optional::stream)
+                        .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                                com.cmagent.core.domain.HttpToolConfig::toolId, config -> config
+                        ));
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID toolId) {
+                store.deleteHttpToolConfig(tenantId, toolId);
+            }
+        };
+        McpToolPublicationRepository memoryPublications = new McpToolPublicationRepository() {
+            @Override
+            public com.cmagent.core.domain.McpToolPublication save(com.cmagent.core.domain.McpToolPublication publication) {
+                return store.saveMcpToolPublication(publication);
+            }
+
+            @Override
+            public Optional<com.cmagent.core.domain.McpToolPublication> findByTenantAndToolId(UUID tenantId, UUID toolId) {
+                return store.findMcpToolPublication(tenantId, toolId);
+            }
+
+            @Override
+            public java.util.Map<UUID, com.cmagent.core.domain.McpToolPublication> findByTenantAndToolIds(
+                    UUID tenantId, List<UUID> toolIds
+            ) {
+                return toolIds.stream().map(toolId -> store.findMcpToolPublication(tenantId, toolId))
+                        .flatMap(Optional::stream)
+                        .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                                com.cmagent.core.domain.McpToolPublication::toolId, publication -> publication
+                        ));
+            }
+
+            @Override
+            public List<com.cmagent.core.domain.McpToolPublication> listEnabledByTenant(UUID tenantId) {
+                return store.listEnabledMcpToolPublications(tenantId);
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID toolId) {
+                store.deleteMcpToolPublication(tenantId, toolId);
+            }
+        };
+        return new ManagementCommandService(
+                emptyAgentRepository(), memoryTools, memoryHttpConfigs, memoryPublications, grantRepository,
+                new AuditAppender(store), null
+        );
+    }
+
+    private AgentDefinitionRepository emptyAgentRepository() {
+        return new AgentDefinitionRepository() {
+            @Override
+            public AgentDefinition save(AgentDefinition agent) {
+                return agent;
+            }
+
+            @Override
+            public Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId) {
+                return Optional.empty();
+            }
+
+            @Override
+            public List<AgentDefinition> listByTenant(UUID tenantId) {
+                return List.of();
+            }
+
+            @Override
+            public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
+                throw new UnsupportedOperationException();
+            }
+        };
     }
 }
