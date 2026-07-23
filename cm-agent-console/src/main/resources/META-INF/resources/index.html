@@ -120,8 +120,18 @@
                         <label for="toolName">Tool 名称</label><input id="toolName" name="name" required>
                         <label for="toolDescription">描述</label><textarea id="toolDescription" name="description" rows="3" required></textarea>
                         <div class="form-row">
-                            <div><label for="toolType">类型</label><select id="toolType" name="type"><option value="LOCAL">LOCAL</option><option value="MCP">MCP</option><option value="A2A">A2A</option></select></div>
+                            <div><label for="toolType">类型</label><select id="toolType" name="type"><option value="LOCAL">LOCAL</option><option value="HTTP">HTTP</option><option value="MCP">MCP</option><option value="A2A">A2A</option></select></div>
                             <div><label for="toolRiskLevel">风险级别</label><select id="toolRiskLevel" name="riskLevel"><option value="LOW">LOW</option><option value="MEDIUM">MEDIUM</option><option value="HIGH">HIGH</option></select></div>
+                        </div>
+                        <div id="httpConfigFields" hidden>
+                            <label for="httpMethod">HTTP 方法</label><select id="httpMethod"><option value="GET">GET</option><option value="POST">POST</option></select>
+                            <label for="httpUrlTemplate">请求地址模板</label><input id="httpUrlTemplate" type="text" inputmode="url">
+                            <label for="httpInputSchema">输入 Schema（JSON）</label><textarea id="httpInputSchema" rows="4">{}</textarea>
+                            <label for="httpParameterMappings">参数映射（JSON 数组）</label><textarea id="httpParameterMappings" rows="4">[]</textarea>
+                            <label for="httpSecretHeaders">Secret 引用（JSON 对象）</label><textarea id="httpSecretHeaders" rows="3">{}</textarea>
+                            <p class="field-help">仅填写 Secret 引用 JSON，例如引用路径；请勿填写、粘贴或展示真实 Secret 值。</p>
+                            <label for="httpTimeoutMillis">超时时间（毫秒）</label><input id="httpTimeoutMillis" type="number" min="100" max="30000" value="1000">
+                            <label class="checkbox-label" for="toolMcpPublished"><input id="toolMcpPublished" type="checkbox"> 创建后发布为 MCP Tool</label>
                         </div>
                         <button id="createToolBtn" class="button primary" type="submit">注册 Tool</button>
                         <p id="toolFormStatus" class="form-status" aria-live="polite"></p>
@@ -135,6 +145,18 @@
                         <button id="grantToolBtn" class="button" type="submit">确认授权</button>
                         <p id="grantFormStatus" class="form-status" aria-live="polite"></p>
                     </form>
+                </article>
+                <article class="panel form-panel">
+                    <div class="panel-heading"><div><p class="eyebrow">调试</p><h2>调用 Tool</h2></div></div>
+                    <form id="debugToolForm">
+                        <label for="debugToolSelect">Tool</label><select id="debugToolSelect" required></select>
+                        <label for="debugInput">输入（JSON）</label><textarea id="debugInput" rows="4" required>{}</textarea>
+                        <label for="debugConfirmedToolName">HIGH 风险确认</label><input id="debugConfirmedToolName" type="text">
+                        <p class="field-help">仅 HTTP 与 LOCAL Tool 可调试。HIGH 风险 Tool 必须逐字输入 Tool 名称确认。</p>
+                        <button id="debugToolBtn" class="button" type="submit">执行调试</button>
+                        <p id="debugFormStatus" class="form-status" aria-live="polite"></p>
+                    </form>
+                    <div id="debugResult" class="debug-result" aria-live="polite"><p class="empty-state">调试结果将显示在这里。</p></div>
                 </article>
             </div>
         </section>

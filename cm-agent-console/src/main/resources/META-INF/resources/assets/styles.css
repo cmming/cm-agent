@@ -120,6 +120,15 @@ textarea { resize: vertical; min-height: 90px; }
 .inline-form { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: stretch; }
 .inline-form textarea { min-height: 70px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field-help { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+.checkbox-label { display: flex; align-items: center; gap: 8px; }
+.checkbox-label input { width: auto; }
+.tool-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.tool-actions .button { min-height: 32px; padding: 6px 10px; font-size: 12px; }
+.debug-result { margin-top: 16px; }
+.debug-result dl { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 8px 12px; margin: 0; }
+.debug-result dt { color: var(--muted); font-size: 12px; }
+.debug-result dd { margin: 0; overflow-wrap: anywhere; }
 .resource-list { display: grid; gap: 8px; }
 .resource-item { width: 100%; border: 1px solid var(--border); border-radius: 9px; padding: 12px; background: var(--surface-soft); text-align: left; cursor: pointer; }
 .resource-item.active { border-color: var(--accent); background: #eef4ff; }

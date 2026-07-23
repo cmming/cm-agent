@@ -121,8 +121,11 @@
 
     function resetSessionViews() {
         $("runInput").value = "";
+        $("debugInput").value = "{}";
+        $("debugConfirmedToolName").value = "";
         renderMessage($("runDetail"), "选择一条运行记录查看详情。");
-        ["agentFormStatus", "toolFormStatus", "grantFormStatus", "runFormStatus"].forEach((id) => setStatus($(id)));
+        renderMessage($("debugResult"), "调试结果将显示在这里。");
+        ["agentFormStatus", "toolFormStatus", "grantFormStatus", "runFormStatus", "debugFormStatus"].forEach((id) => setStatus($(id)));
     }
 
     function showConsole() {
@@ -256,6 +259,7 @@
         }
         renderTools();
         updateToolOptions();
+        updateDebugToolOptions();
         updateOverview();
     }
 
@@ -267,26 +271,63 @@
             return;
         }
         state.tools.forEach((tool) => {
+            const card = element("article", {className: "tool-card"});
             const item = element("button", {className: "resource-item", type: "button"});
             item.classList.toggle("active", tool.id === state.selectedToolId);
             item.append(element("strong", {text: tool.name || "未命名 Tool"}));
             item.append(element("span", {text: `${tool.type || "未知类型"} · ${tool.riskLevel || "未知风险"} · ${tool.enabled ? "已启用" : "已停用"}`}));
+            item.append(element("span", {text: `Endpoint：${tool.endpoint || tool.httpConfig?.urlTemplate || "—"}`}));
+            item.append(element("span", {text: `MCP：${tool.mcpPublished ? "已发布" : "未发布"}`}));
             item.addEventListener("click", () => {
                 state.selectedToolId = tool.id;
                 renderTools();
                 $("grantToolSelect").value = tool.id;
+                $("debugToolSelect").value = tool.id;
             });
-            container.append(item);
+            card.append(item);
+            if (tool.type === "HTTP") {
+                const actions = element("div", {className: "tool-actions"});
+                const publicationButton = element("button", {
+                    className: tool.mcpPublished ? "button ghost" : "button",
+                    type: "button",
+                    text: tool.mcpPublished ? "取消 MCP 发布" : "发布为 MCP Tool"
+                });
+                publicationButton.addEventListener("click", () => {
+                    const action = tool.mcpPublished ? unpublishMcpTool : publishMcpTool;
+                    action(tool).catch((error) => setStatus($("globalStatus"), error.message, "error"));
+                });
+                actions.append(publicationButton);
+                card.append(actions);
+            }
+            container.append(card);
         });
     }
 
     async function createTool() {
-        const payload = {
+        const fields = {
             name: $("toolName").value.trim(),
             description: $("toolDescription").value.trim(),
             type: $("toolType").value,
             riskLevel: $("toolRiskLevel").value
         };
+        let payload;
+        try {
+            payload = fields.type === "HTTP"
+                ? core.buildHttpToolPayload({
+                    ...fields,
+                    mcpPublished: $("toolMcpPublished").checked,
+                    method: $("httpMethod").value,
+                    urlTemplate: $("httpUrlTemplate").value,
+                    inputSchemaText: $("httpInputSchema").value,
+                    parameterMappingsText: $("httpParameterMappings").value,
+                    secretHeadersText: $("httpSecretHeaders").value,
+                    timeoutMillis: $("httpTimeoutMillis").value
+                })
+                : fields;
+        } catch (error) {
+            setStatus($("toolFormStatus"), error.message, "error");
+            return;
+        }
         if (!payload.name || !payload.description) {
             setStatus($("toolFormStatus"), "请完整填写 Tool 信息。", "error");
             return;
@@ -349,6 +390,90 @@
         select.disabled = false;
         state.tools.forEach((tool) => select.append(option(tool.id, tool.name || tool.id)));
         select.value = state.selectedToolId || state.tools[0].id;
+    }
+
+    function updateDebugToolOptions() {
+        const select = $("debugToolSelect");
+        const debugTools = state.tools.filter((tool) => tool.type === "HTTP" || tool.type === "LOCAL");
+        select.replaceChildren();
+        if (!debugTools.length) {
+            select.append(option("", "暂无可调试 Tool"));
+            select.disabled = true;
+            return;
+        }
+        select.disabled = false;
+        debugTools.forEach((tool) => select.append(option(tool.id, `${tool.name || tool.id} · ${tool.type}`)));
+        select.value = debugTools.some((tool) => tool.id === state.selectedToolId)
+            ? state.selectedToolId : debugTools[0].id;
+    }
+
+    function toggleHttpConfigFields() {
+        const isHttp = $("toolType").value === "HTTP";
+        $("httpConfigFields").hidden = !isHttp;
+        ["httpUrlTemplate", "httpInputSchema", "httpParameterMappings", "httpSecretHeaders", "httpTimeoutMillis"].forEach((id) => {
+            $(id).required = isHttp;
+        });
+    }
+
+    async function publishMcpTool(tool) {
+        await withSubmitState($("refreshToolsBtn"), async () => {
+            await api.request(`/api/tools/${encodeURIComponent(tool.id)}/mcp-publication`, {method: "PUT"});
+            await loadTools();
+            setStatus($("globalStatus"), `Tool“${tool.name || tool.id}”已发布为 MCP Tool。`, "success");
+        });
+    }
+
+    async function unpublishMcpTool(tool) {
+        await withSubmitState($("refreshToolsBtn"), async () => {
+            await api.request(`/api/tools/${encodeURIComponent(tool.id)}/mcp-publication`, {method: "DELETE"});
+            await loadTools();
+            setStatus($("globalStatus"), `Tool“${tool.name || tool.id}”已取消 MCP 发布。`, "success");
+        });
+    }
+
+    async function debugTool() {
+        const tool = state.tools.find((item) => item.id === $("debugToolSelect").value);
+        const confirmedToolName = $("debugConfirmedToolName").value;
+        if (!tool) {
+            setStatus($("debugFormStatus"), "请选择可调试的 Tool。", "error");
+            return;
+        }
+        if (!core.canDebugTool(tool, confirmedToolName)) {
+            setStatus($("debugFormStatus"), tool.riskLevel === "HIGH"
+                ? "HIGH 风险 Tool 的确认名称必须与 Tool 名称完全一致。" : "该 Tool 类型不支持调试。", "error");
+            return;
+        }
+        let input;
+        try {
+            input = core.parseJsonField($("debugInput").value, "调试输入");
+        } catch (error) {
+            setStatus($("debugFormStatus"), error.message, "error");
+            return;
+        }
+        try {
+            await withSubmitState($("debugToolBtn"), async () => {
+                const result = await api.request(`/api/tools/${encodeURIComponent(tool.id)}/debug`, {
+                    method: "POST",
+                    body: JSON.stringify({input, confirmedToolName: tool.riskLevel === "HIGH" ? confirmedToolName : null})
+                });
+                renderDebugResult(result);
+                setStatus($("debugFormStatus"), result?.success ? "调试完成。" : "调试未成功完成。", result?.success ? "success" : "error");
+            });
+        } catch (error) {
+            setStatus($("debugFormStatus"), error.message, "error");
+        }
+    }
+
+    function renderDebugResult(result) {
+        const container = $("debugResult");
+        const statusText = result?.success ? "成功" : "失败";
+        container.replaceChildren(definitionList([
+            ["状态", statusText],
+            ["HTTP 状态", result?.statusCode],
+            ["耗时", result?.durationMillis === null || result?.durationMillis === undefined ? "—" : `${result.durationMillis} ms`],
+            ["输出", result?.output],
+            ["错误", result?.errorMessage]
+        ]));
     }
 
     function updateOverview() {
@@ -583,7 +708,9 @@
     $("agentForm").addEventListener("submit", (event) => { event.preventDefault(); createAgent(); });
     $("toolForm").addEventListener("submit", (event) => { event.preventDefault(); createTool(); });
     $("grantForm").addEventListener("submit", (event) => { event.preventDefault(); grantTool(); });
+    $("debugToolForm").addEventListener("submit", (event) => { event.preventDefault(); debugTool(); });
     $("runForm").addEventListener("submit", (event) => { event.preventDefault(); runAgent(); });
+    $("toolType").addEventListener("change", toggleHttpConfigFields);
     $("refreshAgentsBtn").addEventListener("click", () => loadAgents().catch((error) => setStatus($("globalStatus"), error.message, "error")));
     $("refreshToolsBtn").addEventListener("click", () => loadTools().catch((error) => setStatus($("globalStatus"), error.message, "error")));
     $("refreshRunsBtn").addEventListener("click", () => loadRuns({append: false}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
@@ -594,5 +721,6 @@
     document.querySelectorAll("[data-page]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));
     document.querySelectorAll("[data-navigate]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.navigate)));
 
+    toggleHttpConfigFields();
     logout("请输入用户名和密码。");
 })();
