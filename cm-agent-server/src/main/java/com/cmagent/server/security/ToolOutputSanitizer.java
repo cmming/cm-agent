@@ -40,7 +40,10 @@ public class ToolOutputSanitizer {
     );
     private static final Set<String> SENSITIVE_JSON_KEYS = Set.of(
             "authorization", "cookie", "setcookie", "token", "accesstoken", "refreshtoken",
-            "apikey", "secret", "clientsecret", "password", "passwd", "jwtsecret"
+            "authtoken", "apikey", "secret", "clientsecret", "password", "passwd", "jwtsecret"
+    );
+    private static final Set<String> SENSITIVE_JSON_SUFFIXES = Set.of(
+            "authorization", "authtoken", "apikey", "clientsecret", "jwtsecret", "password", "passwd"
     );
 
     private final ObjectMapper objectMapper;
@@ -73,7 +76,7 @@ public class ToolOutputSanitizer {
             List<String> fieldNames = new ArrayList<>();
             node.fieldNames().forEachRemaining(fieldNames::add);
             for (String fieldName : fieldNames) {
-                if (SENSITIVE_JSON_KEYS.contains(normalizeSensitiveKey(fieldName))) {
+                if (isSensitiveJsonKey(normalizeSensitiveKey(fieldName))) {
                     ((ObjectNode) node).set(fieldName, TextNode.valueOf(MASK));
                 } else {
                     ((ObjectNode) node).set(fieldName, sanitizeJson(node.get(fieldName), secretValues));
@@ -109,5 +112,13 @@ public class ToolOutputSanitizer {
 
     private String normalizeSensitiveKey(String key) {
         return key.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+    }
+
+    private boolean isSensitiveJsonKey(String normalizedKey) {
+        if (SENSITIVE_JSON_KEYS.contains(normalizedKey)) {
+            return true;
+        }
+        return SENSITIVE_JSON_SUFFIXES.stream()
+                .anyMatch(suffix -> normalizedKey.length() > suffix.length() && normalizedKey.endsWith(suffix));
     }
 }

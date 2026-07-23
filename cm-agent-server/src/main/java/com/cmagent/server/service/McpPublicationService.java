@@ -20,12 +20,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 @Service
 public class McpPublicationService {
-    private static final Pattern MCP_TOOL_NAME = Pattern.compile("^[A-Za-z0-9_-]{1,128}$");
-
     private final ToolDefinitionRepository toolRepository;
     private final HttpToolConfigRepository httpToolConfigRepository;
     private final McpToolPublicationRepository publicationRepository;
@@ -103,16 +100,12 @@ public class McpPublicationService {
     }
 
     private void validatePublishable(ToolDefinition tool) {
-        if (!MCP_TOOL_NAME.matcher(tool.name()).matches()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "工具名称不符合 MCP 命名规则");
-        }
         if (tool.type() == ToolType.HTTP) {
             HttpToolConfig config = httpToolConfigRepository.findByTenantAndToolId(tool.tenantId(), tool.id()).orElse(null);
-            if (config == null || !tool.endpoint().equals(config.urlTemplate())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "HTTP 工具配置不可用");
-            }
+            McpToolPublicationRules.validateHttp(tool, config);
             return;
         }
+        McpToolPublicationRules.validateName(tool.name());
         if (tool.type() == ToolType.LOCAL && isSameRegistration(tool)) {
             return;
         }

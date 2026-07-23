@@ -102,7 +102,7 @@ public class ManagementCommandService {
             }
             return requireResult(transactionTemplate.execute(status -> {
                 ToolDefinition saved = saveToolWithHttpConfiguration(prepared);
-                appendToolAudit(principal, saved);
+                appendToolAudit(principal, saved, prepared.mcpToolPublication() != null);
                 return saved;
             }));
         } catch (DuplicateKeyException exception) {
@@ -137,6 +137,9 @@ public class ManagementCommandService {
                 httpToolCreateSpec.timeout()
         );
         httpToolConfigValidator.validate(configuration);
+        if (mcpPublished) {
+            McpToolPublicationRules.validateHttp(tool, configuration);
+        }
         McpToolPublication publication = mcpPublished
                 ? new McpToolPublication(principal.tenantId(), tool.id(), true, principal.principalId())
                 : null;
@@ -195,7 +198,7 @@ public class ManagementCommandService {
                 publicationWriteAttempted = true;
                 mcpToolPublicationRepository.save(prepared.mcpToolPublication());
             }
-            appendToolAudit(principal, saved);
+            appendToolAudit(principal, saved, prepared.mcpToolPublication() != null);
             return saved;
         } catch (RuntimeException exception) {
             compensateMemoryWrite(prepared, toolWriteAttempted, configurationWriteAttempted, publicationWriteAttempted, exception);
@@ -266,9 +269,13 @@ public class ManagementCommandService {
         return false;
     }
 
-    private void appendToolAudit(PrincipalRef principal, ToolDefinition tool) {
+    private void appendToolAudit(PrincipalRef principal, ToolDefinition tool, boolean mcpPublished) {
         auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_CREATE", "TOOL",
                 tool.id().toString(), "SUCCEEDED", "Tool 创建成功");
+        if (mcpPublished) {
+            auditAppender.append(principal.tenantId(), principal.principalId(), "MCP_TOOL_PUBLISHED", "TOOL",
+                    tool.id().toString(), "SUCCEEDED", "MCP 工具已发布");
+        }
     }
 
     private void appendGrantAudit(PrincipalRef principal, ToolDefinition tool, AgentDefinition agent) {

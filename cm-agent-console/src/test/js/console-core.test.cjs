@@ -152,6 +152,15 @@ test("不同工具写入按完成顺序协调最终刷新", () => {
     assert.equal(revisions.isCurrent(aReload), true);
 });
 
+test("HTTP 与 LOCAL 工具都提供 MCP 发布管理入口", () => {
+    const script = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+
+    assert.match(script, /tool\.type === "HTTP" \|\| tool\.type === "LOCAL"/);
+});
+
 function response(status, body) {
     return {
         ok: status >= 200 && status < 300,

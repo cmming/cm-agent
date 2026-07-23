@@ -291,7 +291,7 @@
                 $("debugToolSelect").value = tool.id;
             });
             card.append(item);
-            if (tool.type === "HTTP") {
+            if (tool.type === "HTTP" || tool.type === "LOCAL") {
                 const actions = element("div", {className: "tool-actions"});
                 const publicationButton = element("button", {
                     className: tool.mcpPublished ? "button ghost" : "button",

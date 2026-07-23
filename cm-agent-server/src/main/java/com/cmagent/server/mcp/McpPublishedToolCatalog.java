@@ -18,6 +18,7 @@ import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.runtime.GovernedToolExecutionService;
 import com.cmagent.server.runtime.ToolPreparationDataAccessException;
+import com.cmagent.server.runtime.http.HttpToolProperties;
 import com.cmagent.server.security.ToolOutputSanitizer;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -54,6 +55,7 @@ public class McpPublishedToolCatalog {
     private final AuditAppender audits;
     private final ObjectMapper objectMapper;
     private final ToolOutputSanitizer sanitizer;
+    private final HttpToolProperties httpToolProperties;
 
     public McpPublishedToolCatalog(
             ToolDefinitionRepository tools,
@@ -64,7 +66,8 @@ public class McpPublishedToolCatalog {
             PermissionEvaluator permissions,
             AuditAppender audits,
             ObjectMapper objectMapper,
-            ToolOutputSanitizer sanitizer
+            ToolOutputSanitizer sanitizer,
+            HttpToolProperties httpToolProperties
     ) {
         this.tools = Objects.requireNonNull(tools, "tools 不能为空");
         this.httpConfigs = Objects.requireNonNull(httpConfigs, "httpConfigs 不能为空");
@@ -75,6 +78,7 @@ public class McpPublishedToolCatalog {
         this.audits = Objects.requireNonNull(audits, "audits 不能为空");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
         this.sanitizer = Objects.requireNonNull(sanitizer, "sanitizer 不能为空");
+        this.httpToolProperties = Objects.requireNonNull(httpToolProperties, "httpToolProperties 不能为空");
     }
 
     public List<McpStatelessServerFeatures.SyncToolSpecification> specifications(PrincipalRef principal) {
@@ -134,9 +138,15 @@ public class McpPublishedToolCatalog {
                     current.id().toString(), "RUNNING", "MCP 工具调用已开始"
             ));
             if (result.success()) {
+                String output = sanitizer.sanitize(result.outputSummary(), List.of());
+                if (sanitizer.exceedsByteLimit(output, httpToolProperties.getMaxResponseBytes())) {
+                    audits.append(principal.tenantId(), principal.principalId(), "MCP_TOOL_CALL_FAILED", RESOURCE_TYPE,
+                            current.id().toString(), "FAILED", "MCP 工具调用失败");
+                    return failed(TOOL_EXECUTION_FAILED);
+                }
                 audits.append(principal.tenantId(), principal.principalId(), "MCP_TOOL_CALL_COMPLETED", RESOURCE_TYPE,
                         current.id().toString(), "SUCCEEDED", "MCP 工具调用完成");
-                return succeeded(sanitizer.sanitize(result.outputSummary(), List.of()));
+                return succeeded(output);
             }
             audits.append(principal.tenantId(), principal.principalId(), "MCP_TOOL_CALL_FAILED", RESOURCE_TYPE,
                     current.id().toString(), "FAILED", "MCP 工具调用失败");

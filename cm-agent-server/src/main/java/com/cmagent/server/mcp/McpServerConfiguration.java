@@ -7,6 +7,7 @@ import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.core.tool.ToolRegistry;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.runtime.GovernedToolExecutionService;
+import com.cmagent.server.runtime.http.HttpToolProperties;
 import com.cmagent.server.security.ToolOutputSanitizer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -17,7 +18,7 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(prefix = "cm-agent.mcp", name = "enabled", havingValue = "true")
-@EnableConfigurationProperties(McpServerProperties.class)
+@EnableConfigurationProperties({McpServerProperties.class, HttpToolProperties.class})
 public class McpServerConfiguration {
 
     @Bean
@@ -30,10 +31,12 @@ public class McpServerConfiguration {
             PermissionEvaluator permissions,
             AuditAppender audits,
             ObjectMapper objectMapper,
-            ToolOutputSanitizer sanitizer
+            ToolOutputSanitizer sanitizer,
+            HttpToolProperties httpToolProperties
     ) {
         return new McpPublishedToolCatalog(
-                tools, httpConfigs, publications, registry, executions, permissions, audits, objectMapper, sanitizer
+                tools, httpConfigs, publications, registry, executions, permissions, audits, objectMapper, sanitizer,
+                httpToolProperties
         );
     }
 

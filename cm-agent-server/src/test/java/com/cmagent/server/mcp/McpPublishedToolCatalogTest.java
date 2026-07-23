@@ -19,6 +19,7 @@ import com.cmagent.core.tool.ToolRegistry;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.runtime.GovernedToolExecutionService;
+import com.cmagent.server.runtime.http.HttpToolProperties;
 import com.cmagent.server.security.ToolOutputSanitizer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.common.McpTransportContext;
@@ -71,15 +72,17 @@ class McpPublishedToolCatalogTest {
     private AuditAppender audits;
 
     private ObjectMapper objectMapper;
+    private HttpToolProperties httpToolProperties;
     private McpPublishedToolCatalog catalog;
     private PrincipalRef principal;
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
+        httpToolProperties = new HttpToolProperties();
         catalog = new McpPublishedToolCatalog(
                 tools, httpConfigs, publications, registry, executions, permissions, audits,
-                objectMapper, new ToolOutputSanitizer(objectMapper)
+                objectMapper, new ToolOutputSanitizer(objectMapper), httpToolProperties
         );
         principal = new PrincipalRef(TENANT, "mcp-user", "MCP 用户", Set.of("tool:mcp:invoke"));
     }
@@ -315,6 +318,34 @@ class McpPublishedToolCatalogTest {
 
         assertThat(result.isError()).isFalse();
         assertThat(result.content().toString()).doesNotContain("raw-secret", "https://", "Secret.java");
+    }
+
+    @Test
+    void callLocal输出脱敏后超过上限时返回固定失败并记录失败审计() {
+        ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
+        publishableLocal(local);
+        httpToolProperties.setMaxResponseBytes(8);
+        when(permissions.check(principal, "tool:mcp:invoke")).thenReturn(AuthorizationDecision.allow());
+        when(publications.findByTenantAndToolId(TENANT, LOCAL_ID)).thenReturn(Optional.of(publication(LOCAL_ID, TENANT)));
+        when(executions.executeWhenReady(any(), any(), any())).thenAnswer(invocation -> {
+            invocation.getArgument(2, Runnable.class).run();
+            return ToolExecutionResult.succeeded("123456789", 200);
+        });
+        var specification = catalog.specifications(principal).getFirst();
+
+        McpSchema.CallToolResult result = specification.callHandler().apply(
+                McpTransportContext.EMPTY, new McpSchema.CallToolRequest("echo", Map.of())
+        );
+
+        assertThat(result.isError()).isTrue();
+        assertThat(result.content()).singleElement().isInstanceOfSatisfying(
+                McpSchema.TextContent.class,
+                content -> assertThat(content.text()).isEqualTo("工具执行失败")
+        );
+        verify(audits).append(TENANT, "mcp-user", "MCP_TOOL_CALL_FAILED", "TOOL",
+                LOCAL_ID.toString(), "FAILED", "MCP 工具调用失败");
+        verify(audits, never()).append(TENANT, "mcp-user", "MCP_TOOL_CALL_COMPLETED", "TOOL",
+                LOCAL_ID.toString(), "SUCCEEDED", "MCP 工具调用完成");
     }
 
     private void publishableLocal(ToolDefinition local) {

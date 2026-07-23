@@ -155,6 +155,70 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    void initialMcpPublicationRejectsInvalidToolNameBeforePersistence() {
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        ManagementCommandService service = memoryBackedService(store);
+        PrincipalRef principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant"));
+
+        assertThatThrownBy(() -> service.createTool(
+                principal, "invalid mcp name", "非法 MCP 名称", ToolType.HTTP, ToolRiskLevel.LOW,
+                validHttpSpec(), true
+        )).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                assertThat(exception.getStatusCode().value()).isEqualTo(400));
+
+        assertThat(store.listTools(TENANT_ID)).isEmpty();
+        assertThat(store.listEnabledMcpToolPublications(TENANT_ID)).isEmpty();
+        assertThat(store.listAuditEvents(TENANT_ID)).isEmpty();
+    }
+
+    @Test
+    void initialMcpPublicationWritesCreateAndPublicationAudits() {
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        ManagementCommandService service = memoryBackedService(store);
+        PrincipalRef principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant"));
+
+        ToolDefinition created = service.createTool(
+                principal, "valid_mcp_name", "初始发布", ToolType.HTTP, ToolRiskLevel.LOW,
+                validHttpSpec(), true
+        );
+
+        assertThat(store.findMcpToolPublication(TENANT_ID, created.id())).isPresent();
+        assertThat(store.listAuditEvents(TENANT_ID))
+                .extracting(com.cmagent.core.audit.AuditEvent::eventType)
+                .containsExactly("TOOL_CREATE", "MCP_TOOL_PUBLISHED");
+    }
+
+    @Test
+    void initialMcpPublicationAuditFailureRollsBackCreatedResources() {
+        when(toolRepository.listByTenant(TENANT_ID)).thenReturn(List.of());
+        when(toolRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(httpToolConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(mcpToolPublicationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            if ("MCP_TOOL_PUBLISHED".equals(invocation.getArgument(2, String.class))) {
+                throw new AuditPersistenceException(
+                        "审计写入失败", new IllegalStateException("database unavailable")
+                );
+            }
+            return null;
+        }).when(auditAppender).append(any(), any(), any(), any(), any(), any(), any());
+        ManagementCommandService service = new ManagementCommandService(
+                emptyAgentRepository(), toolRepository, httpToolConfigRepository, mcpToolPublicationRepository,
+                grantRepository, auditAppender, httpToolConfigValidator(), null
+        );
+        PrincipalRef principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant"));
+
+        assertThatThrownBy(() -> service.createTool(
+                principal, "valid_mcp_name", "发布审计失败", ToolType.HTTP, ToolRiskLevel.LOW,
+                validHttpSpec(), true
+        )).isInstanceOf(AuditPersistenceException.class);
+
+        verify(mcpToolPublicationRepository).delete(org.mockito.ArgumentMatchers.eq(TENANT_ID), any());
+        verify(httpToolConfigRepository).delete(org.mockito.ArgumentMatchers.eq(TENANT_ID), any());
+        verify(toolRepository).delete(org.mockito.ArgumentMatchers.eq(TENANT_ID), any());
+    }
+
+    @Test
     void duplicateNameConstraintIsMappedToConflict() {
         when(toolRepository.listByTenant(TENANT_ID)).thenReturn(List.of());
         when(toolRepository.save(any())).thenThrow(new DuplicateKeyException(
@@ -273,6 +337,17 @@ class ManagementCommandServiceTest {
 
     private static HttpToolConfigValidator httpToolConfigValidator() {
         return new HttpToolConfigValidator(new ObjectMapper());
+    }
+
+    private static HttpToolCreateSpec validHttpSpec() {
+        return new HttpToolCreateSpec(
+                HttpToolMethod.POST,
+                "https://api.example.test/orders",
+                "{\"type\":\"object\"}",
+                List.of(),
+                java.util.Map.of(),
+                Duration.ofSeconds(1)
+        );
     }
 
     private static ToolDefinitionRepository memoryToolRepository(InMemoryPlatformStore store) {

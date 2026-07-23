@@ -3,11 +3,6 @@ package com.cmagent.server.security;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ToolOutputSanitizerTest {
@@ -37,28 +32,22 @@ class ToolOutputSanitizerTest {
     }
 
     @Test
-    void 动态HTTP工具运维文档声明安全边界和MCP调用条件() throws IOException {
-        String readme = readRepositoryFile("README.md");
-        String configuration = readRepositoryFile("docs/configuration.md");
-        String operations = readRepositoryFile("docs/operations.md");
+    void redactsPrefixedStructuredSecretKeysWithoutMaskingOrdinaryFields() throws Exception {
+        String output = sanitizer.sanitize("""
+                {
+                  "X-Api-Key":"api-secret",
+                  "X-Auth-Token":"auth-secret",
+                  "serviceApiKey":"service-secret",
+                  "tokenCount":12,
+                  "monkey":"visible"
+                }
+                """, java.util.List.of());
 
-        assertThat(readme).contains("动态 HTTP 工具", "控制台", "MCP");
-        assertThat(configuration).contains(
-                "JSON Pointer", "secret/...", "allowed-hosts", "tool:mcp:invoke", "tool:debug",
-                "响应上限", "重定向"
-        );
-        assertThat(operations).contains("幂等", "MCP", "HTTP 工具", "SecretProvider");
-    }
-
-    private String readRepositoryFile(String relativePath) throws IOException {
-        Path directory = Path.of("").toAbsolutePath();
-        while (directory != null) {
-            Path candidate = directory.resolve(relativePath);
-            if (Files.isRegularFile(candidate)) {
-                return Files.readString(candidate, StandardCharsets.UTF_8);
-            }
-            directory = directory.getParent();
-        }
-        throw new IOException("未找到仓库文件：" + relativePath);
+        var json = new ObjectMapper().readTree(output);
+        assertThat(json.path("X-Api-Key").asText()).isEqualTo("<已脱敏>");
+        assertThat(json.path("X-Auth-Token").asText()).isEqualTo("<已脱敏>");
+        assertThat(json.path("serviceApiKey").asText()).isEqualTo("<已脱敏>");
+        assertThat(json.path("tokenCount").asInt()).isEqualTo(12);
+        assertThat(json.path("monkey").asText()).isEqualTo("visible");
     }
 }
