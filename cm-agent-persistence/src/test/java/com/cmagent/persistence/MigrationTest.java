@@ -37,6 +37,8 @@ class MigrationTest {
             "model_configs",
             "agent_definitions",
             "tool_definitions",
+            "tool_http_configs",
+            "tool_mcp_publications",
             "tool_grants",
             "conversations",
             "messages",
@@ -72,12 +74,13 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(3);
+        assertThat(migrationsExecuted).isEqualTo(4);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
             assertThat(indexNames(connection, "agent_definitions")).contains("idx_agent_definitions_tenant");
             assertThat(indexNames(connection, "tool_definitions")).contains("idx_tool_definitions_tenant");
+            assertThat(indexNames(connection, "tool_definitions")).contains("ux_tool_definitions_tenant_name");
             assertThat(indexNames(connection, "tool_grants")).contains("idx_tool_grants_tenant_agent");
             assertThat(indexNames(connection, "runs")).contains("idx_runs_tenant_agent");
             assertThat(indexNames(connection, "runs")).contains("idx_runs_tenant_agent_started");
@@ -96,6 +99,9 @@ class MigrationTest {
             assertThat(isNullable(connection, "tool_grants", "role_code")).isTrue();
             assertThat(importedKeyTargets(connection, "tool_grants")).doesNotContain("roles");
             assertThat(uniqueIndexColumns(connection, "tool_grants")).contains(Set.of("tenant_id", "tool_id", "agent_id"));
+            assertThat(uniqueIndexColumns(connection, "tool_definitions")).contains(Set.of("tenant_id", "name"));
+            assertThat(importedKeyTargets(connection, "tool_http_configs")).contains("tool_definitions");
+            assertThat(importedKeyTargets(connection, "tool_mcp_publications")).contains("tool_definitions");
         } catch (SQLException e) {
             throw new AssertionError("验证迁移后的 schema 失败", e);
         }

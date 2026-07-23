@@ -8,3 +8,4 @@ cm-agent:
     bootstrap-admin-password: ${CM_AGENT_TEST_BOOTSTRAP_ADMIN_PASSWORD:}
     bootstrap-admin-display-name: 测试管理员
     fake-runtime-enabled: true
+    http-tools-allow-http: true

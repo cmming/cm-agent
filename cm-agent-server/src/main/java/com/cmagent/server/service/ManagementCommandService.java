@@ -2,15 +2,21 @@ package com.cmagent.server.service;
 
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
+import com.cmagent.core.domain.HttpToolConfig;
+import com.cmagent.core.domain.McpToolPublication;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.repository.AgentDefinitionRepository;
+import com.cmagent.core.repository.HttpToolConfigRepository;
+import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.server.audit.AuditAppender;
+import com.cmagent.server.runtime.http.HttpToolConfigValidator;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
@@ -27,22 +33,32 @@ public class ManagementCommandService {
 
     private final AgentDefinitionRepository agentRepository;
     private final ToolDefinitionRepository toolRepository;
+    private final HttpToolConfigRepository httpToolConfigRepository;
+    private final McpToolPublicationRepository mcpToolPublicationRepository;
     private final ToolGrantRepository grantRepository;
     private final AuditAppender auditAppender;
+    private final HttpToolConfigValidator httpToolConfigValidator;
     private final TransactionTemplate transactionTemplate;
 
     @Autowired
     public ManagementCommandService(
             AgentDefinitionRepository agentRepository,
             ToolDefinitionRepository toolRepository,
+            HttpToolConfigRepository httpToolConfigRepository,
+            McpToolPublicationRepository mcpToolPublicationRepository,
             ToolGrantRepository grantRepository,
             AuditAppender auditAppender,
+            HttpToolConfigValidator httpToolConfigValidator,
             @Nullable TransactionTemplate transactionTemplate
     ) {
         this.agentRepository = Objects.requireNonNull(agentRepository, "agentRepository 不能为空");
         this.toolRepository = Objects.requireNonNull(toolRepository, "toolRepository 不能为空");
+        this.httpToolConfigRepository = Objects.requireNonNull(httpToolConfigRepository, "httpToolConfigRepository 不能为空");
+        this.mcpToolPublicationRepository = Objects.requireNonNull(mcpToolPublicationRepository, "mcpToolPublicationRepository 不能为空");
         this.grantRepository = Objects.requireNonNull(grantRepository, "grantRepository 不能为空");
         this.auditAppender = Objects.requireNonNull(auditAppender, "auditAppender 不能为空");
+        this.httpToolConfigValidator = Objects.requireNonNull(httpToolConfigValidator,
+                "httpToolConfigValidator 不能为空");
         this.transactionTemplate = transactionTemplate;
     }
 
@@ -65,19 +81,69 @@ public class ManagementCommandService {
     public ToolDefinition createTool(
             PrincipalRef principal, String name, String description, ToolType type, ToolRiskLevel riskLevel
     ) {
-        ToolDefinition tool = new ToolDefinition(
-                UUID.randomUUID(), principal.tenantId(), name, description, type, "{\"type\":\"object\"}",
-                riskLevel, true, "", principal.principalId(), principal.principalId()
-        );
-        if (transactionTemplate == null) {
-            appendToolAudit(principal, tool);
-            return toolRepository.save(tool);
+        return createTool(principal, name, description, type, riskLevel, null, false);
+    }
+
+    public ToolDefinition createTool(
+            PrincipalRef principal,
+            String name,
+            String description,
+            ToolType type,
+            ToolRiskLevel riskLevel,
+            @Nullable HttpToolCreateSpec httpToolCreateSpec,
+            boolean mcpPublished
+    ) {
+        validateToolCreateRequest(type, httpToolCreateSpec, mcpPublished);
+        ensureToolNameAvailable(principal.tenantId(), name);
+        PreparedToolCreate prepared = prepareToolCreate(principal, name, description, type, riskLevel, httpToolCreateSpec, mcpPublished);
+        try {
+            if (transactionTemplate == null) {
+                return saveToolWithCompensation(principal, prepared);
+            }
+            return requireResult(transactionTemplate.execute(status -> {
+                ToolDefinition saved = saveToolWithHttpConfiguration(prepared);
+                appendToolAudit(principal, saved, prepared.mcpToolPublication() != null);
+                return saved;
+            }));
+        } catch (DuplicateKeyException exception) {
+            if (isToolNameConflict(exception)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前租户下工具名称已存在", exception);
+            }
+            throw exception;
         }
-        return requireResult(transactionTemplate.execute(status -> {
-            ToolDefinition saved = toolRepository.save(tool);
-            appendToolAudit(principal, saved);
-            return saved;
-        }));
+    }
+
+    private PreparedToolCreate prepareToolCreate(
+            PrincipalRef principal,
+            String name,
+            String description,
+            ToolType type,
+            ToolRiskLevel riskLevel,
+            @Nullable HttpToolCreateSpec httpToolCreateSpec,
+            boolean mcpPublished
+    ) {
+        String inputSchema = httpToolCreateSpec == null ? "{\"type\":\"object\"}" : httpToolCreateSpec.inputSchema();
+        String endpoint = httpToolCreateSpec == null ? "" : httpToolCreateSpec.urlTemplate();
+        ToolDefinition tool = new ToolDefinition(
+                UUID.randomUUID(), principal.tenantId(), name, description, type, inputSchema,
+                riskLevel, true, endpoint, principal.principalId(), principal.principalId()
+        );
+        if (httpToolCreateSpec == null) {
+            return new PreparedToolCreate(tool, null, null);
+        }
+        HttpToolConfig configuration = new HttpToolConfig(
+                principal.tenantId(), tool.id(), httpToolCreateSpec.method(), httpToolCreateSpec.urlTemplate(),
+                httpToolCreateSpec.inputSchema(), httpToolCreateSpec.parameterMappings(), httpToolCreateSpec.secretHeaders(),
+                httpToolCreateSpec.timeout()
+        );
+        httpToolConfigValidator.validate(configuration);
+        if (mcpPublished) {
+            McpToolPublicationRules.validateHttp(tool, configuration);
+        }
+        McpToolPublication publication = mcpPublished
+                ? new McpToolPublication(principal.tenantId(), tool.id(), true, principal.principalId())
+                : null;
+        return new PreparedToolCreate(tool, configuration, publication);
     }
 
     public ToolGrant grantTool(PrincipalRef principal, UUID toolId, UUID agentId) {
@@ -105,7 +171,118 @@ public class ManagementCommandService {
                 agent.id().toString(), "SUCCEEDED", "Agent 创建成功");
     }
 
-    private void appendToolAudit(PrincipalRef principal, ToolDefinition tool) {
+    private ToolDefinition saveToolWithHttpConfiguration(PreparedToolCreate prepared) {
+        ToolDefinition saved = toolRepository.save(prepared.tool());
+        if (prepared.httpToolConfig() == null) {
+            return saved;
+        }
+        httpToolConfigRepository.save(prepared.httpToolConfig());
+        if (prepared.mcpToolPublication() != null) {
+            mcpToolPublicationRepository.save(prepared.mcpToolPublication());
+        }
+        return saved;
+    }
+
+    private ToolDefinition saveToolWithCompensation(PrincipalRef principal, PreparedToolCreate prepared) {
+        boolean toolWriteAttempted = false;
+        boolean configurationWriteAttempted = false;
+        boolean publicationWriteAttempted = false;
+        try {
+            toolWriteAttempted = true;
+            ToolDefinition saved = toolRepository.save(prepared.tool());
+            if (prepared.httpToolConfig() != null) {
+                configurationWriteAttempted = true;
+                httpToolConfigRepository.save(prepared.httpToolConfig());
+            }
+            if (prepared.mcpToolPublication() != null) {
+                publicationWriteAttempted = true;
+                mcpToolPublicationRepository.save(prepared.mcpToolPublication());
+            }
+            appendToolAudit(principal, saved, prepared.mcpToolPublication() != null);
+            return saved;
+        } catch (RuntimeException exception) {
+            compensateMemoryWrite(prepared, toolWriteAttempted, configurationWriteAttempted, publicationWriteAttempted, exception);
+            throw exception;
+        }
+    }
+
+    private void compensateMemoryWrite(
+            PreparedToolCreate prepared,
+            boolean toolWriteAttempted,
+            boolean configurationWriteAttempted,
+            boolean publicationWriteAttempted,
+            RuntimeException original
+    ) {
+        if (publicationWriteAttempted) {
+            compensate(() -> mcpToolPublicationRepository.delete(prepared.tool().tenantId(), prepared.tool().id()), original);
+        }
+        if (configurationWriteAttempted) {
+            compensate(() -> httpToolConfigRepository.delete(prepared.tool().tenantId(), prepared.tool().id()), original);
+        }
+        if (toolWriteAttempted) {
+            compensate(() -> toolRepository.delete(prepared.tool().tenantId(), prepared.tool().id()), original);
+        }
+    }
+
+    private void compensate(Runnable action, RuntimeException original) {
+        try {
+            action.run();
+        } catch (RuntimeException compensationFailure) {
+            original.addSuppressed(compensationFailure);
+        }
+    }
+
+    private void validateToolCreateRequest(
+            ToolType type,
+            @Nullable HttpToolCreateSpec httpToolCreateSpec,
+            boolean mcpPublished
+    ) {
+        if (type == ToolType.HTTP && httpToolCreateSpec == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "HTTP 工具必须提供配置");
+        }
+        if (type != ToolType.HTTP && httpToolCreateSpec != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "仅 HTTP 工具可以提供 HTTP 配置");
+        }
+        if (type != ToolType.HTTP && mcpPublished) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "仅 HTTP 工具可以发布到 MCP");
+        }
+    }
+
+    private void ensureToolNameAvailable(UUID tenantId, String name) {
+        boolean nameExists = toolRepository.listByTenant(tenantId).stream()
+                .anyMatch(existing -> existing.name().equals(name));
+        if (nameExists) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前租户下工具名称已存在");
+        }
+    }
+
+    private boolean isToolNameConflict(DuplicateKeyException exception) {
+        Throwable current = exception;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && message.toLowerCase(java.util.Locale.ROOT)
+                    .contains("ux_tool_definitions_tenant_name")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private void appendToolAudit(PrincipalRef principal, ToolDefinition tool, boolean mcpPublished) {
+        if (mcpPublished) {
+            auditAppender.appendAll(List.of(
+                    new AuditAppender.AuditWrite(
+                            principal.tenantId(), principal.principalId(), "TOOL_CREATE", "TOOL",
+                            tool.id().toString(), "SUCCEEDED", "Tool 创建成功"
+                    ),
+                    new AuditAppender.AuditWrite(
+                            principal.tenantId(), principal.principalId(), "MCP_TOOL_PUBLISHED", "TOOL",
+                            tool.id().toString(), "SUCCEEDED", "MCP 工具已发布"
+                    )
+            ));
+            return;
+        }
         auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_CREATE", "TOOL",
                 tool.id().toString(), "SUCCEEDED", "Tool 创建成功");
     }
@@ -117,5 +294,12 @@ public class ManagementCommandService {
 
     private static <T> T requireResult(T result) {
         return Objects.requireNonNull(result, "事务未返回结果");
+    }
+
+    private record PreparedToolCreate(
+            ToolDefinition tool,
+            @Nullable HttpToolConfig httpToolConfig,
+            @Nullable McpToolPublication mcpToolPublication
+    ) {
     }
 }

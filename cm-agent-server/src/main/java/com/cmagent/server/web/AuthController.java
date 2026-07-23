@@ -29,6 +29,8 @@ public class AuthController {
             "agent:write",
             "tool:read",
             "tool:grant",
+            "tool:debug",
+            "tool:mcp:invoke",
             "audit:read",
             "apikey:write"
     );

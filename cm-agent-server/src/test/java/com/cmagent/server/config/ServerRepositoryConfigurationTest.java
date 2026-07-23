@@ -12,12 +12,17 @@ import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.repository.RunRepository;
 import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.ToolCallRepository;
+import com.cmagent.core.repository.HttpToolConfigRepository;
+import com.cmagent.core.repository.McpToolPublicationRepository;
+import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -99,6 +104,78 @@ class ServerRepositoryConfigurationTest {
                     assertThatThrownBy(() -> toolCallRepository.saveAll(TENANT_B, batch))
                             .isInstanceOf(IllegalArgumentException.class)
                             .hasMessage("tenantId 与 toolCalls 批次不匹配");
+                });
+    }
+
+    @Test
+    void memoryModeProvidesTenantScopedHttpToolConfigurationRepositories() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ServerRepositoryConfiguration.class)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(HttpToolConfigRepository.class);
+                    assertThat(context).hasSingleBean(McpToolPublicationRepository.class);
+                    HttpToolConfigRepository configurations = context.getBean(HttpToolConfigRepository.class);
+                    McpToolPublicationRepository publications = context.getBean(McpToolPublicationRepository.class);
+                    com.cmagent.core.domain.HttpToolConfig configuration = new com.cmagent.core.domain.HttpToolConfig(
+                            TENANT_A, TOOL_A, com.cmagent.core.domain.HttpToolMethod.GET, "https://api.invalid/items",
+                            "{}", List.of(), java.util.Map.of("X-Api-Key", "secret/http/tenant-a"), java.time.Duration.ofSeconds(1));
+                    com.cmagent.core.domain.McpToolPublication publication = new com.cmagent.core.domain.McpToolPublication(
+                            TENANT_A, TOOL_A, true, "tester");
+
+                    configurations.save(configuration);
+                    publications.save(publication);
+
+                    assertThat(configurations.findByTenantAndToolId(TENANT_A, TOOL_A)).contains(configuration);
+                    assertThat(configurations.findByTenantAndToolId(TENANT_B, TOOL_A)).isEmpty();
+                    assertThat(configurations.findByTenantAndToolIds(TENANT_A, List.of(TOOL_A)))
+                            .containsExactly(Map.entry(TOOL_A, configuration));
+                    assertThat(configurations.findByTenantAndToolIds(TENANT_B, List.of(TOOL_A))).isEmpty();
+                    assertThat(publications.listEnabledByTenant(TENANT_A)).containsExactly(publication);
+                    assertThat(publications.listEnabledByTenant(TENANT_B)).isEmpty();
+                    assertThat(publications.findByTenantAndToolIds(TENANT_A, List.of(TOOL_A)))
+                            .containsExactly(Map.entry(TOOL_A, publication));
+                    assertThat(publications.findByTenantAndToolIds(TENANT_B, List.of(TOOL_A))).isEmpty();
+
+                    configurations.delete(TENANT_A, TOOL_A);
+                    publications.delete(TENANT_A, TOOL_A);
+
+                    assertThat(configurations.findByTenantAndToolId(TENANT_A, TOOL_A)).isEmpty();
+                    assertThat(publications.findByTenantAndToolId(TENANT_A, TOOL_A)).isEmpty();
+                });
+    }
+
+    @Test
+    void memoryToolRepositoryKeepsTenantNameIndexConsistentAfterDelete() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ServerRepositoryConfiguration.class)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    ToolDefinitionRepository repository = context.getBean(ToolDefinitionRepository.class);
+                    ToolDefinition original = new ToolDefinition(
+                            TOOL_A, TENANT_A, "unique-name", "", ToolType.LOCAL, "{}", ToolRiskLevel.LOW,
+                            true, "", "tester", "tester"
+                    );
+                    ToolDefinition duplicate = new ToolDefinition(
+                            UUID.fromString("20000000-0000-0000-0000-000000000002"), TENANT_A,
+                            "unique-name", "", ToolType.LOCAL, "{}", ToolRiskLevel.LOW,
+                            true, "", "tester", "tester"
+                    );
+                    ToolDefinition otherTenant = new ToolDefinition(
+                            UUID.fromString("20000000-0000-0000-0000-000000000003"), TENANT_B,
+                            "unique-name", "", ToolType.LOCAL, "{}", ToolRiskLevel.LOW,
+                            true, "", "tester", "tester"
+                    );
+
+                    repository.save(original);
+                    assertThatThrownBy(() -> repository.save(duplicate))
+                            .isInstanceOf(DuplicateKeyException.class);
+                    repository.save(otherTenant);
+                    repository.delete(TENANT_A, original.id());
+                    repository.save(duplicate);
+
+                    assertThat(repository.listByTenant(TENANT_A)).containsExactly(duplicate);
+                    assertThat(repository.listByTenant(TENANT_B)).containsExactly(otherTenant);
                 });
     }
 

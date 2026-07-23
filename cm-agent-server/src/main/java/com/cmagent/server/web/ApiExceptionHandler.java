@@ -67,6 +67,7 @@ public class ApiExceptionHandler {
             case BAD_REQUEST -> response(status, ApiErrorCode.VALIDATION_FAILED, "请求参数不合法");
             case UNAUTHORIZED -> response(status, ApiErrorCode.UNAUTHORIZED, "未登录或令牌无效");
             case FORBIDDEN -> response(status, ApiErrorCode.FORBIDDEN, "没有权限执行该操作");
+            case CONFLICT -> response(status, ApiErrorCode.VALIDATION_FAILED, "请求资源已存在");
             case NOT_FOUND -> response(status, ApiErrorCode.RUNTIME_ERROR, "请求资源不存在");
             default -> response(HttpStatus.INTERNAL_SERVER_ERROR, ApiErrorCode.INTERNAL_ERROR, "服务内部错误");
         };

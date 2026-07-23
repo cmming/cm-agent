@@ -8,6 +8,15 @@
     }
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     function formatError(status, body, fallbackText) {
+        if (status === 403) {
+            return "请求失败(403)：没有权限执行此操作。";
+        }
+        if (status === 404) {
+            return "请求失败(404)：请求的资源不存在或已不可用。";
+        }
+        if (status >= 500) {
+            return `请求失败(${status})：服务暂时不可用，请稍后重试。`;
+        }
         const structuredMessage = body && typeof body === "object"
             ? body.message || body.error || body.detail
             : "";
@@ -33,6 +42,90 @@
         const limitParameter = `limit=${encodeURIComponent(String(limit))}`;
         const cursorParameter = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
         return `${basePath}${separator}${limitParameter}${cursorParameter}`;
+    }
+
+    function parseJsonField(value, fieldName) {
+        try {
+            return JSON.parse(String(value || "").trim());
+        } catch {
+            throw new Error(`${fieldName}必须是有效 JSON。`);
+        }
+    }
+
+    function canDebugTool(tool, confirmedToolName) {
+        if (!tool || (tool.type !== "HTTP" && tool.type !== "LOCAL")) {
+            return false;
+        }
+        return tool.riskLevel !== "HIGH" || confirmedToolName === tool.name;
+    }
+
+    function buildHttpToolPayload(fields) {
+        const inputSchema = parseJsonField(fields.inputSchemaText, "输入 Schema");
+        const parameterMappings = parseJsonField(fields.parameterMappingsText, "参数映射");
+        const secretHeaders = parseJsonField(fields.secretHeadersText, "Secret 引用");
+        const timeoutMillis = Number(fields.timeoutMillis);
+        if (!Array.isArray(parameterMappings)) {
+            throw new Error("参数映射必须是 JSON 数组。");
+        }
+        if (!secretHeaders || Array.isArray(secretHeaders) || typeof secretHeaders !== "object"
+                || Object.values(secretHeaders).some((reference) => typeof reference !== "string"
+                || !/^secret\/[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/.test(reference))) {
+            throw new Error("Secret 引用必须是键值均为引用标识的 JSON 对象。");
+        }
+        if (!Number.isInteger(timeoutMillis) || timeoutMillis < 100 || timeoutMillis > 30000) {
+            throw new Error("超时时间必须是 100 到 30000 毫秒之间的整数。");
+        }
+        return {
+            name: String(fields.name || "").trim(),
+            description: String(fields.description || "").trim(),
+            type: "HTTP",
+            riskLevel: fields.riskLevel,
+            mcpPublished: Boolean(fields.mcpPublished),
+            httpConfig: {
+                method: fields.method,
+                urlTemplate: String(fields.urlTemplate || "").trim(),
+                inputSchema,
+                parameterMappings,
+                secretHeaders,
+                timeoutMillis
+            }
+        };
+    }
+
+    function createToolPublicationLock() {
+        const activeToolIds = new Set();
+        return {
+            tryAcquire(toolId) {
+                if (!toolId || activeToolIds.has(toolId)) {
+                    return false;
+                }
+                activeToolIds.add(toolId);
+                return true;
+            },
+            release(toolId) {
+                activeToolIds.delete(toolId);
+            }
+        };
+    }
+
+    function createLoadRevisionGate() {
+        let revision = 0;
+        return {
+            issue() {
+                revision += 1;
+                return revision;
+            },
+            invalidate() {
+                revision += 1;
+            },
+            completeWrite() {
+                revision += 1;
+                return revision;
+            },
+            isCurrent(candidate) {
+                return candidate === revision;
+            }
+        };
     }
 
     function createApiClient({fetchImpl, getToken, onUnauthorized}) {
@@ -105,6 +198,11 @@
         createApiClient,
         appendCursorPage,
         buildCursorPath,
+        parseJsonField,
+        canDebugTool,
+        buildHttpToolPayload,
+        createToolPublicationLock,
+        createLoadRevisionGate,
         formatDateTime,
         statusMeta
     };

@@ -36,6 +36,72 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 | `cm-agent.agentscope.model-max-attempts` | `2` | 模型最大尝试次数，范围为 1 到 5 |
 | `cm-agent.persistence.mode` | `memory` | `memory` 只允许本地开发和测试；生产 profile 必须为 `jdbc` |
 | `cm-agent.default-tenant-code` | `default` | 默认租户标识 |
+| `cm-agent.mcp.enabled` | `false` | 是否注册无状态 MCP Streamable HTTP 端点；生产启用前必须同时配置来源和主机白名单 |
+| `cm-agent.mcp.endpoint` | `/mcp` | MCP 端点的单一路径，不能包含查询串、片段、通配符或结尾斜杠 |
+| `cm-agent.http-tools.enabled` | `false` | 是否允许动态 HTTP 工具出站执行；生产环境必须显式开启 |
+| `cm-agent.http-tools.allow-http` | `false` | 是否允许明文 HTTP；生产环境应保持 `false` 并使用 HTTPS |
+| `cm-agent.http-tools.allowed-hosts` | 空 | HTTP 工具允许访问的主机白名单；为空时所有出站请求都会被拒绝 |
+| `cm-agent.http-tools.min-timeout` | `100ms` | 单工具最小请求超时 |
+| `cm-agent.http-tools.max-timeout` | `30s` | 单工具最大总超时；请求、重定向和 Secret 解析共用该时限 |
+| `cm-agent.http-tools.max-response-bytes` | `262144` | 脱敏前后均受约束的响应上限，超过上限返回固定受控失败 |
+| `cm-agent.http-tools.max-redirects` | `3` | 同源重定向最大次数；每跳均重新校验协议、主机与地址安全性 |
+
+## 动态 HTTP 工具
+
+动态 HTTP 工具由 `POST /api/tools` 创建，`type` 为 `HTTP`，需要 `tool:grant` 权限。工具定义与 HTTP 配置在同一事务内保存；同一租户的工具名称唯一。HTTP 配置包含 `method`（`GET` 或 `POST`）、`urlTemplate`、输入 JSON Schema、参数映射、`secretHeaders` 与 `timeoutMillis`。示例仅展示结构，不含可用凭据：
+
+```json
+{
+  "name": "order_lookup",
+  "description": "查询订单摘要",
+  "type": "HTTP",
+  "riskLevel": "MEDIUM",
+  "httpConfig": {
+    "method": "POST",
+    "urlTemplate": "https://api.example.test/orders/{orderId}",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "orderId": { "type": "string" },
+        "filter": { "type": "object", "properties": { "status": { "type": "string" } } }
+      }
+    },
+    "parameterMappings": [
+      { "sourcePointer": "/orderId", "location": "PATH", "targetName": "orderId", "required": true },
+      { "sourcePointer": "/filter/status", "location": "BODY", "targetPointer": "/filter/status", "defaultValue": "OPEN" }
+    ],
+    "secretHeaders": { "X-Service-Token": "secret/integration/order-service" },
+    "timeoutMillis": 3000
+  }
+}
+```
+
+输入 JSON Schema 支持嵌套对象、数组、本地 `$ref` 和受限复杂度校验。`sourcePointer` 与 BODY `targetPointer` 使用 RFC 6901 JSON Pointer；PATH、QUERY、HEADER 映射使用 `targetName`。缺失输入和显式 `null` 都会尝试采用映射 `defaultValue`，仍未得到必填值时调用失败。PATH 映射必须必填，且与 URL 模板中的 `{placeholder}` 精确一一对应。GET 不允许 BODY 映射；复杂对象只能映射到 BODY，不能直接序列化进 PATH、QUERY 或 HEADER。
+
+`secretHeaders` 只允许 `secret/...` 格式的引用，不保存密钥值，也不向创建响应、审计、日志、调试或 MCP 响应返回值。部署方必须提供受控 `SecretProvider`，并确保其自身 I/O 超时与中断响应；缺失、超时或失败的解析只产生固定受控错误。
+
+HTTP 工具默认不能出站。启用后，URL 必须匹配 `allowed-hosts`，并由服务端拒绝回环、链路本地、私有/保留地址及其他 SSRF 风险地址。重定向只允许同源，且每次跳转再次执行 DNS/地址校验；总超时覆盖 Secret 解析、请求和重定向。响应采用固定大小上限并经脱敏后才返回。JDK HTTP 客户端无法在域名解析后将已校验 IP 与 TLS SNI 原子绑定，生产网络仍必须配置 egress 防火墙、受控 DNS 或代理，作为 DNS TOCTOU 的纵深防御。
+
+控制台创建页面只接受 JSON 与 `secret/...` 引用。调试入口仅支持 HTTP/LOCAL 工具，需要 `tool:debug`；HIGH 风险工具必须提交完全一致的工具名称。调试不创建 Agent 或 Run，仍经过同一治理、审计和输出脱敏链路。
+
+## MCP Streamable HTTP
+
+MCP 端点默认关闭。启用时，除 `cm-agent.mcp.enabled=true` 外，必须显式配置非空的 `cm-agent.mcp.allowed-origins` 和 `cm-agent.mcp.allowed-hosts`；任一白名单缺失都会使服务启动失败。可使用部署环境的等价环境变量或受控外部 YAML 提供列表，示例中的值仅用于说明：
+
+```yaml
+cm-agent:
+  mcp:
+    enabled: true
+    endpoint: /mcp
+    allowed-origins:
+      - https://mcp-client.example.test
+    allowed-hosts:
+      - mcp.example.test
+```
+
+`POST /mcp` 使用 MCP Java SDK 2.0 的无状态 Streamable HTTP transport。`GET` 固定返回 `405`；关闭开关时端点不存在并返回 `404`。端点仍受 JWT 认证保护，不会因为启用 MCP 而变为公开接口；调用方还需要 `tool:mcp:invoke` 权限。每个 HTTP 请求都依据认证主体重新构建当前租户的工具目录，每次调用还会重新读取发布记录和工具定义，因此取消发布、禁用或配置漂移会即时生效。
+
+只会公开已发布且启用的 HTTP/LOCAL 工具。创建工具时 `mcpPublished=true` 或通过 `PUT /api/tools/{id}/mcp-publication` 发布，取消发布使用 `DELETE /api/tools/{id}/mcp-publication`，两者均需要 `tool:grant`；控制台操作完成后会重新加载当前工具状态。HTTP 工具的端点必须与受治理配置一致，LOCAL 工具必须与当前注册快照一致。调用使用 `MCP` 来源进入统一受治理执行入口，不创建 Agent 或 Run。输入按 MCP Schema 校验；调用失败仅返回受控 MCP 错误文本，不返回密钥、URL、Cookie、异常栈或底层错误。
 
 通过 `cm-agent.config.*` 可以覆盖公共 YAML 中对应的 `cm-agent.*` 属性。生产配置应放在受控外部 YAML 或由 secret manager 生成并挂载的配置文件中：
 

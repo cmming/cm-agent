@@ -78,8 +78,31 @@ class ConsoleResourceTest {
         String html = resource("META-INF/resources/index.html");
 
         assertThat(html)
-                .contains("value=\"LOCAL\"", "value=\"MCP\"", "value=\"A2A\"")
-                .doesNotContain("value=\"HTTP\"");
+                .contains("value=\"LOCAL\"", "value=\"MCP\"", "value=\"A2A\"", "value=\"HTTP\"");
+    }
+
+    @Test
+    void 控制台提供HTTP配置MCP发布和受控调试入口() throws IOException {
+        String html = resource("META-INF/resources/index.html");
+        String core = resource("META-INF/resources/assets/console-core.js");
+        String script = resource("META-INF/resources/assets/app.js");
+
+        assertThat(html).contains(
+                "id=\"httpConfigFields\"", "id=\"httpInputSchema\"", "id=\"httpParameterMappings\"",
+                "id=\"httpSecretHeaders\"", "Secret 引用", "id=\"toolMcpPublished\"",
+                "id=\"debugToolForm\"", "id=\"debugInput\"", "id=\"debugResult\""
+        ).contains("id=\"httpUrlTemplate\" type=\"text\"")
+                .doesNotContain("id=\"httpUrlTemplate\" type=\"url\"");
+        assertThat(core).contains(
+                "parseJsonField", "canDebugTool", "buildHttpToolPayload",
+                "createToolPublicationLock", "createLoadRevisionGate"
+        );
+        assertThat(script).contains(
+                "/debug", "/mcp-publication", "publishMcpTool", "unpublishMcpTool", "debugTool",
+                "textContent", "canDebugTool", "toolPublicationLock", "toolLoadRevision",
+                "publicationButton.disabled", "completeWrite()",
+                "tool.type === \"HTTP\" || tool.type === \"LOCAL\""
+        ).doesNotContain(".innerHTML", "localStorage", "sessionStorage");
     }
 
     private String resource(String path) throws IOException {

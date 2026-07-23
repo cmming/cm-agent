@@ -11,6 +11,8 @@ import com.cmagent.core.repository.RunRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolCallRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
+import com.cmagent.core.repository.HttpToolConfigRepository;
+import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -21,6 +23,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -67,6 +70,81 @@ public class ServerRepositoryConfiguration {
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
     public ToolCallRepository memoryToolCallRepository(InMemoryPlatformStore store) {
         return store;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(HttpToolConfigRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    public HttpToolConfigRepository memoryHttpToolConfigRepository(InMemoryPlatformStore store) {
+        return new HttpToolConfigRepository() {
+            @Override
+            public com.cmagent.core.domain.HttpToolConfig save(com.cmagent.core.domain.HttpToolConfig config) {
+                return store.saveHttpToolConfig(config);
+            }
+
+            @Override
+            public Optional<com.cmagent.core.domain.HttpToolConfig> findByTenantAndToolId(UUID tenantId, UUID toolId) {
+                return store.findHttpToolConfig(tenantId, toolId);
+            }
+
+            @Override
+            public Map<UUID, com.cmagent.core.domain.HttpToolConfig> findByTenantAndToolIds(
+                    UUID tenantId, List<UUID> toolIds
+            ) {
+                return toolIds.stream()
+                        .map(toolId -> store.findHttpToolConfig(tenantId, toolId))
+                        .flatMap(Optional::stream)
+                        .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                                com.cmagent.core.domain.HttpToolConfig::toolId,
+                                config -> config
+                        ));
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID toolId) {
+                store.deleteHttpToolConfig(tenantId, toolId);
+            }
+        };
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(McpToolPublicationRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    public McpToolPublicationRepository memoryMcpToolPublicationRepository(InMemoryPlatformStore store) {
+        return new McpToolPublicationRepository() {
+            @Override
+            public com.cmagent.core.domain.McpToolPublication save(com.cmagent.core.domain.McpToolPublication publication) {
+                return store.saveMcpToolPublication(publication);
+            }
+
+            @Override
+            public Optional<com.cmagent.core.domain.McpToolPublication> findByTenantAndToolId(UUID tenantId, UUID toolId) {
+                return store.findMcpToolPublication(tenantId, toolId);
+            }
+
+            @Override
+            public Map<UUID, com.cmagent.core.domain.McpToolPublication> findByTenantAndToolIds(
+                    UUID tenantId, List<UUID> toolIds
+            ) {
+                return toolIds.stream()
+                        .map(toolId -> store.findMcpToolPublication(tenantId, toolId))
+                        .flatMap(Optional::stream)
+                        .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                                com.cmagent.core.domain.McpToolPublication::toolId,
+                                publication -> publication
+                        ));
+            }
+
+            @Override
+            public List<com.cmagent.core.domain.McpToolPublication> listEnabledByTenant(UUID tenantId) {
+                return store.listEnabledMcpToolPublications(tenantId);
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID toolId) {
+                store.deleteMcpToolPublication(tenantId, toolId);
+            }
+        };
     }
 
     @Bean
@@ -122,6 +200,11 @@ public class ServerRepositoryConfiguration {
             @Override
             public List<ToolDefinition> listByTenant(UUID tenantId) {
                 return store.listTools(tenantId);
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID toolId) {
+                store.deleteTool(tenantId, toolId);
             }
         };
     }

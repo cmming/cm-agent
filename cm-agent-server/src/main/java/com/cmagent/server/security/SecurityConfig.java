@@ -18,6 +18,7 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -53,6 +54,7 @@ public class SecurityConfig {
                         .authenticationEntryPoint(authenticationEntryPoint())
                         .accessDeniedHandler(accessDeniedHandler()))
                 .authorizeHttpRequests(authorize -> {
+                    authorize.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll();
                     authorize.requestMatchers(
                             "/",
                             "/assets/**",

@@ -30,6 +30,17 @@ cm-agent:
     model-timeout: ${cm-agent.config.agentscope-model-timeout:60s}
     tool-timeout: ${cm-agent.config.agentscope-tool-timeout:30s}
     model-max-attempts: ${cm-agent.config.agentscope-model-max-attempts:2}
+  http-tools:
+    enabled: ${cm-agent.config.http-tools-enabled:false}
+    allow-http: ${cm-agent.config.http-tools-allow-http:false}
+    allowed-hosts: ${cm-agent.config.http-tools-allowed-hosts:}
+    min-timeout: ${cm-agent.config.http-tools-min-timeout:100ms}
+    max-timeout: ${cm-agent.config.http-tools-max-timeout:30s}
+    max-response-bytes: ${cm-agent.config.http-tools-max-response-bytes:262144}
+    max-redirects: ${cm-agent.config.http-tools-max-redirects:3}
+  mcp:
+    enabled: ${cm-agent.config.mcp-enabled:false}
+    endpoint: ${cm-agent.config.mcp-endpoint:/mcp}
   default-tenant-code: ${cm-agent.config.default-tenant-code:default}
   persistence:
     mode: ${cm-agent.config.persistence-mode:memory}

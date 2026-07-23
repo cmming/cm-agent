@@ -120,6 +120,14 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
                 .list();
     }
 
+    @Override
+    public void delete(UUID tenantId, UUID toolId) {
+        jdbcClient.sql("DELETE FROM tool_definitions WHERE tenant_id = :tenantId AND id = :toolId")
+                .param("tenantId", tenantId.toString())
+                .param("toolId", toolId.toString())
+                .update();
+    }
+
     private ToolDefinition mapTool(ResultSet rs, int rowNum) throws SQLException {
         return new ToolDefinition(
                 UUID.fromString(rs.getString("id")),

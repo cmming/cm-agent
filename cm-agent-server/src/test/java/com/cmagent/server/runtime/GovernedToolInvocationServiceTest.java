@@ -13,15 +13,14 @@ import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.ToolAuthorizationPolicy;
 import com.cmagent.core.tool.ToolExecutionRequest;
 import com.cmagent.core.tool.ToolExecutionResult;
-import com.cmagent.core.tool.ToolRegistry;
+import com.cmagent.core.tool.ToolInvocationSource;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.security.SensitiveDataRedactor;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
@@ -31,7 +30,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Stream;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -53,7 +53,6 @@ class GovernedToolInvocationServiceTest {
     private static final UUID AGENT_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
     private static final UUID RUN_ID = UUID.fromString("30000000-0000-0000-0000-000000000001");
     private static final UUID TOOL_ID = UUID.fromString("20000000-0000-0000-0000-000000000001");
-    private static final UUID OTHER_TOOL_ID = UUID.fromString("20000000-0000-0000-0000-000000000002");
     private static final String TOOL_CALL_ID = "call-1";
 
     @Mock
@@ -63,7 +62,7 @@ class GovernedToolInvocationServiceTest {
     @Mock
     private ToolAuthorizationPolicy policy;
     @Mock
-    private ToolRegistry toolRegistry;
+    private GovernedToolExecutionService executionService;
     @Mock
     private AuditAppender auditAppender;
     @Mock
@@ -77,7 +76,7 @@ class GovernedToolInvocationServiceTest {
     @BeforeEach
     void setUp() {
         service = new GovernedToolInvocationService(
-                toolRepository, grantRepository, policy, toolRegistry, auditAppender, redactor
+                toolRepository, grantRepository, policy, executionService, auditAppender, redactor
         );
         principal = new PrincipalRef(TENANT_ID, "principal", "管理员", Set.of("tool:invoke"));
         tool = tool(TENANT_ID, "echo");
@@ -95,7 +94,7 @@ class GovernedToolInvocationServiceTest {
 
         assertThat(result.authorized()).isFalse();
         assertThat(result.errorMessage()).isEqualTo("Agent 未获得工具授权 echo");
-        verifyNoInteractions(toolRegistry);
+        verifyNoInteractions(executionService);
         verify(auditAppender).accessDenied(principal, "TOOL", TOOL_ID.toString(),
                 "tool:invoke", "Agent 未获得工具授权 echo");
     }
@@ -157,51 +156,37 @@ class GovernedToolInvocationServiceTest {
         );
 
         assertThatThrownBy(() -> service.invoke(request())).isSameAs(failure);
-        verifyNoInteractions(grantRepository, policy, toolRegistry);
+        verifyNoInteractions(grantRepository, policy, executionService);
     }
 
     @Test
-    void missingRegisteredDefinitionWritesFailureAuditWithoutStartingOrExecuting() {
+    void unavailablePreparationWritesFailureAuditWithoutStartedOrExecution() {
         arrangeAuthorizedTool();
-        when(toolRegistry.find(TOOL_ID)).thenReturn(Optional.empty());
+        when(executionService.prepare(eq(tool), any())).thenReturn(unavailablePreparation());
 
         ToolInvocationResult result = service.invoke(request());
 
         assertUnavailable(result);
-        verifyFailureAuditWithoutStartOrExecution();
-    }
-
-    @ParameterizedTest
-    @MethodSource("registeredDefinitionMismatches")
-    void mismatchedRegisteredDefinitionWritesFailureAuditWithoutStartingOrExecuting(
-            ToolDefinition registeredTool
-    ) {
-        arrangeAuthorizedTool();
-        when(toolRegistry.find(TOOL_ID)).thenReturn(Optional.of(registeredTool));
-
-        ToolInvocationResult result = service.invoke(request());
-
-        assertUnavailable(result);
-        verifyFailureAuditWithoutStartOrExecution();
-    }
-
-    @Test
-    void registryFailureAuditExceptionIsRethrownUnchangedWithoutStartingOrExecuting() {
-        arrangeAuthorizedTool();
-        when(toolRegistry.find(TOOL_ID)).thenReturn(Optional.empty());
-        AuditPersistenceException failure = new AuditPersistenceException(
-                "审计写入失败", new IllegalStateException()
-        );
-        doThrow(failure).when(auditAppender).append(
-                TENANT_ID, "principal", "TOOL_CALL_FAILED", "TOOL",
-                TOOL_ID.toString(), "FAILED", "工具调用失败"
-        );
-
-        assertThatThrownBy(() -> service.invoke(request())).isSameAs(failure);
+        InOrder order = inOrder(executionService, auditAppender);
+        order.verify(executionService).prepare(eq(tool), any());
+        order.verify(auditAppender).append(TENANT_ID, "principal", "TOOL_CALL_FAILED",
+                "TOOL", TOOL_ID.toString(), "FAILED", "工具调用失败");
         verify(auditAppender, never()).append(
                 any(), any(), eq("TOOL_CALL_STARTED"), any(), any(), any(), any()
         );
-        verify(toolRegistry, never()).execute(any());
+    }
+
+    @Test
+    void preparationRepositoryFailurePropagatesWithoutStartingOrConvertingToToolFailure() {
+        arrangeAuthorizedTool();
+        DataAccessResourceFailureException failure = new DataAccessResourceFailureException("数据库连接失败");
+        when(executionService.prepare(eq(tool), any())).thenThrow(failure);
+
+        assertThatThrownBy(() -> service.invoke(request())).isSameAs(failure);
+
+        verify(auditAppender, never()).append(
+                any(), any(), any(), any(), any(), any(), any()
+        );
     }
 
     @Test
@@ -213,8 +198,7 @@ class GovernedToolInvocationServiceTest {
         when(policy.check(principal, AGENT_ID, tool, granted)).thenReturn(AuthorizationDecision.allow());
         when(policy.check(principal, AGENT_ID, tool, revoked))
                 .thenReturn(AuthorizationDecision.deny("Agent 未获得工具授权 echo"));
-        when(toolRegistry.find(TOOL_ID)).thenReturn(Optional.of(tool));
-        when(toolRegistry.execute(any())).thenReturn(new ToolExecutionResult("工具输出", true));
+        when(executionService.prepare(eq(tool), any())).thenReturn(prepared(new ToolExecutionResult("工具输出", true)));
 
         ToolInvocationResult first = service.invoke(request());
         ToolInvocationResult second = service.invoke(request());
@@ -225,7 +209,7 @@ class GovernedToolInvocationServiceTest {
         verify(grantRepository, times(2)).listByTenantAndAgent(TENANT_ID, AGENT_ID);
         verify(policy).check(principal, AGENT_ID, tool, granted);
         verify(policy).check(principal, AGENT_ID, tool, revoked);
-        verify(toolRegistry, times(1)).execute(any());
+        verify(executionService, times(1)).prepare(eq(tool), any());
         verify(auditAppender).accessDenied(
                 principal, "TOOL", TOOL_ID.toString(), "tool:invoke", "Agent 未获得工具授权 echo"
         );
@@ -234,31 +218,38 @@ class GovernedToolInvocationServiceTest {
     @Test
     void successfulInvocationUsesCompleteContextAndWritesAuditsInGovernedOrder() {
         arrangeAllowedTool();
-        when(toolRegistry.execute(any())).thenReturn(new ToolExecutionResult("工具输出", true));
+        AtomicInteger executions = new AtomicInteger();
+        when(executionService.prepare(eq(tool), any())).thenReturn(prepared(() -> {
+            executions.incrementAndGet();
+            return new ToolExecutionResult("工具输出", true);
+        }));
 
         ToolInvocationResult result = service.invoke(request());
 
         assertThat(result).isEqualTo(ToolInvocationResult.succeeded("工具输出"));
         ArgumentCaptor<ToolExecutionRequest> executionRequest = ArgumentCaptor.forClass(ToolExecutionRequest.class);
-        InOrder order = inOrder(toolRepository, grantRepository, policy, toolRegistry, auditAppender);
+        InOrder order = inOrder(toolRepository, grantRepository, policy, executionService, auditAppender);
         order.verify(toolRepository).findByTenantAndId(TENANT_ID, TOOL_ID);
         order.verify(grantRepository).listByTenantAndAgent(TENANT_ID, AGENT_ID);
         order.verify(policy).check(principal, AGENT_ID, tool, List.of(grant));
-        order.verify(toolRegistry).find(TOOL_ID);
+        order.verify(executionService).prepare(eq(tool), executionRequest.capture());
         order.verify(auditAppender).append(TENANT_ID, "principal", "TOOL_CALL_STARTED",
                 "TOOL", TOOL_ID.toString(), "RUNNING", "工具调用已开始");
-        order.verify(toolRegistry).execute(executionRequest.capture());
         order.verify(auditAppender).append(TENANT_ID, "principal", "TOOL_CALL_COMPLETED",
                 "TOOL", TOOL_ID.toString(), "SUCCEEDED", "工具调用完成");
         assertThat(executionRequest.getValue()).isEqualTo(new ToolExecutionRequest(
                 TENANT_ID, AGENT_ID, principal, RUN_ID, TOOL_CALL_ID, TOOL_ID, "{\"text\":\"hello\"}"
         ));
+        assertThat(executionRequest.getValue().source()).isEqualTo(ToolInvocationSource.AGENT);
+        assertThat(executions).hasValue(1);
     }
 
     @Test
     void executorReturnedFailureWritesFixedFailureAuditAndReturnsControlledError() {
         arrangeAllowedTool();
-        when(toolRegistry.execute(any())).thenReturn(new ToolExecutionResult("password=tool-secret", false));
+        when(executionService.prepare(eq(tool), any())).thenReturn(
+                prepared(new ToolExecutionResult("password=tool-secret", false))
+        );
 
         ToolInvocationResult result = service.invoke(request());
 
@@ -271,7 +262,9 @@ class GovernedToolInvocationServiceTest {
     void executorExceptionIsRedactedBeforeLoggingAndWritesFixedFailureAudit() {
         arrangeAllowedTool();
         IllegalStateException failure = new IllegalStateException("password=tool-secret");
-        when(toolRegistry.execute(any())).thenThrow(failure);
+        when(executionService.prepare(eq(tool), any())).thenReturn(
+                preparedFailure(failure)
+        );
         when(redactor.redact(failure.getMessage())).thenReturn("password=<已脱敏>");
 
         ToolInvocationResult result = service.invoke(request());
@@ -285,6 +278,11 @@ class GovernedToolInvocationServiceTest {
     @Test
     void auditFailureBeforeInvocationPreventsSideEffect() {
         arrangeAllowedTool();
+        AtomicBoolean executed = new AtomicBoolean();
+        when(executionService.prepare(eq(tool), any())).thenReturn(prepared(() -> {
+            executed.set(true);
+            return new ToolExecutionResult("工具输出", true);
+        }));
         AuditPersistenceException failure = new AuditPersistenceException(
                 "审计写入失败", new IllegalStateException()
         );
@@ -293,13 +291,13 @@ class GovernedToolInvocationServiceTest {
         );
 
         assertThatThrownBy(() -> service.invoke(request())).isSameAs(failure);
-        verify(toolRegistry, never()).execute(any());
+        assertThat(executed).isFalse();
     }
 
     @Test
     void completionAuditFailureIsRethrownUnchanged() {
         arrangeAllowedTool();
-        when(toolRegistry.execute(any())).thenReturn(new ToolExecutionResult("工具输出", true));
+        when(executionService.prepare(eq(tool), any())).thenReturn(prepared(new ToolExecutionResult("工具输出", true)));
         AuditPersistenceException failure = new AuditPersistenceException(
                 "审计写入失败", new IllegalStateException()
         );
@@ -318,7 +316,26 @@ class GovernedToolInvocationServiceTest {
 
     private void arrangeAllowedTool() {
         arrangeAuthorizedTool();
-        when(toolRegistry.find(TOOL_ID)).thenReturn(Optional.of(tool));
+    }
+
+    private static GovernedToolExecutionService.PreparedToolExecution prepared(ToolExecutionResult result) {
+        return prepared(() -> result);
+    }
+
+    private static GovernedToolExecutionService.PreparedToolExecution prepared(
+            java.util.function.Supplier<ToolExecutionResult> execution
+    ) {
+        return GovernedToolExecutionService.PreparedToolExecution.ready(execution);
+    }
+
+    private static GovernedToolExecutionService.PreparedToolExecution preparedFailure(RuntimeException failure) {
+        return prepared(() -> {
+            throw failure;
+        });
+    }
+
+    private static GovernedToolExecutionService.PreparedToolExecution unavailablePreparation() {
+        return GovernedToolExecutionService.PreparedToolExecution.unavailable();
     }
 
     private ToolInvocationRequest request() {
@@ -328,14 +345,6 @@ class GovernedToolInvocationServiceTest {
     private ToolInvocationRequest request(String toolName) {
         return new ToolInvocationRequest(
                 TENANT_ID, AGENT_ID, principal, RUN_ID, TOOL_CALL_ID, TOOL_ID, toolName, "{\"text\":\"hello\"}"
-        );
-    }
-
-    private static Stream<ToolDefinition> registeredDefinitionMismatches() {
-        return Stream.of(
-                tool(OTHER_TENANT_ID, "echo"),
-                tool(OTHER_TOOL_ID, TENANT_ID, "echo"),
-                tool(TENANT_ID, "other-name")
         );
     }
 
@@ -354,18 +363,9 @@ class GovernedToolInvocationServiceTest {
         assertThat(result).isEqualTo(ToolInvocationResult.failed("工具不可用"));
     }
 
-    private void verifyFailureAuditWithoutStartOrExecution() {
-        verify(auditAppender).append(TENANT_ID, "principal", "TOOL_CALL_FAILED",
-                "TOOL", TOOL_ID.toString(), "FAILED", "工具调用失败");
-        verify(auditAppender, never()).append(
-                any(), any(), eq("TOOL_CALL_STARTED"), any(), any(), any(), any()
-        );
-        verify(toolRegistry, never()).execute(any());
-    }
-
     private void verifyDefinitionFailureAuditWithoutAuthorizationOrExecution() {
         verify(auditAppender).append(TENANT_ID, "principal", "TOOL_CALL_FAILED",
                 "TOOL", TOOL_ID.toString(), "FAILED", "工具调用失败");
-        verifyNoInteractions(grantRepository, policy, toolRegistry);
+        verifyNoInteractions(grantRepository, policy, executionService);
     }
 }

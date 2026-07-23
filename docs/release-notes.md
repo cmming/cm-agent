@@ -6,6 +6,10 @@
 
 ### 本次变更
 
+- 新增动态 HTTP 工具：支持 GET/POST、嵌套 JSON Schema、本地引用、JSON Pointer 参数映射、缺失/null 默认值、PATH/QUERY/HEADER/BODY 目标及 `secret/...` Header 引用；创建与配置保存保持原子性和租户内工具名称唯一。
+- 新增受治理 HTTP 执行器，默认关闭并要求主机白名单；执行时校验 SSRF 风险地址、同源重定向、总超时和响应上限，输出经过结构化脱敏。部署仍需以 egress 防火墙、受控 DNS 或代理防御 DNS TOCTOU。
+- 新增默认关闭的 MCP 2.0 Streamable HTTP 服务端点。启用时必须配置 Origin/Host 白名单，端点保持 JWT 认证、`tool:mcp:invoke` 授权、多租户目录隔离和严格 MCP 调用审计；每个请求无状态构建并在完成后关闭 transport/server。
+- 新增 MCP 发布/取消发布与 HTTP/LOCAL 单工具调试。调试需要 `tool:debug`，HIGH 风险工具要求完全匹配的名称确认；发布管理需要 `tool:grant`。取消发布、禁用或配置漂移会在下次 MCP 调用立即生效。
 - 轻量控制台升级为面向使用者的可操作管理控制台，采用独立登录页、左侧导航、能力总览和分模块管理布局。
 - 控制台覆盖当前用户、Agent 列表/详情/创建、Tool 列表/创建/授权、Agent 执行、运行历史/详情/工具调用和审计游标分页；健康检查与 OpenAPI 作为辅助入口。
 - 控制台使用内存令牌、统一 `401` 失效处理和纯文本 DOM 渲染，不持久化 JWT、用户名或密码；补充窄屏响应式布局和键盘焦点样式。

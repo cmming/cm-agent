@@ -21,12 +21,18 @@ public class InMemoryToolRegistry implements ToolRegistry {
     }
 
     @Override
+    public Optional<ToolRegistrationSnapshot> snapshot(UUID toolId) {
+        return Optional.ofNullable(registrations.get(toolId))
+                .map(registration -> new ToolRegistrationSnapshot(
+                        registration.definition(), registration.executor()
+                ));
+    }
+
+    @Override
     public ToolExecutionResult execute(ToolExecutionRequest request) {
-        Registration registration = registrations.get(request.toolId());
-        if (registration == null) {
-            return new ToolExecutionResult("工具未注册 " + request.toolId(), false);
-        }
-        return registration.executor().execute(request);
+        return snapshot(request.toolId())
+                .map(snapshot -> snapshot.execute(request))
+                .orElseGet(() -> new ToolExecutionResult("工具未注册 " + request.toolId(), false));
     }
 
     private record Registration(ToolDefinition definition, ToolExecutor executor) {

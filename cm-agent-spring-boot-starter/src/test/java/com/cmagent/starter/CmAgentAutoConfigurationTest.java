@@ -110,6 +110,11 @@ class CmAgentAutoConfigurationTest {
                 }
 
                 @Override
+                public java.util.Optional<ToolRegistrationSnapshot> snapshot(java.util.UUID toolId) {
+                    return java.util.Optional.empty();
+                }
+
+                @Override
                 public com.cmagent.core.tool.ToolExecutionResult execute(com.cmagent.core.tool.ToolExecutionRequest request) {
                     return new com.cmagent.core.tool.ToolExecutionResult("custom", true);
                 }

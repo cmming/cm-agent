@@ -7,6 +7,8 @@ import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolCallRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
+import com.cmagent.core.repository.HttpToolConfigRepository;
+import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.persistence.JdbcAuditEventRepository;
 import com.cmagent.persistence.JdbcAgentDefinitionRepository;
 import com.cmagent.persistence.JdbcRunRepository;
@@ -14,6 +16,8 @@ import com.cmagent.persistence.JdbcModelConfigRepository;
 import com.cmagent.persistence.JdbcToolDefinitionRepository;
 import com.cmagent.persistence.JdbcToolCallRepository;
 import com.cmagent.persistence.JdbcToolGrantRepository;
+import com.cmagent.persistence.JdbcHttpToolConfigRepository;
+import com.cmagent.persistence.JdbcMcpToolPublicationRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import org.flywaydb.core.Flyway;
@@ -90,8 +94,11 @@ public class JdbcPersistenceConfiguration {
     }
 
     @Bean
-    AuditEventRepository jdbcAuditEventRepository(JdbcClient cmAgentJdbcClient) {
-        return new JdbcAuditEventRepository(cmAgentJdbcClient);
+    AuditEventRepository jdbcAuditEventRepository(
+            JdbcClient cmAgentJdbcClient,
+            TransactionTemplate cmAgentTransactionTemplate
+    ) {
+        return new JdbcAuditEventRepository(cmAgentJdbcClient, cmAgentTransactionTemplate);
     }
 
     @Bean
@@ -110,6 +117,23 @@ public class JdbcPersistenceConfiguration {
             TransactionTemplate cmAgentTransactionTemplate
     ) {
         return new JdbcToolCallRepository(cmAgentJdbcClient, cmAgentTransactionTemplate);
+    }
+
+    @Bean
+    HttpToolConfigRepository jdbcHttpToolConfigRepository(
+            JdbcClient cmAgentJdbcClient,
+            ObjectMapper objectMapper,
+            TransactionTemplate cmAgentTransactionTemplate
+    ) {
+        return new JdbcHttpToolConfigRepository(cmAgentJdbcClient, objectMapper, cmAgentTransactionTemplate);
+    }
+
+    @Bean
+    McpToolPublicationRepository jdbcMcpToolPublicationRepository(
+            JdbcClient cmAgentJdbcClient,
+            TransactionTemplate cmAgentTransactionTemplate
+    ) {
+        return new JdbcMcpToolPublicationRepository(cmAgentJdbcClient, cmAgentTransactionTemplate);
     }
 
     @Bean

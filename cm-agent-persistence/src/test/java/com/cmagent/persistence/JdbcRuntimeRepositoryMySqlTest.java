@@ -7,6 +7,8 @@ import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.RunToolCall;
 import com.cmagent.core.domain.RunToolCallBatch;
+import com.cmagent.core.domain.HttpToolConfig;
+import com.cmagent.core.domain.McpToolPublication;
 import org.flywaydb.core.Flyway;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -22,8 +24,13 @@ import org.junit.jupiter.api.Test;
 import javax.sql.DataSource;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -47,10 +54,13 @@ class JdbcRuntimeRepositoryMySqlTest {
     private JdbcRunRepository runRepository;
     private JdbcToolCallRepository toolCallRepository;
     private JdbcModelConfigRepository modelConfigRepository;
+    private JdbcHttpToolConfigRepository httpToolConfigRepository;
+    private JdbcMcpToolPublicationRepository mcpToolPublicationRepository;
+    private DataSource dataSource;
 
     @BeforeEach
     void setUp() {
-        DataSource dataSource = new DriverManagerDataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
+        dataSource = new DriverManagerDataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").cleanDisabled(false).load().clean();
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
         seedData(dataSource);
@@ -58,6 +68,13 @@ class JdbcRuntimeRepositoryMySqlTest {
         runRepository = new JdbcRunRepository(jdbcClient);
         modelConfigRepository = new JdbcModelConfigRepository(jdbcClient);
         toolCallRepository = new JdbcToolCallRepository(
+                jdbcClient, new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+        );
+        httpToolConfigRepository = new JdbcHttpToolConfigRepository(
+                jdbcClient, new com.fasterxml.jackson.databind.ObjectMapper(),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+        );
+        mcpToolPublicationRepository = new JdbcMcpToolPublicationRepository(
                 jdbcClient, new TransactionTemplate(new DataSourceTransactionManager(dataSource))
         );
     }
@@ -101,6 +118,108 @@ class JdbcRuntimeRepositoryMySqlTest {
         toolCallRepository.saveAll(TENANT_A, new RunToolCallBatch(TENANT_A, List.of(valid)));
         assertThat(toolCallRepository.listByTenantAndRun(TENANT_A, RUN_A)).containsExactly(valid);
         assertThat(toolCallRepository.listByTenantAndRun(TENANT_B, RUN_A)).isEmpty();
+    }
+
+    @Test
+    void mysqlHttpConfigAndMcpPublicationKeepTenantIsolation() {
+        HttpToolConfig config = JdbcHttpToolConfigRepositoryTest.config(
+                TENANT_A, TOOL_A, "https://api-a.invalid/v1/{customerId}", Duration.ofSeconds(3));
+        McpToolPublication publication = new McpToolPublication(TENANT_A, TOOL_A, true, "tester");
+
+        httpToolConfigRepository.save(config);
+        mcpToolPublicationRepository.save(publication);
+
+        assertThat(httpToolConfigRepository.findByTenantAndToolId(TENANT_A, TOOL_A)).contains(config);
+        assertThat(httpToolConfigRepository.findByTenantAndToolId(TENANT_B, TOOL_A)).isEmpty();
+        assertThat(mcpToolPublicationRepository.listEnabledByTenant(TENANT_A)).containsExactly(publication);
+        assertThat(mcpToolPublicationRepository.listEnabledByTenant(TENANT_B)).isEmpty();
+    }
+
+    @Test
+    void mysqlConcurrentFirstSavesAreIdempotent() throws Exception {
+        HttpToolConfig first = JdbcHttpToolConfigRepositoryTest.config(
+                TENANT_A, TOOL_A, "https://api-a.invalid/v1/{customerId}", Duration.ofSeconds(3));
+        HttpToolConfig second = JdbcHttpToolConfigRepositoryTest.config(
+                TENANT_A, TOOL_A, "https://api-a.invalid/v2/{customerId}", Duration.ofSeconds(4));
+        JdbcHttpToolConfigRepository firstRepository = new JdbcHttpToolConfigRepository(
+                JdbcClient.create(dataSource), new com.fasterxml.jackson.databind.ObjectMapper(),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+        JdbcHttpToolConfigRepository secondRepository = new JdbcHttpToolConfigRepository(
+                JdbcClient.create(dataSource), new com.fasterxml.jackson.databind.ObjectMapper(),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            var firstSave = executor.submit(() -> saveAfterStart(firstRepository, first, ready, start));
+            var secondSave = executor.submit(() -> saveAfterStart(secondRepository, second, ready, start));
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            firstSave.get(20, TimeUnit.SECONDS);
+            secondSave.get(20, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(httpToolConfigRepository.findByTenantAndToolId(TENANT_A, TOOL_A)).get().isIn(first, second);
+    }
+
+    @Test
+    void mysqlConcurrentFirstPublicationSavesAreIdempotent() throws Exception {
+        McpToolPublication enabled = new McpToolPublication(TENANT_A, TOOL_A, true, "tester-a");
+        McpToolPublication disabled = new McpToolPublication(TENANT_A, TOOL_A, false, "tester-b");
+        JdbcMcpToolPublicationRepository firstRepository = new JdbcMcpToolPublicationRepository(
+                JdbcClient.create(dataSource), new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+        JdbcMcpToolPublicationRepository secondRepository = new JdbcMcpToolPublicationRepository(
+                JdbcClient.create(dataSource), new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            var firstSave = executor.submit(() -> savePublicationAfterStart(firstRepository, enabled, ready, start));
+            var secondSave = executor.submit(() -> savePublicationAfterStart(secondRepository, disabled, ready, start));
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            firstSave.get(20, TimeUnit.SECONDS);
+            secondSave.get(20, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(mcpToolPublicationRepository.findByTenantAndToolId(TENANT_A, TOOL_A)).get().isIn(enabled, disabled);
+    }
+
+    private static void savePublicationAfterStart(
+            JdbcMcpToolPublicationRepository repository,
+            McpToolPublication publication,
+            CountDownLatch ready,
+            CountDownLatch start
+    ) {
+        ready.countDown();
+        awaitStart(start);
+        repository.save(publication);
+    }
+
+    private static void saveAfterStart(
+            JdbcHttpToolConfigRepository repository,
+            HttpToolConfig config,
+            CountDownLatch ready,
+            CountDownLatch start
+    ) {
+        ready.countDown();
+        awaitStart(start);
+        repository.save(config);
+    }
+
+    private static void awaitStart(CountDownLatch start) {
+        try {
+            start.await();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("并发保存测试被中断", exception);
+        }
     }
 
     private static RunToolCall toolCall(UUID id, UUID runId, UUID toolId) {
