@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -28,6 +29,9 @@ class JdbcAuditEventRepositoryTest {
 
     @Container
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    @Container
+    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4");
 
     private JdbcAuditEventRepository repository;
     private TransactionTemplate transactionTemplate;
@@ -170,6 +174,41 @@ class JdbcAuditEventRepositoryTest {
     }
 
     @Test
+    void appendAll在MySql第二条写入失败时不会留下首条审计() {
+        AuditRepositoryFixture fixture = mysqlFixture();
+        UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        AuditEvent existing = auditEvent("11111111-1111-1111-1111-111111111111", tenantId,
+                Instant.parse("2026-06-18T01:00:00Z"));
+        AuditEvent first = auditEvent("22222222-2222-2222-2222-222222222222", tenantId,
+                Instant.parse("2026-06-18T02:00:00Z"));
+        AuditEvent duplicate = auditEvent("11111111-1111-1111-1111-111111111111", tenantId,
+                Instant.parse("2026-06-18T03:00:00Z"));
+        fixture.repository().append(existing);
+
+        assertThatThrownBy(() -> fixture.repository().appendAll(List.of(first, duplicate)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThat(fixture.repository().listByTenant(tenantId, 10)).containsExactly(existing);
+    }
+
+    @Test
+    void appendAll在MySql加入已有事务并随外层回滚() {
+        AuditRepositoryFixture fixture = mysqlFixture();
+        UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        AuditEvent first = auditEvent("11111111-1111-1111-1111-111111111111", tenantId,
+                Instant.parse("2026-06-18T01:00:00Z"));
+        AuditEvent second = auditEvent("22222222-2222-2222-2222-222222222222", tenantId,
+                Instant.parse("2026-06-18T02:00:00Z"));
+
+        fixture.transactionTemplate().executeWithoutResult(status -> {
+            fixture.repository().appendAll(List.of(first, second));
+            status.setRollbackOnly();
+        });
+
+        assertThat(fixture.repository().listByTenant(tenantId, 10)).isEmpty();
+    }
+
+    @Test
     void listByTenantPageUsesCreatedAtAndIdKeysetWithinTenant() {
         UUID tenantA = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID tenantB = UUID.fromString("00000000-0000-0000-0000-000000000002");
@@ -200,6 +239,26 @@ class JdbcAuditEventRepositoryTest {
         );
     }
 
+    private static AuditRepositoryFixture mysqlFixture() {
+        DataSource dataSource = new DriverManagerDataSource(
+                mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword()
+        );
+        Flyway.configure()
+                .dataSource(dataSource)
+                .locations("classpath:db/migration")
+                .cleanDisabled(false)
+                .load()
+                .clean();
+        Flyway.configure()
+                .dataSource(dataSource)
+                .locations("classpath:db/migration")
+                .load()
+                .migrate();
+        seedTenants(dataSource);
+        TransactionTemplate template = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        return new AuditRepositoryFixture(new JdbcAuditEventRepository(JdbcClient.create(dataSource), template), template);
+    }
+
     private static void seedTenants(DataSource dataSource) {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
         Timestamp now = Timestamp.from(Instant.parse("2026-06-18T00:00:00Z"));
@@ -225,5 +284,11 @@ class JdbcAuditEventRepositoryTest {
                 .param("enabled", true)
                 .param("createdAt", now)
                 .update();
+    }
+
+    private record AuditRepositoryFixture(
+            JdbcAuditEventRepository repository,
+            TransactionTemplate transactionTemplate
+    ) {
     }
 }
