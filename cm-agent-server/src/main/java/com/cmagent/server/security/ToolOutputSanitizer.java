@@ -35,7 +35,8 @@ public class ToolOutputSanitizer {
             "(?im)^(?:authorization|cookie|set-cookie)\\s*[:=][^\\r\\n]*$"
     );
     private static final Pattern STACK_DETAIL = Pattern.compile(
-            "(?im)(?:^|\\n)\\s*(?:at\\s+|caused by:|suppressed:|[a-z_$][\\w$]*(?:\\.[\\w$]+)+(?:exception|error)\\s*:)"
+            "(?im)(?:^|\\n)\\s*(?:at\\s+|caused by:|suppressed:|[a-z_$][\\w$]*(?:\\.[\\w$]+)+(?:exception|error)\\s*:)|" +
+                    "\\bat\\s+[a-z_$][\\w$]*(?:\\.[\\w$]+)+\\([^\\r\\n)]*(?:\\.java:\\d+|unknown source|native method)\\)"
     );
     private static final Set<String> SENSITIVE_JSON_KEYS = Set.of(
             "authorization", "cookie", "setcookie", "token", "accesstoken", "refreshtoken",

@@ -38,6 +38,9 @@ cm-agent:
     max-timeout: ${cm-agent.config.http-tools-max-timeout:30s}
     max-response-bytes: ${cm-agent.config.http-tools-max-response-bytes:262144}
     max-redirects: ${cm-agent.config.http-tools-max-redirects:3}
+  mcp:
+    enabled: ${cm-agent.config.mcp-enabled:false}
+    endpoint: ${cm-agent.config.mcp-endpoint:/mcp}
   default-tenant-code: ${cm-agent.config.default-tenant-code:default}
   persistence:
     mode: ${cm-agent.config.persistence-mode:memory}

@@ -36,6 +36,27 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 | `cm-agent.agentscope.model-max-attempts` | `2` | 模型最大尝试次数，范围为 1 到 5 |
 | `cm-agent.persistence.mode` | `memory` | `memory` 只允许本地开发和测试；生产 profile 必须为 `jdbc` |
 | `cm-agent.default-tenant-code` | `default` | 默认租户标识 |
+| `cm-agent.mcp.enabled` | `false` | 是否注册无状态 MCP Streamable HTTP 端点；生产启用前必须同时配置来源和主机白名单 |
+| `cm-agent.mcp.endpoint` | `/mcp` | MCP 端点的单一路径，不能包含查询串、片段、通配符或结尾斜杠 |
+
+## MCP Streamable HTTP
+
+MCP 端点默认关闭。启用时，除 `cm-agent.mcp.enabled=true` 外，必须显式配置非空的 `cm-agent.mcp.allowed-origins` 和 `cm-agent.mcp.allowed-hosts`；任一白名单缺失都会使服务启动失败。可使用部署环境的等价环境变量或受控外部 YAML 提供列表，示例中的值仅用于说明：
+
+```yaml
+cm-agent:
+  mcp:
+    enabled: true
+    endpoint: /mcp
+    allowed-origins:
+      - https://mcp-client.example.test
+    allowed-hosts:
+      - mcp.example.test
+```
+
+`POST /mcp` 使用 MCP Java SDK 2.0 的无状态 Streamable HTTP transport。`GET` 固定返回 `405`；关闭开关时端点不存在并返回 `404`。端点仍受 JWT 认证保护，不会因为启用 MCP 而变为公开接口；调用方还需要 `tool:mcp:invoke` 权限。每个 HTTP 请求都依据认证主体重新构建当前租户的工具目录，每次调用还会重新读取发布记录和工具定义，因此取消发布、禁用或配置漂移会即时生效。
+
+只会公开已发布且启用的 HTTP/LOCAL 工具：HTTP 工具的端点必须与受治理配置一致，LOCAL 工具必须与当前注册快照一致。调用使用 `MCP` 来源进入统一受治理执行入口，不创建 Agent 或 Run。输入按 MCP Schema 校验；调用失败仅返回受控 MCP 错误文本，不返回密钥、URL、Cookie、异常栈或底层错误。
 
 通过 `cm-agent.config.*` 可以覆盖公共 YAML 中对应的 `cm-agent.*` 属性。生产配置应放在受控外部 YAML 或由 secret manager 生成并挂载的配置文件中：
 
