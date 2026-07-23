@@ -80,6 +80,34 @@ cm-agent:
 
 `model_configs` 只部署 Provider、`baseUrl`、`modelName` 等模型元数据，不保存明文 API Key。AgentScope Java 2.0.0 当前支持 OpenAI Compatible 与 DashScope Provider；升级 AgentScope 或 Provider 扩展时必须重新核对依赖树和运行合同。
 
+## 动态 HTTP 工具与 MCP 部署
+
+动态 HTTP 工具和 MCP 都默认关闭。生产仅在已完成出口网络评估后启用，并使用最小集合白名单。以下是无真实凭据的结构示例：
+
+```yaml
+cm-agent:
+  http-tools:
+    enabled: true
+    allow-http: false
+    allowed-hosts:
+      - api.example.test
+    min-timeout: 100ms
+    max-timeout: 30s
+    max-response-bytes: 262144
+    max-redirects: 3
+  mcp:
+    enabled: true
+    endpoint: /mcp
+    allowed-origins:
+      - https://mcp-client.example.test
+    allowed-hosts:
+      - mcp.example.test
+```
+
+`secret/...` Header 引用必须由部署平台注册的 `SecretProvider` 解析，真实值不能出现在 YAML、数据库迁移、镜像、日志或 API 响应中。为 DNS TOCTOU 提供纵深防御，应在 egress 防火墙、受控 DNS 或代理中再次约束 `allowed-hosts` 对应的实际目标地址。
+
+发布 MCP 前需为调用主体授予 `tool:mcp:invoke`，为控制台发布/取消发布授予 `tool:grant`，为单工具调试授予 `tool:debug`。MCP 端点沿用 JWT 认证，不得设置为匿名路径；`GET` 返回 `405`，关闭开关时返回 `404`。反向代理不得将认证头、Cookie 或下游密钥写入访问日志。发布后无需重启：每个 MCP 请求都会重新加载租户目录，取消发布、禁用和配置漂移即时拒绝调用。
+
 外部配置目录示例为 `/etc/cm-agent/`，实际路径由部署平台控制。生产启动必须显式选择 `production`、`prod` 或 `supabase` profile：
 
 ```bash

@@ -59,6 +59,16 @@ JDBC 模式下，运行启动阶段写入 `RUNNING` Run 和启动审计；运行
 - timeout 或线程中断不等于外部副作用已停止。工具与下游系统必须以 `runId`、`toolCallId` 或业务键实现幂等；重试前先查询下游结果，避免重复扣款、通知或写入。
 - 当前仅支持同步单轮调用，不支持多轮会话持久化、流式 REST 或 HITL。调用方超时应保留运行 ID，并通过 Run 详情查询最终收口状态。
 
+## 动态 HTTP 工具与 MCP 运维
+
+动态 HTTP 工具是受治理的出站能力，不是通用代理。生产启用前应将 `cm-agent.http-tools.enabled` 设为 `true`，配置精确的 `cm-agent.http-tools.allowed-hosts`，并保持 `allow-http=false`。空白名单、私有地址、回环地址、不安全协议、跨源重定向和超过总超时的请求会被拒绝。响应大小受 `max-response-bytes` 限制；运维人员不应通过提高上限来传输文件或大对象。
+
+请求头只保存 `secret/...` 引用。`SecretProvider` 必须由部署平台接入 secret manager，且需具有可取消的短 I/O 超时；不得把解析出的值写入日志、审计、异常、控制台或抓包导出。HTTP 客户端的域名解析与连接之间仍可能出现 DNS TOCTOU，因此生产网络必须额外限制应用出站目的地址，例如通过 egress 防火墙、受控 DNS 或受控代理。
+
+为需要外部副作用的 HTTP 工具配置业务幂等键。网络超时、线程中断或调用端重试不表示下游操作已经停止或回滚；应在下游查询业务结果后再重试，避免重复扣款、通知或写入。调试同样可能触发真实下游调用，只授予受信人员 `tool:debug`，并对 HIGH 风险工具执行工具名称完全匹配的二次确认。
+
+MCP 默认关闭。启用 `cm-agent.mcp.enabled=true` 时，同时设置允许的 Origin/Host 白名单，并在反向代理层只公开配置的端点。`POST /mcp` 需要有效 Bearer JWT 和 `tool:mcp:invoke`；`GET /mcp` 固定为 `405`，关闭时为 `404`。每次 MCP 请求都会重新加载当前租户发布目录，取消发布、禁用或 HTTP/LOCAL 配置漂移无需等待缓存失效即可生效。MCP 调用、HTTP 工具和调试的错误与审计文字只应保留受控摘要，排障时不得要求输出 Authorization、Cookie、API Key、完整 URL 或堆栈。
+
 ## Flyway 运维
 
 - 迁移文件位于 `cm-agent-persistence/src/main/resources/db/migration`。
