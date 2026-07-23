@@ -270,12 +270,21 @@ public class ManagementCommandService {
     }
 
     private void appendToolAudit(PrincipalRef principal, ToolDefinition tool, boolean mcpPublished) {
+        if (mcpPublished) {
+            auditAppender.appendAll(List.of(
+                    new AuditAppender.AuditWrite(
+                            principal.tenantId(), principal.principalId(), "TOOL_CREATE", "TOOL",
+                            tool.id().toString(), "SUCCEEDED", "Tool 创建成功"
+                    ),
+                    new AuditAppender.AuditWrite(
+                            principal.tenantId(), principal.principalId(), "MCP_TOOL_PUBLISHED", "TOOL",
+                            tool.id().toString(), "SUCCEEDED", "MCP 工具已发布"
+                    )
+            ));
+            return;
+        }
         auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_CREATE", "TOOL",
                 tool.id().toString(), "SUCCEEDED", "Tool 创建成功");
-        if (mcpPublished) {
-            auditAppender.append(principal.tenantId(), principal.principalId(), "MCP_TOOL_PUBLISHED", "TOOL",
-                    tool.id().toString(), "SUCCEEDED", "MCP 工具已发布");
-        }
     }
 
     private void appendGrantAudit(PrincipalRef principal, ToolDefinition tool, AgentDefinition agent) {

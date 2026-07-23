@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Component
@@ -58,6 +59,16 @@ public class AuditAppender {
         }
     }
 
+    public void appendAll(List<AuditWrite> writes) {
+        try {
+            repository.appendAll(writes.stream().map(this::toAuditEvent).toList());
+        } catch (RuntimeException ex) {
+            log.warn("批量写入审计事件失败。eventCount={}, reason={}",
+                    writes == null ? 0 : writes.size(), redactor.redact(ex.getMessage()));
+            throw new AuditPersistenceException("审计写入失败", ex);
+        }
+    }
+
     public void accessDenied(PrincipalRef principal, String resourceType, String resourceId, String permission, String reason) {
         append(
                 principal.tenantId(),
@@ -68,5 +79,30 @@ public class AuditAppender {
                 "DENIED",
                 "缺少权限 " + permission + ": " + reason
         );
+    }
+
+    private AuditEvent toAuditEvent(AuditWrite write) {
+        return new AuditEvent(
+                UUID.randomUUID(),
+                write.tenantId(),
+                write.principalId() == null || write.principalId().isBlank() ? "anonymous" : write.principalId(),
+                write.eventType(),
+                write.resourceType(),
+                write.resourceId() == null || write.resourceId().isBlank() ? "-" : write.resourceId(),
+                write.status(),
+                write.message() == null || write.message().isBlank() ? "-" : redactor.redact(write.message()),
+                Instant.now()
+        );
+    }
+
+    public record AuditWrite(
+            UUID tenantId,
+            String principalId,
+            String eventType,
+            String resourceType,
+            String resourceId,
+            String status,
+            String message
+    ) {
     }
 }

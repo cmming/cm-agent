@@ -43,7 +43,8 @@ public class ToolOutputSanitizer {
             "authtoken", "apikey", "secret", "clientsecret", "password", "passwd", "jwtsecret"
     );
     private static final Set<String> SENSITIVE_JSON_SUFFIXES = Set.of(
-            "authorization", "authtoken", "apikey", "clientsecret", "jwtsecret", "password", "passwd"
+            "authorization", "authtoken", "accesstoken", "refreshtoken", "apikey", "secret", "clientsecret",
+            "jwtsecret", "password", "passwd", "token"
     );
 
     private final ObjectMapper objectMapper;

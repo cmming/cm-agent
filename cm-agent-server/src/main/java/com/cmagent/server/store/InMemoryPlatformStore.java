@@ -252,6 +252,14 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     @Override
+    public void appendAll(List<AuditEvent> events) {
+        Objects.requireNonNull(events, "events 不能为空");
+        synchronized (auditEvents) {
+            auditEvents.addAll(List.copyOf(events));
+        }
+    }
+
+    @Override
     public List<AuditEvent> listByTenant(UUID tenantId, int limit) {
         if (limit <= 0) {
             throw new IllegalArgumentException("limit 必须大于 0");

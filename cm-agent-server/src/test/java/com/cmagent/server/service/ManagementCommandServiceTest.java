@@ -185,7 +185,7 @@ class ManagementCommandServiceTest {
         assertThat(store.findMcpToolPublication(TENANT_ID, created.id())).isPresent();
         assertThat(store.listAuditEvents(TENANT_ID))
                 .extracting(com.cmagent.core.audit.AuditEvent::eventType)
-                .containsExactly("TOOL_CREATE", "MCP_TOOL_PUBLISHED");
+                .containsExactlyInAnyOrder("TOOL_CREATE", "MCP_TOOL_PUBLISHED");
     }
 
     @Test
@@ -194,14 +194,9 @@ class ManagementCommandServiceTest {
         when(toolRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(httpToolConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(mcpToolPublicationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        org.mockito.Mockito.doAnswer(invocation -> {
-            if ("MCP_TOOL_PUBLISHED".equals(invocation.getArgument(2, String.class))) {
-                throw new AuditPersistenceException(
-                        "审计写入失败", new IllegalStateException("database unavailable")
-                );
-            }
-            return null;
-        }).when(auditAppender).append(any(), any(), any(), any(), any(), any(), any());
+        org.mockito.Mockito.doThrow(new AuditPersistenceException(
+                "审计写入失败", new IllegalStateException("database unavailable")
+        )).when(auditAppender).appendAll(any());
         ManagementCommandService service = new ManagementCommandService(
                 emptyAgentRepository(), toolRepository, httpToolConfigRepository, mcpToolPublicationRepository,
                 grantRepository, auditAppender, httpToolConfigValidator(), null
@@ -216,6 +211,50 @@ class ManagementCommandServiceTest {
         verify(mcpToolPublicationRepository).delete(org.mockito.ArgumentMatchers.eq(TENANT_ID), any());
         verify(httpToolConfigRepository).delete(org.mockito.ArgumentMatchers.eq(TENANT_ID), any());
         verify(toolRepository).delete(org.mockito.ArgumentMatchers.eq(TENANT_ID), any());
+    }
+
+    @Test
+    void memoryInitialMcpPublicationAuditFailureDoesNotLeaveToolCreateAudit() {
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        AuditAppender failingAuditAppender = new AuditAppender(new com.cmagent.core.audit.AuditEventRepository() {
+            @Override
+            public void append(com.cmagent.core.audit.AuditEvent event) {
+                if ("MCP_TOOL_PUBLISHED".equals(event.eventType())) {
+                    throw new AuditPersistenceException(
+                            "审计写入失败", new IllegalStateException("memory audit unavailable")
+                    );
+                }
+                store.append(event);
+            }
+
+            @Override
+            public void appendAll(List<com.cmagent.core.audit.AuditEvent> events) {
+                throw new IllegalStateException("memory audit unavailable");
+            }
+
+            @Override
+            public List<com.cmagent.core.audit.AuditEvent> listByTenant(UUID tenantId, int limit) {
+                return store.listByTenant(tenantId, limit);
+            }
+
+            @Override
+            public List<com.cmagent.core.audit.AuditEvent> listByTenant(
+                    UUID tenantId, com.cmagent.core.audit.AuditPageRequest pageRequest
+            ) {
+                return store.listByTenant(tenantId, pageRequest);
+            }
+        });
+        ManagementCommandService service = memoryBackedService(store, memoryToolRepository(store), failingAuditAppender);
+        PrincipalRef principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant"));
+
+        assertThatThrownBy(() -> service.createTool(
+                principal, "valid_mcp_name", "发布审计失败", ToolType.HTTP, ToolRiskLevel.LOW,
+                validHttpSpec(), true
+        )).isInstanceOf(AuditPersistenceException.class);
+
+        assertThat(store.listTools(TENANT_ID)).isEmpty();
+        assertThat(store.listEnabledMcpToolPublications(TENANT_ID)).isEmpty();
+        assertThat(store.listAuditEvents(TENANT_ID)).isEmpty();
     }
 
     @Test
@@ -270,6 +309,14 @@ class ManagementCommandServiceTest {
     }
 
     private ManagementCommandService memoryBackedService(InMemoryPlatformStore store, ToolDefinitionRepository memoryTools) {
+        return memoryBackedService(store, memoryTools, new AuditAppender(store));
+    }
+
+    private ManagementCommandService memoryBackedService(
+            InMemoryPlatformStore store,
+            ToolDefinitionRepository memoryTools,
+            AuditAppender memoryAuditAppender
+    ) {
         HttpToolConfigRepository memoryHttpConfigs = new HttpToolConfigRepository() {
             @Override
             public com.cmagent.core.domain.HttpToolConfig save(com.cmagent.core.domain.HttpToolConfig config) {
@@ -331,7 +378,7 @@ class ManagementCommandServiceTest {
         };
         return new ManagementCommandService(
                 emptyAgentRepository(), memoryTools, memoryHttpConfigs, memoryPublications, grantRepository,
-                new AuditAppender(store), httpToolConfigValidator(), null
+                memoryAuditAppender, httpToolConfigValidator(), null
         );
     }
 

@@ -38,6 +38,9 @@ class ToolOutputSanitizerTest {
                   "X-Api-Key":"api-secret",
                   "X-Auth-Token":"auth-secret",
                   "serviceApiKey":"service-secret",
+                  "databaseSecret":"database-secret",
+                  "vendorAccessToken":"access-secret",
+                  "serviceRefreshToken":"refresh-secret",
                   "tokenCount":12,
                   "monkey":"visible"
                 }
@@ -47,6 +50,9 @@ class ToolOutputSanitizerTest {
         assertThat(json.path("X-Api-Key").asText()).isEqualTo("<已脱敏>");
         assertThat(json.path("X-Auth-Token").asText()).isEqualTo("<已脱敏>");
         assertThat(json.path("serviceApiKey").asText()).isEqualTo("<已脱敏>");
+        assertThat(json.path("databaseSecret").asText()).isEqualTo("<已脱敏>");
+        assertThat(json.path("vendorAccessToken").asText()).isEqualTo("<已脱敏>");
+        assertThat(json.path("serviceRefreshToken").asText()).isEqualTo("<已脱敏>");
         assertThat(json.path("tokenCount").asInt()).isEqualTo(12);
         assertThat(json.path("monkey").asText()).isEqualTo("visible");
     }
