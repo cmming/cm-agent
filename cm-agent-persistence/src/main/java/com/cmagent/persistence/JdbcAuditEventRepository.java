@@ -4,6 +4,7 @@ import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.core.audit.AuditPageRequest;
 import com.cmagent.core.audit.AuditEventRepository;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.Timestamp;
 import java.util.List;
@@ -13,9 +14,11 @@ import java.util.UUID;
 public class JdbcAuditEventRepository implements AuditEventRepository {
 
     private final JdbcClient jdbcClient;
+    private final TransactionTemplate transactionTemplate;
 
-    public JdbcAuditEventRepository(JdbcClient jdbcClient) {
-        this.jdbcClient = jdbcClient;
+    public JdbcAuditEventRepository(JdbcClient jdbcClient, TransactionTemplate transactionTemplate) {
+        this.jdbcClient = Objects.requireNonNull(jdbcClient, "jdbcClient 不能为空");
+        this.transactionTemplate = Objects.requireNonNull(transactionTemplate, "transactionTemplate 不能为空");
     }
 
     @Override
@@ -53,6 +56,12 @@ public class JdbcAuditEventRepository implements AuditEventRepository {
                 .param("message", event.message())
                 .param("createdAt", Timestamp.from(event.createdAt()))
                 .update();
+    }
+
+    @Override
+    public void appendAll(List<AuditEvent> events) {
+        List<AuditEvent> batch = List.copyOf(Objects.requireNonNull(events, "events 不能为空"));
+        transactionTemplate.executeWithoutResult(status -> batch.forEach(this::append));
     }
 
     @Override

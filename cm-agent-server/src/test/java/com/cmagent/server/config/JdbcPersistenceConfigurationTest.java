@@ -51,7 +51,7 @@ class JdbcPersistenceConfigurationTest {
         TransactionTemplate transactionTemplate = mock(TransactionTemplate.class);
         JdbcPersistenceConfiguration configuration = new JdbcPersistenceConfiguration();
 
-        assertThat(configuration.jdbcAuditEventRepository(jdbcClient))
+        assertThat(configuration.jdbcAuditEventRepository(jdbcClient, transactionTemplate))
                 .isInstanceOf(JdbcAuditEventRepository.class)
                 .isInstanceOf(AuditEventRepository.class);
         assertThat(configuration.jdbcRunRepository(jdbcClient))

@@ -5,8 +5,11 @@ import com.cmagent.core.audit.AuditPageRequest;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -27,6 +30,7 @@ class JdbcAuditEventRepositoryTest {
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
     private JdbcAuditEventRepository repository;
+    private TransactionTemplate transactionTemplate;
 
     @BeforeEach
     void setUp() {
@@ -52,7 +56,8 @@ class JdbcAuditEventRepositoryTest {
         seedTenants(dataSource);
 
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
-        repository = new JdbcAuditEventRepository(jdbcClient);
+        transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        repository = new JdbcAuditEventRepository(jdbcClient, transactionTemplate);
     }
 
     @Test
@@ -129,6 +134,39 @@ class JdbcAuditEventRepositoryTest {
     @Test
     void advertisesCursorPaginationSupport() {
         assertThat(repository.supportsCursorPagination()).isTrue();
+    }
+
+    @Test
+    void appendAll在第二条写入失败时不会留下首条审计() {
+        UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        AuditEvent existing = auditEvent("11111111-1111-1111-1111-111111111111", tenantId,
+                Instant.parse("2026-06-18T01:00:00Z"));
+        AuditEvent first = auditEvent("22222222-2222-2222-2222-222222222222", tenantId,
+                Instant.parse("2026-06-18T02:00:00Z"));
+        AuditEvent duplicate = auditEvent("11111111-1111-1111-1111-111111111111", tenantId,
+                Instant.parse("2026-06-18T03:00:00Z"));
+        repository.append(existing);
+
+        assertThatThrownBy(() -> repository.appendAll(List.of(first, duplicate)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThat(repository.listByTenant(tenantId, 10)).containsExactly(existing);
+    }
+
+    @Test
+    void appendAll加入已有事务并随外层回滚() {
+        UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        AuditEvent first = auditEvent("11111111-1111-1111-1111-111111111111", tenantId,
+                Instant.parse("2026-06-18T01:00:00Z"));
+        AuditEvent second = auditEvent("22222222-2222-2222-2222-222222222222", tenantId,
+                Instant.parse("2026-06-18T02:00:00Z"));
+
+        transactionTemplate.executeWithoutResult(status -> {
+            repository.appendAll(List.of(first, second));
+            status.setRollbackOnly();
+        });
+
+        assertThat(repository.listByTenant(tenantId, 10)).isEmpty();
     }
 
     @Test

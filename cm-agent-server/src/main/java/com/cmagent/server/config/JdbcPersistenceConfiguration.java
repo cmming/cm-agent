@@ -94,8 +94,11 @@ public class JdbcPersistenceConfiguration {
     }
 
     @Bean
-    AuditEventRepository jdbcAuditEventRepository(JdbcClient cmAgentJdbcClient) {
-        return new JdbcAuditEventRepository(cmAgentJdbcClient);
+    AuditEventRepository jdbcAuditEventRepository(
+            JdbcClient cmAgentJdbcClient,
+            TransactionTemplate cmAgentTransactionTemplate
+    ) {
+        return new JdbcAuditEventRepository(cmAgentJdbcClient, cmAgentTransactionTemplate);
     }
 
     @Bean

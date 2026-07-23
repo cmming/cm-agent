@@ -84,7 +84,7 @@ class ManagementCommandServiceJdbcPersistenceTest {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
         JdbcToolDefinitionRepository jdbcTools = new JdbcToolDefinitionRepository(jdbcClient);
         ToolDefinitionRepository tools = new BarrierToolDefinitionRepository(jdbcTools, 2);
-        AuditAppender auditAppender = new AuditAppender(new JdbcAuditEventRepository(jdbcClient));
+        AuditAppender auditAppender = new AuditAppender(new JdbcAuditEventRepository(jdbcClient, transactionTemplate));
         ManagementCommandService first = service(dataSource, transactionTemplate, tools, auditAppender);
         ManagementCommandService second = service(dataSource, transactionTemplate, tools, auditAppender);
         PrincipalRef principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant"));
