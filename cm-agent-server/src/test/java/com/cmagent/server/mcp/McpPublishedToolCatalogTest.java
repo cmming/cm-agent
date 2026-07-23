@@ -17,11 +17,14 @@ import com.cmagent.core.tool.ToolExecutionResult;
 import com.cmagent.core.tool.ToolInvocationSource;
 import com.cmagent.core.tool.ToolRegistry;
 import com.cmagent.server.audit.AuditAppender;
+import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.runtime.GovernedToolExecutionService;
 import com.cmagent.server.security.ToolOutputSanitizer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpError;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -177,6 +181,67 @@ class McpPublishedToolCatalogTest {
                 McpSchema.TextContent.class,
                 content -> assertThat(content.text()).isEqualTo("工具不可用")
         );
+        verify(audits).append(TENANT, "mcp-user", "MCP_TOOL_CALL_FAILED", "TOOL",
+                LOCAL_ID.toString(), "FAILED", "MCP 工具调用失败");
+        verify(executions, never()).executeWhenReady(any(), any(), any());
+    }
+
+    @Test
+    void call工具禁用后即时不可用并记录失败审计() {
+        ToolDefinition enabled = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
+        ToolDefinition disabled = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, false, "");
+        publishableLocal(enabled);
+        var specification = catalog.specifications(principal).getFirst();
+        when(permissions.check(principal, "tool:mcp:invoke")).thenReturn(AuthorizationDecision.allow());
+        when(publications.findByTenantAndToolId(TENANT, LOCAL_ID)).thenReturn(Optional.of(publication(LOCAL_ID, TENANT)));
+        when(tools.findByTenantAndId(TENANT, LOCAL_ID)).thenReturn(Optional.of(disabled));
+
+        assertUnavailableAndAudited(specification);
+    }
+
+    @Test
+    void callHttp端点漂移后即时不可用并记录失败审计() {
+        ToolDefinition http = tool(HTTP_ID, TENANT, "http_echo", ToolType.HTTP, true, "https://api.example.test/run");
+        publishableHttp(http);
+        var specification = catalog.specifications(principal).getFirst();
+        when(permissions.check(principal, "tool:mcp:invoke")).thenReturn(AuthorizationDecision.allow());
+        when(publications.findByTenantAndToolId(TENANT, HTTP_ID)).thenReturn(Optional.of(publication(HTTP_ID, TENANT)));
+        ToolDefinition drifted = tool(HTTP_ID, TENANT, "http_echo", ToolType.HTTP, true, "https://api.example.test/new");
+        when(tools.findByTenantAndId(TENANT, HTTP_ID)).thenReturn(Optional.of(drifted));
+        when(httpConfigs.findByTenantAndToolId(TENANT, HTTP_ID)).thenReturn(Optional.of(httpConfig(http)));
+
+        assertUnavailableAndAudited(specification);
+    }
+
+    @Test
+    void callLocal快照漂移后即时不可用并记录失败审计() {
+        ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
+        publishableLocal(local);
+        var specification = catalog.specifications(principal).getFirst();
+        when(permissions.check(principal, "tool:mcp:invoke")).thenReturn(AuthorizationDecision.allow());
+        when(publications.findByTenantAndToolId(TENANT, LOCAL_ID)).thenReturn(Optional.of(publication(LOCAL_ID, TENANT)));
+        ToolDefinition drifted = tool(LOCAL_ID, TENANT, "echo_v2", ToolType.LOCAL, true, "");
+        when(registry.snapshot(LOCAL_ID)).thenReturn(Optional.of(
+                new ToolRegistry.ToolRegistrationSnapshot(drifted, request -> ToolExecutionResult.succeeded("ok", null))
+        ));
+
+        assertUnavailableAndAudited(specification);
+    }
+
+    @Test
+    void call不可用审计失败时返回受控协议错误且不会执行() {
+        ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
+        publishableLocal(local);
+        var specification = catalog.specifications(principal).getFirst();
+        when(permissions.check(principal, "tool:mcp:invoke")).thenReturn(AuthorizationDecision.allow());
+        when(publications.findByTenantAndToolId(TENANT, LOCAL_ID)).thenReturn(Optional.empty());
+        doThrow(auditFailure("Bearer unavailable-secret")).when(audits).append(
+                TENANT, "mcp-user", "MCP_TOOL_CALL_FAILED", "TOOL", LOCAL_ID.toString(), "FAILED", "MCP 工具调用失败"
+        );
+
+        assertProtocolPersistenceError(() -> specification.callHandler().apply(
+                McpTransportContext.EMPTY, new McpSchema.CallToolRequest("echo", Map.of())
+        ));
         verify(executions, never()).executeWhenReady(any(), any(), any());
     }
 
@@ -195,6 +260,39 @@ class McpPublishedToolCatalogTest {
         assertThat(result.content().toString()).doesNotContain("secret-token", "Bearer");
         verify(audits).accessDenied(principal, "MCP", "/mcp", "tool:mcp:invoke", "Bearer secret-token");
         verify(executions, never()).executeWhenReady(any(), any(), any());
+    }
+
+    @Test
+    void call拒绝审计失败时返回受控协议错误且不泄露原因() {
+        ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
+        publishableLocal(local);
+        var specification = catalog.specifications(principal).getFirst();
+        when(permissions.check(principal, "tool:mcp:invoke")).thenReturn(AuthorizationDecision.deny("Bearer denied-secret"));
+        doThrow(auditFailure("Bearer denied-secret")).when(audits).accessDenied(
+                principal, "MCP", "/mcp", "tool:mcp:invoke", "Bearer denied-secret"
+        );
+
+        assertProtocolPersistenceError(() -> specification.callHandler().apply(
+                McpTransportContext.EMPTY, new McpSchema.CallToolRequest("echo", Map.of())
+        ));
+        verify(executions, never()).executeWhenReady(any(), any(), any());
+    }
+
+    @Test
+    void call运行时失败审计失败时返回受控协议错误且不泄露原因() {
+        ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
+        publishableLocal(local);
+        when(permissions.check(principal, "tool:mcp:invoke")).thenReturn(AuthorizationDecision.allow());
+        when(publications.findByTenantAndToolId(TENANT, LOCAL_ID)).thenReturn(Optional.of(publication(LOCAL_ID, TENANT)));
+        when(executions.executeWhenReady(any(), any(), any())).thenThrow(new IllegalStateException("Bearer runtime-secret"));
+        doThrow(auditFailure("Bearer runtime-secret")).when(audits).append(
+                TENANT, "mcp-user", "MCP_TOOL_CALL_FAILED", "TOOL", LOCAL_ID.toString(), "FAILED", "MCP 工具调用失败"
+        );
+        var specification = catalog.specifications(principal).getFirst();
+
+        assertProtocolPersistenceError(() -> specification.callHandler().apply(
+                McpTransportContext.EMPTY, new McpSchema.CallToolRequest("echo", Map.of())
+        ));
     }
 
     @Test
@@ -225,6 +323,40 @@ class McpPublishedToolCatalogTest {
         when(registry.snapshot(LOCAL_ID)).thenReturn(Optional.of(
                 new ToolRegistry.ToolRegistrationSnapshot(local, request -> ToolExecutionResult.succeeded("ok", null))
         ));
+    }
+
+    private void publishableHttp(ToolDefinition http) {
+        when(publications.listEnabledByTenant(TENANT)).thenReturn(List.of(publication(HTTP_ID, TENANT)));
+        when(tools.findByTenantAndId(TENANT, HTTP_ID)).thenReturn(Optional.of(http));
+        when(httpConfigs.findByTenantAndToolId(TENANT, HTTP_ID)).thenReturn(Optional.of(httpConfig(http)));
+    }
+
+    private void assertUnavailableAndAudited(McpStatelessServerFeatures.SyncToolSpecification specification) {
+        McpSchema.CallToolResult result = specification.callHandler().apply(
+                McpTransportContext.EMPTY, new McpSchema.CallToolRequest(specification.tool().name(), Map.of())
+        );
+
+        assertThat(result.isError()).isTrue();
+        assertThat(result.content()).singleElement().isInstanceOfSatisfying(
+                McpSchema.TextContent.class,
+                content -> assertThat(content.text()).isEqualTo("工具不可用")
+        );
+        verify(audits).append(TENANT, "mcp-user", "MCP_TOOL_CALL_FAILED", "TOOL",
+                specification.tool().name().equals("http_echo") ? HTTP_ID.toString() : LOCAL_ID.toString(),
+                "FAILED", "MCP 工具调用失败");
+        verify(executions, never()).executeWhenReady(any(), any(), any());
+    }
+
+    private void assertProtocolPersistenceError(org.assertj.core.api.ThrowableAssert.ThrowingCallable action) {
+        assertThatThrownBy(action)
+                .isInstanceOfSatisfying(McpError.class, error -> {
+                    assertThat(error.getMessage()).isEqualTo("MCP 工具调用暂不可用");
+                    assertThat(error.getMessage()).doesNotContain("Bearer", "secret");
+                });
+    }
+
+    private AuditPersistenceException auditFailure(String sensitiveReason) {
+        return new AuditPersistenceException("审计写入失败：" + sensitiveReason, new IllegalStateException(sensitiveReason));
     }
 
     private static ToolDefinition tool(UUID id, UUID tenantId, String name, ToolType type, boolean enabled, String endpoint) {

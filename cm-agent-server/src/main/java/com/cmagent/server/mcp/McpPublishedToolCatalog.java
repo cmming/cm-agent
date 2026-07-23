@@ -107,12 +107,16 @@ public class McpPublishedToolCatalog {
     ) {
         AuthorizationDecision decision = permissions.check(principal, INVOKE_PERMISSION);
         if (!decision.allowed()) {
-            audits.accessDenied(principal, "MCP", "/mcp", INVOKE_PERMISSION, decision.reason());
+            try {
+                audits.accessDenied(principal, "MCP", "/mcp", INVOKE_PERMISSION, decision.reason());
+            } catch (AuditPersistenceException exception) {
+                throw protocolPersistenceError();
+            }
             return failed("没有权限调用 MCP 工具");
         }
         ToolDefinition current = currentPublishedTool(principal, listedTool).orElse(null);
         if (current == null) {
-            return failed(TOOL_UNAVAILABLE);
+            return unavailable(principal, listedTool.id());
         }
         String inputJson;
         try {
@@ -142,10 +146,26 @@ public class McpPublishedToolCatalog {
         } catch (ToolPreparationDataAccessException exception) {
             throw protocolPersistenceError();
         } catch (RuntimeException exception) {
-            audits.append(principal.tenantId(), principal.principalId(), "MCP_TOOL_CALL_FAILED", RESOURCE_TYPE,
-                    current.id().toString(), "FAILED", "MCP 工具调用失败");
-            return failed(TOOL_EXECUTION_FAILED);
+            return executionFailed(principal, current.id());
         }
+    }
+
+    private McpSchema.CallToolResult unavailable(PrincipalRef principal, UUID toolId) {
+        return failedWithAudit(principal, toolId, TOOL_UNAVAILABLE);
+    }
+
+    private McpSchema.CallToolResult executionFailed(PrincipalRef principal, UUID toolId) {
+        return failedWithAudit(principal, toolId, TOOL_EXECUTION_FAILED);
+    }
+
+    private McpSchema.CallToolResult failedWithAudit(PrincipalRef principal, UUID toolId, String message) {
+        try {
+            audits.append(principal.tenantId(), principal.principalId(), "MCP_TOOL_CALL_FAILED", RESOURCE_TYPE,
+                    toolId.toString(), "FAILED", "MCP 工具调用失败");
+        } catch (AuditPersistenceException exception) {
+            throw protocolPersistenceError();
+        }
+        return failed(message);
     }
 
     private Optional<ToolDefinition> currentPublishedTool(PrincipalRef principal, ToolDefinition listedTool) {
