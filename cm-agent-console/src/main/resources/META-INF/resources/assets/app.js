@@ -19,6 +19,8 @@
         auditEvents: [],
         auditCursor: ""
     };
+    const toolPublicationLock = core.createToolPublicationLock();
+    const toolLoadRevision = core.createLoadRevisionGate();
 
     const pageInfo = {
         overviewPage: ["能力总览", "查看当前租户已交付的 Agent 能力与最近活动。"],
@@ -252,7 +254,11 @@
     }
 
     async function loadTools() {
+        const revision = toolLoadRevision.issue();
         const tools = await api.request("/api/tools");
+        if (!toolLoadRevision.isCurrent(revision)) {
+            return false;
+        }
         state.tools = Array.isArray(tools) ? tools : [];
         if (!state.tools.some((tool) => tool.id === state.selectedToolId)) {
             state.selectedToolId = state.tools[0]?.id || "";
@@ -261,6 +267,7 @@
         updateToolOptions();
         updateDebugToolOptions();
         updateOverview();
+        return true;
     }
 
     function renderTools() {
@@ -294,7 +301,7 @@
                 });
                 publicationButton.addEventListener("click", () => {
                     const action = tool.mcpPublished ? unpublishMcpTool : publishMcpTool;
-                    action(tool).catch((error) => setStatus($("globalStatus"), error.message, "error"));
+                    action(tool, publicationButton);
                 });
                 actions.append(publicationButton);
                 card.append(actions);
@@ -415,20 +422,42 @@
         });
     }
 
-    async function publishMcpTool(tool) {
-        await withSubmitState($("refreshToolsBtn"), async () => {
-            await api.request(`/api/tools/${encodeURIComponent(tool.id)}/mcp-publication`, {method: "PUT"});
-            await loadTools();
-            setStatus($("globalStatus"), `Tool“${tool.name || tool.id}”已发布为 MCP Tool。`, "success");
-        });
+    function publishMcpTool(tool, publicationButton) {
+        return changeMcpPublication(tool, publicationButton, "PUT", "已发布为 MCP Tool。");
     }
 
-    async function unpublishMcpTool(tool) {
-        await withSubmitState($("refreshToolsBtn"), async () => {
-            await api.request(`/api/tools/${encodeURIComponent(tool.id)}/mcp-publication`, {method: "DELETE"});
-            await loadTools();
-            setStatus($("globalStatus"), `Tool“${tool.name || tool.id}”已取消 MCP 发布。`, "success");
-        });
+    function unpublishMcpTool(tool, publicationButton) {
+        return changeMcpPublication(tool, publicationButton, "DELETE", "已取消 MCP 发布。");
+    }
+
+    async function changeMcpPublication(tool, publicationButton, method, successText) {
+        if (!toolPublicationLock.tryAcquire(tool.id)) {
+            return;
+        }
+        const originalText = publicationButton.textContent;
+        publicationButton.disabled = true;
+        publicationButton.textContent = "处理中…";
+        toolLoadRevision.invalidate();
+        let operationError = null;
+        try {
+            await api.request(`/api/tools/${encodeURIComponent(tool.id)}/mcp-publication`, {method});
+        } catch (error) {
+            operationError = error;
+            setStatus($("globalStatus"), error.message, "error");
+        } finally {
+            try {
+                await loadTools();
+                if (!operationError) {
+                    setStatus($("globalStatus"), `Tool“${tool.name || tool.id}”${successText}`, "success");
+                }
+            } catch (reloadError) {
+                setStatus($("globalStatus"), reloadError.message, "error");
+            } finally {
+                toolPublicationLock.release(tool.id);
+                publicationButton.disabled = false;
+                publicationButton.textContent = originalText;
+            }
+        }
     }
 
     async function debugTool() {

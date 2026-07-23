@@ -92,6 +92,38 @@
         };
     }
 
+    function createToolPublicationLock() {
+        const activeToolIds = new Set();
+        return {
+            tryAcquire(toolId) {
+                if (!toolId || activeToolIds.has(toolId)) {
+                    return false;
+                }
+                activeToolIds.add(toolId);
+                return true;
+            },
+            release(toolId) {
+                activeToolIds.delete(toolId);
+            }
+        };
+    }
+
+    function createLoadRevisionGate() {
+        let revision = 0;
+        return {
+            issue() {
+                revision += 1;
+                return revision;
+            },
+            invalidate() {
+                revision += 1;
+            },
+            isCurrent(candidate) {
+                return candidate === revision;
+            }
+        };
+    }
+
     function createApiClient({fetchImpl, getToken, onUnauthorized}) {
         if (typeof fetchImpl !== "function" || typeof getToken !== "function" || typeof onUnauthorized !== "function") {
             throw new TypeError("请求客户端依赖不完整");
@@ -165,6 +197,8 @@
         parseJsonField,
         canDebugTool,
         buildHttpToolPayload,
+        createToolPublicationLock,
+        createLoadRevisionGate,
         formatDateTime,
         statusMeta
     };

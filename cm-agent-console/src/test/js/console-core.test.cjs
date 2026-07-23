@@ -123,6 +123,26 @@ test("HTTP 地址模板使用文本输入以支持路径参数占位符", () => 
     assert.doesNotMatch(html, /id="httpUrlTemplate" type="url"/);
 });
 
+test("工具发布锁拒绝同一工具的重复操作并在释放后允许重试", () => {
+    const lock = core.createToolPublicationLock();
+
+    assert.equal(lock.tryAcquire("tool-1"), true);
+    assert.equal(lock.tryAcquire("tool-1"), false);
+    assert.equal(lock.tryAcquire("tool-2"), true);
+    lock.release("tool-1");
+    assert.equal(lock.tryAcquire("tool-1"), true);
+});
+
+test("工具加载版本会拒绝早到的旧响应", () => {
+    const revisions = core.createLoadRevisionGate();
+    const oldRequest = revisions.issue();
+    revisions.invalidate();
+    const latestRequest = revisions.issue();
+
+    assert.equal(revisions.isCurrent(oldRequest), false);
+    assert.equal(revisions.isCurrent(latestRequest), true);
+});
+
 function response(status, body) {
     return {
         ok: status >= 200 && status < 300,

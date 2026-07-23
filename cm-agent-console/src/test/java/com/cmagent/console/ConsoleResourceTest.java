@@ -93,10 +93,14 @@ class ConsoleResourceTest {
                 "id=\"debugToolForm\"", "id=\"debugInput\"", "id=\"debugResult\""
         ).contains("id=\"httpUrlTemplate\" type=\"text\"")
                 .doesNotContain("id=\"httpUrlTemplate\" type=\"url\"");
-        assertThat(core).contains("parseJsonField", "canDebugTool", "buildHttpToolPayload");
+        assertThat(core).contains(
+                "parseJsonField", "canDebugTool", "buildHttpToolPayload",
+                "createToolPublicationLock", "createLoadRevisionGate"
+        );
         assertThat(script).contains(
                 "/debug", "/mcp-publication", "publishMcpTool", "unpublishMcpTool", "debugTool",
-                "textContent", "canDebugTool"
+                "textContent", "canDebugTool", "toolPublicationLock", "toolLoadRevision",
+                "publicationButton.disabled", "invalidate()"
         ).doesNotContain(".innerHTML", "localStorage", "sessionStorage");
     }
 
