@@ -253,8 +253,7 @@
         }
     }
 
-    async function loadTools() {
-        const revision = toolLoadRevision.issue();
+    async function loadTools(revision = toolLoadRevision.issue()) {
         const tools = await api.request("/api/tools");
         if (!toolLoadRevision.isCurrent(revision)) {
             return false;
@@ -446,7 +445,8 @@
             setStatus($("globalStatus"), error.message, "error");
         } finally {
             try {
-                await loadTools();
+                const reloadRevision = toolLoadRevision.completeWrite();
+                await loadTools(reloadRevision);
                 if (!operationError) {
                     setStatus($("globalStatus"), `Tool“${tool.name || tool.id}”${successText}`, "success");
                 }

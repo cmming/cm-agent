@@ -143,6 +143,15 @@ test("工具加载版本会拒绝早到的旧响应", () => {
     assert.equal(revisions.isCurrent(latestRequest), true);
 });
 
+test("不同工具写入按完成顺序协调最终刷新", () => {
+    const revisions = core.createLoadRevisionGate();
+    const bReload = revisions.completeWrite();
+    const aReload = revisions.completeWrite();
+
+    assert.equal(revisions.isCurrent(bReload), false);
+    assert.equal(revisions.isCurrent(aReload), true);
+});
+
 function response(status, body) {
     return {
         ok: status >= 200 && status < 300,

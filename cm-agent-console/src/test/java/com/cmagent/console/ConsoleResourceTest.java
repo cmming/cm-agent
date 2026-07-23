@@ -100,7 +100,7 @@ class ConsoleResourceTest {
         assertThat(script).contains(
                 "/debug", "/mcp-publication", "publishMcpTool", "unpublishMcpTool", "debugTool",
                 "textContent", "canDebugTool", "toolPublicationLock", "toolLoadRevision",
-                "publicationButton.disabled", "invalidate()"
+                "publicationButton.disabled", "completeWrite()"
         ).doesNotContain(".innerHTML", "localStorage", "sessionStorage");
     }
 

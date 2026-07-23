@@ -118,6 +118,10 @@
             invalidate() {
                 revision += 1;
             },
+            completeWrite() {
+                revision += 1;
+                return revision;
+            },
             isCurrent(candidate) {
                 return candidate === revision;
             }
