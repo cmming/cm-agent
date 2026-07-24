@@ -35,7 +35,9 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
     private final GovernedToolExecutionService executionService;
     private final AuditAppender auditAppender;
     private final SensitiveDataRedactor redactor;
-
+    /**
+     * GovernedToolInvocationService：处理该类内部的业务逻辑或辅助计算。
+     */
     public GovernedToolInvocationService(
             ToolDefinitionRepository toolRepository,
             ToolGrantRepository grantRepository,
@@ -88,7 +90,6 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
             appendAudit(request, "TOOL_CALL_FAILED", "FAILED", "工具调用失败");
             return ToolInvocationResult.failed(TOOL_UNAVAILABLE);
         }
-
         appendAudit(request, "TOOL_CALL_STARTED", "RUNNING", "工具调用已开始");
         try {
             ToolExecutionResult executionResult = prepared.execute();
@@ -108,6 +109,9 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
         }
     }
 
+    /**
+     * isVisibleDefinition：判断当前条件是否成立。
+     */
     private boolean isVisibleDefinition(ToolInvocationRequest request, ToolDefinition definition) {
         return definition.enabled()
                 && request.tenantId().equals(definition.tenantId())
@@ -115,6 +119,9 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
                 && request.toolName().equals(definition.name());
     }
 
+    /**
+     * appendAudit：追加处理结果或审计记录。
+     */
     private void appendAudit(ToolInvocationRequest request, String eventType, String status, String message) {
         auditAppender.append(
                 request.tenantId(), request.principal().principalId(), eventType, RESOURCE_TYPE,

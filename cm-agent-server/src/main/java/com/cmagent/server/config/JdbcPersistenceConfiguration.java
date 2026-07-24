@@ -225,6 +225,9 @@ public class JdbcPersistenceConfiguration {
         return args -> {
             Timestamp now = Timestamp.from(Instant.now());
             cmAgentJdbcClient.sql("""
+                            /**
+                             * tenants：处理该类内部的业务逻辑或辅助计算。
+                             */
                             INSERT INTO tenants (id, code, name, enabled, created_at)
                             SELECT :id, :code, :name, true, :createdAt
                             WHERE NOT EXISTS (SELECT 1 FROM tenants WHERE id = :id)
@@ -234,8 +237,10 @@ public class JdbcPersistenceConfiguration {
                     .param("name", "默认租户")
                     .param("createdAt", now)
                     .update();
-
             cmAgentJdbcClient.sql("""
+                            /**
+                             * model_configs：处理该类内部的业务逻辑或辅助计算。
+                             */
                             INSERT INTO model_configs (
                                 id,
                                 tenant_id,

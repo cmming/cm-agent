@@ -41,7 +41,9 @@ public class McpEndpointServlet extends HttpServlet {
     private final AuditAppender audits;
     private final ObjectMapper objectMapper;
     private final RequestServerFactory serverFactory;
-
+    /**
+     * McpEndpointServlet：处理该类内部的业务逻辑或辅助计算。
+     */
     public McpEndpointServlet(
             McpServerProperties properties,
             McpPublishedToolCatalog catalog,
@@ -51,7 +53,9 @@ public class McpEndpointServlet extends HttpServlet {
     ) {
         this(properties, catalog, permissions, audits, objectMapper, null);
     }
-
+    /**
+     * McpEndpointServlet：处理该类内部的业务逻辑或辅助计算。
+     */
     McpEndpointServlet(
             McpServerProperties properties,
             McpPublishedToolCatalog catalog,
@@ -69,6 +73,9 @@ public class McpEndpointServlet extends HttpServlet {
     }
 
     @Override
+    /**
+     * service：处理该类内部的业务逻辑或辅助计算。
+     */
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         PrincipalRef principal = currentPrincipal();
@@ -103,6 +110,9 @@ public class McpEndpointServlet extends HttpServlet {
         }
     }
 
+    /**
+     * createOfficialServer：创建并返回新的领域对象或配置。
+     */
     private RequestServer createOfficialServer(PrincipalRef principal) {
         JacksonMcpJsonMapper jsonMapper = new JacksonMcpJsonMapper(objectMapper);
         DefaultServerTransportSecurityValidator officialValidator = DefaultServerTransportSecurityValidator.builder()
@@ -133,18 +143,27 @@ public class McpEndpointServlet extends HttpServlet {
         }
         return new RequestServer() {
             @Override
+            /**
+             * service：处理该类内部的业务逻辑或辅助计算。
+             */
             public void service(HttpServletRequest request, HttpServletResponse response)
                     throws ServletException, IOException {
                 transport.service(request, response);
             }
 
             @Override
+            /**
+             * close：处理该类内部的业务逻辑或辅助计算。
+             */
             public void close() {
                 server.close();
             }
         };
     }
 
+    /**
+     * rejectAmbiguousHeader：处理该类内部的业务逻辑或辅助计算。
+     */
     private void rejectAmbiguousHeader(Map<String, List<String>> headers, String headerName, int status)
             throws ServerTransportSecurityException {
         for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
@@ -158,10 +177,16 @@ public class McpEndpointServlet extends HttpServlet {
         }
     }
 
+    /**
+     * isAmbiguous：判断当前条件是否成立。
+     */
     private boolean isAmbiguous(String value) {
         return value == null || value.isBlank() || value.contains(",") || value.contains("\r") || value.contains("\n");
     }
 
+    /**
+     * currentPrincipal：查询并返回当前上下文中的匹配结果。
+     */
     private PrincipalRef currentPrincipal() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()
@@ -173,6 +198,9 @@ public class McpEndpointServlet extends HttpServlet {
         );
     }
 
+    /**
+     * writeError：转换并生成规范化输出。
+     */
     private void writeError(HttpServletResponse response, int status, String message) throws IOException {
         response.setStatus(status);
         response.setContentType("application/json");
@@ -180,14 +208,29 @@ public class McpEndpointServlet extends HttpServlet {
         objectMapper.writeValue(response.getOutputStream(), Map.of("error", message));
     }
 
+    /**
+     * RequestServerFactory：定义本模块使用的协作契约。
+     */
     interface RequestServerFactory {
+        /**
+         * create：创建并返回新的领域对象或配置。
+         */
         RequestServer create(PrincipalRef principal);
     }
 
+    /**
+     * RequestServer：定义本模块使用的协作契约。
+     */
     interface RequestServer extends AutoCloseable {
+        /**
+         * service：处理该类内部的业务逻辑或辅助计算。
+         */
         void service(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException;
 
         @Override
+        /**
+         * close：处理该类内部的业务逻辑或辅助计算。
+         */
         void close();
     }
 }

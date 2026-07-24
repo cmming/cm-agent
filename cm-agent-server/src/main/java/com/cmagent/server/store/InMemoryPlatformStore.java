@@ -46,35 +46,49 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     private final List<RunToolCall> toolCalls = Collections.synchronizedList(new ArrayList<>());
     private final ConcurrentHashMap<String, HttpToolConfig> httpToolConfigs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, McpToolPublication> mcpToolPublications = new ConcurrentHashMap<>();
-
+    /**
+     * saveHttpToolConfig：保存当前对象及其关联配置。
+     */
     public HttpToolConfig saveHttpToolConfig(HttpToolConfig config) {
         httpToolConfigs.put(toolKey(config.tenantId(), config.toolId()), config);
         return config;
     }
-
+    /**
+     * findHttpToolConfig：查询并返回当前上下文中的匹配结果。
+     */
     public Optional<HttpToolConfig> findHttpToolConfig(UUID tenantId, UUID toolId) {
         return Optional.ofNullable(httpToolConfigs.get(toolKey(tenantId, toolId)))
                 .filter(config -> tenantId.equals(config.tenantId()) && toolId.equals(config.toolId()));
     }
-
+    /**
+     * deleteHttpToolConfig：删除或撤销当前目标的关联状态。
+     */
     public void deleteHttpToolConfig(UUID tenantId, UUID toolId) {
         httpToolConfigs.remove(toolKey(tenantId, toolId));
     }
-
+    /**
+     * saveMcpToolPublication：保存当前对象及其关联配置。
+     */
     public McpToolPublication saveMcpToolPublication(McpToolPublication publication) {
         mcpToolPublications.put(toolKey(publication.tenantId(), publication.toolId()), publication);
         return publication;
     }
-
+    /**
+     * findMcpToolPublication：查询并返回当前上下文中的匹配结果。
+     */
     public Optional<McpToolPublication> findMcpToolPublication(UUID tenantId, UUID toolId) {
         return Optional.ofNullable(mcpToolPublications.get(toolKey(tenantId, toolId)))
                 .filter(publication -> tenantId.equals(publication.tenantId()) && toolId.equals(publication.toolId()));
     }
-
+    /**
+     * deleteMcpToolPublication：删除或撤销当前目标的关联状态。
+     */
     public void deleteMcpToolPublication(UUID tenantId, UUID toolId) {
         mcpToolPublications.remove(toolKey(tenantId, toolId));
     }
-
+    /**
+     * listEnabledMcpToolPublications：查询并返回符合条件的集合。
+     */
     public List<McpToolPublication> listEnabledMcpToolPublications(UUID tenantId) {
         return mcpToolPublications.values().stream()
                 .filter(publication -> tenantId.equals(publication.tenantId()) && publication.enabled())
@@ -82,18 +96,28 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                 .toList();
     }
 
+    /**
+     * toolKey：转换内部数据为目标表示。
+     */
     private static String toolKey(UUID tenantId, UUID toolId) {
         return tenantId + ":" + toolId;
     }
 
+    /**
+     * TenantToolName：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record TenantToolName(UUID tenantId, String name) {
     }
-
+    /**
+     * saveModelConfig：保存当前对象及其关联配置。
+     */
     public ModelConfig saveModelConfig(ModelConfig modelConfig) {
         modelConfigs.put(modelConfig.id(), modelConfig);
         return modelConfig;
     }
-
+    /**
+     * findModelConfig：查询并返回当前上下文中的匹配结果。
+     */
     public Optional<ModelConfig> findModelConfig(UUID tenantId, UUID modelConfigId) {
         ModelConfig modelConfig = modelConfigs.get(modelConfigId);
         if (modelConfig == null || !tenantId.equals(modelConfig.tenantId())) {
@@ -101,12 +125,16 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         }
         return Optional.of(modelConfig);
     }
-
+    /**
+     * saveAgent：保存当前对象及其关联配置。
+     */
     public AgentDefinition saveAgent(AgentDefinition agent) {
         agents.put(agent.id(), agent);
         return agent;
     }
-
+    /**
+     * findAgent：查询并返回当前上下文中的匹配结果。
+     */
     public Optional<AgentDefinition> findAgent(UUID tenantId, UUID agentId) {
         AgentDefinition agent = agents.get(agentId);
         if (agent == null || !agent.tenantId().equals(tenantId)) {
@@ -114,7 +142,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         }
         return Optional.of(agent);
     }
-
+    /**
+     * listAgents：查询并返回符合条件的集合。
+     */
     public List<AgentDefinition> listAgents(UUID tenantId) {
         return agents.values().stream()
                 .filter(agent -> agent.tenantId().equals(tenantId))
@@ -122,7 +152,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                         .thenComparing(agent -> agent.id().toString()))
                 .toList();
     }
-
+    /**
+     * addToolToAgent：处理该类内部的业务逻辑或辅助计算。
+     */
     public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
         AtomicReference<AgentDefinition> updated = new AtomicReference<>();
         agents.computeIfPresent(agentId, (id, agent) -> {
@@ -159,7 +191,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         }
         return result;
     }
-
+    /**
+     * saveTool：保存当前对象及其关联配置。
+     */
     public ToolDefinition saveTool(ToolDefinition tool) {
         Objects.requireNonNull(tool, "tool 不能为空");
         TenantToolName name = new TenantToolName(tool.tenantId(), tool.name());
@@ -179,7 +213,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
             return tool;
         }
     }
-
+    /**
+     * findTool：查询并返回当前上下文中的匹配结果。
+     */
     public Optional<ToolDefinition> findTool(UUID tenantId, UUID toolId) {
         ToolDefinition tool = tools.get(toolId);
         if (tool == null || !tool.tenantId().equals(tenantId)) {
@@ -187,7 +223,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         }
         return Optional.of(tool);
     }
-
+    /**
+     * deleteTool：删除或撤销当前目标的关联状态。
+     */
     public void deleteTool(UUID tenantId, UUID toolId) {
         synchronized (toolLock) {
             ToolDefinition tool = tools.get(toolId);
@@ -198,7 +236,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
             toolIdsByTenantAndName.remove(new TenantToolName(tenantId, tool.name()), toolId);
         }
     }
-
+    /**
+     * listTools：查询并返回符合条件的集合。
+     */
     public List<ToolDefinition> listTools(UUID tenantId) {
         return tools.values().stream()
                 .filter(tool -> tool.tenantId().equals(tenantId))
@@ -206,7 +246,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                         .thenComparing(tool -> tool.id().toString()))
                 .toList();
     }
-
+    /**
+     * saveGrant：保存当前对象及其关联配置。
+     */
     public ToolGrant saveGrant(ToolGrant grant) {
         synchronized (grants) {
             return grants.stream()
@@ -220,7 +262,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                     });
         }
     }
-
+    /**
+     * listGrants：查询并返回符合条件的集合。
+     */
     public List<ToolGrant> listGrants(UUID tenantId) {
         synchronized (grants) {
             return grants.stream()
@@ -228,7 +272,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                     .toList();
         }
     }
-
+    /**
+     * listGrants：查询并返回符合条件的集合。
+     */
     public List<ToolGrant> listGrants(UUID tenantId, UUID agentId) {
         synchronized (grants) {
             return grants.stream()
@@ -236,7 +282,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                     .toList();
         }
     }
-
+    /**
+     * listGrants：查询并返回符合条件的集合。
+     */
     public List<ToolGrant> listGrants(UUID tenantId, UUID agentId, UUID toolId) {
         synchronized (grants) {
             return grants.stream()
@@ -248,6 +296,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     @Override
+    /**
+     * append：追加处理结果或审计记录。
+     */
     public void append(AuditEvent event) {
         synchronized (auditEvents) {
             auditEvents.add(event);
@@ -255,6 +306,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     @Override
+    /**
+     * appendAll：追加处理结果或审计记录。
+     */
     public void appendAll(List<AuditEvent> events) {
         Objects.requireNonNull(events, "events 不能为空");
         synchronized (auditEvents) {
@@ -263,6 +317,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     @Override
+    /**
+     * listByTenant：查询并返回符合条件的集合。
+     */
     public List<AuditEvent> listByTenant(UUID tenantId, int limit) {
         if (limit <= 0) {
             throw new IllegalArgumentException("limit 必须大于 0");
@@ -277,11 +334,17 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     @Override
+    /**
+     * supportsCursorPagination：处理该类内部的业务逻辑或辅助计算。
+     */
     public boolean supportsCursorPagination() {
         return true;
     }
 
     @Override
+    /**
+     * listByTenant：查询并返回符合条件的集合。
+     */
     public List<AuditEvent> listByTenant(UUID tenantId, AuditPageRequest pageRequest) {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(pageRequest, "pageRequest 不能为空");
@@ -294,16 +357,23 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                     .toList();
         }
     }
-
+    /**
+     * listAuditEvents：查询并返回符合条件的集合。
+     */
     public List<AuditEvent> listAuditEvents(UUID tenantId) {
         return listAuditEvents(tenantId, 100);
     }
-
+    /**
+     * listAuditEvents：查询并返回符合条件的集合。
+     */
     public List<AuditEvent> listAuditEvents(UUID tenantId, int limit) {
         return listByTenant(tenantId, limit);
     }
 
     @Override
+    /**
+     * save：保存当前对象及其关联配置。
+     */
     public RunRecord save(UUID tenantId, RunRecord run) {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(run, "run 不能为空");
@@ -317,6 +387,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     @Override
+    /**
+     * complete：处理该类内部的业务逻辑或辅助计算。
+     */
     public RunRecord complete(
             UUID tenantId,
             UUID runId,
@@ -337,6 +410,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     @Override
+    /**
+     * findByTenantAndAgentAndId：查询并返回当前上下文中的匹配结果。
+     */
     public Optional<RunRecord> findByTenantAndAgentAndId(UUID tenantId, UUID agentId, UUID runId) {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(agentId, "agentId 不能为空");
@@ -349,6 +425,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     @Override
+    /**
+     * listByTenantAndAgent：查询并返回符合条件的集合。
+     */
     public List<RunRecord> listByTenantAndAgent(UUID tenantId, UUID agentId, RunPageRequest pageRequest) {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(agentId, "agentId 不能为空");
@@ -362,6 +441,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     @Override
+    /**
+     * saveAll：保存当前对象及其关联配置。
+     */
     public void saveAll(UUID tenantId, RunToolCallBatch toolCallBatch) {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(toolCallBatch, "toolCalls 不能为空");
@@ -387,6 +469,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     @Override
+    /**
+     * listByTenantAndRun：查询并返回符合条件的集合。
+     */
     public List<RunToolCall> listByTenantAndRun(UUID tenantId, UUID runId) {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(runId, "runId 不能为空");
@@ -398,6 +483,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         }
     }
 
+    /**
+     * findByTenantAndId：查询并返回当前上下文中的匹配结果。
+     */
     private Optional<RunRecord> findByTenantAndId(UUID tenantId, UUID runId) {
         RunRecord run = runs.get(runId);
         if (run == null || !tenantId.equals(run.tenantId())) {
@@ -406,11 +494,17 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         return Optional.of(run);
     }
 
+    /**
+     * auditEventOrder：处理该类内部的业务逻辑或辅助计算。
+     */
     private static Comparator<AuditEvent> auditEventOrder() {
         return Comparator.comparing(AuditEvent::createdAt).reversed()
                 .thenComparing(AuditEvent::id, (left, right) -> right.toString().compareTo(left.toString()));
     }
 
+    /**
+     * isBeforeAuditCursor：判断当前条件是否成立。
+     */
     private static boolean isBeforeAuditCursor(AuditEvent event, AuditPageRequest pageRequest) {
         if (pageRequest.beforeCreatedAt() == null) {
             return true;

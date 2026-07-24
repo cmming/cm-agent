@@ -157,6 +157,9 @@ public class HttpToolProperties {
         this.maxRedirects = maxRedirects;
     }
 
+    /**
+     * validateTimeoutBound：校验输入、状态或前置条件。
+     */
     private static void validateTimeoutBound(Duration timeout) {
         if (timeout == null || timeout.compareTo(ABSOLUTE_MIN_TIMEOUT) < 0
                 || timeout.compareTo(ABSOLUTE_MAX_TIMEOUT) > 0) {
@@ -165,6 +168,9 @@ public class HttpToolProperties {
     }
 
     @Override
+    /**
+     * toString：转换内部数据为目标表示。
+     */
     public String toString() {
         return "HttpToolProperties{" +
                 "enabled=" + enabled +

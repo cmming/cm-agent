@@ -110,11 +110,17 @@ public class AgentScopeRuntimeProperties {
         }
     }
 
+    /**
+     * isPositive：判断当前条件是否成立。
+     */
     private static boolean isPositive(Duration duration) {
         return duration != null && !duration.isZero() && !duration.isNegative();
     }
 
     @Override
+    /**
+     * toString：转换内部数据为目标表示。
+     */
     public String toString() {
         return "AgentScopeRuntimeProperties[enabled=" + enabled
                 + ", modelTimeout=" + modelTimeout
@@ -123,6 +129,9 @@ public class AgentScopeRuntimeProperties {
                 + ", credentialCount=" + credentials.size() + "]";
     }
 
+    /**
+     * CredentialProperties：配置属性类，负责承载并校验运行参数。
+     */
     public static class CredentialProperties {
 
         private UUID tenantId;
@@ -171,6 +180,9 @@ public class AgentScopeRuntimeProperties {
             this.apiKey = apiKey;
         }
 
+        /**
+         * validate：校验输入、状态或前置条件。
+         */
         private void validate() {
             if (tenantId == null) {
                 throw new IllegalStateException("模型凭据 tenantId 不能为空");
@@ -184,6 +196,9 @@ public class AgentScopeRuntimeProperties {
         }
 
         @Override
+        /**
+         * toString：转换内部数据为目标表示。
+         */
         public String toString() {
             return "CredentialProperties[tenantId=" + tenantId
                     + ", modelConfigId=" + modelConfigId

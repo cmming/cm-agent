@@ -20,6 +20,9 @@ public class BootstrapAdminConfiguration {
         return new BootstrapAdminValidator();
     }
 
+    /**
+     * BootstrapAdminValidator：封装本模块的相关实现逻辑。
+     */
     static class BootstrapAdminValidator {
     }
 }

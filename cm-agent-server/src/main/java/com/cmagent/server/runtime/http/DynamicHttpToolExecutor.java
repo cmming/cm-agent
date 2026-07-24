@@ -61,6 +61,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     private final ExecutorService blockingExecutor;
 
     @Autowired
+    /**
+     * DynamicHttpToolExecutor：处理该类内部的业务逻辑或辅助计算。
+     */
     public DynamicHttpToolExecutor(
             HttpToolProperties properties,
             HttpToolSecretProvider secretProvider,
@@ -71,7 +74,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     ) {
         this(properties, secretProvider, urlPolicy, inputMapper, objectMapper, createTransport(properties), sanitizer);
     }
-
+    /**
+     * DynamicHttpToolExecutor：处理该类内部的业务逻辑或辅助计算。
+     */
     public DynamicHttpToolExecutor(
             HttpToolProperties properties,
             HttpToolSecretProvider secretProvider,
@@ -82,7 +87,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         this(properties, secretProvider, urlPolicy, inputMapper, objectMapper, createTransport(properties),
                 new ToolOutputSanitizer(objectMapper));
     }
-
+    /**
+     * DynamicHttpToolExecutor：处理该类内部的业务逻辑或辅助计算。
+     */
     DynamicHttpToolExecutor(
             HttpToolProperties properties,
             HttpToolSecretProvider secretProvider,
@@ -94,7 +101,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         this(properties, secretProvider, urlPolicy, inputMapper, objectMapper, httpTransport,
                 new ToolOutputSanitizer(objectMapper));
     }
-
+    /**
+     * DynamicHttpToolExecutor：处理该类内部的业务逻辑或辅助计算。
+     */
     DynamicHttpToolExecutor(
             HttpToolProperties properties,
             HttpToolSecretProvider secretProvider,
@@ -115,6 +124,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
                 Thread.ofVirtual().name("cm-agent-http-", 0).factory());
     }
 
+    /**
+     * createTransport：创建并返回新的领域对象或配置。
+     */
     private static HttpTransport createTransport(HttpToolProperties properties) {
         HttpClient client = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NEVER)
@@ -122,11 +134,17 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
                 .build();
         return new HttpTransport() {
             @Override
+            /**
+             * send：处理该类内部的业务逻辑或辅助计算。
+             */
             public HttpResponse<InputStream> send(HttpRequest request) throws IOException, InterruptedException {
                 return client.send(request, HttpResponse.BodyHandlers.ofInputStream());
             }
 
             @Override
+            /**
+             * close：处理该类内部的业务逻辑或辅助计算。
+             */
             public void close() {
                 client.shutdownNow();
             }
@@ -204,6 +222,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
                 secretHeaders.secretValues());
     }
 
+    /**
+     * isMatchingContext：判断当前条件是否成立。
+     */
     private boolean isMatchingContext(
             ToolDefinition tool,
             HttpToolConfig config,
@@ -215,12 +236,18 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
                 && (request.tenantId() == null || request.tenantId().equals(config.tenantId()));
     }
 
+    /**
+     * isAllowedTimeout：判断当前条件是否成立。
+     */
     private boolean isAllowedTimeout(Duration timeout) {
         return timeout != null && properties.getMinTimeout() != null && properties.getMaxTimeout() != null
                 && timeout.compareTo(properties.getMinTimeout()) >= 0
                 && timeout.compareTo(properties.getMaxTimeout()) <= 0;
     }
 
+    /**
+     * resolveSecretHeaders：解析并定位可用的目标对象。
+     */
     private ResolvedHeaders resolveSecretHeaders(HttpToolConfig config) {
         Map<String, String> headers = new LinkedHashMap<>();
         List<String> secretValues = new ArrayList<>();
@@ -257,6 +284,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         return new ResolvedHeaders(Map.copyOf(headers), List.copyOf(secretValues), null, false);
     }
 
+    /**
+     * mergeHeaders：处理该类内部的业务逻辑或辅助计算。
+     */
     private Map<String, String> mergeHeaders(Map<String, String> dynamic, Map<String, String> secrets) {
         Map<String, String> merged = new LinkedHashMap<>();
         Set<String> normalizedNames = new HashSet<>();
@@ -273,15 +303,24 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         return Map.copyOf(merged);
     }
 
+    /**
+     * isSafeHeader：判断当前条件是否成立。
+     */
     private boolean isSafeHeader(String name) {
         return name != null && HEADER_NAME.matcher(name).matches()
                 && !FORBIDDEN_REQUEST_HEADERS.contains(name.toLowerCase(Locale.ROOT));
     }
 
+    /**
+     * isSafeHeaderValue：判断当前条件是否成立。
+     */
     private boolean isSafeHeaderValue(String value) {
         return value != null && value.indexOf('\r') < 0 && value.indexOf('\n') < 0;
     }
 
+    /**
+     * buildUri：处理该类内部的业务逻辑或辅助计算。
+     */
     private URI buildUri(String urlTemplate, PreparedHttpToolRequest prepared) {
         String expanded = urlTemplate;
         for (Map.Entry<String, String> entry : prepared.pathValues().entrySet()) {
@@ -309,6 +348,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         return URI.create(value.toString());
     }
 
+    /**
+     * encode：转换并生成规范化输出。
+     */
     private String encode(String value) {
         char[] hex = "0123456789ABCDEF".toCharArray();
         byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
@@ -328,6 +370,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         return encoded.toString();
     }
 
+    /**
+     * send：处理该类内部的业务逻辑或辅助计算。
+     */
     private ToolExecutionResult send(
             HttpToolMethod initialMethod,
             URI initialUri,
@@ -444,6 +489,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         }
     }
 
+    /**
+     * runWithinDeadline：执行当前流程并返回处理结果。
+     */
     private <T> T runWithinDeadline(
             CheckedSupplier<T> supplier,
             Deadline deadline,
@@ -477,6 +525,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         }
     }
 
+    /**
+     * buildRequest：处理该类内部的业务逻辑或辅助计算。
+     */
     private HttpRequest buildRequest(
             HttpToolMethod method,
             URI uri,
@@ -497,18 +548,27 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         return builder.build();
     }
 
+    /**
+     * isSupportedContentType：判断当前条件是否成立。
+     */
     private boolean isSupportedContentType(String value) {
         String mediaType = value.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
         return mediaType.startsWith("text/") || "application/json".equals(mediaType)
                 || (mediaType.startsWith("application/") && mediaType.endsWith("+json"));
     }
 
+    /**
+     * isJsonContentType：判断当前条件是否成立。
+     */
     private boolean isJsonContentType(String value) {
         String mediaType = value.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
         return "application/json".equals(mediaType)
                 || (mediaType.startsWith("application/") && mediaType.endsWith("+json"));
     }
 
+    /**
+     * closeQuietly：处理该类内部的业务逻辑或辅助计算。
+     */
     private static void closeQuietly(InputStream body) {
         if (body == null) {
             return;
@@ -521,47 +581,83 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     }
 
     @Override
+    /**
+     * destroy：处理该类内部的业务逻辑或辅助计算。
+     */
     public void destroy() {
         close();
     }
 
     @Override
+    /**
+     * close：处理该类内部的业务逻辑或辅助计算。
+     */
     public void close() {
         httpTransport.close();
         blockingExecutor.shutdownNow();
     }
 
+    /**
+     * ResolvedHeaders：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record ResolvedHeaders(
             Map<String, String> values,
             List<String> secretValues,
             ToolExecutionResult failure,
             boolean cancelled
     ) {
+        /**
+         * failed：处理该类内部的业务逻辑或辅助计算。
+         */
         private static ResolvedHeaders failed(ToolExecutionResult failure) {
             return new ResolvedHeaders(Map.of(), List.of(), failure, false);
         }
 
+        /**
+         * cancelledResult：处理该类内部的业务逻辑或辅助计算。
+         */
         private static ResolvedHeaders cancelledResult() {
             return new ResolvedHeaders(Map.of(), List.of(), null, true);
         }
     }
 
     @FunctionalInterface
+    /**
+     * HttpTransport：定义本模块使用的协作契约。
+     */
     interface HttpTransport extends AutoCloseable {
+        /**
+         * send：处理该类内部的业务逻辑或辅助计算。
+         */
         HttpResponse<InputStream> send(HttpRequest request) throws IOException, InterruptedException;
 
         @Override
+        /**
+         * close：处理该类内部的业务逻辑或辅助计算。
+         */
         default void close() {
             // 测试传输默认没有独立资源，生产传输会覆盖并关闭 HttpClient。
         }
     }
 
     @FunctionalInterface
+    /**
+     * CheckedSupplier：定义本模块使用的协作契约。
+     */
     private interface CheckedSupplier<T> {
+        /**
+         * get：返回当前配置或状态。
+         */
         T get() throws Exception;
     }
 
+    /**
+     * Deadline：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record Deadline(long deadlineNanos) {
+        /**
+         * start：处理该类内部的业务逻辑或辅助计算。
+         */
         private static Deadline start(Duration timeout) {
             long now = System.nanoTime();
             long durationNanos = timeout.toNanos();
@@ -569,10 +665,16 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
             return new Deadline(deadline);
         }
 
+        /**
+         * remainingNanos：处理该类内部的业务逻辑或辅助计算。
+         */
         private long remainingNanos() {
             return deadlineNanos - System.nanoTime();
         }
 
+        /**
+         * remaining：处理该类内部的业务逻辑或辅助计算。
+         */
         private Duration remaining() throws HttpTimeoutException {
             long nanos = remainingNanos();
             if (nanos <= 0) {
@@ -581,6 +683,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
             return Duration.ofNanos(nanos);
         }
 
+        /**
+         * expired：处理该类内部的业务逻辑或辅助计算。
+         */
         private boolean expired() {
             return remainingNanos() <= 0;
         }

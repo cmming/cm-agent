@@ -26,12 +26,17 @@ import java.time.Instant;
 /** 将常见业务异常转换为稳定、脱敏的 JSON 错误响应。 */
 public class ApiExceptionHandler {
     private final SensitiveDataRedactor redactor;
-
+    /**
+     * ApiExceptionHandler：处理该类内部的业务逻辑或辅助计算。
+     */
     public ApiExceptionHandler() {
         this(new SensitiveDataRedactor());
     }
 
     @Autowired
+    /**
+     * ApiExceptionHandler：处理该类内部的业务逻辑或辅助计算。
+     */
     public ApiExceptionHandler(SensitiveDataRedactor redactor) {
         this.redactor = redactor;
     }
@@ -47,21 +52,33 @@ public class ApiExceptionHandler {
             BindException.class,
             ConstraintViolationException.class
     })
+    /**
+     * validationFailure：处理该类内部的业务逻辑或辅助计算。
+     */
     public ResponseEntity<ApiErrorResponse> validationFailure(Exception ignored) {
         return response(HttpStatus.BAD_REQUEST, ApiErrorCode.VALIDATION_FAILED, "请求参数不合法");
     }
 
     @ExceptionHandler(DataAccessException.class)
+    /**
+     * persistenceFailure：保存当前对象及其关联配置。
+     */
     public ResponseEntity<ApiErrorResponse> persistenceFailure(DataAccessException ignored) {
         return response(HttpStatus.SERVICE_UNAVAILABLE, ApiErrorCode.PERSISTENCE_UNAVAILABLE, "数据服务暂不可用");
     }
 
     @ExceptionHandler(AuditPersistenceException.class)
+    /**
+     * auditPersistenceFailure：处理该类内部的业务逻辑或辅助计算。
+     */
     public ResponseEntity<ApiErrorResponse> auditPersistenceFailure(AuditPersistenceException ignored) {
         return response(HttpStatus.SERVICE_UNAVAILABLE, ApiErrorCode.AUDIT_UNAVAILABLE, "审计服务暂不可用");
     }
 
     @ExceptionHandler(ResponseStatusException.class)
+    /**
+     * statusFailure：处理该类内部的业务逻辑或辅助计算。
+     */
     public ResponseEntity<ApiErrorResponse> statusFailure(ResponseStatusException exception) {
         HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
         return switch (status) {
@@ -75,10 +92,16 @@ public class ApiExceptionHandler {
     }
 
     @ExceptionHandler(RuntimeException.class)
+    /**
+     * runtimeFailure：执行当前流程并返回处理结果。
+     */
     public ResponseEntity<ApiErrorResponse> runtimeFailure(RuntimeException ignored) {
         return response(HttpStatus.INTERNAL_SERVER_ERROR, ApiErrorCode.INTERNAL_ERROR, "服务内部错误");
     }
 
+    /**
+     * response：处理该类内部的业务逻辑或辅助计算。
+     */
     private ResponseEntity<ApiErrorResponse> response(HttpStatus status, ApiErrorCode code, String message) {
         return ResponseEntity.status(status)
                 .body(new ApiErrorResponse(code, redactor.redact(message), Instant.now()));

@@ -59,6 +59,9 @@ public class CmAgentPersistenceProperties {
         }
     }
 
+    /**
+     * hasStrictPersistenceProfile：判断当前条件是否成立。
+     */
     private boolean hasStrictPersistenceProfile(Environment environment) {
         return Arrays.stream(environment.getActiveProfiles())
                 .anyMatch(profile -> "production".equalsIgnoreCase(profile)
@@ -66,20 +69,34 @@ public class CmAgentPersistenceProperties {
                         || "supabase".equalsIgnoreCase(profile));
     }
 
+    /**
+     * hasSupabaseProfile：判断当前条件是否成立。
+     */
     private boolean hasSupabaseProfile(Environment environment) {
         return Arrays.stream(environment.getActiveProfiles())
                 .anyMatch(profile -> "supabase".equalsIgnoreCase(profile));
     }
 
+    /**
+     * isBlank：判断当前条件是否成立。
+     */
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
 
+    /**
+     * Mode：枚举本模块使用的有限状态或类型。
+     */
     public enum Mode {
+        /** 使用仅供本地开发和测试的内存存储。 */
         MEMORY,
+        /** 使用由 Flyway 管理的 JDBC 持久化存储。 */
         JDBC
     }
 
+    /**
+     * Jdbc：封装本模块的相关实现逻辑。
+     */
     public static class Jdbc {
         private String url;
         private String username;

@@ -108,16 +108,25 @@ public class ServerRepositoryConfiguration {
     public HttpToolConfigRepository memoryHttpToolConfigRepository(InMemoryPlatformStore store) {
         return new HttpToolConfigRepository() {
             @Override
+            /**
+             * save：保存当前对象及其关联配置。
+             */
             public com.cmagent.core.domain.HttpToolConfig save(com.cmagent.core.domain.HttpToolConfig config) {
                 return store.saveHttpToolConfig(config);
             }
 
             @Override
+            /**
+             * findByTenantAndToolId：查询并返回当前上下文中的匹配结果。
+             */
             public Optional<com.cmagent.core.domain.HttpToolConfig> findByTenantAndToolId(UUID tenantId, UUID toolId) {
                 return store.findHttpToolConfig(tenantId, toolId);
             }
 
             @Override
+            /**
+             * findByTenantAndToolIds：查询并返回当前上下文中的匹配结果。
+             */
             public Map<UUID, com.cmagent.core.domain.HttpToolConfig> findByTenantAndToolIds(
                     UUID tenantId, List<UUID> toolIds
             ) {
@@ -131,6 +140,9 @@ public class ServerRepositoryConfiguration {
             }
 
             @Override
+            /**
+             * delete：删除或撤销当前目标的关联状态。
+             */
             public void delete(UUID tenantId, UUID toolId) {
                 store.deleteHttpToolConfig(tenantId, toolId);
             }
@@ -149,16 +161,25 @@ public class ServerRepositoryConfiguration {
     public McpToolPublicationRepository memoryMcpToolPublicationRepository(InMemoryPlatformStore store) {
         return new McpToolPublicationRepository() {
             @Override
+            /**
+             * save：保存当前对象及其关联配置。
+             */
             public com.cmagent.core.domain.McpToolPublication save(com.cmagent.core.domain.McpToolPublication publication) {
                 return store.saveMcpToolPublication(publication);
             }
 
             @Override
+            /**
+             * findByTenantAndToolId：查询并返回当前上下文中的匹配结果。
+             */
             public Optional<com.cmagent.core.domain.McpToolPublication> findByTenantAndToolId(UUID tenantId, UUID toolId) {
                 return store.findMcpToolPublication(tenantId, toolId);
             }
 
             @Override
+            /**
+             * findByTenantAndToolIds：查询并返回当前上下文中的匹配结果。
+             */
             public Map<UUID, com.cmagent.core.domain.McpToolPublication> findByTenantAndToolIds(
                     UUID tenantId, List<UUID> toolIds
             ) {
@@ -172,11 +193,17 @@ public class ServerRepositoryConfiguration {
             }
 
             @Override
+            /**
+             * listEnabledByTenant：查询并返回符合条件的集合。
+             */
             public List<com.cmagent.core.domain.McpToolPublication> listEnabledByTenant(UUID tenantId) {
                 return store.listEnabledMcpToolPublications(tenantId);
             }
 
             @Override
+            /**
+             * delete：删除或撤销当前目标的关联状态。
+             */
             public void delete(UUID tenantId, UUID toolId) {
                 store.deleteMcpToolPublication(tenantId, toolId);
             }
@@ -210,21 +237,33 @@ public class ServerRepositoryConfiguration {
     public AgentDefinitionRepository memoryAgentDefinitionRepository(InMemoryPlatformStore store) {
         return new AgentDefinitionRepository() {
             @Override
+            /**
+             * save：保存当前对象及其关联配置。
+             */
             public AgentDefinition save(AgentDefinition agent) {
                 return store.saveAgent(agent);
             }
 
             @Override
+            /**
+             * findByTenantAndId：查询并返回当前上下文中的匹配结果。
+             */
             public Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId) {
                 return store.findAgent(tenantId, agentId);
             }
 
             @Override
+            /**
+             * listByTenant：查询并返回符合条件的集合。
+             */
             public List<AgentDefinition> listByTenant(UUID tenantId) {
                 return store.listAgents(tenantId);
             }
 
             @Override
+            /**
+             * addToolToAgent：处理该类内部的业务逻辑或辅助计算。
+             */
             public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.addToolToAgent(tenantId, agentId, toolId);
             }
@@ -243,21 +282,33 @@ public class ServerRepositoryConfiguration {
     public ToolDefinitionRepository memoryToolDefinitionRepository(InMemoryPlatformStore store) {
         return new ToolDefinitionRepository() {
             @Override
+            /**
+             * save：保存当前对象及其关联配置。
+             */
             public ToolDefinition save(ToolDefinition tool) {
                 return store.saveTool(tool);
             }
 
             @Override
+            /**
+             * findByTenantAndId：查询并返回当前上下文中的匹配结果。
+             */
             public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
                 return store.findTool(tenantId, toolId);
             }
 
             @Override
+            /**
+             * listByTenant：查询并返回符合条件的集合。
+             */
             public List<ToolDefinition> listByTenant(UUID tenantId) {
                 return store.listTools(tenantId);
             }
 
             @Override
+            /**
+             * delete：删除或撤销当前目标的关联状态。
+             */
             public void delete(UUID tenantId, UUID toolId) {
                 store.deleteTool(tenantId, toolId);
             }
@@ -276,21 +327,33 @@ public class ServerRepositoryConfiguration {
     public ToolGrantRepository memoryToolGrantRepository(InMemoryPlatformStore store) {
         return new ToolGrantRepository() {
             @Override
+            /**
+             * save：保存当前对象及其关联配置。
+             */
             public ToolGrant save(ToolGrant grant) {
                 return store.saveGrant(grant);
             }
 
             @Override
+            /**
+             * listByTenant：查询并返回符合条件的集合。
+             */
             public List<ToolGrant> listByTenant(UUID tenantId) {
                 return store.listGrants(tenantId);
             }
 
             @Override
+            /**
+             * listByTenantAndAgent：查询并返回符合条件的集合。
+             */
             public List<ToolGrant> listByTenantAndAgent(UUID tenantId, UUID agentId) {
                 return store.listGrants(tenantId, agentId);
             }
 
             @Override
+            /**
+             * listByTenantAgentAndTool：查询并返回符合条件的集合。
+             */
             public List<ToolGrant> listByTenantAgentAndTool(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.listGrants(tenantId, agentId, toolId);
             }

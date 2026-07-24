@@ -23,7 +23,9 @@ import java.util.Objects;
 public class HttpToolInputMapper {
     private final ObjectMapper objectMapper;
     private final HttpToolConfigValidator configValidator;
-
+    /**
+     * HttpToolInputMapper：处理该类内部的业务逻辑或辅助计算。
+     */
     public HttpToolInputMapper(ObjectMapper objectMapper, HttpToolConfigValidator configValidator) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
         this.configValidator = Objects.requireNonNull(configValidator, "configValidator 不能为空");
@@ -53,6 +55,9 @@ public class HttpToolInputMapper {
         return mapValues(config, effectiveInput);
     }
 
+    /**
+     * applyDefaults：处理该类内部的业务逻辑或辅助计算。
+     */
     private void applyDefaults(HttpToolConfig config, JsonNode rootSchema, ObjectNode effectiveInput) {
         for (HttpParameterMapping mapping : config.parameterMappings()) {
             JsonNode value = effectiveInput.at(JsonPointer.compile(mapping.sourcePointer()));
@@ -64,6 +69,9 @@ public class HttpToolInputMapper {
         }
     }
 
+    /**
+     * ensureRequiredMappings：校验输入、状态或前置条件。
+     */
     private void ensureRequiredMappings(HttpToolConfig config, ObjectNode effectiveInput) {
         for (HttpParameterMapping mapping : config.parameterMappings()) {
             JsonNode value = effectiveInput.at(JsonPointer.compile(mapping.sourcePointer()));
@@ -73,6 +81,9 @@ public class HttpToolInputMapper {
         }
     }
 
+    /**
+     * mapValues：转换内部数据为目标表示。
+     */
     private PreparedHttpToolRequest mapValues(HttpToolConfig config, ObjectNode effectiveInput) {
         Map<String, String> pathValues = new LinkedHashMap<>();
         Map<String, List<String>> queryValues = new LinkedHashMap<>();
@@ -99,6 +110,9 @@ public class HttpToolInputMapper {
         return new PreparedHttpToolRequest(pathValues, queryValues, headers, hasBody ? body : null);
     }
 
+    /**
+     * parseDefault：读取并解析输入内容。
+     */
     private JsonNode parseDefault(String defaultValueJson) {
         try {
             return objectMapper.readTree(defaultValueJson);
@@ -107,6 +121,9 @@ public class HttpToolInputMapper {
         }
     }
 
+    /**
+     * scalarText：处理该类内部的业务逻辑或辅助计算。
+     */
     private static String scalarText(JsonNode value) {
         if (!value.isValueNode() || value.isNull()) {
             throw new IllegalArgumentException("非 BODY 参数必须是标量值");
@@ -114,6 +131,9 @@ public class HttpToolInputMapper {
         return value.isTextual() ? value.textValue() : value.asText();
     }
 
+    /**
+     * queryTexts：处理该类内部的业务逻辑或辅助计算。
+     */
     private static List<String> queryTexts(JsonNode value) {
         if (!value.isArray()) {
             return List.of(scalarText(value));
@@ -123,6 +143,9 @@ public class HttpToolInputMapper {
         return List.copyOf(values);
     }
 
+    /**
+     * setObjectPath：更新当前配置或状态。
+     */
     private static void setObjectPath(ObjectNode root, List<String> tokens, JsonNode value) {
         if (tokens.isEmpty()) {
             throw new IllegalArgumentException("JSON Pointer 不能指向根节点");
@@ -169,6 +192,9 @@ public class HttpToolInputMapper {
         }
     }
 
+    /**
+     * setInputPath：更新当前配置或状态。
+     */
     private void setInputPath(ObjectNode root, JsonNode rootSchema, List<String> tokens, JsonNode value) {
         if (tokens.isEmpty()) {
             throw new IllegalArgumentException("JSON Pointer 不能指向根节点");
@@ -215,6 +241,9 @@ public class HttpToolInputMapper {
         }
     }
 
+    /**
+     * shouldCreateArray：处理该类内部的业务逻辑或辅助计算。
+     */
     private boolean shouldCreateArray(JsonNode rootSchema, List<String> tokens, int inclusiveIndex) {
         StringBuilder pointer = new StringBuilder();
         for (int index = 0; index <= inclusiveIndex; index++) {
@@ -223,10 +252,16 @@ public class HttpToolInputMapper {
         return configValidator.isArrayAt(rootSchema, pointer.toString());
     }
 
+    /**
+     * objectMapperArrayNode：处理该类内部的业务逻辑或辅助计算。
+     */
     private static ArrayNode objectMapperArrayNode(ArrayNode parent) {
         return parent.arrayNode();
     }
 
+    /**
+     * objectMapperObjectNode：处理该类内部的业务逻辑或辅助计算。
+     */
     private static ObjectNode objectMapperObjectNode(ArrayNode parent) {
         return parent.objectNode();
     }

@@ -22,11 +22,16 @@ public class AuditAppender {
     private final SensitiveDataRedactor redactor;
 
     @Autowired
+    /**
+     * AuditAppender：处理该类内部的业务逻辑或辅助计算。
+     */
     public AuditAppender(AuditEventRepository repository, SensitiveDataRedactor redactor) {
         this.repository = repository;
         this.redactor = redactor;
     }
-
+    /**
+     * AuditAppender：处理该类内部的业务逻辑或辅助计算。
+     */
     public AuditAppender(AuditEventRepository repository) {
         this(repository, new SensitiveDataRedactor());
     }
@@ -110,6 +115,9 @@ public class AuditAppender {
         );
     }
 
+    /**
+     * toAuditEvent：转换内部数据为目标表示。
+     */
     private AuditEvent toAuditEvent(AuditWrite write) {
         return new AuditEvent(
                 UUID.randomUUID(),
@@ -124,6 +132,9 @@ public class AuditAppender {
         );
     }
 
+    /**
+     * AuditWrite：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record AuditWrite(
             UUID tenantId,
             String principalId,

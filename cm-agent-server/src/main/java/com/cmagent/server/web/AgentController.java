@@ -31,7 +31,9 @@ public class AgentController {
     private final PermissionEvaluator permissionEvaluator;
     private final AuditAppender auditAppender;
     private final ManagementCommandService managementCommandService;
-
+    /**
+     * AgentController：处理该类内部的业务逻辑或辅助计算。
+     */
     public AgentController(
             AgentDefinitionRepository agentRepository,
             PermissionEvaluator permissionEvaluator,
@@ -71,6 +73,9 @@ public class AgentController {
         );
     }
 
+    /**
+     * principal：处理该类内部的业务逻辑或辅助计算。
+     */
     private PrincipalRef principal(Authentication authentication) {
         // 只接受 JWT 过滤器创建的会话主体，避免信任客户端提交的租户或权限信息。
         if (authentication == null || !authentication.isAuthenticated()
@@ -80,6 +85,9 @@ public class AgentController {
         return new PrincipalRef(session.tenantId(), session.principalId(), session.displayName(), Set.copyOf(session.permissions()));
     }
 
+    /**
+     * authorize：处理该类内部的业务逻辑或辅助计算。
+     */
     private void authorize(PrincipalRef principal, String permission, String resourceType, String resourceId) {
         AuthorizationDecision decision = permissionEvaluator.check(principal, permission);
         if (!decision.allowed()) {
@@ -88,6 +96,9 @@ public class AgentController {
         }
     }
 
+    /**
+     * AgentCreateRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record AgentCreateRequest(
             @jakarta.validation.constraints.NotBlank String name,
             @jakarta.validation.constraints.NotBlank String systemPrompt,

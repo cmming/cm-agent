@@ -14,6 +14,9 @@ import java.nio.charset.StandardCharsets;
 class ConsoleController {
 
     @GetMapping(value = "/", produces = MediaType.TEXT_HTML_VALUE)
+    /**
+     * index：处理该类内部的业务逻辑或辅助计算。
+     */
     ResponseEntity<Resource> index() {
         return ResponseEntity.ok()
                 .contentType(new MediaType(MediaType.TEXT_HTML, StandardCharsets.UTF_8))

@@ -45,6 +45,9 @@ public class RunPersistenceService {
     private final TransactionTemplate transactionTemplate;
 
     @Autowired
+    /**
+     * RunPersistenceService：执行当前流程并返回处理结果。
+     */
     public RunPersistenceService(
             RunRepository runRepository,
             ToolCallRepository toolCallRepository,
@@ -212,6 +215,9 @@ public class RunPersistenceService {
                 .toList();
     }
 
+    /**
+     * redactRun：清理或脱敏可能包含敏感信息的内容。
+     */
     private RunRecord redactRun(RunRecord run) {
         return new RunRecord(
                 run.id(), run.tenantId(), run.agentId(), run.principalId(), run.status(),
@@ -220,6 +226,9 @@ public class RunPersistenceService {
         );
     }
 
+    /**
+     * redactToolCall：清理或脱敏可能包含敏感信息的内容。
+     */
     private RunToolCall redactToolCall(RunToolCall toolCall) {
         return new RunToolCall(
                 toolCall.id(), toolCall.tenantId(), toolCall.runId(), toolCall.toolId(), toolCall.toolName(),
@@ -229,6 +238,9 @@ public class RunPersistenceService {
         );
     }
 
+    /**
+     * mapToolCalls：转换内部数据为目标表示。
+     */
     private List<RunToolCall> mapToolCalls(
             UUID tenantId,
             UUID runId,
@@ -276,6 +288,9 @@ public class RunPersistenceService {
         return mapped;
     }
 
+    /**
+     * resolveTool：解析并定位可用的目标对象。
+     */
     private ToolDefinition resolveTool(
             ToolCallRecord record,
             Map<UUID, ToolDefinition> byId,
@@ -298,6 +313,9 @@ public class RunPersistenceService {
         return byName.get(record.toolName());
     }
 
+    /**
+     * appendAudit：追加处理结果或审计记录。
+     */
     private void appendAudit(PrincipalRef principal, RunRecord run, RunStatus status, String message) {
         auditAppender.append(
                 principal.tenantId(), principal.principalId(), "AGENT_RUN", "RUN", run.id().toString(),
@@ -305,10 +323,16 @@ public class RunPersistenceService {
         );
     }
 
+    /**
+     * finalStatus：处理该类内部的业务逻辑或辅助计算。
+     */
     private static RunStatus finalStatus(RunStatus status) {
         return status == null || status == RunStatus.RUNNING ? RunStatus.FAILED : status;
     }
 
+    /**
+     * finishedAt：处理该类内部的业务逻辑或辅助计算。
+     */
     private static Instant finishedAt(RunRecord run, Instant candidate) {
         if (candidate != null && !candidate.isBefore(run.startedAt())) {
             return candidate;
@@ -317,6 +341,9 @@ public class RunPersistenceService {
         return now.isBefore(run.startedAt()) ? run.startedAt() : now;
     }
 
+    /**
+     * completionMessage：处理该类内部的业务逻辑或辅助计算。
+     */
     private static String completionMessage(RunStatus status) {
         return switch (status) {
             case SUCCEEDED -> "Agent 运行完成";
@@ -325,10 +352,16 @@ public class RunPersistenceService {
         };
     }
 
+    /**
+     * requireResult：校验输入、状态或前置条件。
+     */
     private static <T> T requireResult(T result) {
         return Objects.requireNonNull(result, "事务未返回结果");
     }
 
+    /**
+     * RunDetail：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record RunDetail(RunRecord run, List<RunToolCall> toolCalls) {
         public RunDetail {
             toolCalls = List.copyOf(toolCalls);

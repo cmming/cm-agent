@@ -19,7 +19,9 @@ public class ToolQueryService {
     private final ToolDefinitionRepository toolRepository;
     private final HttpToolConfigRepository httpToolConfigRepository;
     private final McpToolPublicationRepository mcpToolPublicationRepository;
-
+    /**
+     * ToolQueryService：转换内部数据为目标表示。
+     */
     public ToolQueryService(
             ToolDefinitionRepository toolRepository,
             HttpToolConfigRepository httpToolConfigRepository,

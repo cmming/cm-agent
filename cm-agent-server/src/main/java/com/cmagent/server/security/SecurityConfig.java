@@ -30,7 +30,9 @@ public class SecurityConfig {
     private final Environment environment;
     private final boolean publicApiDocsEnabled;
     private final ObjectMapper objectMapper;
-
+    /**
+     * SecurityConfig：处理该类内部的业务逻辑或辅助计算。
+     */
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
                           Environment environment,
                           @Value("${cm-agent.security.public-api-docs-enabled:true}") boolean publicApiDocsEnabled,
@@ -84,6 +86,9 @@ public class SecurityConfig {
         return http.build();
     }
 
+    /**
+     * authenticationEntryPoint：处理该类内部的业务逻辑或辅助计算。
+     */
     private AuthenticationEntryPoint authenticationEntryPoint() {
         return (request, response, exception) -> writeError(
                 response,
@@ -93,6 +98,9 @@ public class SecurityConfig {
         );
     }
 
+    /**
+     * accessDeniedHandler：处理该类内部的业务逻辑或辅助计算。
+     */
     private AccessDeniedHandler accessDeniedHandler() {
         return (request, response, exception) -> writeError(
                 response,
@@ -102,6 +110,9 @@ public class SecurityConfig {
         );
     }
 
+    /**
+     * writeError：转换并生成规范化输出。
+     */
     private void writeError(HttpServletResponse response,
                             HttpStatus status,
                             ApiErrorCode code,
@@ -112,6 +123,9 @@ public class SecurityConfig {
         objectMapper.writeValue(response.getOutputStream(), new ApiErrorResponse(code, message, Instant.now()));
     }
 
+    /**
+     * isPublicApiDocsAllowed：判断当前条件是否成立。
+     */
     private boolean isPublicApiDocsAllowed() {
         if (!publicApiDocsEnabled) {
             return false;

@@ -18,7 +18,9 @@ public class BootstrapAdminProperties {
     private String bootstrapAdminUsername = DEFAULT_USERNAME;
     private String bootstrapAdminPassword = "";
     private String bootstrapAdminDisplayName = DEFAULT_DISPLAY_NAME;
-
+    /**
+     * BootstrapAdminProperties：处理该类内部的业务逻辑或辅助计算。
+     */
     public BootstrapAdminProperties(Environment environment) {
         this.environment = environment;
     }
@@ -99,6 +101,9 @@ public class BootstrapAdminProperties {
         }
     }
 
+    /**
+     * hasProductionProfile：判断当前条件是否成立。
+     */
     private boolean hasProductionProfile() {
         return Arrays.stream(environment.getActiveProfiles())
                 .anyMatch(profile -> "production".equalsIgnoreCase(profile)
@@ -106,11 +111,17 @@ public class BootstrapAdminProperties {
                         || "supabase".equalsIgnoreCase(profile));
     }
 
+    /**
+     * hasSupabaseProfile：判断当前条件是否成立。
+     */
     private boolean hasSupabaseProfile() {
         return Arrays.stream(environment.getActiveProfiles())
                 .anyMatch(profile -> "supabase".equalsIgnoreCase(profile));
     }
 
+    /**
+     * blankToDefault：处理该类内部的业务逻辑或辅助计算。
+     */
     private String blankToDefault(String value, String defaultValue) {
         return value == null || value.isBlank() ? defaultValue : value;
     }

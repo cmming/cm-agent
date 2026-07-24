@@ -16,7 +16,9 @@ import java.util.UUID;
 public final class ExternalModelCredentialProvider implements ModelCredentialProvider {
 
     private final Map<CredentialKey, ModelCredential> credentials;
-
+    /**
+     * ExternalModelCredentialProvider：处理该类内部的业务逻辑或辅助计算。
+     */
     public ExternalModelCredentialProvider(AgentScopeRuntimeProperties properties) {
         Objects.requireNonNull(properties, "AgentScope 运行时配置不能为空");
         properties.validate(false);
@@ -49,10 +51,16 @@ public final class ExternalModelCredentialProvider implements ModelCredentialPro
     }
 
     @Override
+    /**
+     * toString：转换内部数据为目标表示。
+     */
     public String toString() {
         return "ExternalModelCredentialProvider[credentialCount=" + credentials.size() + "]";
     }
 
+    /**
+     * CredentialKey：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record CredentialKey(UUID tenantId, UUID modelConfigId) {
     }
 }

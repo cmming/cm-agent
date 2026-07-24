@@ -49,7 +49,9 @@ public class ToolOutputSanitizer {
     );
 
     private final ObjectMapper objectMapper;
-
+    /**
+     * ToolOutputSanitizer：转换内部数据为目标表示。
+     */
     public ToolOutputSanitizer(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
@@ -88,6 +90,9 @@ public class ToolOutputSanitizer {
         return value.getBytes(StandardCharsets.UTF_8).length > maxBytes;
     }
 
+    /**
+     * sanitizeJson：清理或脱敏可能包含敏感信息的内容。
+     */
     private JsonNode sanitizeJson(JsonNode node, List<String> secretValues) {
         if (node.isObject()) {
             List<String> fieldNames = new ArrayList<>();
@@ -113,6 +118,9 @@ public class ToolOutputSanitizer {
         return node;
     }
 
+    /**
+     * sanitizeText：清理或脱敏可能包含敏感信息的内容。
+     */
     private String sanitizeText(String value, List<String> secretValues) {
         String redacted = value;
         for (String secret : secretValues) {
@@ -127,10 +135,16 @@ public class ToolOutputSanitizer {
         return STACK_DETAIL.matcher(redacted).find() ? STACK_MASK : redacted;
     }
 
+    /**
+     * normalizeSensitiveKey：规范化输入值以便后续处理。
+     */
     private String normalizeSensitiveKey(String key) {
         return key.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
 
+    /**
+     * isSensitiveJsonKey：判断当前条件是否成立。
+     */
     private boolean isSensitiveJsonKey(String normalizedKey) {
         if (SENSITIVE_JSON_KEYS.contains(normalizedKey)) {
             return true;

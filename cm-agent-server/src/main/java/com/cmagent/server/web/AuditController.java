@@ -36,6 +36,9 @@ public class AuditController {
     private final SensitiveDataRedactor redactor;
 
     @Autowired
+    /**
+     * AuditController：处理该类内部的业务逻辑或辅助计算。
+     */
     public AuditController(
             AuditEventRepository auditEventRepository,
             PermissionEvaluator permissionEvaluator,
@@ -47,7 +50,9 @@ public class AuditController {
         this.auditAppender = auditAppender;
         this.redactor = redactor;
     }
-
+    /**
+     * AuditController：处理该类内部的业务逻辑或辅助计算。
+     */
     public AuditController(
             AuditEventRepository auditEventRepository,
             PermissionEvaluator permissionEvaluator,
@@ -98,6 +103,9 @@ public class AuditController {
         return new AuditPage(storedItems.stream().map(this::redact).toList(), nextCursor);
     }
 
+    /**
+     * redact：清理或脱敏可能包含敏感信息的内容。
+     */
     private AuditEvent redact(AuditEvent event) {
         return new AuditEvent(
                 event.id(), event.tenantId(), redactor.redact(event.principalId()), redactor.redact(event.eventType()),
@@ -106,6 +114,9 @@ public class AuditController {
         );
     }
 
+    /**
+     * decodeCursor：读取并解析输入内容。
+     */
     private CursorPosition decodeCursor(String cursor) {
         if (cursor == null) {
             return null;
@@ -125,15 +136,24 @@ public class AuditController {
         }
     }
 
+    /**
+     * encodeCursor：转换并生成规范化输出。
+     */
     private String encodeCursor(AuditEvent event) {
         String value = event.createdAt() + "|" + event.id();
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * invalidRequest：处理该类内部的业务逻辑或辅助计算。
+     */
     private ResponseStatusException invalidRequest() {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, "请求参数不合法");
     }
 
+    /**
+     * principal：处理该类内部的业务逻辑或辅助计算。
+     */
     private PrincipalRef principal(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated() || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录或令牌无效");
@@ -141,6 +161,9 @@ public class AuditController {
         return new PrincipalRef(session.tenantId(), session.principalId(), session.displayName(), Set.copyOf(session.permissions()));
     }
 
+    /**
+     * authorize：处理该类内部的业务逻辑或辅助计算。
+     */
     private void authorize(PrincipalRef principal, String permission, String resourceType, String resourceId) {
         AuthorizationDecision decision = permissionEvaluator.check(principal, permission);
         if (!decision.allowed()) {
@@ -149,12 +172,18 @@ public class AuditController {
         }
     }
 
+    /**
+     * AuditPage：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record AuditPage(List<AuditEvent> items, String nextCursor) {
         public AuditPage {
             items = List.copyOf(items);
         }
     }
 
+    /**
+     * CursorPosition：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record CursorPosition(Instant createdAt, UUID id) {
     }
 }

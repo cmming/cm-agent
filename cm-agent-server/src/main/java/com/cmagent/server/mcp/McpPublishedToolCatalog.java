@@ -59,7 +59,9 @@ public class McpPublishedToolCatalog {
     private final ObjectMapper objectMapper;
     private final ToolOutputSanitizer sanitizer;
     private final HttpToolProperties httpToolProperties;
-
+    /**
+     * McpPublishedToolCatalog：处理该类内部的业务逻辑或辅助计算。
+     */
     public McpPublishedToolCatalog(
             ToolDefinitionRepository tools,
             HttpToolConfigRepository httpConfigs,
@@ -102,6 +104,9 @@ public class McpPublishedToolCatalog {
         return publishedTools.stream().map(tool -> specification(principal, tool)).toList();
     }
 
+    /**
+     * specification：处理该类内部的业务逻辑或辅助计算。
+     */
     private McpStatelessServerFeatures.SyncToolSpecification specification(PrincipalRef principal, ToolDefinition tool) {
         McpSchema.Tool mcpTool = McpSchema.Tool.builder()
                 .name(tool.name())
@@ -114,6 +119,9 @@ public class McpPublishedToolCatalog {
                 .build();
     }
 
+    /**
+     * call：执行当前流程并返回处理结果。
+     */
     private McpSchema.CallToolResult call(
             PrincipalRef principal,
             ToolDefinition listedTool,
@@ -170,14 +178,23 @@ public class McpPublishedToolCatalog {
         }
     }
 
+    /**
+     * unavailable：处理该类内部的业务逻辑或辅助计算。
+     */
     private McpSchema.CallToolResult unavailable(PrincipalRef principal, UUID toolId) {
         return failedWithAudit(principal, toolId, TOOL_UNAVAILABLE);
     }
 
+    /**
+     * executionFailed：处理该类内部的业务逻辑或辅助计算。
+     */
     private McpSchema.CallToolResult executionFailed(PrincipalRef principal, UUID toolId) {
         return failedWithAudit(principal, toolId, TOOL_EXECUTION_FAILED);
     }
 
+    /**
+     * failedWithAudit：处理该类内部的业务逻辑或辅助计算。
+     */
     private McpSchema.CallToolResult failedWithAudit(PrincipalRef principal, UUID toolId, String message) {
         try {
             audits.append(principal.tenantId(), principal.principalId(), "MCP_TOOL_CALL_FAILED", RESOURCE_TYPE,
@@ -188,6 +205,9 @@ public class McpPublishedToolCatalog {
         return failed(message);
     }
 
+    /**
+     * currentPublishedTool：查询并返回当前上下文中的匹配结果。
+     */
     private Optional<ToolDefinition> currentPublishedTool(PrincipalRef principal, ToolDefinition listedTool) {
         McpToolPublication publication = publications
                 .findByTenantAndToolId(principal.tenantId(), listedTool.id())
@@ -200,12 +220,18 @@ public class McpPublishedToolCatalog {
                 .filter(current -> current.name().equals(listedTool.name()));
     }
 
+    /**
+     * currentPublishableTool：查询并返回当前上下文中的匹配结果。
+     */
     private Optional<ToolDefinition> currentPublishableTool(UUID tenantId, UUID toolId) {
         return tools.findByTenantAndId(tenantId, toolId)
                 .filter(tool -> tool.enabled() && tenantId.equals(tool.tenantId()) && toolId.equals(tool.id()))
                 .filter(this::hasMatchingRuntime);
     }
 
+    /**
+     * hasMatchingRuntime：判断当前条件是否成立。
+     */
     private boolean hasMatchingRuntime(ToolDefinition tool) {
         if (tool.type() == ToolType.HTTP) {
             HttpToolConfig config = httpConfigs.findByTenantAndToolId(tool.tenantId(), tool.id()).orElse(null);
@@ -220,6 +246,9 @@ public class McpPublishedToolCatalog {
         return false;
     }
 
+    /**
+     * readSchema：读取并解析输入内容。
+     */
     private Map<String, Object> readSchema(String schema) {
         try {
             return objectMapper.readValue(schema, new TypeReference<>() {
@@ -229,10 +258,16 @@ public class McpPublishedToolCatalog {
         }
     }
 
+    /**
+     * canonicalJson：转换并生成规范化输出。
+     */
     private String canonicalJson(Object value) throws JsonProcessingException {
         return objectMapper.writeValueAsString(canonicalize(objectMapper.valueToTree(value)));
     }
 
+    /**
+     * canonicalize：转换并生成规范化输出。
+     */
     private JsonNode canonicalize(JsonNode value) {
         if (value.isObject()) {
             ObjectNode canonical = objectMapper.createObjectNode();
@@ -250,6 +285,9 @@ public class McpPublishedToolCatalog {
         return value;
     }
 
+    /**
+     * rejectDuplicateNames：处理该类内部的业务逻辑或辅助计算。
+     */
     private void rejectDuplicateNames(List<ToolDefinition> publishedTools) {
         Set<String> names = new HashSet<>();
         if (publishedTools.stream().anyMatch(tool -> !names.add(tool.name()))) {
@@ -257,6 +295,9 @@ public class McpPublishedToolCatalog {
         }
     }
 
+    /**
+     * succeeded：处理该类内部的业务逻辑或辅助计算。
+     */
     private McpSchema.CallToolResult succeeded(String output) {
         return McpSchema.CallToolResult.builder()
                 .content(List.of(new McpSchema.TextContent(output)))
@@ -264,6 +305,9 @@ public class McpPublishedToolCatalog {
                 .build();
     }
 
+    /**
+     * failed：处理该类内部的业务逻辑或辅助计算。
+     */
     private McpSchema.CallToolResult failed(String message) {
         return McpSchema.CallToolResult.builder()
                 .content(List.of(new McpSchema.TextContent(message)))
@@ -271,6 +315,9 @@ public class McpPublishedToolCatalog {
                 .build();
     }
 
+    /**
+     * protocolPersistenceError：处理该类内部的业务逻辑或辅助计算。
+     */
     private McpError protocolPersistenceError() {
         return McpError.builder(McpSchema.ErrorCodes.INTERNAL_ERROR)
                 .message("MCP 工具调用暂不可用")

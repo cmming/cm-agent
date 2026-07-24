@@ -28,6 +28,9 @@ public class JwtSecurityConfiguration {
         return createKey(secret);
     }
 
+    /**
+     * createKey：创建并返回新的领域对象或配置。
+     */
     private SecretKey createKey(String secret) {
         byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
         return Keys.hmacShaKeyFor(keyBytes);

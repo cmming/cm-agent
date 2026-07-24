@@ -49,6 +49,9 @@ public class RunExecutionService {
     private final SensitiveDataRedactor redactor;
 
     @Autowired
+    /**
+     * RunExecutionService：执行当前流程并返回处理结果。
+     */
     public RunExecutionService(
             AgentRuntime runtime,
             AgentDefinitionRepository agentRepository,
@@ -128,6 +131,9 @@ public class RunExecutionService {
         return responseWithPersistentId(completedRun, runtimeResult);
     }
 
+    /**
+     * bestEffortFailureClosure：处理该类内部的业务逻辑或辅助计算。
+     */
     private void bestEffortFailureClosure(PrincipalRef principal, RunRecord runningRun) {
         try {
             persistenceService.completeFailure(principal, runningRun);
@@ -137,10 +143,16 @@ public class RunExecutionService {
         }
     }
 
+    /**
+     * bestEffortFailureAudit：处理该类内部的业务逻辑或辅助计算。
+     */
     private void bestEffortFailureAudit(PrincipalRef principal, RunRecord runningRun) {
         persistenceService.appendFailureAudit(principal, runningRun);
     }
 
+    /**
+     * authorizedTools：处理该类内部的业务逻辑或辅助计算。
+     */
     private List<ToolDefinition> authorizedTools(PrincipalRef principal, AgentDefinition agent) {
         List<ToolGrant> grants = grantRepository.listByTenantAndAgent(principal.tenantId(), agent.id());
         Map<UUID, ToolDefinition> tools = new LinkedHashMap<>();
@@ -159,6 +171,9 @@ public class RunExecutionService {
         return new ArrayList<>(tools.values());
     }
 
+    /**
+     * responseWithPersistentId：处理该类内部的业务逻辑或辅助计算。
+     */
     private AgentRunResult responseWithPersistentId(com.cmagent.core.domain.RunRecord completedRun, AgentRunResult result) {
         List<ToolCallRecord> toolCalls = result.toolCalls() == null
                 ? List.of()
@@ -177,7 +192,13 @@ public class RunExecutionService {
         );
     }
 
+    /**
+     * RuntimeExecutionException：运行期异常，表示当前模块的处理失败。
+     */
     public static final class RuntimeExecutionException extends RuntimeException {
+        /**
+         * RuntimeExecutionException：执行当前流程并返回处理结果。
+         */
         public RuntimeExecutionException(Throwable cause) {
             super(CONTROLLED_FAILURE, cause);
         }

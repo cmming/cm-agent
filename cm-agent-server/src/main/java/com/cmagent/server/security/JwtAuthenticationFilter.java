@@ -18,12 +18,17 @@ import java.io.IOException;
 /** 从 Bearer Token 构建 Spring Security 认证主体，失败时保持请求未认证。 */
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
-
+    /**
+     * JwtAuthenticationFilter：处理该类内部的业务逻辑或辅助计算。
+     */
     public JwtAuthenticationFilter(JwtService jwtService) {
         this.jwtService = jwtService;
     }
 
     @Override
+    /**
+     * doFilterInternal：处理该类内部的业务逻辑或辅助计算。
+     */
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);

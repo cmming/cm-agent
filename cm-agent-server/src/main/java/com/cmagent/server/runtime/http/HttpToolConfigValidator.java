@@ -42,7 +42,9 @@ public class HttpToolConfigValidator {
     private final SchemaRegistry schemaRegistry;
     private final Schema metaSchema;
     private final HttpToolSchemaNavigator schemaNavigator;
-
+    /**
+     * HttpToolConfigValidator：处理该类内部的业务逻辑或辅助计算。
+     */
     public HttpToolConfigValidator(ObjectMapper objectMapper) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
         this.schemaRegistry = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
@@ -65,12 +67,16 @@ public class HttpToolConfigValidator {
         compile(rootSchema);
         validateMappings(config, rootSchema);
     }
-
+    /**
+     * parseAndValidateSchema：读取并解析输入内容。
+     */
     JsonNode parseAndValidateSchema(HttpToolConfig config) {
         validate(config);
         return parseJsonStrict(config.inputSchema(), "inputSchema 不是合法 JSON");
     }
-
+    /**
+     * compile：处理该类内部的业务逻辑或辅助计算。
+     */
     Schema compile(JsonNode schemaNode) {
         try {
             return schemaRegistry.getSchema(schemaNode);
@@ -80,7 +86,9 @@ public class HttpToolConfigValidator {
             throw new IllegalArgumentException("JSON Schema 无效", exception);
         }
     }
-
+    /**
+     * isArrayAt：判断当前条件是否成立。
+     */
     boolean isArrayAt(JsonNode rootSchema, String sourcePointer) {
         HttpToolSchemaNavigator.SchemaShape shape = schemaNavigator.analyzeSourceShape(
                 rootSchema, sourcePointer
@@ -96,7 +104,9 @@ public class HttpToolConfigValidator {
         }
         return false;
     }
-
+    /**
+     * pointerTokens：处理该类内部的业务逻辑或辅助计算。
+     */
     static List<String> pointerTokens(String pointer, String fieldName) {
         if (pointer == null || (!pointer.isEmpty() && !pointer.startsWith("/"))) {
             throw new IllegalArgumentException(fieldName + " 必须是 JSON Pointer");
@@ -121,6 +131,9 @@ public class HttpToolConfigValidator {
         }
     }
 
+    /**
+     * parseJsonStrict：读取并解析输入内容。
+     */
     private JsonNode parseJsonStrict(String value, String errorMessage) {
         try {
             JsonNode parsed = objectMapper.reader()
@@ -135,6 +148,9 @@ public class HttpToolConfigValidator {
         }
     }
 
+    /**
+     * validateSchemaDocument：校验输入、状态或前置条件。
+     */
     private void validateSchemaDocument(JsonNode rootSchema) {
         if (!rootSchema.isObject()) {
             throw new IllegalArgumentException("inputSchema 根必须是 object Schema");
@@ -153,12 +169,14 @@ public class HttpToolConfigValidator {
         }
     }
 
+    /**
+     * validateMappings：校验输入、状态或前置条件。
+     */
     private void validateMappings(HttpToolConfig config, JsonNode rootSchema) {
         Set<String> targets = new HashSet<>();
         List<List<String>> bodyTargets = new ArrayList<>();
         Map<List<String>, ContainerShape> bodyContainerShapes = new LinkedHashMap<>();
         Set<String> pathTargets = new LinkedHashSet<>();
-
         schemaNavigator.validateTerminalLocalReferences(
                 rootSchema,
                 config.parameterMappings().stream().map(HttpParameterMapping::sourcePointer).toList()
@@ -174,6 +192,9 @@ public class HttpToolConfigValidator {
         }
     }
 
+    /**
+     * validateDefault：校验输入、状态或前置条件。
+     */
     private void validateDefault(HttpParameterMapping mapping, JsonNode rootSchema) {
         if (!mapping.hasDefaultValue()) {
             return;
@@ -196,12 +217,18 @@ public class HttpToolConfigValidator {
         }
     }
 
+    /**
+     * copyDefinitionKeyword：处理该类内部的业务逻辑或辅助计算。
+     */
     private static void copyDefinitionKeyword(JsonNode source, ObjectNode target, String keyword) {
         if (source.has(keyword)) {
             target.set(keyword, source.get(keyword).deepCopy());
         }
     }
 
+    /**
+     * validateLocationType：校验输入、状态或前置条件。
+     */
     private void validateLocationType(HttpParameterMapping mapping, JsonNode rootSchema) {
         if (mapping.location() == HttpParameterLocation.BODY) {
             return;
@@ -221,6 +248,9 @@ public class HttpToolConfigValidator {
         }
     }
 
+    /**
+     * validateTarget：校验输入、状态或前置条件。
+     */
     private void validateTarget(
             HttpParameterMapping mapping,
             Set<String> targets,
@@ -260,6 +290,9 @@ public class HttpToolConfigValidator {
         }
     }
 
+    /**
+     * validateBodyContainerShapes：校验输入、状态或前置条件。
+     */
     private void validateBodyContainerShapes(
             List<String> target,
             Map<List<String>, ContainerShape> bodyContainerShapes
@@ -276,6 +309,9 @@ public class HttpToolConfigValidator {
         }
     }
 
+    /**
+     * extractPathPlaceholders：处理该类内部的业务逻辑或辅助计算。
+     */
     private static Set<String> extractPathPlaceholders(String urlTemplate) {
         Set<String> placeholders = new LinkedHashSet<>();
         Matcher matcher = PATH_PLACEHOLDER.matcher(urlTemplate);
@@ -285,12 +321,20 @@ public class HttpToolConfigValidator {
         return Set.copyOf(placeholders);
     }
 
+    /**
+     * isPrefix：判断当前条件是否成立。
+     */
     private static boolean isPrefix(List<String> prefix, List<String> value) {
         return prefix.size() <= value.size() && value.subList(0, prefix.size()).equals(prefix);
     }
 
+    /**
+     * ContainerShape：枚举本模块使用的有限状态或类型。
+     */
     private enum ContainerShape {
+        /** 当前节点按 JSON 对象容器处理。 */
         OBJECT,
+        /** 当前节点按 JSON 数组容器处理。 */
         ARRAY
     }
 }

@@ -30,7 +30,9 @@ public class ToolDebugService {
     private final AuditAppender auditAppender;
     private final ToolOutputSanitizer sanitizer;
     private final HttpToolProperties httpToolProperties;
-
+    /**
+     * ToolDebugService：转换内部数据为目标表示。
+     */
     public ToolDebugService(
             ToolDefinitionRepository toolRepository,
             GovernedToolExecutionService executionService,
@@ -94,10 +96,16 @@ public class ToolDebugService {
         }
     }
 
+    /**
+     * isVisible：判断当前条件是否成立。
+     */
     private boolean isVisible(PrincipalRef principal, UUID toolId, ToolDefinition tool) {
         return tool.enabled() && principal.tenantId().equals(tool.tenantId()) && toolId.equals(tool.id());
     }
 
+    /**
+     * validateDebugScope：校验输入、状态或前置条件。
+     */
     private void validateDebugScope(ToolDefinition tool, String confirmedToolName) {
         if (tool.type() != ToolType.HTTP && tool.type() != ToolType.LOCAL) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "工具类型不支持调试");
@@ -107,6 +115,9 @@ public class ToolDebugService {
         }
     }
 
+    /**
+     * safeOutput：处理该类内部的业务逻辑或辅助计算。
+     */
     private String safeOutput(String output) {
         String sanitized = sanitizer.sanitize(output, List.of());
         return sanitizer.exceedsByteLimit(sanitized, httpToolProperties.getMaxResponseBytes())
@@ -114,6 +125,9 @@ public class ToolDebugService {
                 : sanitized;
     }
 
+    /**
+     * elapsedMillis：处理该类内部的业务逻辑或辅助计算。
+     */
     private long elapsedMillis(long startedAt) {
         return Math.max(0L, (System.nanoTime() - startedAt) / 1_000_000L);
     }

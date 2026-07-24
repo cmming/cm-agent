@@ -18,7 +18,9 @@ import java.util.UUID;
 public class JwtService {
     private static final Duration TOKEN_TTL = Duration.ofHours(8);
     private final SecretKey signingKey;
-
+    /**
+     * JwtService：处理该类内部的业务逻辑或辅助计算。
+     */
     public JwtService(SecretKey jwtSigningKey) {
         this.signingKey = jwtSigningKey;
     }
@@ -69,6 +71,9 @@ public class JwtService {
         );
     }
 
+    /**
+     * JwtSession：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record JwtSession(UUID tenantId, String principalId, String displayName, List<String> permissions) {
     }
 }

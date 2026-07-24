@@ -31,11 +31,15 @@ final class HttpToolSchemaNavigator {
     private static final Set<ValueType> ALL_TYPES = Set.copyOf(EnumSet.allOf(ValueType.class));
 
     private final ObjectMapper objectMapper;
-
+    /**
+     * HttpToolSchemaNavigator：处理该类内部的业务逻辑或辅助计算。
+     */
     HttpToolSchemaNavigator(ObjectMapper objectMapper) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
     }
-
+    /**
+     * projectSourceSchema：转换内部数据为目标表示。
+     */
     JsonNode projectSourceSchema(JsonNode rootSchema, String sourcePointer) {
         Projection projection = projectSourceSchema(
                 rootSchema,
@@ -50,10 +54,15 @@ final class HttpToolSchemaNavigator {
         }
         return projection.schema();
     }
-
+    /**
+     * analyzeSourceShape：处理该类内部的业务逻辑或辅助计算。
+     */
     SchemaShape analyzeSourceShape(JsonNode rootSchema, String sourcePointer) {
         List<String> tokens = HttpToolConfigValidator.pointerTokens(sourcePointer, "sourcePointer");
         PathShape result = analyzePathShape(
+                /**
+                 * SchemaNode：处理该类内部的业务逻辑或辅助计算。
+                 */
                 rootSchema, new SchemaNode(rootSchema, List.of()), tokens, 0, ALL_TYPES, new HashSet<>()
         );
         if (!result.found()) {
@@ -61,7 +70,9 @@ final class HttpToolSchemaNavigator {
         }
         return result.shape();
     }
-
+    /**
+     * validateTerminalLocalReferences：校验输入、状态或前置条件。
+     */
     void validateTerminalLocalReferences(JsonNode rootSchema, List<String> sourcePointers) {
         ReferenceTraversalContext context = new ReferenceTraversalContext();
         for (String sourcePointer : sourcePointers) {
@@ -73,6 +84,9 @@ final class HttpToolSchemaNavigator {
         }
     }
 
+    /**
+     * projectSourceSchema：转换内部数据为目标表示。
+     */
     private Projection projectSourceSchema(
             JsonNode rootSchema,
             SchemaNode current,
@@ -184,6 +198,9 @@ final class HttpToolSchemaNavigator {
         return new Projection(true, cumulativeSchema(cumulative));
     }
 
+    /**
+     * alternativeSchema：处理该类内部的业务逻辑或辅助计算。
+     */
     private JsonNode alternativeSchema(String keyword, List<JsonNode> alternatives) {
         if (alternatives.size() == 1) {
             return alternatives.getFirst();
@@ -194,6 +211,9 @@ final class HttpToolSchemaNavigator {
         return schema;
     }
 
+    /**
+     * cumulativeSchema：处理该类内部的业务逻辑或辅助计算。
+     */
     private JsonNode cumulativeSchema(List<JsonNode> constraints) {
         if (constraints.size() == 1) {
             return constraints.getFirst();
@@ -204,6 +224,9 @@ final class HttpToolSchemaNavigator {
         return schema;
     }
 
+    /**
+     * analyzePathShape：处理该类内部的业务逻辑或辅助计算。
+     */
     private PathShape analyzePathShape(
             JsonNode rootSchema,
             SchemaNode current,
@@ -319,6 +342,9 @@ final class HttpToolSchemaNavigator {
         return new PathShape(found, constraints);
     }
 
+    /**
+     * resolveSourceNodes：解析并定位可用的目标对象。
+     */
     private List<SchemaNode> resolveSourceNodes(JsonNode rootSchema, String sourcePointer) {
         List<String> tokens = HttpToolConfigValidator.pointerTokens(sourcePointer, "sourcePointer");
         List<SchemaNode> current = List.of(new SchemaNode(rootSchema, List.of()));
@@ -335,6 +361,9 @@ final class HttpToolSchemaNavigator {
         return current;
     }
 
+    /**
+     * findChildSchemas：查询并返回当前上下文中的匹配结果。
+     */
     private void findChildSchemas(
             JsonNode rootSchema,
             SchemaNode current,
@@ -385,6 +414,9 @@ final class HttpToolSchemaNavigator {
         }
     }
 
+    /**
+     * resolveArrayItem：解析并定位可用的目标对象。
+     */
     private SchemaNode resolveArrayItem(SchemaNode current, int itemIndex) {
         JsonNode prefixItems = current.node().get("prefixItems");
         if (prefixItems != null && prefixItems.isArray() && itemIndex < prefixItems.size()) {
@@ -397,6 +429,9 @@ final class HttpToolSchemaNavigator {
         return null;
     }
 
+    /**
+     * parseArrayIndexForParent：读取并解析输入内容。
+     */
     private static HttpToolArrayIndex.ParseResult parseArrayIndexForParent(
             Set<ValueType> parentTypes,
             String token
@@ -411,6 +446,9 @@ final class HttpToolSchemaNavigator {
         return result;
     }
 
+    /**
+     * analyzeShape：处理该类内部的业务逻辑或辅助计算。
+     */
     private SchemaShape analyzeShape(JsonNode rootSchema, SchemaNode schemaNode, Set<List<Object>> visited) {
         if (!visited.add(schemaNode.schemaPath())) {
             return SchemaShape.all();
@@ -500,6 +538,9 @@ final class HttpToolSchemaNavigator {
         return result;
     }
 
+    /**
+     * resolveLocalReference：解析并定位可用的目标对象。
+     */
     private SchemaNode resolveLocalReference(JsonNode rootSchema, SchemaNode schemaNode) {
         JsonNode referenceNode = schemaNode.node().get("$ref");
         if (referenceNode == null || !referenceNode.isTextual() || !referenceNode.asText().startsWith("#")) {
@@ -532,6 +573,9 @@ final class HttpToolSchemaNavigator {
         return new SchemaNode(current, schemaPath);
     }
 
+    /**
+     * validateTerminalLocalReferences：校验输入、状态或前置条件。
+     */
     private void validateTerminalLocalReferences(
             JsonNode rootSchema,
             SchemaNode current,
@@ -607,6 +651,9 @@ final class HttpToolSchemaNavigator {
         }
     }
 
+    /**
+     * validateSchemaMapChildren：校验输入、状态或前置条件。
+     */
     private void validateSchemaMapChildren(
             JsonNode rootSchema,
             SchemaNode current,
@@ -626,6 +673,9 @@ final class HttpToolSchemaNavigator {
         ));
     }
 
+    /**
+     * validateSchemaChild：校验输入、状态或前置条件。
+     */
     private void validateSchemaChild(
             JsonNode rootSchema,
             SchemaNode current,
@@ -645,6 +695,9 @@ final class HttpToolSchemaNavigator {
         );
     }
 
+    /**
+     * validateSchemaArrayChildren：校验输入、状态或前置条件。
+     */
     private void validateSchemaArrayChildren(
             JsonNode rootSchema,
             SchemaNode current,
@@ -666,6 +719,9 @@ final class HttpToolSchemaNavigator {
         }
     }
 
+    /**
+     * resolveRequiredLocalReference：解析并定位可用的目标对象。
+     */
     private SchemaNode resolveRequiredLocalReference(JsonNode rootSchema, String reference) {
         final List<String> tokens;
         try {
@@ -697,6 +753,9 @@ final class HttpToolSchemaNavigator {
         return new SchemaNode(current, schemaPath);
     }
 
+    /**
+     * typesFromType：处理该类内部的业务逻辑或辅助计算。
+     */
     private static Set<ValueType> typesFromType(JsonNode typeNode) {
         Set<ValueType> types = EnumSet.noneOf(ValueType.class);
         if (typeNode.isTextual()) {
@@ -711,6 +770,9 @@ final class HttpToolSchemaNavigator {
         return Set.copyOf(types);
     }
 
+    /**
+     * addDeclaredType：处理该类内部的业务逻辑或辅助计算。
+     */
     private static void addDeclaredType(Set<ValueType> types, String declaredType) {
         switch (declaredType) {
             case "string" -> types.add(ValueType.STRING);
@@ -728,6 +790,9 @@ final class HttpToolSchemaNavigator {
         }
     }
 
+    /**
+     * typeOfValue：处理该类内部的业务逻辑或辅助计算。
+     */
     private static ValueType typeOfValue(JsonNode value) {
         if (value.isTextual()) {
             return ValueType.STRING;
@@ -750,12 +815,18 @@ final class HttpToolSchemaNavigator {
         return ValueType.NULL;
     }
 
+    /**
+     * addArrayItemTypes：处理该类内部的业务逻辑或辅助计算。
+     */
     private static void addArrayItemTypes(Set<ValueType> itemTypes, JsonNode value) {
         if (value.isArray()) {
             value.forEach(item -> itemTypes.add(typeOfValue(item)));
         }
     }
 
+    /**
+     * withoutNull：处理该类内部的业务逻辑或辅助计算。
+     */
     private static Set<ValueType> withoutNull(Set<ValueType> types) {
         Set<ValueType> result = EnumSet.noneOf(ValueType.class);
         result.addAll(types);
@@ -763,6 +834,9 @@ final class HttpToolSchemaNavigator {
         return Set.copyOf(result);
     }
 
+    /**
+     * intersectTypes：处理该类内部的业务逻辑或辅助计算。
+     */
     private static Set<ValueType> intersectTypes(Set<ValueType> left, Set<ValueType> right) {
         Set<ValueType> result = EnumSet.noneOf(ValueType.class);
         result.addAll(left);
@@ -770,42 +844,68 @@ final class HttpToolSchemaNavigator {
         return Set.copyOf(result);
     }
 
+    /**
+     * sourceMissing：处理该类内部的业务逻辑或辅助计算。
+     */
     private static IllegalArgumentException sourceMissing() {
         return new IllegalArgumentException("sourcePointer 未指向 Schema 中存在的输入节点");
     }
 
+    /**
+     * ValueType：枚举本模块使用的有限状态或类型。
+     */
     private enum ValueType {
+        /** JSON 字符串值。 */
         STRING,
+        /** JSON 整数值。 */
         INTEGER,
+        /** JSON 非整数数值。 */
         NUMBER,
+        /** JSON 布尔值。 */
         BOOLEAN,
+        /** JSON 对象值。 */
         OBJECT,
+        /** JSON 数组值。 */
         ARRAY,
+        /** JSON 空值。 */
         NULL
     }
 
+    /**
+     * SchemaShape：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     record SchemaShape(Set<ValueType> types, Set<ValueType> arrayItemTypes) {
         SchemaShape {
             types = Set.copyOf(types);
             arrayItemTypes = Set.copyOf(arrayItemTypes);
         }
-
+        /**
+         * hasNoKnownNonNullType：判断当前条件是否成立。
+         */
         boolean hasNoKnownNonNullType() {
             return withoutNull(types).isEmpty();
         }
-
+        /**
+         * isOnlyArray：判断当前条件是否成立。
+         */
         boolean isOnlyArray() {
             return withoutNull(types).equals(Set.of(ValueType.ARRAY));
         }
-
+        /**
+         * hasArrayAlternative：判断当前条件是否成立。
+         */
         boolean hasArrayAlternative() {
             return withoutNull(types).contains(ValueType.ARRAY);
         }
-
+        /**
+         * isScalarSafe：判断当前条件是否成立。
+         */
         boolean isScalarSafe() {
             return SCALAR_TYPES.containsAll(withoutNull(types));
         }
-
+        /**
+         * isQuerySafe：判断当前条件是否成立。
+         */
         boolean isQuerySafe() {
             Set<ValueType> possibleTypes = withoutNull(types);
             Set<ValueType> itemTypes = withoutNull(arrayItemTypes);
@@ -820,14 +920,23 @@ final class HttpToolSchemaNavigator {
             return true;
         }
 
+        /**
+         * all：处理该类内部的业务逻辑或辅助计算。
+         */
         private static SchemaShape all() {
             return new SchemaShape(ALL_TYPES, ALL_TYPES);
         }
 
+        /**
+         * empty：处理该类内部的业务逻辑或辅助计算。
+         */
         private static SchemaShape empty() {
             return new SchemaShape(Set.of(), Set.of());
         }
 
+        /**
+         * intersect：处理该类内部的业务逻辑或辅助计算。
+         */
         private SchemaShape intersect(SchemaShape other) {
             Set<ValueType> intersectedTypes = EnumSet.noneOf(ValueType.class);
             intersectedTypes.addAll(types);
@@ -838,6 +947,9 @@ final class HttpToolSchemaNavigator {
             return new SchemaShape(intersectedTypes, intersectedItems);
         }
 
+        /**
+         * union：处理该类内部的业务逻辑或辅助计算。
+         */
         private SchemaShape union(SchemaShape other) {
             Set<ValueType> unionTypes = EnumSet.noneOf(ValueType.class);
             unionTypes.addAll(types);
@@ -853,11 +965,17 @@ final class HttpToolSchemaNavigator {
         }
     }
 
+    /**
+     * SchemaNode：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record SchemaNode(JsonNode node, List<Object> schemaPath) {
         private SchemaNode {
             schemaPath = List.copyOf(schemaPath);
         }
 
+        /**
+         * append：追加处理结果或审计记录。
+         */
         private SchemaNode append(Object pathElement, JsonNode child) {
             List<Object> childPath = new ArrayList<>(schemaPath);
             childPath.add(pathElement);
@@ -865,6 +983,9 @@ final class HttpToolSchemaNavigator {
         }
     }
 
+    /**
+     * SourceTraversalKey：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record SourceTraversalKey(
             List<Object> schemaPath,
             int tokenIndex,
@@ -876,6 +997,9 @@ final class HttpToolSchemaNavigator {
         }
     }
 
+    /**
+     * ContainerTraversalKey：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record ContainerTraversalKey(List<Object> schemaPath, Set<ValueType> allowedContainerTypes) {
         private ContainerTraversalKey {
             schemaPath = List.copyOf(schemaPath);
@@ -883,18 +1007,33 @@ final class HttpToolSchemaNavigator {
         }
     }
 
+    /**
+     * Projection：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record Projection(boolean found, JsonNode schema) {
+        /**
+         * missing：处理该类内部的业务逻辑或辅助计算。
+         */
         private static Projection missing(ObjectMapper objectMapper) {
             return new Projection(false, objectMapper.getNodeFactory().booleanNode(true));
         }
     }
 
+    /**
+     * PathShape：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record PathShape(boolean found, SchemaShape shape) {
+        /**
+         * missing：处理该类内部的业务逻辑或辅助计算。
+         */
         private static PathShape missing() {
             return new PathShape(false, SchemaShape.all());
         }
     }
 
+    /**
+     * ReferenceTraversalState：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record ReferenceTraversalState(
             List<Object> schemaPath,
             Set<List<Object>> directReferenceChain
@@ -905,28 +1044,46 @@ final class HttpToolSchemaNavigator {
         }
     }
 
+    /**
+     * ReferenceTraversalContext：封装本模块的相关实现逻辑。
+     */
     private static final class ReferenceTraversalContext {
         private final Set<List<Object>> visitingPaths = new HashSet<>();
         private final Set<ReferenceTraversalState> completedStates = new HashSet<>();
         private int traversalDepth;
         private int traversedStates;
 
+        /**
+         * isCompleted：判断当前条件是否成立。
+         */
         private boolean isCompleted(ReferenceTraversalState state) {
             return completedStates.contains(state);
         }
 
+        /**
+         * enter：处理该类内部的业务逻辑或辅助计算。
+         */
         private boolean enter(List<Object> schemaPath) {
             return visitingPaths.add(schemaPath);
         }
 
+        /**
+         * exit：处理该类内部的业务逻辑或辅助计算。
+         */
         private void exit(List<Object> schemaPath) {
             visitingPaths.remove(schemaPath);
         }
 
+        /**
+         * complete：处理该类内部的业务逻辑或辅助计算。
+         */
         private void complete(ReferenceTraversalState state) {
             completedStates.add(state);
         }
 
+        /**
+         * enterTraversalDepth：处理该类内部的业务逻辑或辅助计算。
+         */
         private void enterTraversalDepth() {
             traversalDepth++;
             if (traversalDepth > MAX_REFERENCE_TRAVERSAL_DEPTH) {
@@ -934,10 +1091,16 @@ final class HttpToolSchemaNavigator {
             }
         }
 
+        /**
+         * exitTraversalDepth：处理该类内部的业务逻辑或辅助计算。
+         */
         private void exitTraversalDepth() {
             traversalDepth--;
         }
 
+        /**
+         * recordTraversalState：处理该类内部的业务逻辑或辅助计算。
+         */
         private void recordTraversalState() {
             traversedStates++;
             if (traversedStates > MAX_REFERENCE_TRAVERSAL_STATES) {

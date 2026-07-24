@@ -26,7 +26,9 @@ public class ProfileSafetyValidator implements InitializingBean {
     private final boolean agentScopeRuntimeEnabled;
     private final boolean httpAllowed;
     private final ObjectProvider<AgentRuntime> agentRuntimeProvider;
-
+    /**
+     * ProfileSafetyValidator：处理该类内部的业务逻辑或辅助计算。
+     */
     public ProfileSafetyValidator(
             Environment environment,
             @Value("${cm-agent.persistence.mode:memory}") String persistenceMode,
@@ -48,6 +50,9 @@ public class ProfileSafetyValidator implements InitializingBean {
     }
 
     @Override
+    /**
+     * afterPropertiesSet：处理该类内部的业务逻辑或辅助计算。
+     */
     public void afterPropertiesSet() {
         Set<String> activeProfiles = Arrays.stream(environment.getActiveProfiles())
                 .map(profile -> profile.toLowerCase(Locale.ROOT))

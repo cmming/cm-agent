@@ -59,7 +59,9 @@ public class ToolController {
     private final ToolQueryService toolQueryService;
     private final ToolDebugService toolDebugService;
     private final McpPublicationService mcpPublicationService;
-
+    /**
+     * ToolController：转换内部数据为目标表示。
+     */
     public ToolController(
             PermissionEvaluator permissionEvaluator,
             AuditAppender auditAppender,
@@ -194,6 +196,9 @@ public class ToolController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * principal：处理该类内部的业务逻辑或辅助计算。
+     */
     private PrincipalRef principal(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()
                 || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
@@ -202,6 +207,9 @@ public class ToolController {
         return new PrincipalRef(session.tenantId(), session.principalId(), session.displayName(), Set.copyOf(session.permissions()));
     }
 
+    /**
+     * authorize：处理该类内部的业务逻辑或辅助计算。
+     */
     private void authorize(PrincipalRef principal, String permission, String resourceType, String resourceId) {
         AuthorizationDecision decision = permissionEvaluator.check(principal, permission);
         if (!decision.allowed()) {
@@ -210,6 +218,9 @@ public class ToolController {
         }
     }
 
+    /**
+     * toSummary：转换内部数据为目标表示。
+     */
     private ToolSummaryResponse toSummary(ToolSummary summary) {
         var tool = summary.tool();
         return new ToolSummaryResponse(
@@ -219,6 +230,9 @@ public class ToolController {
         );
     }
 
+    /**
+     * toHttpToolCreateSpec：转换内部数据为目标表示。
+     */
     private HttpToolCreateSpec toHttpToolCreateSpec(HttpConfigRequest request) {
         if (request == null) {
             return null;
@@ -243,6 +257,9 @@ public class ToolController {
         );
     }
 
+    /**
+     * toHttpConfigResponse：转换内部数据为目标表示。
+     */
     private HttpToolConfigResponse toHttpConfigResponse(com.cmagent.core.domain.HttpToolConfig config) {
         return new HttpToolConfigResponse(
                 config.method(), config.urlTemplate(), config.inputSchema(), config.parameterMappings(),
@@ -250,6 +267,9 @@ public class ToolController {
         );
     }
 
+    /**
+     * canonicalJson：转换并生成规范化输出。
+     */
     private String canonicalJson(JsonNode value) {
         try {
             return objectMapper.writeValueAsString(canonicalize(value));
@@ -258,6 +278,9 @@ public class ToolController {
         }
     }
 
+    /**
+     * canonicalize：转换并生成规范化输出。
+     */
     private JsonNode canonicalize(JsonNode value) {
         if (value.isObject()) {
             ObjectNode canonical = objectMapper.createObjectNode();
@@ -274,6 +297,9 @@ public class ToolController {
         return value.deepCopy();
     }
 
+    /**
+     * ToolCreateRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record ToolCreateRequest(
             @NotBlank String name,
             @NotBlank String description,
@@ -284,6 +310,9 @@ public class ToolController {
     ) {
     }
 
+    /**
+     * HttpConfigRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record HttpConfigRequest(
             @NotNull HttpToolMethod method,
             @NotBlank String urlTemplate,
@@ -294,6 +323,9 @@ public class ToolController {
     ) {
     }
 
+    /**
+     * HttpParameterMappingRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record HttpParameterMappingRequest(
             String sourcePointer,
             @NotNull HttpParameterLocation location,
@@ -304,6 +336,9 @@ public class ToolController {
     ) {
     }
 
+    /**
+     * HttpToolConfigResponse：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record HttpToolConfigResponse(
             HttpToolMethod method,
             String urlTemplate,
@@ -314,6 +349,9 @@ public class ToolController {
     ) {
     }
 
+    /**
+     * ToolSummaryResponse：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record ToolSummaryResponse(
             UUID id,
             UUID tenantId,
@@ -331,9 +369,15 @@ public class ToolController {
     ) {
     }
 
+    /**
+     * ToolGrantRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record ToolGrantRequest(@NotNull UUID agentId) {
     }
 
+    /**
+     * ToolDebugRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record ToolDebugRequest(@NotNull JsonNode input, String confirmedToolName) {
     }
 }

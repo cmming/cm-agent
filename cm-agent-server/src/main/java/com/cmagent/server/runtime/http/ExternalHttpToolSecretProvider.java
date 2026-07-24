@@ -9,7 +9,9 @@ import java.util.UUID;
  */
 public final class ExternalHttpToolSecretProvider implements HttpToolSecretProvider {
     private final HttpToolProperties properties;
-
+    /**
+     * ExternalHttpToolSecretProvider：处理该类内部的业务逻辑或辅助计算。
+     */
     public ExternalHttpToolSecretProvider(HttpToolProperties properties) {
         this.properties = Objects.requireNonNull(properties, "properties 不能为空");
     }
@@ -29,13 +31,18 @@ public final class ExternalHttpToolSecretProvider implements HttpToolSecretProvi
         return Optional.ofNullable(properties.getSecrets().get(compositeKey(tenantId, secretRef)))
                 .filter(value -> !value.isBlank());
     }
-
+    /**
+     * compositeKey：处理该类内部的业务逻辑或辅助计算。
+     */
     static String compositeKey(UUID tenantId, String secretRef) {
         return Objects.requireNonNull(tenantId, "tenantId 不能为空") + "|" +
                 Objects.requireNonNull(secretRef, "secretRef 不能为空");
     }
 
     @Override
+    /**
+     * toString：转换内部数据为目标表示。
+     */
     public String toString() {
         return "ExternalHttpToolSecretProvider{secrets=<已脱敏>}";
     }

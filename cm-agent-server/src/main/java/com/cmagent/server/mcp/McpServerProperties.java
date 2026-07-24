@@ -92,6 +92,9 @@ public class McpServerProperties implements InitializingBean {
         }
     }
 
+    /**
+     * normalized：规范化输入值以便后续处理。
+     */
     private static List<String> normalized(List<String> values) {
         LinkedHashSet<String> normalized = new LinkedHashSet<>();
         for (String value : values == null ? List.<String>of() : values) {

@@ -23,10 +23,15 @@ public class HttpToolUrlPolicy {
     private final HostAddressResolver addressResolver;
 
     @Autowired
+    /**
+     * HttpToolUrlPolicy：处理该类内部的业务逻辑或辅助计算。
+     */
     public HttpToolUrlPolicy(HttpToolProperties properties) {
         this(properties, host -> List.of(InetAddress.getAllByName(host)));
     }
-
+    /**
+     * HttpToolUrlPolicy：处理该类内部的业务逻辑或辅助计算。
+     */
     public HttpToolUrlPolicy(HttpToolProperties properties, HostAddressResolver addressResolver) {
         this.properties = Objects.requireNonNull(properties, "properties 不能为空");
         this.addressResolver = Objects.requireNonNull(addressResolver, "addressResolver 不能为空");
@@ -71,6 +76,9 @@ public class HttpToolUrlPolicy {
         }
     }
 
+    /**
+     * origin：处理该类内部的业务逻辑或辅助计算。
+     */
     private Origin origin(URI uri) {
         if (uri == null || uri.isOpaque() || uri.getRawUserInfo() != null || uri.getRawFragment() != null) {
             throw rejected();
@@ -81,6 +89,9 @@ public class HttpToolUrlPolicy {
         return new Origin(scheme, canonicalHost(uri), effectivePort);
     }
 
+    /**
+     * normalizeScheme：规范化输入值以便后续处理。
+     */
     private String normalizeScheme(String scheme) {
         if (scheme == null) {
             throw rejected();
@@ -88,6 +99,9 @@ public class HttpToolUrlPolicy {
         return scheme.toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * validateSchemeAndPort：校验输入、状态或前置条件。
+     */
     private void validateSchemeAndPort(String scheme, int port) {
         if ("https".equals(scheme)) {
             if (port != -1 && port != 443) {
@@ -102,6 +116,9 @@ public class HttpToolUrlPolicy {
         throw rejected();
     }
 
+    /**
+     * canonicalHost：转换并生成规范化输出。
+     */
     private String canonicalHost(URI uri) {
         String host = uri.getHost();
         if (host == null) {
@@ -126,6 +143,9 @@ public class HttpToolUrlPolicy {
         }
     }
 
+    /**
+     * isAllowedHost：判断当前条件是否成立。
+     */
     private boolean isAllowedHost(String host) {
         for (String configured : properties.getAllowedHosts()) {
             String pattern = canonicalAllowedHost(configured);
@@ -144,6 +164,9 @@ public class HttpToolUrlPolicy {
         return false;
     }
 
+    /**
+     * canonicalAllowedHost：转换并生成规范化输出。
+     */
     private String canonicalAllowedHost(String configured) {
         if (configured == null || configured.isBlank()) {
             return null;
@@ -168,6 +191,9 @@ public class HttpToolUrlPolicy {
         }
     }
 
+    /**
+     * resolve：解析并定位可用的目标对象。
+     */
     private List<InetAddress> resolve(String host) {
         try {
             List<InetAddress> resolved = addressResolver.resolve(host);
@@ -177,10 +203,16 @@ public class HttpToolUrlPolicy {
         }
     }
 
+    /**
+     * isLocalhost：判断当前条件是否成立。
+     */
     private boolean isLocalhost(String host) {
         return "localhost".equals(host) || host.endsWith(".localhost");
     }
 
+    /**
+     * canonicalUri：转换并生成规范化输出。
+     */
     private URI canonicalUri(URI original, String scheme, String host) {
         StringBuilder value = new StringBuilder(scheme).append("://").append(host);
         if (original.getPort() != -1) {
@@ -199,6 +231,9 @@ public class HttpToolUrlPolicy {
         }
     }
 
+    /**
+     * isPublicAddress：判断当前条件是否成立。
+     */
     private boolean isPublicAddress(InetAddress address) {
         if (address == null || address.isAnyLocalAddress() || address.isLoopbackAddress()
                 || address.isLinkLocalAddress() || address.isSiteLocalAddress()
@@ -214,6 +249,9 @@ public class HttpToolUrlPolicy {
         return false;
     }
 
+    /**
+     * isPublicIpv4：判断当前条件是否成立。
+     */
     private boolean isPublicIpv4(byte[] bytes) {
         long value = ((long) bytes[0] & 0xff) << 24
                 | ((long) bytes[1] & 0xff) << 16
@@ -236,6 +274,9 @@ public class HttpToolUrlPolicy {
                 && !inIpv4Range(value, "240.0.0.0", 4);
     }
 
+    /**
+     * isPublicIpv6：判断当前条件是否成立。
+     */
     private boolean isPublicIpv6(byte[] bytes) {
         if ((bytes[0] & 0xe0) != 0x20) {
             return false;
@@ -246,6 +287,9 @@ public class HttpToolUrlPolicy {
                 && !hasIpv6Prefix(bytes, new byte[]{0x3f, (byte) 0xff, 0x00}, 20);
     }
 
+    /**
+     * hasIpv6Prefix：判断当前条件是否成立。
+     */
     private static boolean hasIpv6Prefix(byte[] address, byte[] prefix, int prefixLength) {
         int fullBytes = prefixLength / 8;
         for (int index = 0; index < fullBytes; index++) {
@@ -261,11 +305,17 @@ public class HttpToolUrlPolicy {
         return (address[fullBytes] & mask) == (prefix[fullBytes] & mask);
     }
 
+    /**
+     * inIpv4Range：处理该类内部的业务逻辑或辅助计算。
+     */
     private static boolean inIpv4Range(long value, String networkAddress, int prefixLength) {
         long mask = prefixLength == 0 ? 0 : 0xffff_ffffL << (32 - prefixLength) & 0xffff_ffffL;
         return (value & mask) == (ipv4Value(networkAddress) & mask);
     }
 
+    /**
+     * ipv4Value：处理该类内部的业务逻辑或辅助计算。
+     */
     private static long ipv4Value(String value) {
         String[] parts = value.split("\\.");
         return Long.parseLong(parts[0]) << 24
@@ -274,10 +324,16 @@ public class HttpToolUrlPolicy {
                 | Long.parseLong(parts[3]);
     }
 
+    /**
+     * rejected：处理该类内部的业务逻辑或辅助计算。
+     */
     private static IllegalArgumentException rejected() {
         return new IllegalArgumentException(REJECTED_MESSAGE);
     }
 
+    /**
+     * Origin：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record Origin(String scheme, String host, int port) {
     }
 }

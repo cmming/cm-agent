@@ -42,6 +42,9 @@ public class ManagementCommandService {
     private final TransactionTemplate transactionTemplate;
 
     @Autowired
+    /**
+     * ManagementCommandService：处理该类内部的业务逻辑或辅助计算。
+     */
     public ManagementCommandService(
             AgentDefinitionRepository agentRepository,
             ToolDefinitionRepository toolRepository,
@@ -149,6 +152,9 @@ public class ManagementCommandService {
         }
     }
 
+    /**
+     * prepareToolCreate：处理该类内部的业务逻辑或辅助计算。
+     */
     private PreparedToolCreate prepareToolCreate(
             PrincipalRef principal,
             String name,
@@ -212,11 +218,17 @@ public class ManagementCommandService {
         }));
     }
 
+    /**
+     * appendAgentAudit：追加处理结果或审计记录。
+     */
     private void appendAgentAudit(PrincipalRef principal, AgentDefinition agent) {
         auditAppender.append(principal.tenantId(), principal.principalId(), "AGENT_CREATE", "AGENT",
                 agent.id().toString(), "SUCCEEDED", "Agent 创建成功");
     }
 
+    /**
+     * saveToolWithHttpConfiguration：保存当前对象及其关联配置。
+     */
     private ToolDefinition saveToolWithHttpConfiguration(PreparedToolCreate prepared) {
         ToolDefinition saved = toolRepository.save(prepared.tool());
         if (prepared.httpToolConfig() == null) {
@@ -229,6 +241,9 @@ public class ManagementCommandService {
         return saved;
     }
 
+    /**
+     * saveToolWithCompensation：保存当前对象及其关联配置。
+     */
     private ToolDefinition saveToolWithCompensation(PrincipalRef principal, PreparedToolCreate prepared) {
         boolean toolWriteAttempted = false;
         boolean configurationWriteAttempted = false;
@@ -252,6 +267,9 @@ public class ManagementCommandService {
         }
     }
 
+    /**
+     * compensateMemoryWrite：处理该类内部的业务逻辑或辅助计算。
+     */
     private void compensateMemoryWrite(
             PreparedToolCreate prepared,
             boolean toolWriteAttempted,
@@ -270,6 +288,9 @@ public class ManagementCommandService {
         }
     }
 
+    /**
+     * compensate：处理该类内部的业务逻辑或辅助计算。
+     */
     private void compensate(Runnable action, RuntimeException original) {
         try {
             action.run();
@@ -278,6 +299,9 @@ public class ManagementCommandService {
         }
     }
 
+    /**
+     * validateToolCreateRequest：校验输入、状态或前置条件。
+     */
     private void validateToolCreateRequest(
             ToolType type,
             @Nullable HttpToolCreateSpec httpToolCreateSpec,
@@ -294,6 +318,9 @@ public class ManagementCommandService {
         }
     }
 
+    /**
+     * ensureToolNameAvailable：校验输入、状态或前置条件。
+     */
     private void ensureToolNameAvailable(UUID tenantId, String name) {
         boolean nameExists = toolRepository.listByTenant(tenantId).stream()
                 .anyMatch(existing -> existing.name().equals(name));
@@ -302,6 +329,9 @@ public class ManagementCommandService {
         }
     }
 
+    /**
+     * isToolNameConflict：判断当前条件是否成立。
+     */
     private boolean isToolNameConflict(DuplicateKeyException exception) {
         Throwable current = exception;
         while (current != null) {
@@ -315,6 +345,9 @@ public class ManagementCommandService {
         return false;
     }
 
+    /**
+     * appendToolAudit：追加处理结果或审计记录。
+     */
     private void appendToolAudit(PrincipalRef principal, ToolDefinition tool, boolean mcpPublished) {
         if (mcpPublished) {
             auditAppender.appendAll(List.of(
@@ -333,15 +366,24 @@ public class ManagementCommandService {
                 tool.id().toString(), "SUCCEEDED", "Tool 创建成功");
     }
 
+    /**
+     * appendGrantAudit：追加处理结果或审计记录。
+     */
     private void appendGrantAudit(PrincipalRef principal, ToolDefinition tool, AgentDefinition agent) {
         auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_GRANT", "TOOL",
                 tool.id().toString(), "SUCCEEDED", "Tool 已授权给 Agent " + agent.id());
     }
 
+    /**
+     * requireResult：校验输入、状态或前置条件。
+     */
     private static <T> T requireResult(T result) {
         return Objects.requireNonNull(result, "事务未返回结果");
     }
 
+    /**
+     * PreparedToolCreate：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record PreparedToolCreate(
             ToolDefinition tool,
             @Nullable HttpToolConfig httpToolConfig,

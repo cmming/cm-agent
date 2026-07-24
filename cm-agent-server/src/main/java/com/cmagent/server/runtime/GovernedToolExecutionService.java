@@ -23,7 +23,9 @@ public class GovernedToolExecutionService {
     private final HttpToolConfigRepository configs;
     private final DynamicHttpToolExecutor http;
     private final ToolRegistry registry;
-
+    /**
+     * GovernedToolExecutionService：处理该类内部的业务逻辑或辅助计算。
+     */
     public GovernedToolExecutionService(
             HttpToolConfigRepository configs,
             DynamicHttpToolExecutor http,
@@ -74,7 +76,9 @@ public class GovernedToolExecutionService {
         beforeExecution.run();
         return prepared.execute();
     }
-
+    /**
+     * prepare：处理该类内部的业务逻辑或辅助计算。
+     */
     PreparedToolExecution prepare(ToolDefinition tool, ToolExecutionRequest request) {
         Objects.requireNonNull(tool, "tool 不能为空");
         Objects.requireNonNull(request, "request 不能为空");
@@ -100,10 +104,16 @@ public class GovernedToolExecutionService {
         return PreparedToolExecution.unavailable();
     }
 
+    /**
+     * isMatchingHttpConfiguration：判断当前条件是否成立。
+     */
     private boolean isMatchingHttpConfiguration(ToolDefinition tool, HttpToolConfig config) {
         return tool.endpoint() != null && tool.endpoint().equals(config.urlTemplate());
     }
 
+    /**
+     * isSameRegistration：判断当前条件是否成立。
+     */
     private boolean isSameRegistration(ToolDefinition tool, ToolDefinition registered) {
         return registered != null
                 && tool.tenantId().equals(registered.tenantId())
@@ -111,29 +121,43 @@ public class GovernedToolExecutionService {
                 && tool.name().equals(registered.name());
     }
 
+    /**
+     * PreparedToolExecution：封装本模块的相关实现逻辑。
+     */
     static final class PreparedToolExecution {
         private final Supplier<ToolExecutionResult> execution;
         private final ToolExecutionResult unavailableResult;
         private final AtomicBoolean consumed;
 
+        /**
+         * PreparedToolExecution：处理该类内部的业务逻辑或辅助计算。
+         */
         private PreparedToolExecution(Supplier<ToolExecutionResult> execution, ToolExecutionResult unavailableResult) {
             this.execution = execution;
             this.unavailableResult = unavailableResult;
             this.consumed = execution == null ? null : new AtomicBoolean();
         }
-
+        /**
+         * ready：读取并解析输入内容。
+         */
         static PreparedToolExecution ready(Supplier<ToolExecutionResult> execution) {
             return new PreparedToolExecution(Objects.requireNonNull(execution, "execution 不能为空"), null);
         }
-
+        /**
+         * unavailable：处理该类内部的业务逻辑或辅助计算。
+         */
         static PreparedToolExecution unavailable() {
             return new PreparedToolExecution(null, ToolExecutionResult.failed(TOOL_UNAVAILABLE, null));
         }
-
+        /**
+         * ready：读取并解析输入内容。
+         */
         boolean ready() {
             return execution != null;
         }
-
+        /**
+         * execute：执行当前流程并返回处理结果。
+         */
         ToolExecutionResult execute() {
             if (!ready()) {
                 return unavailableResult;

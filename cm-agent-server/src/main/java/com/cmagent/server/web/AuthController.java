@@ -39,7 +39,9 @@ public class AuthController {
     private final JwtService jwtService;
     private final BootstrapAdminProperties bootstrapAdminProperties;
     private final AuditAppender auditAppender;
-
+    /**
+     * AuthController：处理该类内部的业务逻辑或辅助计算。
+     */
     public AuthController(JwtService jwtService, BootstrapAdminProperties bootstrapAdminProperties, AuditAppender auditAppender) {
         this.jwtService = jwtService;
         this.bootstrapAdminProperties = bootstrapAdminProperties;
@@ -94,6 +96,9 @@ public class AuthController {
         );
     }
 
+    /**
+     * principalFrom：处理该类内部的业务逻辑或辅助计算。
+     */
     private String principalFrom(LoginRequest request) {
         if (request == null || request.username() == null || request.username().isBlank()) {
             return "anonymous";
@@ -101,6 +106,9 @@ public class AuthController {
         return request.username();
     }
 
+    /**
+     * auditLogin：处理该类内部的业务逻辑或辅助计算。
+     */
     private void auditLogin(String principalId, String status, String message) {
         auditAppender.append(
                 TENANT_ID,

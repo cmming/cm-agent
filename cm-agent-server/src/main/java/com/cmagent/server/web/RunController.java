@@ -39,7 +39,9 @@ public class RunController {
     private final RunPersistenceService persistenceService;
     private final PermissionEvaluator permissionEvaluator;
     private final AuditAppender auditAppender;
-
+    /**
+     * RunController：执行当前流程并返回处理结果。
+     */
     public RunController(
             RunExecutionService executionService,
             RunPersistenceService persistenceService,
@@ -134,6 +136,9 @@ public class RunController {
         return new RunDetailResponse(detail.run(), detail.toolCalls());
     }
 
+    /**
+     * decodeCursor：读取并解析输入内容。
+     */
     private CursorPosition decodeCursor(String cursor) {
         if (cursor == null) {
             return null;
@@ -153,11 +158,17 @@ public class RunController {
         }
     }
 
+    /**
+     * encodeCursor：转换并生成规范化输出。
+     */
     private String encodeCursor(RunRecord run) {
         String value = run.startedAt() + "|" + run.id();
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * principal：处理该类内部的业务逻辑或辅助计算。
+     */
     private PrincipalRef principal(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()
                 || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
@@ -166,6 +177,9 @@ public class RunController {
         return new PrincipalRef(session.tenantId(), session.principalId(), session.displayName(), Set.copyOf(session.permissions()));
     }
 
+    /**
+     * authorize：处理该类内部的业务逻辑或辅助计算。
+     */
     private void authorize(PrincipalRef principal, String permission, String resourceType, String resourceId) {
         AuthorizationDecision decision = permissionEvaluator.check(principal, permission);
         if (!decision.allowed()) {
@@ -174,21 +188,33 @@ public class RunController {
         }
     }
 
+    /**
+     * RunRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record RunRequest(@NotBlank String input) {
     }
 
+    /**
+     * RunPageResponse：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record RunPageResponse(List<RunRecord> items, String nextCursor) {
         public RunPageResponse {
             items = List.copyOf(items);
         }
     }
 
+    /**
+     * RunDetailResponse：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     public record RunDetailResponse(RunRecord run, List<RunToolCall> toolCalls) {
         public RunDetailResponse {
             toolCalls = List.copyOf(toolCalls);
         }
     }
 
+    /**
+     * CursorPosition：不可变数据载体，用于在本模块内传递结构化信息。
+     */
     private record CursorPosition(Instant startedAt, UUID id) {
     }
 }

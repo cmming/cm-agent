@@ -30,7 +30,9 @@ public class McpPublicationService {
     private final ToolRegistry registry;
     private final AuditAppender auditAppender;
     private final TransactionTemplate transactionTemplate;
-
+    /**
+     * McpPublicationService：处理该类内部的业务逻辑或辅助计算。
+     */
     public McpPublicationService(
             ToolDefinitionRepository toolRepository,
             HttpToolConfigRepository httpToolConfigRepository,
@@ -98,6 +100,9 @@ public class McpPublicationService {
         }
     }
 
+    /**
+     * publishAndAudit：处理该类内部的业务逻辑或辅助计算。
+     */
     private McpToolPublication publishAndAudit(PrincipalRef principal, McpToolPublication publication) {
         McpToolPublication saved = publicationRepository.save(publication);
         auditAppender.append(principal.tenantId(), principal.principalId(), "MCP_TOOL_PUBLISHED", "TOOL",
@@ -105,12 +110,18 @@ public class McpPublicationService {
         return saved;
     }
 
+    /**
+     * unpublishAndAudit：删除或撤销当前目标的关联状态。
+     */
     private void unpublishAndAudit(PrincipalRef principal, ToolDefinition tool) {
         publicationRepository.delete(principal.tenantId(), tool.id());
         auditAppender.append(principal.tenantId(), principal.principalId(), "MCP_TOOL_UNPUBLISHED", "TOOL",
                 tool.id().toString(), "SUCCEEDED", "MCP 工具已取消发布");
     }
 
+    /**
+     * findVisibleTool：查询并返回当前上下文中的匹配结果。
+     */
     private ToolDefinition findVisibleTool(PrincipalRef principal, UUID toolId) {
         Objects.requireNonNull(principal, "principal 不能为空");
         Objects.requireNonNull(toolId, "toolId 不能为空");
@@ -119,6 +130,9 @@ public class McpPublicationService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
     }
 
+    /**
+     * validatePublishable：校验输入、状态或前置条件。
+     */
     private void validatePublishable(ToolDefinition tool) {
         if (tool.type() == ToolType.HTTP) {
             HttpToolConfig config = httpToolConfigRepository.findByTenantAndToolId(tool.tenantId(), tool.id()).orElse(null);
@@ -132,6 +146,9 @@ public class McpPublicationService {
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "工具不可发布");
     }
 
+    /**
+     * rejectConflictingEnabledName：处理该类内部的业务逻辑或辅助计算。
+     */
     private void rejectConflictingEnabledName(ToolDefinition tool) {
         // MCP 客户端按名称发现工具；同一租户内启用工具不能出现重名。
         Map<UUID, ToolDefinition> tools = toolRepository.listByTenant(tool.tenantId()).stream()
@@ -146,6 +163,9 @@ public class McpPublicationService {
         }
     }
 
+    /**
+     * isSameRegistration：判断当前条件是否成立。
+     */
     private boolean isSameRegistration(ToolDefinition tool) {
         return registry.snapshot(tool.id())
                 .map(ToolRegistry.ToolRegistrationSnapshot::definition)
@@ -155,6 +175,9 @@ public class McpPublicationService {
                 .orElse(false);
     }
 
+    /**
+     * restore：处理该类内部的业务逻辑或辅助计算。
+     */
     private void restore(UUID tenantId, UUID toolId, Optional<McpToolPublication> previous) {
         if (previous.isPresent()) {
             publicationRepository.save(previous.get());
