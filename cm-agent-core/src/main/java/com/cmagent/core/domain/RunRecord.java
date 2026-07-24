@@ -4,6 +4,9 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
+/**
+ * RunRecord 的核心领域类型。
+ */
 public record RunRecord(
         UUID id,
         UUID tenantId,
@@ -16,6 +19,9 @@ public record RunRecord(
         Instant startedAt,
         Instant finishedAt
 ) {
+    /**
+     * 构造 RunRecord 实例并校验输入参数。
+     */
     public RunRecord {
         Objects.requireNonNull(id, "id 不能为空");
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
@@ -39,6 +45,9 @@ public record RunRecord(
         }
     }
 
+    /**
+     * 执行 create 操作。
+     */
     public static RunRecord create(
             UUID id,
             UUID tenantId,
@@ -50,6 +59,9 @@ public record RunRecord(
         return new RunRecord(id, tenantId, agentId, principalId, RunStatus.RUNNING, input, "", "", startedAt, null);
     }
 
+    /**
+     * 执行 complete 操作。
+     */
     public RunRecord complete(RunStatus status, String output, String errorMessage, Instant finishedAt) {
         if (status == RunStatus.RUNNING) {
             throw new IllegalArgumentException("finalStatus 不能为 RUNNING");

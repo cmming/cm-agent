@@ -3,6 +3,9 @@ package com.cmagent.core.domain;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * AgentDefinition 的核心领域类型。
+ */
 public record AgentDefinition(
         UUID id,
         UUID tenantId,
@@ -19,6 +22,9 @@ public record AgentDefinition(
         String updatedBy
 ) {
 
+    /**
+     * 构造 AgentDefinition 实例并校验输入参数。
+     */
     public AgentDefinition {
         toolIds = List.copyOf(toolIds);
         if (temperature < 0 || temperature > 2) {

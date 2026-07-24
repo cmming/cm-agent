@@ -7,8 +7,17 @@ import com.cmagent.core.domain.ToolGrant;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * DefaultToolAuthorizationPolicy 的核心领域类型。
+ */
 public class DefaultToolAuthorizationPolicy implements ToolAuthorizationPolicy {
 
+    /**
+     * 执行 check 操作。
+     */
+    /**
+     * 定义 check 操作。
+     */
     @Override
     public AuthorizationDecision check(PrincipalRef principal, UUID agentId, ToolDefinition tool, List<ToolGrant> grants) {
         if (!principal.tenantId().equals(tool.tenantId())) {

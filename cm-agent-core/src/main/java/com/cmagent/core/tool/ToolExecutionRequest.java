@@ -5,6 +5,9 @@ import com.cmagent.api.PrincipalRef;
 import java.util.Objects;
 import java.util.UUID;
 
+/**
+ * ToolExecutionRequest 的核心领域类型。
+ */
 public record ToolExecutionRequest(
         UUID tenantId,
         UUID agentId,
@@ -16,6 +19,9 @@ public record ToolExecutionRequest(
         ToolInvocationSource source
 ) {
 
+    /**
+     * 构造 ToolExecutionRequest 实例并校验输入参数。
+     */
     public ToolExecutionRequest {
         Objects.requireNonNull(toolId, "toolId 不能为空");
         Objects.requireNonNull(inputJson, "inputJson 不能为空");
@@ -40,16 +46,25 @@ public record ToolExecutionRequest(
         }
     }
 
+    /**
+     * 构造 ToolExecutionRequest 实例并校验输入参数。
+     */
     public ToolExecutionRequest(UUID tenantId, UUID agentId, PrincipalRef principal, UUID runId,
                                 String toolCallId, UUID toolId, String inputJson) {
         this(tenantId, agentId, principal, runId, toolCallId, toolId, inputJson,
                 ToolInvocationSource.AGENT);
     }
 
+    /**
+     * 构造 ToolExecutionRequest 实例并校验输入参数。
+     */
     public ToolExecutionRequest(UUID toolId, String inputJson) {
         this(null, null, null, null, null, toolId, inputJson, ToolInvocationSource.LEGACY);
     }
 
+    /**
+     * 执行 hasRuntimeContext 操作。
+     */
     public boolean hasRuntimeContext() {
         return source == ToolInvocationSource.AGENT && tenantId != null && agentId != null
                 && principal != null && runId != null && toolCallId != null && !toolCallId.isBlank();

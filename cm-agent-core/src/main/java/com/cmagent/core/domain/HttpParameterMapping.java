@@ -2,6 +2,9 @@ package com.cmagent.core.domain;
 
 import java.util.Objects;
 
+/**
+ * HttpParameterMapping 的核心领域类型。
+ */
 public record HttpParameterMapping(
         String sourcePointer,
         HttpParameterLocation location,
@@ -11,6 +14,9 @@ public record HttpParameterMapping(
         String defaultValueJson
 ) {
 
+    /**
+     * 构造 HttpParameterMapping 实例并校验输入参数。
+     */
     public HttpParameterMapping {
         sourcePointer = Objects.requireNonNull(sourcePointer, "sourcePointer 不能为空");
         location = Objects.requireNonNull(location, "location 不能为空");
@@ -29,6 +35,9 @@ public record HttpParameterMapping(
         }
     }
 
+    /**
+     * 执行 hasDefaultValue 操作。
+     */
     public boolean hasDefaultValue() {
         return !defaultValueJson.isBlank();
     }

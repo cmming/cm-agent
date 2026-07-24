@@ -4,8 +4,14 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
+/**
+ * AuditEventRepository 的核心领域类型。
+ */
 public interface AuditEventRepository {
 
+    /**
+     * 定义 append 操作。
+     */
     void append(AuditEvent event);
 
     /**
@@ -16,8 +22,14 @@ public interface AuditEventRepository {
         events.forEach(this::append);
     }
 
+    /**
+     * 定义 listByTenant 操作。
+     */
     List<AuditEvent> listByTenant(UUID tenantId, int limit);
 
+    /**
+     * 执行 supportsCursorPagination 操作。
+     */
     default boolean supportsCursorPagination() {
         return false;
     }

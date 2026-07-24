@@ -3,6 +3,7 @@ package com.cmagent.core.repository;
 import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.RunPageRequest;
 import com.cmagent.core.domain.RunStatus;
+
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -10,6 +11,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * RunRepository 的核心领域类型。
+ */
 public interface RunRepository {
     /**
      * Persists a run only when {@code run.tenantId()} matches {@code tenantId}.
@@ -28,6 +32,9 @@ public interface RunRepository {
             Instant finishedAt
     );
 
+    /**
+     * 定义 findByTenantAndAgentAndId 操作。
+     */
     Optional<RunRecord> findByTenantAndAgentAndId(UUID tenantId, UUID agentId, UUID runId);
 
     /**
@@ -36,6 +43,9 @@ public interface RunRepository {
      */
     List<RunRecord> listByTenantAndAgent(UUID tenantId, UUID agentId, RunPageRequest pageRequest);
 
+    /**
+     * 执行 keysetOrder 操作。
+     */
     static Comparator<RunRecord> keysetOrder() {
         return Comparator.comparing(RunRecord::startedAt)
                 .reversed()
@@ -49,6 +59,9 @@ public interface RunRepository {
         return left.toString().compareTo(right.toString());
     }
 
+    /**
+     * 执行 isStrictlyBeforeCursor 操作。
+     */
     static boolean isStrictlyBeforeCursor(RunRecord run, RunPageRequest pageRequest) {
         Objects.requireNonNull(run, "run 不能为空");
         Objects.requireNonNull(pageRequest, "pageRequest 不能为空");

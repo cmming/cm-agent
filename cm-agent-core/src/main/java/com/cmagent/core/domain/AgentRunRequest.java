@@ -6,6 +6,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
+/**
+ * AgentRunRequest 的核心领域类型。
+ */
 public record AgentRunRequest(
         UUID runId,
         UUID tenantId,
@@ -16,6 +19,9 @@ public record AgentRunRequest(
         List<ToolDefinition> tools
 ) {
 
+    /**
+     * 构造 AgentRunRequest 实例并校验输入参数。
+     */
     public AgentRunRequest {
         Objects.requireNonNull(runId, "runId 不能为空");
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
@@ -45,6 +51,9 @@ public record AgentRunRequest(
         }
     }
 
+    /**
+     * 执行 agentId 操作。
+     */
     public UUID agentId() {
         return agent.id();
     }

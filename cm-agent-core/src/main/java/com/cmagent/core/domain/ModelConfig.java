@@ -2,6 +2,9 @@ package com.cmagent.core.domain;
 
 import java.util.UUID;
 
+/**
+ * ModelConfig 的核心领域类型。
+ */
 public record ModelConfig(
         UUID id,
         UUID tenantId,

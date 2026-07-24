@@ -2,6 +2,9 @@ package com.cmagent.core.domain;
 
 import java.util.UUID;
 
+/**
+ * ToolDefinition 的核心领域类型。
+ */
 public record ToolDefinition(
         UUID id,
         UUID tenantId,

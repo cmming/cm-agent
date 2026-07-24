@@ -5,6 +5,9 @@ import com.cmagent.api.PrincipalRef;
 import java.util.Objects;
 import java.util.UUID;
 
+/**
+ * ToolInvocationRequest 的核心领域类型。
+ */
 public record ToolInvocationRequest(
         UUID tenantId,
         UUID agentId,
@@ -16,6 +19,9 @@ public record ToolInvocationRequest(
         String inputJson
 ) {
 
+    /**
+     * 构造 ToolInvocationRequest 实例并校验输入参数。
+     */
     public ToolInvocationRequest {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(agentId, "agentId 不能为空");

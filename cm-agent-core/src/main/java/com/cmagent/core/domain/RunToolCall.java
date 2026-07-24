@@ -4,6 +4,9 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
+/**
+ * RunToolCall 的核心领域类型。
+ */
 public record RunToolCall(
         UUID id,
         UUID tenantId,
@@ -18,6 +21,9 @@ public record RunToolCall(
         String errorMessage,
         Instant createdAt
 ) {
+    /**
+     * 构造 RunToolCall 实例并校验输入参数。
+     */
     public RunToolCall {
         Objects.requireNonNull(id, "id 不能为空");
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
@@ -36,6 +42,9 @@ public record RunToolCall(
         errorMessage = normalizeText(errorMessage);
     }
 
+    /**
+     * 执行 normalizeText 操作。
+     */
     private static String normalizeText(String value) {
         return value == null || value.isBlank() ? "" : value;
     }

@@ -8,6 +8,9 @@ import java.util.UUID;
  * Immutable tool-call batch that rejects cross-tenant records before persistence starts.
  */
 public record RunToolCallBatch(UUID tenantId, List<RunToolCall> toolCalls) {
+    /**
+     * 构造 RunToolCallBatch 实例并校验输入参数。
+     */
     public RunToolCallBatch {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         toolCalls = List.copyOf(Objects.requireNonNull(toolCalls, "toolCalls 不能为空"));

@@ -7,6 +7,9 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+/**
+ * HttpToolConfig 的核心领域类型。
+ */
 public record HttpToolConfig(
         UUID tenantId,
         UUID toolId,
@@ -21,6 +24,9 @@ public record HttpToolConfig(
             "secret/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*"
     );
 
+    /**
+     * 构造 HttpToolConfig 实例并校验输入参数。
+     */
     public HttpToolConfig {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(toolId, "toolId 不能为空");
