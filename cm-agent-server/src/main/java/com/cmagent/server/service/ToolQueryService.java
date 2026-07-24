@@ -57,7 +57,7 @@ public class ToolQueryService {
      * 查询租户下指定工具的摘要。
      *
      * @param tenantId 租户标识
-     * @param toolId 工具标识
+     * @param toolId   工具标识
      * @return 工具存在时返回摘要，否则返回空
      */
     public Optional<ToolSummary> findByTenantAndId(UUID tenantId, UUID toolId) {

@@ -81,7 +81,7 @@ public class JdbcPersistenceConfiguration {
      * 创建基于命名参数的 JDBC 客户端。
      *
      * @param cmAgentDataSource CM Agent 数据源
-     * @param cmAgentFlyway 已完成迁移的 Flyway 组件，用于保证初始化顺序
+     * @param cmAgentFlyway     已完成迁移的 Flyway 组件，用于保证初始化顺序
      * @return JDBC 客户端
      */
     @Bean
@@ -111,19 +111,25 @@ public class JdbcPersistenceConfiguration {
         return new TransactionTemplate(cmAgentTransactionManager);
     }
 
-    /** @param cmAgentJdbcClient JDBC 客户端 @return Agent 定义 Repository */
+    /**
+     * @param cmAgentJdbcClient JDBC 客户端 @return Agent 定义 Repository
+     */
     @Bean
     AgentDefinitionRepository jdbcAgentDefinitionRepository(JdbcClient cmAgentJdbcClient) {
         return new JdbcAgentDefinitionRepository(cmAgentJdbcClient, new ObjectMapper());
     }
 
-    /** @param cmAgentJdbcClient JDBC 客户端 @return 工具定义 Repository */
+    /**
+     * @param cmAgentJdbcClient JDBC 客户端 @return 工具定义 Repository
+     */
     @Bean
     ToolDefinitionRepository jdbcToolDefinitionRepository(JdbcClient cmAgentJdbcClient) {
         return new JdbcToolDefinitionRepository(cmAgentJdbcClient);
     }
 
-    /** @param cmAgentJdbcClient JDBC 客户端 @return 工具授权 Repository */
+    /**
+     * @param cmAgentJdbcClient JDBC 客户端 @return 工具授权 Repository
+     */
     @Bean
     ToolGrantRepository jdbcToolGrantRepository(JdbcClient cmAgentJdbcClient) {
         return new JdbcToolGrantRepository(cmAgentJdbcClient);
@@ -132,7 +138,7 @@ public class JdbcPersistenceConfiguration {
     /**
      * 创建带事务支持的审计 Repository。
      *
-     * @param cmAgentJdbcClient JDBC 客户端
+     * @param cmAgentJdbcClient          JDBC 客户端
      * @param cmAgentTransactionTemplate 事务模板
      * @return 审计事件 Repository
      */
@@ -144,13 +150,17 @@ public class JdbcPersistenceConfiguration {
         return new JdbcAuditEventRepository(cmAgentJdbcClient, cmAgentTransactionTemplate);
     }
 
-    /** @param cmAgentJdbcClient JDBC 客户端 @return 运行记录 Repository */
+    /**
+     * @param cmAgentJdbcClient JDBC 客户端 @return 运行记录 Repository
+     */
     @Bean
     RunRepository jdbcRunRepository(JdbcClient cmAgentJdbcClient) {
         return new JdbcRunRepository(cmAgentJdbcClient);
     }
 
-    /** @param cmAgentJdbcClient JDBC 客户端 @return 模型配置 Repository */
+    /**
+     * @param cmAgentJdbcClient JDBC 客户端 @return 模型配置 Repository
+     */
     @Bean
     ModelConfigRepository jdbcModelConfigRepository(JdbcClient cmAgentJdbcClient) {
         return new JdbcModelConfigRepository(cmAgentJdbcClient);
@@ -159,7 +169,7 @@ public class JdbcPersistenceConfiguration {
     /**
      * 创建带事务支持的工具调用 Repository。
      *
-     * @param cmAgentJdbcClient JDBC 客户端
+     * @param cmAgentJdbcClient          JDBC 客户端
      * @param cmAgentTransactionTemplate 事务模板
      * @return 工具调用 Repository
      */
@@ -174,8 +184,8 @@ public class JdbcPersistenceConfiguration {
     /**
      * 创建带 JSON 映射和事务支持的 HTTP 工具配置 Repository。
      *
-     * @param cmAgentJdbcClient JDBC 客户端
-     * @param objectMapper JSON 映射器
+     * @param cmAgentJdbcClient          JDBC 客户端
+     * @param objectMapper               JSON 映射器
      * @param cmAgentTransactionTemplate 事务模板
      * @return HTTP 工具配置 Repository
      */
@@ -191,7 +201,7 @@ public class JdbcPersistenceConfiguration {
     /**
      * 创建带行锁和事务支持的 MCP 发布 Repository。
      *
-     * @param cmAgentJdbcClient JDBC 客户端
+     * @param cmAgentJdbcClient          JDBC 客户端
      * @param cmAgentTransactionTemplate 事务模板
      * @return MCP 工具发布 Repository
      */
@@ -207,7 +217,7 @@ public class JdbcPersistenceConfiguration {
      * 创建 JDBC 默认租户和默认模型数据初始化器。
      *
      * @param cmAgentJdbcClient JDBC 客户端
-     * @param cmAgentFlyway Flyway 组件，用于保证迁移先于初始化执行
+     * @param cmAgentFlyway     Flyway 组件，用于保证迁移先于初始化执行
      * @return Spring 应用启动回调
      */
     @Bean

@@ -10,7 +10,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
-/** 按租户和模型配置读取外部模型凭据，避免把 API Key 放入领域配置。 */
+/**
+ * 按租户和模型配置读取外部模型凭据，避免把 API Key 放入领域配置。
+ */
 public final class ExternalModelCredentialProvider implements ModelCredentialProvider {
 
     private final Map<CredentialKey, ModelCredential> credentials;

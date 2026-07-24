@@ -27,7 +27,7 @@ public class AgentScopeRuntimeConfiguration {
     /**
      * 创建 AgentScope 运行时配置校验回调。
      *
-     * @param properties AgentScope 配置属性
+     * @param properties         AgentScope 配置属性
      * @param fakeRuntimeEnabled 是否启用 fake runtime
      * @return Spring 初始化回调
      * @throws IllegalStateException 配置冲突或参数不合法时抛出
@@ -60,9 +60,9 @@ public class AgentScopeRuntimeConfiguration {
     /**
      * 创建 AgentScope 真实运行时，并接入受治理的工具调用网关。
      *
-     * @param properties AgentScope 运行时配置
+     * @param properties         AgentScope 运行时配置
      * @param credentialProvider Spring 管理的模型凭据提供者
-     * @param gateway 工具调用治理网关
+     * @param gateway            工具调用治理网关
      * @return AgentScope AgentRuntime
      * @throws IllegalStateException 未找到模型凭据提供者或运行时配置不合法时抛出
      */

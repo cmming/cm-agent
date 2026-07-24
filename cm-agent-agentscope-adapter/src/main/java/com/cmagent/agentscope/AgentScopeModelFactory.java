@@ -10,10 +10,14 @@ import io.agentscope.extensions.model.openai.OpenAIChatModel;
 
 import java.util.Objects;
 
-/** 根据模型配置和凭据创建 AgentScope 模型实例。 */
+/**
+ * 根据模型配置和凭据创建 AgentScope 模型实例。
+ */
 public class AgentScopeModelFactory {
 
-    /** 创建与 Provider 类型匹配的 AgentScope 聊天模型。 */
+    /**
+     * 创建与 Provider 类型匹配的 AgentScope 聊天模型。
+     */
     public Model create(ModelConfig config, AgentDefinition agent, ModelCredential credential) {
         Objects.requireNonNull(config, "config 不能为空");
         Objects.requireNonNull(agent, "agent 不能为空");

@@ -97,7 +97,7 @@ public class ToolController {
     /**
      * 创建工具及可选的 HTTP 配置或 MCP 发布记录。
      *
-     * @param request 工具创建请求
+     * @param request        工具创建请求
      * @param authentication 当前请求认证信息
      * @return 创建后的工具摘要
      * @throws ResponseStatusException 未认证、缺少权限或配置不合法时抛出
@@ -123,8 +123,8 @@ public class ToolController {
     /**
      * 将工具授权给指定 Agent。
      *
-     * @param id 工具标识
-     * @param request 授权目标 Agent
+     * @param id             工具标识
+     * @param request        授权目标 Agent
      * @param authentication 当前请求认证信息
      * @return 新建的工具授权记录
      * @throws ResponseStatusException 未认证、无权限或资源不存在时抛出
@@ -143,8 +143,8 @@ public class ToolController {
     /**
      * 调试工具并返回脱敏后的执行结果。
      *
-     * @param id 工具标识
-     * @param request 调试输入及高风险工具二次确认信息
+     * @param id             工具标识
+     * @param request        调试输入及高风险工具二次确认信息
      * @param authentication 当前请求认证信息
      * @return 脱敏后的调试结果
      * @throws ResponseStatusException 未认证、无权限、确认失败或工具执行失败时抛出
@@ -163,7 +163,7 @@ public class ToolController {
     /**
      * 发布工具到当前租户的 MCP 工具目录。
      *
-     * @param id 工具标识
+     * @param id             工具标识
      * @param authentication 当前请求认证信息
      * @return MCP 发布记录
      * @throws ResponseStatusException 未认证、无权限或工具不满足发布规则时抛出
@@ -181,7 +181,7 @@ public class ToolController {
     /**
      * 从当前租户的 MCP 工具目录取消发布。
      *
-     * @param id 工具标识
+     * @param id             工具标识
      * @param authentication 当前请求认证信息
      * @return 无内容响应
      * @throws ResponseStatusException 未认证、无权限或工具不存在时抛出
@@ -224,15 +224,15 @@ public class ToolController {
             return null;
         }
         List<HttpParameterMapping> mappings = request.parameterMappings() == null ? List.of() : request.parameterMappings().stream()
-                .map(mapping -> new HttpParameterMapping(
-                        mapping.sourcePointer(),
-                        mapping.location(),
-                        mapping.targetName(),
-                        mapping.targetPointer(),
-                        mapping.required(),
-                        mapping.defaultValue() == null ? "" : canonicalJson(mapping.defaultValue())
-                ))
-                .toList();
+                                                                                                .map(mapping -> new HttpParameterMapping(
+                                                                                                        mapping.sourcePointer(),
+                                                                                                        mapping.location(),
+                                                                                                        mapping.targetName(),
+                                                                                                        mapping.targetPointer(),
+                                                                                                        mapping.required(),
+                                                                                                        mapping.defaultValue() == null ? "" : canonicalJson(mapping.defaultValue())
+                                                                                                ))
+                                                                                                .toList();
         return new HttpToolCreateSpec(
                 request.method(),
                 request.urlTemplate(),

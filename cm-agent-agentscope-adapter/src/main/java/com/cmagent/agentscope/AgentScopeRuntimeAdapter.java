@@ -14,7 +14,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 
-/** 将 CM Agent 运行时请求适配为 AgentScope 执行流程。 */
+/**
+ * 将 CM Agent 运行时请求适配为 AgentScope 执行流程。
+ */
 public class AgentScopeRuntimeAdapter implements AgentRuntime {
 
     private final ModelCredentialProvider credentialProvider;
@@ -22,7 +24,9 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
     private final AgentScopeExecutor executor;
     private final Clock clock;
 
-    /** 创建运行时适配器实例。 */
+    /**
+     * 创建运行时适配器实例。
+     */
     AgentScopeRuntimeAdapter(
             ModelCredentialProvider credentialProvider,
             ToolInvocationGateway toolGateway,
@@ -35,7 +39,9 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
         this.clock = Objects.requireNonNull(clock, "clock 不能为空");
     }
 
-    /** 根据运行时选项创建使用默认执行器的适配器。 */
+    /**
+     * 根据运行时选项创建使用默认执行器的适配器。
+     */
     public static AgentScopeRuntimeAdapter create(
             ModelCredentialProvider credentialProvider,
             ToolInvocationGateway toolGateway,
@@ -49,12 +55,16 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
                 clock);
     }
 
-    /** 将领域运行请求包装为 AgentScope 执行规格。 */
+    /**
+     * 将领域运行请求包装为 AgentScope 执行规格。
+     */
     public AgentScopeRunSpec toRunSpec(AgentRunRequest request) {
         return new AgentScopeRunSpec(request);
     }
 
-    /** 执行一次运行请求，并将凭据异常转换为失败结果。 */
+    /**
+     * 执行一次运行请求，并将凭据异常转换为失败结果。
+     */
     @Override
     public AgentRunResult run(AgentRunRequest request) {
         Objects.requireNonNull(request, "request 不能为空");

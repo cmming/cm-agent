@@ -6,7 +6,9 @@ import com.cmagent.core.domain.ToolCallRecord;
 import java.util.List;
 import java.util.Objects;
 
-/** AgentScope 执行结果的适配器内部表示。 */
+/**
+ * AgentScope 执行结果的适配器内部表示。
+ */
 record AgentScopeExecutionResult(
         RunStatus status,
         String output,
@@ -14,7 +16,9 @@ record AgentScopeExecutionResult(
         String errorMessage
 ) {
 
-    /** 校验执行结果并复制工具调用记录，确保结果不可变。 */
+    /**
+     * 校验执行结果并复制工具调用记录，确保结果不可变。
+     */
     AgentScopeExecutionResult {
         Objects.requireNonNull(status, "status 不能为空");
         Objects.requireNonNull(output, "output 不能为空");
@@ -26,22 +30,30 @@ record AgentScopeExecutionResult(
         toolCalls = List.copyOf(toolCalls);
     }
 
-    /** 创建成功结果。 */
+    /**
+     * 创建成功结果。
+     */
     static AgentScopeExecutionResult succeeded(String output, List<ToolCallRecord> toolCalls) {
         return new AgentScopeExecutionResult(RunStatus.SUCCEEDED, output, toolCalls, "");
     }
 
-    /** 创建失败结果。 */
+    /**
+     * 创建失败结果。
+     */
     static AgentScopeExecutionResult failed(String errorMessage, List<ToolCallRecord> toolCalls) {
         return new AgentScopeExecutionResult(RunStatus.FAILED, "", toolCalls, errorMessage);
     }
 
-    /** 创建无输出的拒绝结果。 */
+    /**
+     * 创建无输出的拒绝结果。
+     */
     static AgentScopeExecutionResult denied(String errorMessage, List<ToolCallRecord> toolCalls) {
         return denied("", errorMessage, toolCalls);
     }
 
-    /** 创建可携带部分输出的拒绝结果。 */
+    /**
+     * 创建可携带部分输出的拒绝结果。
+     */
     static AgentScopeExecutionResult denied(
             String output,
             String errorMessage,

@@ -33,7 +33,7 @@ public class HttpToolInputMapper {
      * 将工具输入映射为待发送的 HTTP 请求。
      *
      * @param config HTTP 工具配置
-     * @param input 调用方提供的 JSON 输入
+     * @param input  调用方提供的 JSON 输入
      * @return 完成路径、查询参数、请求头和请求体映射的请求
      * @throws IllegalArgumentException 输入不符合 Schema 或映射规则时抛出
      */

@@ -186,7 +186,7 @@ public class ServerRepositoryConfiguration {
     /**
      * 创建持久化配置启动校验器。
      *
-     * @param properties 持久化配置属性
+     * @param properties  持久化配置属性
      * @param environment Spring 环境及当前激活 profile
      * @return Spring 初始化回调
      */

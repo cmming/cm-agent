@@ -57,7 +57,7 @@ public class ToolOutputSanitizer {
     /**
      * 将工具输出转换为受控摘要，并移除已知 secret 值。
      *
-     * @param value 工具原始输出
+     * @param value        工具原始输出
      * @param secretValues 需要从输出中替换的敏感值
      * @return 脱敏且受长度限制的输出摘要
      * @throws IllegalArgumentException 输出无法按 JSON 处理且不满足文本要求时抛出
@@ -80,7 +80,7 @@ public class ToolOutputSanitizer {
     /**
      * 判断字符串按 UTF-8 编码后的字节数是否超过限制。
      *
-     * @param value 待检查字符串
+     * @param value    待检查字符串
      * @param maxBytes 最大允许字节数
      * @return 超过限制返回 {@code true}，否则返回 {@code false}
      */

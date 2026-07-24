@@ -37,7 +37,7 @@ public class GovernedToolExecutionService {
     /**
      * 执行已完成治理准备的工具请求。
      *
-     * @param tool 工具定义
+     * @param tool    工具定义
      * @param request 已校验的工具调用请求
      * @return 工具执行结果
      * @throws RuntimeException 工具执行器不存在或执行失败时抛出
@@ -49,12 +49,12 @@ public class GovernedToolExecutionService {
     /**
      * 在工具注册状态满足要求后执行工具。
      *
-     * @param tool 工具定义
-     * @param request 工具调用请求
+     * @param tool            工具定义
+     * @param request         工具调用请求
      * @param beforeExecution 工具真正执行前的回调，通常用于写入调用开始审计
      * @return 工具执行结果
      * @throws ToolPreparationDataAccessException 准备工具时访问数据失败
-     * @throws RuntimeException 工具不可用或执行失败时抛出
+     * @throws RuntimeException                   工具不可用或执行失败时抛出
      */
     public ToolExecutionResult executeWhenReady(
             ToolDefinition tool,

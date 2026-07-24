@@ -66,10 +66,10 @@ public class ManagementCommandService {
     /**
      * 创建 Agent，并写入创建审计。
      *
-     * @param principal 当前认证主体
-     * @param name Agent 名称
+     * @param principal    当前认证主体
+     * @param name         Agent 名称
      * @param systemPrompt 系统提示词
-     * @param modelName 使用的模型名称
+     * @param modelName    使用的模型名称
      * @return 已保存的 Agent 定义
      * @throws RuntimeException 持久化或审计失败时抛出
      */
@@ -92,11 +92,11 @@ public class ManagementCommandService {
     /**
      * 创建不带额外 HTTP 配置的工具。
      *
-     * @param principal 当前认证主体
-     * @param name 工具名称
+     * @param principal   当前认证主体
+     * @param name        工具名称
      * @param description 工具描述
-     * @param type 工具类型
-     * @param riskLevel 工具风险等级
+     * @param type        工具类型
+     * @param riskLevel   工具风险等级
      * @return 已保存的工具定义
      * @throws ResponseStatusException 工具名称冲突或参数不合法时抛出
      */
@@ -109,16 +109,16 @@ public class ManagementCommandService {
     /**
      * 创建工具，并按需保存 HTTP 配置和 MCP 发布记录。
      *
-     * @param principal 当前认证主体
-     * @param name 工具名称
-     * @param description 工具描述
-     * @param type 工具类型
-     * @param riskLevel 工具风险等级
+     * @param principal          当前认证主体
+     * @param name               工具名称
+     * @param description        工具描述
+     * @param type               工具类型
+     * @param riskLevel          工具风险等级
      * @param httpToolCreateSpec HTTP 工具配置；非 HTTP 工具必须为空
-     * @param mcpPublished 是否立即发布到 MCP
+     * @param mcpPublished       是否立即发布到 MCP
      * @return 已保存的工具定义
      * @throws ResponseStatusException 配置不合法或工具名称冲突时抛出
-     * @throws DuplicateKeyException 持久化层发生未识别的唯一键冲突时抛出
+     * @throws DuplicateKeyException   持久化层发生未识别的唯一键冲突时抛出
      */
     public ToolDefinition createTool(
             PrincipalRef principal,
@@ -186,11 +186,11 @@ public class ManagementCommandService {
      * 将工具授权给同一租户下的 Agent。
      *
      * @param principal 当前认证主体
-     * @param toolId 工具标识
-     * @param agentId Agent 标识
+     * @param toolId    工具标识
+     * @param agentId   Agent 标识
      * @return 已保存的授权记录
      * @throws ResponseStatusException 工具或 Agent 不存在时抛出
-     * @throws RuntimeException 授权、关联或审计失败时抛出
+     * @throws RuntimeException        授权、关联或审计失败时抛出
      */
     public ToolGrant grantTool(PrincipalRef principal, UUID toolId, UUID agentId) {
         ToolDefinition tool = toolRepository.findByTenantAndId(principal.tenantId(), toolId)

@@ -63,8 +63,8 @@ public class RunPersistenceService {
      * 创建运行中的初始记录并写入启动审计。
      *
      * @param principal 当前认证主体
-     * @param agentId 运行目标 Agent 标识
-     * @param input 用户输入
+     * @param agentId   运行目标 Agent 标识
+     * @param input     用户输入
      * @return 状态为运行中的运行记录
      * @throws RuntimeException 持久化或审计失败时抛出
      */
@@ -90,10 +90,10 @@ public class RunPersistenceService {
     /**
      * 将运行记录更新为成功完成，并保存工具调用批次。
      *
-     * @param principal 当前认证主体
+     * @param principal  当前认证主体
      * @param runningRun 已存在的运行中记录
-     * @param result Agent 运行结果
-     * @param toolCalls 本次运行产生的工具调用记录
+     * @param result     Agent 运行结果
+     * @param toolCalls  本次运行产生的工具调用记录
      * @return 完成后的运行记录
      * @throws RuntimeException 持久化或审计失败时抛出
      */
@@ -148,7 +148,7 @@ public class RunPersistenceService {
     /**
      * 将运行记录更新为失败，并写入受控错误摘要。
      *
-     * @param principal 当前认证主体
+     * @param principal  当前认证主体
      * @param runningRun 失败的运行中记录
      * @return 失败状态的运行记录
      * @throws RuntimeException 持久化失败时抛出
@@ -170,7 +170,7 @@ public class RunPersistenceService {
     /**
      * 为失败运行补写失败审计，供非事务运行路径使用。
      *
-     * @param principal 当前认证主体
+     * @param principal  当前认证主体
      * @param runningRun 失败的运行记录
      * @throws RuntimeException 审计写入失败时抛出
      */
@@ -184,8 +184,8 @@ public class RunPersistenceService {
      * 查询指定租户和 Agent 下的运行详情及工具调用记录。
      *
      * @param tenantId 租户标识
-     * @param agentId Agent 标识
-     * @param runId 运行标识
+     * @param agentId  Agent 标识
+     * @param runId    运行标识
      * @return 运行记录与工具调用明细
      * @throws ResponseStatusException 运行不存在或不属于当前租户/Agent 时抛出
      */
@@ -200,8 +200,8 @@ public class RunPersistenceService {
     /**
      * 按游标分页查询指定租户和 Agent 的运行记录。
      *
-     * @param tenantId 租户标识
-     * @param agentId Agent 标识
+     * @param tenantId    租户标识
+     * @param agentId     Agent 标识
      * @param pageRequest 分页大小及游标位置
      * @return 当前页运行记录
      * @throws IllegalArgumentException 分页参数不合法时抛出

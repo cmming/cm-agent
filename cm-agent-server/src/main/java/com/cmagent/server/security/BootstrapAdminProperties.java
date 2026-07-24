@@ -23,42 +23,58 @@ public class BootstrapAdminProperties {
         this.environment = environment;
     }
 
-    /** @return 是否启用 bootstrap admin。 */
+    /**
+     * @return 是否启用 bootstrap admin。
+     */
     public boolean isBootstrapAdminEnabled() {
         return bootstrapAdminEnabled;
     }
 
-    /** @param bootstrapAdminEnabled 是否启用 bootstrap admin。 */
+    /**
+     * @param bootstrapAdminEnabled 是否启用 bootstrap admin。
+     */
     public void setBootstrapAdminEnabled(boolean bootstrapAdminEnabled) {
         this.bootstrapAdminEnabled = bootstrapAdminEnabled;
     }
 
-    /** @return bootstrap admin 用户名；为空时使用本地默认用户名。 */
+    /**
+     * @return bootstrap admin 用户名；为空时使用本地默认用户名。
+     */
     public String getBootstrapAdminUsername() {
         return blankToDefault(bootstrapAdminUsername, DEFAULT_USERNAME);
     }
 
-    /** @param bootstrapAdminUsername bootstrap admin 用户名。 */
+    /**
+     * @param bootstrapAdminUsername bootstrap admin 用户名。
+     */
     public void setBootstrapAdminUsername(String bootstrapAdminUsername) {
         this.bootstrapAdminUsername = bootstrapAdminUsername;
     }
 
-    /** @return bootstrap admin 密码；调用方不得记录该值。 */
+    /**
+     * @return bootstrap admin 密码；调用方不得记录该值。
+     */
     public String getBootstrapAdminPassword() {
         return bootstrapAdminPassword == null ? "" : bootstrapAdminPassword;
     }
 
-    /** @param bootstrapAdminPassword bootstrap admin 密码，仅用于本地/测试认证。 */
+    /**
+     * @param bootstrapAdminPassword bootstrap admin 密码，仅用于本地/测试认证。
+     */
     public void setBootstrapAdminPassword(String bootstrapAdminPassword) {
         this.bootstrapAdminPassword = bootstrapAdminPassword;
     }
 
-    /** @return bootstrap admin 展示名称。 */
+    /**
+     * @return bootstrap admin 展示名称。
+     */
     public String getBootstrapAdminDisplayName() {
         return blankToDefault(bootstrapAdminDisplayName, DEFAULT_DISPLAY_NAME);
     }
 
-    /** @param bootstrapAdminDisplayName bootstrap admin 展示名称。 */
+    /**
+     * @param bootstrapAdminDisplayName bootstrap admin 展示名称。
+     */
     public void setBootstrapAdminDisplayName(String bootstrapAdminDisplayName) {
         this.bootstrapAdminDisplayName = bootstrapAdminDisplayName;
     }

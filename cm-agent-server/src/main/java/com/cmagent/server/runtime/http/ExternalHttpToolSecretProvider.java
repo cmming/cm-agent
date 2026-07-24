@@ -4,7 +4,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-/** 从外部映射读取 HTTP 工具 secret，未配置时明确拒绝执行。 */
+/**
+ * 从外部映射读取 HTTP 工具 secret，未配置时明确拒绝执行。
+ */
 public final class ExternalHttpToolSecretProvider implements HttpToolSecretProvider {
     private final HttpToolProperties properties;
 

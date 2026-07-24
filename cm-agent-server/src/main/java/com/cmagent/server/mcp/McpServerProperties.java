@@ -14,42 +14,58 @@ public class McpServerProperties implements InitializingBean {
     private List<String> allowedOrigins = List.of();
     private List<String> allowedHosts = List.of();
 
-    /** @return 是否启用 MCP Streamable HTTP 端点。 */
+    /**
+     * @return 是否启用 MCP Streamable HTTP 端点。
+     */
     public boolean isEnabled() {
         return enabled;
     }
 
-    /** @param enabled 是否启用 MCP Streamable HTTP 端点。 */
+    /**
+     * @param enabled 是否启用 MCP Streamable HTTP 端点。
+     */
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
     }
 
-    /** @return MCP HTTP 端点路径。 */
+    /**
+     * @return MCP HTTP 端点路径。
+     */
     public String getEndpoint() {
         return endpoint;
     }
 
-    /** @param endpoint MCP HTTP 端点路径，写入时会去除首尾空白。 */
+    /**
+     * @param endpoint MCP HTTP 端点路径，写入时会去除首尾空白。
+     */
     public void setEndpoint(String endpoint) {
         this.endpoint = endpoint == null ? "" : endpoint.trim();
     }
 
-    /** @return MCP 请求允许的 Origin 白名单。 */
+    /**
+     * @return MCP 请求允许的 Origin 白名单。
+     */
     public List<String> getAllowedOrigins() {
         return allowedOrigins;
     }
 
-    /** @param allowedOrigins MCP 请求允许的 Origin 白名单，将被规范化并复制。 */
+    /**
+     * @param allowedOrigins MCP 请求允许的 Origin 白名单，将被规范化并复制。
+     */
     public void setAllowedOrigins(List<String> allowedOrigins) {
         this.allowedOrigins = normalized(allowedOrigins);
     }
 
-    /** @return MCP 请求允许的 Host 白名单。 */
+    /**
+     * @return MCP 请求允许的 Host 白名单。
+     */
     public List<String> getAllowedHosts() {
         return allowedHosts;
     }
 
-    /** @param allowedHosts MCP 请求允许的 Host 白名单，将被规范化并复制。 */
+    /**
+     * @param allowedHosts MCP 请求允许的 Host 白名单，将被规范化并复制。
+     */
     public void setAllowedHosts(List<String> allowedHosts) {
         this.allowedHosts = normalized(allowedHosts);
     }

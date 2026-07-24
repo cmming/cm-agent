@@ -3,10 +3,14 @@ package com.cmagent.agentscope;
 import java.time.Duration;
 import java.util.Objects;
 
-/** AgentScope 模型调用和工具调用的运行参数。 */
+/**
+ * AgentScope 模型调用和工具调用的运行参数。
+ */
 public record AgentScopeRuntimeOptions(Duration modelTimeout, Duration toolTimeout, int modelMaxAttempts) {
 
-    /** 校验超时和模型重试次数满足运行时约束。 */
+    /**
+     * 校验超时和模型重试次数满足运行时约束。
+     */
     public AgentScopeRuntimeOptions {
         Objects.requireNonNull(modelTimeout, "modelTimeout 不能为空");
         Objects.requireNonNull(toolTimeout, "toolTimeout 不能为空");

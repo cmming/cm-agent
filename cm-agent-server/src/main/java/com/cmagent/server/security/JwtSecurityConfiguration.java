@@ -17,7 +17,7 @@ public class JwtSecurityConfiguration {
      * @param configuredSecret JWT 签名密钥原文
      * @return HMAC JWT 签名密钥
      * @throws IllegalStateException 未配置签名密钥时抛出
-     * @throws RuntimeException 密钥长度不满足算法要求时抛出
+     * @throws RuntimeException      密钥长度不满足算法要求时抛出
      */
     @Bean
     SecretKey jwtSigningKey(@Value("${cm-agent.security.jwt-secret:}") String configuredSecret) {

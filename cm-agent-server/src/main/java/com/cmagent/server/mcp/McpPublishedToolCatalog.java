@@ -40,7 +40,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-/** 从当前租户的发布记录构建 MCP 工具目录，并在调用时重新验证可用性。 */
+/**
+ * 从当前租户的发布记录构建 MCP 工具目录，并在调用时重新验证可用性。
+ */
 public class McpPublishedToolCatalog {
     static final String INVOKE_PERMISSION = "tool:mcp:invoke";
     private static final String RESOURCE_TYPE = "TOOL";

@@ -26,7 +26,7 @@ public class JwtService {
     /**
      * 为指定租户主体签发访问令牌。
      *
-     * @param tenantId 主体所属租户
+     * @param tenantId    主体所属租户
      * @param principalId 主体标识
      * @param displayName 主体展示名称
      * @param permissions 令牌中携带的权限集合

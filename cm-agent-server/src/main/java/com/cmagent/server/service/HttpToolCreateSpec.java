@@ -7,7 +7,9 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
-/** 创建 HTTP 工具时由管理服务使用的领域参数集合。 */
+/**
+ * 创建 HTTP 工具时由管理服务使用的领域参数集合。
+ */
 public record HttpToolCreateSpec(
         HttpToolMethod method,
         String urlTemplate,

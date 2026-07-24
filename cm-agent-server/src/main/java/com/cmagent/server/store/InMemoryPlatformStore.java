@@ -30,7 +30,9 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** 本地和测试使用的内存存储实现，不作为生产持久化方案。 */
+/**
+ * 本地和测试使用的内存存储实现，不作为生产持久化方案。
+ */
 public class InMemoryPlatformStore implements AuditEventRepository, RunRepository, ToolCallRepository {
 
     private final ConcurrentHashMap<UUID, AgentDefinition> agents = new ConcurrentHashMap<>();

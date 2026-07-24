@@ -18,7 +18,10 @@ import java.util.Set;
 /**
  * 负责 HTTP 工具输入 Schema 的路径导航、局部投影、引用解析与类型域推导。
  */
-/** 在 JSON Schema 中解析嵌套对象、数组和 required 约束。 */
+
+/**
+ * 在 JSON Schema 中解析嵌套对象、数组和 required 约束。
+ */
 final class HttpToolSchemaNavigator {
     private static final int MAX_REFERENCE_TRAVERSAL_DEPTH = 256;
     private static final int MAX_REFERENCE_TRAVERSAL_STATES = 10_000;

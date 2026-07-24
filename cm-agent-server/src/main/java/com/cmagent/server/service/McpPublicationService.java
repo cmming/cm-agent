@@ -51,10 +51,10 @@ public class McpPublicationService {
      * 发布工具到 MCP 目录，并记录发布审计。
      *
      * @param principal 当前认证主体
-     * @param toolId 待发布工具标识
+     * @param toolId    待发布工具标识
      * @return 已保存的 MCP 发布记录
      * @throws ResponseStatusException 工具不可见、配置不合法或名称冲突时抛出
-     * @throws RuntimeException 发布或审计失败时抛出
+     * @throws RuntimeException        发布或审计失败时抛出
      */
     public McpToolPublication publish(PrincipalRef principal, UUID toolId) {
         // 发布前重新读取并校验工具，避免使用过期的控制台数据绕过治理规则。
@@ -78,9 +78,9 @@ public class McpPublicationService {
      * 取消工具的 MCP 发布状态，并记录取消发布审计。
      *
      * @param principal 当前认证主体
-     * @param toolId 待取消发布工具标识
+     * @param toolId    待取消发布工具标识
      * @throws ResponseStatusException 工具不可见时抛出
-     * @throws RuntimeException 取消发布或审计失败时抛出
+     * @throws RuntimeException        取消发布或审计失败时抛出
      */
     public void unpublish(PrincipalRef principal, UUID toolId) {
         // 取消发布与发布使用相同的租户边界，并在事务不可用时执行补偿恢复。

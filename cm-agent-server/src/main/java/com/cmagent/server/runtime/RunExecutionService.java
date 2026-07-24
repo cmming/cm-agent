@@ -73,10 +73,10 @@ public class RunExecutionService {
      * 执行 Agent 的单轮运行，并持久化运行状态和工具调用结果。
      *
      * @param principal 当前认证主体
-     * @param agentId 待运行的 Agent 标识
-     * @param input 用户输入
+     * @param agentId   待运行的 Agent 标识
+     * @param input     用户输入
      * @return Agent 运行结果
-     * @throws ResponseStatusException Agent 不存在、未启用或不可运行时抛出
+     * @throws ResponseStatusException   Agent 不存在、未启用或不可运行时抛出
      * @throws RuntimeExecutionException 运行时或受治理工具调用失败时抛出
      */
     public AgentRunResult run(PrincipalRef principal, UUID agentId, String input) {

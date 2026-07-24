@@ -48,9 +48,9 @@ public class ToolDebugService {
     /**
      * 在调试权限和风险确认均通过后执行工具。
      *
-     * @param principal 当前认证主体
-     * @param toolId 工具标识
-     * @param inputJson 工具输入 JSON
+     * @param principal         当前认证主体
+     * @param toolId            工具标识
+     * @param inputJson         工具输入 JSON
      * @param confirmedToolName 高风险工具的二次确认名称
      * @return 脱敏后的调试响应
      * @throws ResponseStatusException 工具不可见、未授权、确认失败或输入无效时抛出

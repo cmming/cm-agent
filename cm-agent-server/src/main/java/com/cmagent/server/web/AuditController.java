@@ -59,8 +59,8 @@ public class AuditController {
     /**
      * 按游标查询当前租户的审计事件。
      *
-     * @param limit 单页最大事件数
-     * @param cursor 上一页返回的游标，可为空
+     * @param limit          单页最大事件数
+     * @param cursor         上一页返回的游标，可为空
      * @param authentication 当前请求认证信息
      * @return 审计事件分页结果
      * @throws ResponseStatusException 未认证、无权限或游标格式错误时抛出

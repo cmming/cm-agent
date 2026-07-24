@@ -59,7 +59,7 @@ public class HttpToolUrlPolicy {
     /**
      * 判断两个地址是否具有相同的协议、主机和有效端口。
      *
-     * @param first 第一个地址
+     * @param first  第一个地址
      * @param second 第二个地址
      * @return 来源一致返回 {@code true}，否则返回 {@code false}
      */

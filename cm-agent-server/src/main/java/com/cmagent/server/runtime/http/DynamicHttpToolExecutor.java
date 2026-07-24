@@ -136,7 +136,7 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     /**
      * 执行动态 HTTP 工具请求，并限制目标地址、重定向、超时和响应大小。
      *
-     * @param tool 工具定义
+     * @param tool    工具定义
      * @param request 工具调用请求
      * @return HTTP 响应映射成的工具执行结果
      * @throws RuntimeException 请求构造、网络访问或响应处理失败时抛出
@@ -158,7 +158,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         Deadline deadline = Deadline.start(config.timeout());
         ResolvedHeaders secretHeaders;
         try {
-            secretHeaders = runWithinDeadline(() -> resolveSecretHeaders(config), deadline, () -> { });
+            secretHeaders = runWithinDeadline(() -> resolveSecretHeaders(config), deadline, () -> {
+            });
         } catch (HttpTimeoutException exception) {
             return ToolExecutionResult.failed("HTTP 工具调用超时", null);
         } catch (InterruptedException exception) {
@@ -342,10 +343,12 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         while (true) {
             try {
                 URI uriToValidate = currentUri;
-                currentUri = runWithinDeadline(() -> urlPolicy.validate(uriToValidate), deadline, () -> { });
+                currentUri = runWithinDeadline(() -> urlPolicy.validate(uriToValidate), deadline, () -> {
+                });
                 HttpRequest request = buildRequest(method, currentUri, currentBody, headers, deadline.remaining());
                 HttpResponse<InputStream> response = runWithinDeadline(
-                        () -> httpTransport.send(request), deadline, () -> { });
+                        () -> httpTransport.send(request), deadline, () -> {
+                        });
                 int status = response.statusCode();
                 if (REDIRECT_STATUSES.contains(status)) {
                     closeQuietly(response.body());
