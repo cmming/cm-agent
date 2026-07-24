@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
+/** 查询工具及其授权信息，并将领域数据转换为控制台所需的摘要。 */
 public class ToolQueryService {
     private final ToolDefinitionRepository toolRepository;
     private final HttpToolConfigRepository httpToolConfigRepository;
@@ -29,6 +30,12 @@ public class ToolQueryService {
         this.mcpToolPublicationRepository = mcpToolPublicationRepository;
     }
 
+    /**
+     * 查询租户下的工具及其 HTTP 配置和 MCP 发布状态。
+     *
+     * @param tenantId 租户标识
+     * @return 工具摘要列表
+     */
     public List<ToolSummary> listByTenant(UUID tenantId) {
         List<ToolDefinition> tools = toolRepository.listByTenant(tenantId);
         if (tools.isEmpty()) {
@@ -46,6 +53,13 @@ public class ToolQueryService {
                 .toList();
     }
 
+    /**
+     * 查询租户下指定工具的摘要。
+     *
+     * @param tenantId 租户标识
+     * @param toolId 工具标识
+     * @return 工具存在时返回摘要，否则返回空
+     */
     public Optional<ToolSummary> findByTenantAndId(UUID tenantId, UUID toolId) {
         return toolRepository.findByTenantAndId(tenantId, toolId)
                 .map(tool -> new ToolSummary(

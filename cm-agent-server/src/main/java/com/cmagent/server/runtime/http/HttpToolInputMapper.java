@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Objects;
 
 @Component
+/** 按 JSON Pointer 将输入参数映射到 PATH、QUERY、HEADER 和 BODY。 */
 public class HttpToolInputMapper {
     private final ObjectMapper objectMapper;
     private final HttpToolConfigValidator configValidator;
@@ -28,6 +29,14 @@ public class HttpToolInputMapper {
         this.configValidator = Objects.requireNonNull(configValidator, "configValidator 不能为空");
     }
 
+    /**
+     * 将工具输入映射为待发送的 HTTP 请求。
+     *
+     * @param config HTTP 工具配置
+     * @param input 调用方提供的 JSON 输入
+     * @return 完成路径、查询参数、请求头和请求体映射的请求
+     * @throws IllegalArgumentException 输入不符合 Schema 或映射规则时抛出
+     */
     public PreparedHttpToolRequest map(HttpToolConfig config, JsonNode input) {
         Objects.requireNonNull(config, "config 不能为空");
         JsonNode rootSchema = configValidator.parseAndValidateSchema(config);

@@ -33,6 +33,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/agents/{agentId}/runs")
+/** Agent 运行接口，负责校验主体权限并委托运行服务执行单轮任务。 */
 public class RunController {
     private final RunExecutionService executionService;
     private final RunPersistenceService persistenceService;
@@ -51,6 +52,15 @@ public class RunController {
         this.auditAppender = auditAppender;
     }
 
+    /**
+     * 启动指定 Agent 的单轮运行。
+     *
+     * @param agentId Agent 标识
+     * @param request 运行输入
+     * @param authentication 当前请求认证信息
+     * @return Agent 运行结果
+     * @throws ResponseStatusException 未认证、无权限或 Agent 不可运行时抛出
+     */
     @PostMapping
     public AgentRunResult run(
             @PathVariable("agentId") UUID agentId,
@@ -62,6 +72,16 @@ public class RunController {
         return executionService.run(principal, agentId, request.input());
     }
 
+    /**
+     * 按游标分页查询指定 Agent 的运行记录。
+     *
+     * @param agentId Agent 标识
+     * @param limit 单页最大记录数
+     * @param cursor 上一页返回的游标，可为空
+     * @param authentication 当前请求认证信息
+     * @return 当前页记录及下一页游标
+     * @throws ResponseStatusException 未认证、无权限或游标格式错误时抛出
+     */
     @GetMapping
     public RunPageResponse list(
             @PathVariable("agentId") UUID agentId,
@@ -91,6 +111,15 @@ public class RunController {
         return new RunPageResponse(items, nextCursor);
     }
 
+    /**
+     * 查询指定 Agent 的单次运行详情。
+     *
+     * @param agentId Agent 标识
+     * @param runId 运行标识
+     * @param authentication 当前请求认证信息
+     * @return 运行记录及工具调用详情
+     * @throws ResponseStatusException 未认证、无权限或运行不存在时抛出
+     */
     @GetMapping("/{runId}")
     public RunDetailResponse get(
             @PathVariable("agentId") UUID agentId,

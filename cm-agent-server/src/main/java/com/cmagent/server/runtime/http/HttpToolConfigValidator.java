@@ -30,6 +30,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
+/** 校验动态 HTTP 工具的协议、Schema、映射、超时和安全边界。 */
 public class HttpToolConfigValidator {
     private static final Pattern PATH_PLACEHOLDER = Pattern.compile("\\{([^{}]+)}");
     private static final Set<String> FORBIDDEN_DYNAMIC_HEADERS = Set.of(
@@ -51,6 +52,12 @@ public class HttpToolConfigValidator {
         this.schemaNavigator = new HttpToolSchemaNavigator(objectMapper);
     }
 
+    /**
+     * 校验动态 HTTP 工具配置是否满足运行时和安全约束。
+     *
+     * @param config 待校验的 HTTP 工具配置
+     * @throws IllegalArgumentException 协议、Schema、映射或超时配置不合法时抛出
+     */
     public void validate(HttpToolConfig config) {
         Objects.requireNonNull(config, "config 不能为空");
         JsonNode rootSchema = parseJsonStrict(config.inputSchema(), "inputSchema 不是合法 JSON");

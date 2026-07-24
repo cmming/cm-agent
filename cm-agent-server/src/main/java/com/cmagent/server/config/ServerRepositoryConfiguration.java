@@ -29,11 +29,17 @@ import java.util.UUID;
 
 @Configuration
 @EnableConfigurationProperties(CmAgentPersistenceProperties.class)
+/** 按持久化模式选择 memory 或 JDBC Repository 实现。 */
 public class ServerRepositoryConfiguration {
 
     private static final UUID DEFAULT_MODEL_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
     private static final UUID DEFAULT_TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
+    /**
+     * 创建内存平台存储，并植入本地 fake runtime 所需的默认模型元数据。
+     *
+     * @return 内存平台存储实例
+     */
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
@@ -51,6 +57,12 @@ public class ServerRepositoryConfiguration {
         return store;
     }
 
+    /**
+     * 创建内存模型配置 Repository。
+     *
+     * @param store 内存平台存储
+     * @return 模型配置 Repository
+     */
     @Bean
     @ConditionalOnMissingBean(ModelConfigRepository.class)
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
@@ -58,6 +70,12 @@ public class ServerRepositoryConfiguration {
         return store::findModelConfig;
     }
 
+    /**
+     * 创建内存运行记录 Repository。
+     *
+     * @param store 内存平台存储
+     * @return 运行记录 Repository
+     */
     @Bean
     @ConditionalOnMissingBean(RunRepository.class)
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
@@ -65,6 +83,12 @@ public class ServerRepositoryConfiguration {
         return store;
     }
 
+    /**
+     * 创建内存工具调用记录 Repository。
+     *
+     * @param store 内存平台存储
+     * @return 工具调用 Repository
+     */
     @Bean
     @ConditionalOnMissingBean(ToolCallRepository.class)
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
@@ -72,6 +96,12 @@ public class ServerRepositoryConfiguration {
         return store;
     }
 
+    /**
+     * 创建内存 HTTP 工具配置 Repository，并保持所有查询按租户隔离。
+     *
+     * @param store 内存平台存储
+     * @return HTTP 工具配置 Repository
+     */
     @Bean
     @ConditionalOnMissingBean(HttpToolConfigRepository.class)
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
@@ -107,6 +137,12 @@ public class ServerRepositoryConfiguration {
         };
     }
 
+    /**
+     * 创建内存 MCP 发布 Repository，并保持发布记录按租户隔离。
+     *
+     * @param store 内存平台存储
+     * @return MCP 工具发布 Repository
+     */
     @Bean
     @ConditionalOnMissingBean(McpToolPublicationRepository.class)
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
@@ -147,6 +183,13 @@ public class ServerRepositoryConfiguration {
         };
     }
 
+    /**
+     * 创建持久化配置启动校验器。
+     *
+     * @param properties 持久化配置属性
+     * @param environment Spring 环境及当前激活 profile
+     * @return Spring 初始化回调
+     */
     @Bean
     public InitializingBean cmAgentPersistenceValidator(
             CmAgentPersistenceProperties properties,
@@ -155,6 +198,12 @@ public class ServerRepositoryConfiguration {
         return () -> properties.validate(environment);
     }
 
+    /**
+     * 创建内存 Agent 定义 Repository。
+     *
+     * @param store 内存平台存储
+     * @return Agent 定义 Repository
+     */
     @Bean
     @ConditionalOnMissingBean(AgentDefinitionRepository.class)
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
@@ -182,6 +231,12 @@ public class ServerRepositoryConfiguration {
         };
     }
 
+    /**
+     * 创建内存工具定义 Repository。
+     *
+     * @param store 内存平台存储
+     * @return 工具定义 Repository
+     */
     @Bean
     @ConditionalOnMissingBean(ToolDefinitionRepository.class)
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
@@ -209,6 +264,12 @@ public class ServerRepositoryConfiguration {
         };
     }
 
+    /**
+     * 创建内存工具授权 Repository。
+     *
+     * @param store 内存平台存储
+     * @return 工具授权 Repository
+     */
     @Bean
     @ConditionalOnMissingBean(ToolGrantRepository.class)
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)

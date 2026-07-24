@@ -14,6 +14,7 @@ import java.util.Locale;
 import java.util.Objects;
 
 @Component
+/** 执行 HTTP 目标地址安全策略，阻止非 HTTP 协议、内网地址和不允许的主机。 */
 public class HttpToolUrlPolicy {
     private static final String REJECTED_MESSAGE = "HTTP 目标地址不允许";
     private static final byte[] IPV6_DOCUMENTATION_PREFIX = {0x20, 0x01, 0x0d, (byte) 0xb8};
@@ -31,6 +32,13 @@ public class HttpToolUrlPolicy {
         this.addressResolver = Objects.requireNonNull(addressResolver, "addressResolver 不能为空");
     }
 
+    /**
+     * 校验 HTTP 工具目标地址，阻止不允许的协议、主机和内网地址。
+     *
+     * @param uri 待访问的目标地址
+     * @return 通过校验的规范化地址
+     * @throws IllegalArgumentException 地址格式不合法或违反网络安全策略时抛出
+     */
     public URI validate(URI uri) {
         if (uri == null || uri.isOpaque() || uri.getRawUserInfo() != null || uri.getRawFragment() != null) {
             throw rejected();
@@ -48,6 +56,13 @@ public class HttpToolUrlPolicy {
         return canonicalUri(uri, scheme, host);
     }
 
+    /**
+     * 判断两个地址是否具有相同的协议、主机和有效端口。
+     *
+     * @param first 第一个地址
+     * @param second 第二个地址
+     * @return 来源一致返回 {@code true}，否则返回 {@code false}
+     */
     public boolean hasSameOrigin(URI first, URI second) {
         try {
             return origin(first).equals(origin(second));

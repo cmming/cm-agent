@@ -27,6 +27,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/audit-events")
+/** 审计查询接口，只允许读取当前租户的审计事件。 */
 public class AuditController {
 
     private final AuditEventRepository auditEventRepository;
@@ -55,6 +56,15 @@ public class AuditController {
         this(auditEventRepository, permissionEvaluator, auditAppender, new SensitiveDataRedactor());
     }
 
+    /**
+     * 按游标查询当前租户的审计事件。
+     *
+     * @param limit 单页最大事件数
+     * @param cursor 上一页返回的游标，可为空
+     * @param authentication 当前请求认证信息
+     * @return 审计事件分页结果
+     * @throws ResponseStatusException 未认证、无权限或游标格式错误时抛出
+     */
     @GetMapping
     public AuditPage list(
             Authentication authentication,

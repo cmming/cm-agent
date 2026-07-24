@@ -42,6 +42,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 @Component
+/** 执行动态 HTTP 工具，负责请求构造、超时、响应限制和资源释放。 */
 public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     private static final Set<Integer> REDIRECT_STATUSES = Set.of(301, 302, 303, 307, 308);
     private static final Set<String> FORBIDDEN_REQUEST_HEADERS = Set.of(
@@ -132,6 +133,14 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
         };
     }
 
+    /**
+     * 执行动态 HTTP 工具请求，并限制目标地址、重定向、超时和响应大小。
+     *
+     * @param tool 工具定义
+     * @param request 工具调用请求
+     * @return HTTP 响应映射成的工具执行结果
+     * @throws RuntimeException 请求构造、网络访问或响应处理失败时抛出
+     */
     public ToolExecutionResult execute(
             ToolDefinition tool,
             HttpToolConfig config,

@@ -23,6 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 
 @RestControllerAdvice
+/** 将常见业务异常转换为稳定、脱敏的 JSON 错误响应。 */
 public class ApiExceptionHandler {
     private final SensitiveDataRedactor redactor;
 

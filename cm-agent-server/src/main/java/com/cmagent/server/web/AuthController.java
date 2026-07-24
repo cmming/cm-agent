@@ -21,6 +21,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/auth")
+/** 登录和当前用户信息接口，不在响应中暴露任何敏感配置。 */
 public class AuthController {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final List<String> PERMISSIONS = List.of(
@@ -45,6 +46,13 @@ public class AuthController {
         this.auditAppender = auditAppender;
     }
 
+    /**
+     * 校验登录凭据并签发访问令牌。
+     *
+     * @param request 用户名和密码
+     * @return 访问令牌及当前主体信息
+     * @throws ResponseStatusException 凭据无效或 bootstrap admin 未启用时抛出
+     */
     @PostMapping("/login")
     public LoginResponse login(@RequestBody LoginRequest request) {
         String username = principalFrom(request);
@@ -66,6 +74,12 @@ public class AuthController {
         return new LoginResponse(TENANT_ID.toString(), configuredUsername, displayName, PERMISSIONS, token);
     }
 
+    /**
+     * 返回当前 JWT 主体的非敏感信息。
+     *
+     * @return 当前用户信息
+     * @throws ResponseStatusException 请求未携带有效认证主体时抛出
+     */
     @GetMapping("/me")
     public CurrentUserResponse me() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

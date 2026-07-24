@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+/** MCP Streamable HTTP 入口，将 MCP 会话请求转交给已发布工具目录。 */
 public class McpEndpointServlet extends HttpServlet {
     private static final String RESOURCE_ID = "/mcp";
 

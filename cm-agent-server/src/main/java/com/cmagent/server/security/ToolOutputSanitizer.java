@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 @Component
+/** 将工具输出限制为安全摘要，避免把内部错误或敏感字段直接返回给调用方。 */
 public class ToolOutputSanitizer {
     private static final String MASK = "<已脱敏>";
     private static final String URL_MASK = "<已脱敏URL>";
@@ -53,6 +54,14 @@ public class ToolOutputSanitizer {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 将工具输出转换为受控摘要，并移除已知 secret 值。
+     *
+     * @param value 工具原始输出
+     * @param secretValues 需要从输出中替换的敏感值
+     * @return 脱敏且受长度限制的输出摘要
+     * @throws IllegalArgumentException 输出无法按 JSON 处理且不满足文本要求时抛出
+     */
     public String sanitize(String value, List<String> secretValues) {
         if (value == null || value.isBlank()) {
             return "";
@@ -68,6 +77,13 @@ public class ToolOutputSanitizer {
         return sanitizeText(value, secretValues);
     }
 
+    /**
+     * 判断字符串按 UTF-8 编码后的字节数是否超过限制。
+     *
+     * @param value 待检查字符串
+     * @param maxBytes 最大允许字节数
+     * @return 超过限制返回 {@code true}，否则返回 {@code false}
+     */
     public boolean exceedsByteLimit(String value, int maxBytes) {
         return value.getBytes(StandardCharsets.UTF_8).length > maxBytes;
     }

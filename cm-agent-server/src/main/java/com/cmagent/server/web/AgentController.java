@@ -25,6 +25,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/agents")
+/** Agent 管理接口；所有数据访问都限定在当前认证主体的租户范围内。 */
 public class AgentController {
     private final AgentDefinitionRepository agentRepository;
     private final PermissionEvaluator permissionEvaluator;
@@ -44,6 +45,7 @@ public class AgentController {
     }
 
     @GetMapping
+    /** 查询当前租户可见的 Agent 列表。 */
     public List<AgentDefinition> list(Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:read", "AGENT", "list");
@@ -51,6 +53,7 @@ public class AgentController {
     }
 
     @GetMapping("/{id}")
+    /** 查询单个 Agent，并在返回前执行资源级权限校验。 */
     public AgentDefinition get(@PathVariable("id") UUID id, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:read", "AGENT", id.toString());
@@ -59,6 +62,7 @@ public class AgentController {
     }
 
     @PostMapping
+    /** 创建 Agent；业务编排和审计由命令服务统一处理。 */
     public AgentDefinition create(@Valid @RequestBody AgentCreateRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:write", "AGENT", "create");
@@ -68,6 +72,7 @@ public class AgentController {
     }
 
     private PrincipalRef principal(Authentication authentication) {
+        // 只接受 JWT 过滤器创建的会话主体，避免信任客户端提交的租户或权限信息。
         if (authentication == null || !authentication.isAuthenticated()
                 || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录或令牌无效");

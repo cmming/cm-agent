@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Objects;
 
 @Service
+/** 面向 AgentScope 的工具调用网关，确保每次调用都重新经过治理链路。 */
 public class GovernedToolInvocationService implements ToolInvocationGateway {
     private static final Logger log = LoggerFactory.getLogger(GovernedToolInvocationService.class);
     private static final String RESOURCE_TYPE = "TOOL";
@@ -52,6 +53,13 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
     }
 
     @Override
+    /**
+     * 接收 AgentScope 的工具调用，并在每次调用时重新执行租户、权限和工具状态校验。
+     *
+     * @param request 包含主体、工具和输入的调用请求
+     * @return 受治理的工具调用结果
+     * @throws RuntimeException 治理失败、工具执行失败或审计失败时抛出
+     */
     public ToolInvocationResult invoke(ToolInvocationRequest request) {
         Objects.requireNonNull(request, "request 不能为空");
         ToolDefinition tool = toolRepository.findByTenantAndId(request.tenantId(), request.toolId())

@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 @Service
+/** 在真正执行工具前落实工具状态、租户和权限治理，并记录调用结果。 */
 public class GovernedToolExecutionService {
     private static final String TOOL_UNAVAILABLE = "工具不可用";
 
@@ -33,10 +34,28 @@ public class GovernedToolExecutionService {
         this.registry = Objects.requireNonNull(registry, "registry 不能为空");
     }
 
+    /**
+     * 执行已完成治理准备的工具请求。
+     *
+     * @param tool 工具定义
+     * @param request 已校验的工具调用请求
+     * @return 工具执行结果
+     * @throws RuntimeException 工具执行器不存在或执行失败时抛出
+     */
     public ToolExecutionResult execute(ToolDefinition tool, ToolExecutionRequest request) {
         return prepare(tool, request).execute();
     }
 
+    /**
+     * 在工具注册状态满足要求后执行工具。
+     *
+     * @param tool 工具定义
+     * @param request 工具调用请求
+     * @param beforeExecution 工具真正执行前的回调，通常用于写入调用开始审计
+     * @return 工具执行结果
+     * @throws ToolPreparationDataAccessException 准备工具时访问数据失败
+     * @throws RuntimeException 工具不可用或执行失败时抛出
+     */
     public ToolExecutionResult executeWhenReady(
             ToolDefinition tool,
             ToolExecutionRequest request,

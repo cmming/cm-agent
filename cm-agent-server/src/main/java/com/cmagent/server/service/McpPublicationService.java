@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
+/** 管理工具的 MCP 发布状态，并保证租户、工具名称和注册信息的一致性。 */
 public class McpPublicationService {
     private final ToolDefinitionRepository toolRepository;
     private final HttpToolConfigRepository httpToolConfigRepository;
@@ -46,7 +47,17 @@ public class McpPublicationService {
         this.transactionTemplate = transactionTemplate;
     }
 
+    /**
+     * 发布工具到 MCP 目录，并记录发布审计。
+     *
+     * @param principal 当前认证主体
+     * @param toolId 待发布工具标识
+     * @return 已保存的 MCP 发布记录
+     * @throws ResponseStatusException 工具不可见、配置不合法或名称冲突时抛出
+     * @throws RuntimeException 发布或审计失败时抛出
+     */
     public McpToolPublication publish(PrincipalRef principal, UUID toolId) {
+        // 发布前重新读取并校验工具，避免使用过期的控制台数据绕过治理规则。
         ToolDefinition tool = findVisibleTool(principal, toolId);
         validatePublishable(tool);
         rejectConflictingEnabledName(tool);
@@ -63,7 +74,16 @@ public class McpPublicationService {
         }
     }
 
+    /**
+     * 取消工具的 MCP 发布状态，并记录取消发布审计。
+     *
+     * @param principal 当前认证主体
+     * @param toolId 待取消发布工具标识
+     * @throws ResponseStatusException 工具不可见时抛出
+     * @throws RuntimeException 取消发布或审计失败时抛出
+     */
     public void unpublish(PrincipalRef principal, UUID toolId) {
+        // 取消发布与发布使用相同的租户边界，并在事务不可用时执行补偿恢复。
         ToolDefinition tool = findVisibleTool(principal, toolId);
         if (transactionTemplate != null) {
             transactionTemplate.executeWithoutResult(status -> unpublishAndAudit(principal, tool));
@@ -113,6 +133,7 @@ public class McpPublicationService {
     }
 
     private void rejectConflictingEnabledName(ToolDefinition tool) {
+        // MCP 客户端按名称发现工具；同一租户内启用工具不能出现重名。
         Map<UUID, ToolDefinition> tools = toolRepository.listByTenant(tool.tenantId()).stream()
                 .collect(java.util.stream.Collectors.toMap(ToolDefinition::id, candidate -> candidate));
         boolean conflict = publicationRepository.listEnabledByTenant(tool.tenantId()).stream()

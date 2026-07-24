@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.time.Instant;
 
 @Configuration
+/** 配置无状态安全链、公开端点和受保护 API 的默认访问策略。 */
 public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final Environment environment;
@@ -40,11 +41,23 @@ public class SecurityConfig {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 创建无状态用户详情服务。
+     *
+     * @return 不承载业务用户数据的空用户详情服务
+     */
     @Bean
     UserDetailsService userDetailsService() {
         return new InMemoryUserDetailsManager();
     }
 
+    /**
+     * 创建 Spring Security 过滤链，配置 JWT、公开端点和统一错误响应。
+     *
+     * @param http Spring Security HTTP 配置器
+     * @return 无状态安全过滤链
+     * @throws Exception 安全过滤链构建失败时抛出
+     */
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http

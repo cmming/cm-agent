@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
+/** 按租户和模型配置读取外部模型凭据，避免把 API Key 放入领域配置。 */
 public final class ExternalModelCredentialProvider implements ModelCredentialProvider {
 
     private final Map<CredentialKey, ModelCredential> credentials;
@@ -29,6 +30,14 @@ public final class ExternalModelCredentialProvider implements ModelCredentialPro
     }
 
     @Override
+    /**
+     * 按租户和模型配置解析外部凭据。
+     *
+     * @param tenantId 当前租户标识
+     * @param modelConfigId 模型配置标识
+     * @return 外部模型凭据
+     * @throws IllegalStateException 未配置匹配凭据时抛出
+     */
     public ModelCredential resolve(UUID tenantId, UUID modelConfigId) {
         ModelCredential credential = credentials.get(new CredentialKey(tenantId, modelConfigId));
         if (credential == null) {

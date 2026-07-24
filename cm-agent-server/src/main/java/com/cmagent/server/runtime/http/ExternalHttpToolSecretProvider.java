@@ -4,6 +4,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
+/** 从外部映射读取 HTTP 工具 secret，未配置时明确拒绝执行。 */
 public final class ExternalHttpToolSecretProvider implements HttpToolSecretProvider {
     private final HttpToolProperties properties;
 
@@ -12,6 +13,13 @@ public final class ExternalHttpToolSecretProvider implements HttpToolSecretProvi
     }
 
     @Override
+    /**
+     * 按租户解析 HTTP 工具引用的 secret。
+     *
+     * @param tenantId 当前租户标识
+     * @param secretRef 配置中的 secret 引用
+     * @return 找到且属于当前租户的 secret，否则返回空
+     */
     public Optional<String> resolve(UUID tenantId, String secretRef) {
         if (tenantId == null || secretRef == null || secretRef.isBlank()) {
             return Optional.empty();

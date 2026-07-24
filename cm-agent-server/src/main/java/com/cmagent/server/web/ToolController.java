@@ -50,6 +50,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/tools")
+/** 工具治理接口，集中处理工具管理、调试和 MCP 发布等 HTTP 入口。 */
 public class ToolController {
     private final PermissionEvaluator permissionEvaluator;
     private final AuditAppender auditAppender;
@@ -77,6 +78,13 @@ public class ToolController {
         this.mcpPublicationService = mcpPublicationService;
     }
 
+    /**
+     * 查询当前租户可见的工具摘要。
+     *
+     * @param authentication 当前请求认证信息
+     * @return 工具摘要列表，不包含敏感 secret 原文
+     * @throws ResponseStatusException 未认证或缺少 {@code tool:read} 权限时抛出
+     */
     @GetMapping
     public List<ToolSummaryResponse> list(Authentication authentication) {
         PrincipalRef principal = principal(authentication);
@@ -86,6 +94,14 @@ public class ToolController {
                 .toList();
     }
 
+    /**
+     * 创建工具及可选的 HTTP 配置或 MCP 发布记录。
+     *
+     * @param request 工具创建请求
+     * @param authentication 当前请求认证信息
+     * @return 创建后的工具摘要
+     * @throws ResponseStatusException 未认证、缺少权限或配置不合法时抛出
+     */
     @PostMapping
     public ToolSummaryResponse create(@Valid @RequestBody ToolCreateRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
@@ -104,6 +120,15 @@ public class ToolController {
                 .orElseThrow(() -> new IllegalStateException("已创建工具未找到"));
     }
 
+    /**
+     * 将工具授权给指定 Agent。
+     *
+     * @param id 工具标识
+     * @param request 授权目标 Agent
+     * @param authentication 当前请求认证信息
+     * @return 新建的工具授权记录
+     * @throws ResponseStatusException 未认证、无权限或资源不存在时抛出
+     */
     @PostMapping("/{id}/grants")
     public ToolGrant grant(
             @PathVariable("id") UUID id,
@@ -115,6 +140,15 @@ public class ToolController {
         return managementCommandService.grantTool(principal, id, request.agentId());
     }
 
+    /**
+     * 调试工具并返回脱敏后的执行结果。
+     *
+     * @param id 工具标识
+     * @param request 调试输入及高风险工具二次确认信息
+     * @param authentication 当前请求认证信息
+     * @return 脱敏后的调试结果
+     * @throws ResponseStatusException 未认证、无权限、确认失败或工具执行失败时抛出
+     */
     @PostMapping("/{id}/debug")
     public ToolDebugResponse debug(
             @PathVariable("id") UUID id,
@@ -126,6 +160,14 @@ public class ToolController {
         return toolDebugService.debug(principal, id, canonicalJson(request.input()), request.confirmedToolName());
     }
 
+    /**
+     * 发布工具到当前租户的 MCP 工具目录。
+     *
+     * @param id 工具标识
+     * @param authentication 当前请求认证信息
+     * @return MCP 发布记录
+     * @throws ResponseStatusException 未认证、无权限或工具不满足发布规则时抛出
+     */
     @PutMapping("/{id}/mcp-publication")
     public com.cmagent.core.domain.McpToolPublication publishMcpTool(
             @PathVariable("id") UUID id,
@@ -136,6 +178,14 @@ public class ToolController {
         return mcpPublicationService.publish(principal, id);
     }
 
+    /**
+     * 从当前租户的 MCP 工具目录取消发布。
+     *
+     * @param id 工具标识
+     * @param authentication 当前请求认证信息
+     * @return 无内容响应
+     * @throws ResponseStatusException 未认证、无权限或工具不存在时抛出
+     */
     @DeleteMapping("/{id}/mcp-publication")
     public ResponseEntity<Void> unpublishMcpTool(@PathVariable("id") UUID id, Authentication authentication) {
         PrincipalRef principal = principal(authentication);

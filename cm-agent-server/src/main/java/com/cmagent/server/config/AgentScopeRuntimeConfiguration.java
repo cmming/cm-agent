@@ -21,8 +21,17 @@ import java.util.Objects;
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(AgentScopeRuntimeProperties.class)
 @ConditionalOnProperty(prefix = "cm-agent.agentscope", name = "enabled", havingValue = "true")
+/** AgentScope 真实运行时的条件化装配，凭据由外部提供者按租户隔离。 */
 public class AgentScopeRuntimeConfiguration {
 
+    /**
+     * 创建 AgentScope 运行时配置校验回调。
+     *
+     * @param properties AgentScope 配置属性
+     * @param fakeRuntimeEnabled 是否启用 fake runtime
+     * @return Spring 初始化回调
+     * @throws IllegalStateException 配置冲突或参数不合法时抛出
+     */
     @Bean
     InitializingBean agentScopeRuntimePropertiesValidator(
             AgentScopeRuntimeProperties properties,
@@ -31,6 +40,13 @@ public class AgentScopeRuntimeConfiguration {
         return () -> properties.validate(fakeRuntimeEnabled);
     }
 
+    /**
+     * 创建按租户和模型配置解析凭据的默认提供者。
+     *
+     * @param properties AgentScope 配置属性
+     * @return 外部模型凭据提供者
+     * @throws IllegalStateException 未配置任何模型凭据且未提供自定义提供者时抛出
+     */
     @Bean
     @ConditionalOnMissingBean({AgentRuntime.class, ModelCredentialProvider.class})
     ModelCredentialProvider externalModelCredentialProvider(AgentScopeRuntimeProperties properties) {
@@ -41,6 +57,15 @@ public class AgentScopeRuntimeConfiguration {
         return new ExternalModelCredentialProvider(properties);
     }
 
+    /**
+     * 创建 AgentScope 真实运行时，并接入受治理的工具调用网关。
+     *
+     * @param properties AgentScope 运行时配置
+     * @param credentialProvider Spring 管理的模型凭据提供者
+     * @param gateway 工具调用治理网关
+     * @return AgentScope AgentRuntime
+     * @throws IllegalStateException 未找到模型凭据提供者或运行时配置不合法时抛出
+     */
     @Bean
     @ConditionalOnMissingBean(AgentRuntime.class)
     AgentRuntime agentScopeRuntime(

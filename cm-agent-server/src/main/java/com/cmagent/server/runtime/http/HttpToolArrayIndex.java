@@ -3,6 +3,7 @@ package com.cmagent.server.runtime.http;
 /**
  * 统一解析 JSON Pointer 中可能表示数组下标的 token，并限制可构造数组的最大下标。
  */
+/** JSON Pointer 数组下标的值对象，负责保证下标格式和范围有效。 */
 record HttpToolArrayIndex(int value) {
     static final int MAX_VALUE = 10_000;
     private static final String INVALID_MESSAGE = "JSON Pointer 数组索引无效或超过安全上限";

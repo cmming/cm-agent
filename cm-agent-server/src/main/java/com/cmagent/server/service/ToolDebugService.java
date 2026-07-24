@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
+/** 提供受权限保护的工具调试能力，统一限制风险工具和输出内容。 */
 public class ToolDebugService {
     private final ToolDefinitionRepository toolRepository;
     private final GovernedToolExecutionService executionService;
@@ -44,6 +45,16 @@ public class ToolDebugService {
         this.httpToolProperties = Objects.requireNonNull(httpToolProperties, "httpToolProperties 不能为空");
     }
 
+    /**
+     * 在调试权限和风险确认均通过后执行工具。
+     *
+     * @param principal 当前认证主体
+     * @param toolId 工具标识
+     * @param inputJson 工具输入 JSON
+     * @param confirmedToolName 高风险工具的二次确认名称
+     * @return 脱敏后的调试响应
+     * @throws ResponseStatusException 工具不可见、未授权、确认失败或输入无效时抛出
+     */
     public ToolDebugResponse debug(PrincipalRef principal, UUID toolId, String inputJson, String confirmedToolName) {
         Objects.requireNonNull(principal, "principal 不能为空");
         Objects.requireNonNull(toolId, "toolId 不能为空");

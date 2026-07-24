@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Component
+/** 统一写入安全审计事件；审计失败按严格策略向上抛出，不静默忽略。 */
 public class AuditAppender {
     private static final Logger log = LoggerFactory.getLogger(AuditAppender.class);
 
@@ -30,6 +31,18 @@ public class AuditAppender {
         this(repository, new SensitiveDataRedactor());
     }
 
+    /**
+     * 写入一条经过脱敏的审计事件。
+     *
+     * @param tenantId 租户标识
+     * @param principalId 操作主体标识；为空时记录为匿名主体
+     * @param eventType 事件类型
+     * @param resourceType 资源类型
+     * @param resourceId 资源标识；为空时使用占位符
+     * @param status 事件结果状态
+     * @param message 事件描述，写入前会进行敏感信息脱敏
+     * @throws AuditPersistenceException 审计存储失败时抛出
+     */
     public void append(UUID tenantId,
                        String principalId,
                        String eventType,
@@ -59,6 +72,12 @@ public class AuditAppender {
         }
     }
 
+    /**
+     * 批量写入审计事件，并保证每条事件的消息都经过脱敏。
+     *
+     * @param writes 待写入的审计事件集合
+     * @throws AuditPersistenceException 批量写入失败时抛出
+     */
     public void appendAll(List<AuditWrite> writes) {
         try {
             repository.appendAll(writes.stream().map(this::toAuditEvent).toList());
@@ -69,6 +88,16 @@ public class AuditAppender {
         }
     }
 
+    /**
+     * 记录一次权限拒绝事件。
+     *
+     * @param principal 发起请求的认证主体及其租户信息
+     * @param resourceType 被访问资源类型
+     * @param resourceId 被访问资源标识
+     * @param permission 所需权限
+     * @param reason 拒绝原因
+     * @throws AuditPersistenceException 审计写入失败时抛出
+     */
     public void accessDenied(PrincipalRef principal, String resourceType, String resourceId, String permission, String reason) {
         append(
                 principal.tenantId(),

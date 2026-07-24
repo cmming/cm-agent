@@ -34,6 +34,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 @Service
+/** 编排 Agent 单轮运行，连接运行时、工具治理、持久化和输出脱敏边界。 */
 public class RunExecutionService {
     private static final String CONTROLLED_FAILURE = "Agent 运行失败";
     private static final Logger log = LoggerFactory.getLogger(RunExecutionService.class);
@@ -68,6 +69,16 @@ public class RunExecutionService {
         this.redactor = Objects.requireNonNull(redactor, "redactor 不能为空");
     }
 
+    /**
+     * 执行 Agent 的单轮运行，并持久化运行状态和工具调用结果。
+     *
+     * @param principal 当前认证主体
+     * @param agentId 待运行的 Agent 标识
+     * @param input 用户输入
+     * @return Agent 运行结果
+     * @throws ResponseStatusException Agent 不存在、未启用或不可运行时抛出
+     * @throws RuntimeExecutionException 运行时或受治理工具调用失败时抛出
+     */
     public AgentRunResult run(PrincipalRef principal, UUID agentId, String input) {
         AgentDefinition agent = agentRepository.findByTenantAndId(principal.tenantId(), agentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));

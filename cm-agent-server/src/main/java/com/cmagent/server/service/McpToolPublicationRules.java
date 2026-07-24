@@ -7,6 +7,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.regex.Pattern;
 
+/** 集中定义工具进入 MCP 目录前必须满足的领域规则。 */
 final class McpToolPublicationRules {
     private static final Pattern MCP_TOOL_NAME = Pattern.compile("^[A-Za-z0-9_-]{1,128}$");
 

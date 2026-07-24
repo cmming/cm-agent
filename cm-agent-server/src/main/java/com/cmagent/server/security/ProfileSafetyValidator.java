@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.Set;
 
 @Component
+/** 启动时校验 profile 与安全配置组合，阻止生产环境误启用开发能力。 */
 public class ProfileSafetyValidator implements InitializingBean {
     private static final Set<String> STRICT_PROFILES = Set.of("production", "prod", "supabase");
     private static final Set<String> NON_PRODUCTION_PROFILES = Set.of("local", "test", "postgres", "mysql");

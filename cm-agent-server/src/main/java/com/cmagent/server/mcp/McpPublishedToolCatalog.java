@@ -40,6 +40,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+/** 从当前租户的发布记录构建 MCP 工具目录，并在调用时重新验证可用性。 */
 public class McpPublishedToolCatalog {
     static final String INVOKE_PERMISSION = "tool:mcp:invoke";
     private static final String RESOURCE_TYPE = "TOOL";
@@ -81,6 +82,13 @@ public class McpPublishedToolCatalog {
         this.httpToolProperties = Objects.requireNonNull(httpToolProperties, "httpToolProperties 不能为空");
     }
 
+    /**
+     * 构建当前租户可见的 MCP 工具规格列表。
+     *
+     * @param principal 当前认证主体
+     * @return 已发布且当前仍满足执行条件的 MCP 工具规格
+     * @throws RuntimeException 查询发布记录或构建规格失败时抛出
+     */
     public List<McpStatelessServerFeatures.SyncToolSpecification> specifications(PrincipalRef principal) {
         Objects.requireNonNull(principal, "principal 不能为空");
         List<ToolDefinition> publishedTools = publications.listEnabledByTenant(principal.tenantId()).stream()

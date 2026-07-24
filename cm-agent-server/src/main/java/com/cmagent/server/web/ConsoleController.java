@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import java.nio.charset.StandardCharsets;
 
 @Controller
+/** 提供轻量控制台静态页面入口，不承载业务数据和权限逻辑。 */
 class ConsoleController {
 
     @GetMapping(value = "/", produces = MediaType.TEXT_HTML_VALUE)

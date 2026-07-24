@@ -19,8 +19,24 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(prefix = "cm-agent.mcp", name = "enabled", havingValue = "true")
 @EnableConfigurationProperties({McpServerProperties.class, HttpToolProperties.class})
+/** MCP 服务端条件化配置；默认关闭，启用后仍受 JWT 和工具权限保护。 */
 public class McpServerConfiguration {
 
+    /**
+     * 创建当前租户 MCP 工具目录。
+     *
+     * @param tools 工具定义 Repository
+     * @param httpConfigs HTTP 工具配置 Repository
+     * @param publications MCP 发布 Repository
+     * @param registry 工具注册表
+     * @param executions 受治理的工具执行服务
+     * @param permissions 权限评估器
+     * @param audits 审计写入器
+     * @param objectMapper JSON 映射器
+     * @param sanitizer 工具输出脱敏器
+     * @param httpToolProperties HTTP 工具运行时限制
+     * @return MCP 已发布工具目录
+     */
     @Bean
     McpPublishedToolCatalog mcpPublishedToolCatalog(
             ToolDefinitionRepository tools,
@@ -40,6 +56,16 @@ public class McpServerConfiguration {
         );
     }
 
+    /**
+     * 创建 MCP HTTP Servlet。
+     *
+     * @param properties MCP 端点和白名单配置
+     * @param catalog MCP 工具目录
+     * @param permissions 权限评估器
+     * @param audits 审计写入器
+     * @param objectMapper JSON 映射器
+     * @return MCP 请求处理 Servlet
+     */
     @Bean
     McpEndpointServlet mcpEndpointServlet(
             McpServerProperties properties,
@@ -51,6 +77,13 @@ public class McpServerConfiguration {
         return new McpEndpointServlet(properties, catalog, permissions, audits, objectMapper);
     }
 
+    /**
+     * 将 MCP Servlet 注册到配置的 HTTP 端点。
+     *
+     * @param servlet MCP 请求处理 Servlet
+     * @param properties MCP 端点配置
+     * @return Servlet 注册 Bean
+     */
     @Bean
     ServletRegistrationBean<McpEndpointServlet> mcpServletRegistration(
             McpEndpointServlet servlet,

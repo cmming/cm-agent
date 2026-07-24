@@ -9,6 +9,7 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerA
         scanBasePackages = "com.cmagent",
         exclude = {DataSourceAutoConfiguration.class, DataSourceTransactionManagerAutoConfiguration.class}
 )
+/** CM Agent 服务端应用入口，负责装配 Starter、持久化和服务端 Web 能力。 */
 public class CmAgentServerApplication {
     public static void main(String[] args) {
         SpringApplication.run(CmAgentServerApplication.class, args);
