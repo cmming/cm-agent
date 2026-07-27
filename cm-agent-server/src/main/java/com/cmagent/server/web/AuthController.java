@@ -41,6 +41,10 @@ public class AuthController {
     private final AuditAppender auditAppender;
     /**
      * AuthController：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param jwtService 参与 AuthController 处理的 jwtService 输入值。
+     * @param bootstrapAdminProperties bootstrapAdminProperties 对应的配置数据，用于驱动本次处理。
+     * @param auditAppender 参与 AuthController 处理的 auditAppender 输入值。
      */
     public AuthController(JwtService jwtService, BootstrapAdminProperties bootstrapAdminProperties, AuditAppender auditAppender) {
         this.jwtService = jwtService;
@@ -98,6 +102,8 @@ public class AuthController {
 
     /**
      * principalFrom：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param request 当前业务请求参数，承载调用方提交的数据。
      */
     private String principalFrom(LoginRequest request) {
         if (request == null || request.username() == null || request.username().isBlank()) {
@@ -108,6 +114,10 @@ public class AuthController {
 
     /**
      * auditLogin：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param principalId 目标 principal 标识，用于定位本次处理对象。
+     * @param status 当前处理状态，用于驱动状态分支或记录结果。
+     * @param message 处理结果或审计消息。
      */
     private void auditLogin(String principalId, String status, String message) {
         auditAppender.append(

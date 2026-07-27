@@ -110,6 +110,8 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * save：保存当前对象及其关联配置。
+             *
+             * @param config 待处理的工具或运行时配置。
              */
             public com.cmagent.core.domain.HttpToolConfig save(com.cmagent.core.domain.HttpToolConfig config) {
                 return store.saveHttpToolConfig(config);
@@ -118,6 +120,9 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * findByTenantAndToolId：查询并返回当前上下文中的匹配结果。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+             * @param toolId 目标工具标识，用于定位关联的工具定义。
              */
             public Optional<com.cmagent.core.domain.HttpToolConfig> findByTenantAndToolId(UUID tenantId, UUID toolId) {
                 return store.findHttpToolConfig(tenantId, toolId);
@@ -126,6 +131,9 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * findByTenantAndToolIds：查询并返回当前上下文中的匹配结果。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+             * @param toolIds 参与 findByTenantAndToolIds 处理的 toolIds 集合。
              */
             public Map<UUID, com.cmagent.core.domain.HttpToolConfig> findByTenantAndToolIds(
                     UUID tenantId, List<UUID> toolIds
@@ -142,6 +150,9 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * delete：删除或撤销当前目标的关联状态。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+             * @param toolId 目标工具标识，用于定位关联的工具定义。
              */
             public void delete(UUID tenantId, UUID toolId) {
                 store.deleteHttpToolConfig(tenantId, toolId);
@@ -163,6 +174,8 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * save：保存当前对象及其关联配置。
+             *
+             * @param publication 待保存或校验的 MCP 发布记录。
              */
             public com.cmagent.core.domain.McpToolPublication save(com.cmagent.core.domain.McpToolPublication publication) {
                 return store.saveMcpToolPublication(publication);
@@ -171,6 +184,9 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * findByTenantAndToolId：查询并返回当前上下文中的匹配结果。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+             * @param toolId 目标工具标识，用于定位关联的工具定义。
              */
             public Optional<com.cmagent.core.domain.McpToolPublication> findByTenantAndToolId(UUID tenantId, UUID toolId) {
                 return store.findMcpToolPublication(tenantId, toolId);
@@ -179,6 +195,9 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * findByTenantAndToolIds：查询并返回当前上下文中的匹配结果。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+             * @param toolIds 参与 findByTenantAndToolIds 处理的 toolIds 集合。
              */
             public Map<UUID, com.cmagent.core.domain.McpToolPublication> findByTenantAndToolIds(
                     UUID tenantId, List<UUID> toolIds
@@ -195,6 +214,8 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * listEnabledByTenant：查询并返回符合条件的集合。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              */
             public List<com.cmagent.core.domain.McpToolPublication> listEnabledByTenant(UUID tenantId) {
                 return store.listEnabledMcpToolPublications(tenantId);
@@ -203,6 +224,9 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * delete：删除或撤销当前目标的关联状态。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+             * @param toolId 目标工具标识，用于定位关联的工具定义。
              */
             public void delete(UUID tenantId, UUID toolId) {
                 store.deleteMcpToolPublication(tenantId, toolId);
@@ -239,6 +263,8 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * save：保存当前对象及其关联配置。
+             *
+             * @param agent 当前处理的 Agent 定义。
              */
             public AgentDefinition save(AgentDefinition agent) {
                 return store.saveAgent(agent);
@@ -247,6 +273,9 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * findByTenantAndId：查询并返回当前上下文中的匹配结果。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+             * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
              */
             public Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId) {
                 return store.findAgent(tenantId, agentId);
@@ -255,6 +284,8 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * listByTenant：查询并返回符合条件的集合。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              */
             public List<AgentDefinition> listByTenant(UUID tenantId) {
                 return store.listAgents(tenantId);
@@ -263,6 +294,10 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * addToolToAgent：处理该类内部的业务逻辑或辅助计算。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+             * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
+             * @param toolId 目标工具标识，用于定位关联的工具定义。
              */
             public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.addToolToAgent(tenantId, agentId, toolId);
@@ -284,6 +319,8 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * save：保存当前对象及其关联配置。
+             *
+             * @param tool 当前处理的工具定义。
              */
             public ToolDefinition save(ToolDefinition tool) {
                 return store.saveTool(tool);
@@ -292,6 +329,9 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * findByTenantAndId：查询并返回当前上下文中的匹配结果。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+             * @param toolId 目标工具标识，用于定位关联的工具定义。
              */
             public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
                 return store.findTool(tenantId, toolId);
@@ -300,6 +340,8 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * listByTenant：查询并返回符合条件的集合。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              */
             public List<ToolDefinition> listByTenant(UUID tenantId) {
                 return store.listTools(tenantId);
@@ -308,6 +350,9 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * delete：删除或撤销当前目标的关联状态。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+             * @param toolId 目标工具标识，用于定位关联的工具定义。
              */
             public void delete(UUID tenantId, UUID toolId) {
                 store.deleteTool(tenantId, toolId);
@@ -329,6 +374,8 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * save：保存当前对象及其关联配置。
+             *
+             * @param grant 参与 save 处理的 grant 输入值。
              */
             public ToolGrant save(ToolGrant grant) {
                 return store.saveGrant(grant);
@@ -337,6 +384,8 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * listByTenant：查询并返回符合条件的集合。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              */
             public List<ToolGrant> listByTenant(UUID tenantId) {
                 return store.listGrants(tenantId);
@@ -345,6 +394,9 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * listByTenantAndAgent：查询并返回符合条件的集合。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+             * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
              */
             public List<ToolGrant> listByTenantAndAgent(UUID tenantId, UUID agentId) {
                 return store.listGrants(tenantId, agentId);
@@ -353,6 +405,10 @@ public class ServerRepositoryConfiguration {
             @Override
             /**
              * listByTenantAgentAndTool：查询并返回符合条件的集合。
+             *
+             * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+             * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
+             * @param toolId 目标工具标识，用于定位关联的工具定义。
              */
             public List<ToolGrant> listByTenantAgentAndTool(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.listGrants(tenantId, agentId, toolId);

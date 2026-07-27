@@ -30,6 +30,8 @@ public class JwtSecurityConfiguration {
 
     /**
      * createKey：创建并返回新的领域对象或配置。
+     *
+     * @param secret 参与 createKey 处理的 secret 输入值。
      */
     private SecretKey createKey(String secret) {
         byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);

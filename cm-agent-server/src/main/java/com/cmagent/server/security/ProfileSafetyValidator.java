@@ -28,6 +28,15 @@ public class ProfileSafetyValidator implements InitializingBean {
     private final ObjectProvider<AgentRuntime> agentRuntimeProvider;
     /**
      * ProfileSafetyValidator：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param environment 参与 ProfileSafetyValidator 处理的 environment 输入值。
+     * @param persistenceMode 参与 ProfileSafetyValidator 处理的 persistenceMode 输入值。
+     * @param bootstrapAdminEnabled 参与 ProfileSafetyValidator 处理的 bootstrapAdminEnabled 输入值。
+     * @param devJwtFallbackEnabled 参与 ProfileSafetyValidator 处理的 devJwtFallbackEnabled 输入值。
+     * @param fakeRuntimeEnabled 参与 ProfileSafetyValidator 处理的 fakeRuntimeEnabled 输入值。
+     * @param agentScopeRuntimeEnabled 参与 ProfileSafetyValidator 处理的 agentScopeRuntimeEnabled 输入值。
+     * @param httpAllowed 参与 ProfileSafetyValidator 处理的 httpAllowed 输入值。
+     * @param agentRuntimeProvider 参与 ProfileSafetyValidator 处理的 agentRuntimeProvider 输入值。
      */
     public ProfileSafetyValidator(
             Environment environment,

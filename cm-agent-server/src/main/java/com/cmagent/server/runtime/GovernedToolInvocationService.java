@@ -37,6 +37,13 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
     private final SensitiveDataRedactor redactor;
     /**
      * GovernedToolInvocationService：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param toolRepository 参与 GovernedToolInvocationService 处理的 toolRepository 输入值。
+     * @param grantRepository 参与 GovernedToolInvocationService 处理的 grantRepository 输入值。
+     * @param policy 参与 GovernedToolInvocationService 处理的 policy 输入值。
+     * @param executionService 参与 GovernedToolInvocationService 处理的 executionService 输入值。
+     * @param auditAppender 参与 GovernedToolInvocationService 处理的 auditAppender 输入值。
+     * @param redactor 参与 GovernedToolInvocationService 处理的 redactor 输入值。
      */
     public GovernedToolInvocationService(
             ToolDefinitionRepository toolRepository,
@@ -111,6 +118,9 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
 
     /**
      * isVisibleDefinition：判断当前条件是否成立。
+     *
+     * @param request 当前业务请求参数，承载调用方提交的数据。
+     * @param definition 参与 isVisibleDefinition 处理的 definition 输入值。
      */
     private boolean isVisibleDefinition(ToolInvocationRequest request, ToolDefinition definition) {
         return definition.enabled()
@@ -121,6 +131,11 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
 
     /**
      * appendAudit：追加处理结果或审计记录。
+     *
+     * @param request 当前业务请求参数，承载调用方提交的数据。
+     * @param eventType 参与 appendAudit 处理的 eventType 输入值。
+     * @param status 当前处理状态，用于驱动状态分支或记录结果。
+     * @param message 处理结果或审计消息。
      */
     private void appendAudit(ToolInvocationRequest request, String eventType, String status, String message) {
         auditAppender.append(

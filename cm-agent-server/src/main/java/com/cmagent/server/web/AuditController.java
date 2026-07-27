@@ -38,6 +38,11 @@ public class AuditController {
     @Autowired
     /**
      * AuditController：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param auditEventRepository 参与 AuditController 处理的 auditEventRepository 输入值。
+     * @param permissionEvaluator 参与 AuditController 处理的 permissionEvaluator 输入值。
+     * @param auditAppender 参与 AuditController 处理的 auditAppender 输入值。
+     * @param redactor 参与 AuditController 处理的 redactor 输入值。
      */
     public AuditController(
             AuditEventRepository auditEventRepository,
@@ -52,6 +57,10 @@ public class AuditController {
     }
     /**
      * AuditController：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param auditEventRepository 参与 AuditController 处理的 auditEventRepository 输入值。
+     * @param permissionEvaluator 参与 AuditController 处理的 permissionEvaluator 输入值。
+     * @param auditAppender 参与 AuditController 处理的 auditAppender 输入值。
      */
     public AuditController(
             AuditEventRepository auditEventRepository,
@@ -105,6 +114,8 @@ public class AuditController {
 
     /**
      * redact：清理或脱敏可能包含敏感信息的内容。
+     *
+     * @param event 参与 redact 处理的 event 输入值。
      */
     private AuditEvent redact(AuditEvent event) {
         return new AuditEvent(
@@ -116,6 +127,8 @@ public class AuditController {
 
     /**
      * decodeCursor：读取并解析输入内容。
+     *
+     * @param cursor 分页游标，用于定位下一页数据。
      */
     private CursorPosition decodeCursor(String cursor) {
         if (cursor == null) {
@@ -138,6 +151,8 @@ public class AuditController {
 
     /**
      * encodeCursor：转换并生成规范化输出。
+     *
+     * @param event 参与 encodeCursor 处理的 event 输入值。
      */
     private String encodeCursor(AuditEvent event) {
         String value = event.createdAt() + "|" + event.id();
@@ -153,6 +168,8 @@ public class AuditController {
 
     /**
      * principal：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param authentication Spring Security 认证信息，用于解析当前登录主体。
      */
     private PrincipalRef principal(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated() || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
@@ -163,6 +180,11 @@ public class AuditController {
 
     /**
      * authorize：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param permission 参与 authorize 处理的 permission 输入值。
+     * @param resourceType 参与 authorize 处理的 resourceType 输入值。
+     * @param resourceId 目标 resource 标识，用于定位本次处理对象。
      */
     private void authorize(PrincipalRef principal, String permission, String resourceType, String resourceId) {
         AuthorizationDecision decision = permissionEvaluator.check(principal, permission);

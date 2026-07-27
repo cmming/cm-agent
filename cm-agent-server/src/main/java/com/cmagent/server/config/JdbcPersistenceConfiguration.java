@@ -227,6 +227,12 @@ public class JdbcPersistenceConfiguration {
             cmAgentJdbcClient.sql("""
                             /**
                              * tenants：处理该类内部的业务逻辑或辅助计算。
+                             *
+                             * @param id 目标资源标识。
+                             * @param code 参与 tenants 处理的 code 输入值。
+                             * @param name 目标对象的名称。
+                             * @param enabled 是否启用目标能力的开关值。
+                             * @param created_at 参与 tenants 处理的 created_at 输入值。
                              */
                             INSERT INTO tenants (id, code, name, enabled, created_at)
                             SELECT :id, :code, :name, true, :createdAt
@@ -240,6 +246,16 @@ public class JdbcPersistenceConfiguration {
             cmAgentJdbcClient.sql("""
                             /**
                              * model_configs：处理该类内部的业务逻辑或辅助计算。
+                             *
+                             * @param id 目标资源标识。
+                             * @param tenant_id 参与 model_configs 处理的 tenant_id 输入值。
+                             * @param provider_type 参与 model_configs 处理的 provider_type 输入值。
+                             * @param display_name 参与 model_configs 处理的 display_name 输入值。
+                             * @param base_url 参与 model_configs 处理的 base_url 输入值。
+                             * @param model_name 参与 model_configs 处理的 model_name 输入值。
+                             * @param encrypted_api_key 参与 model_configs 处理的 encrypted_api_key 输入值。
+                             * @param enabled 是否启用目标能力的开关值。
+                             * @param created_at 参与 model_configs 处理的 created_at 输入值。
                              */
                             INSERT INTO model_configs (
                                 id,

@@ -32,6 +32,11 @@ public class SecurityConfig {
     private final ObjectMapper objectMapper;
     /**
      * SecurityConfig：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param jwtAuthenticationFilter 参与 SecurityConfig 处理的 jwtAuthenticationFilter 输入值。
+     * @param environment 参与 SecurityConfig 处理的 environment 输入值。
+     * @param publicApiDocsEnabled 参与 SecurityConfig 处理的 publicApiDocsEnabled 输入值。
+     * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
      */
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
                           Environment environment,
@@ -112,6 +117,11 @@ public class SecurityConfig {
 
     /**
      * writeError：转换并生成规范化输出。
+     *
+     * @param response 参与 writeError 处理的 response 输入值。
+     * @param status 当前处理状态，用于驱动状态分支或记录结果。
+     * @param code 参与 writeError 处理的 code 输入值。
+     * @param message 处理结果或审计消息。
      */
     private void writeError(HttpServletResponse response,
                             HttpStatus status,

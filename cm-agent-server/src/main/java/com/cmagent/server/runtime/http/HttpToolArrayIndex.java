@@ -12,6 +12,8 @@ record HttpToolArrayIndex(int value) {
     private static final String INVALID_MESSAGE = "JSON Pointer 数组索引无效或超过安全上限";
     /**
      * parse：读取并解析输入内容。
+     *
+     * @param token 参与 parse 处理的 token 输入值。
      */
     static ParseResult parse(String token) {
         if (token == null || token.isEmpty()) {
@@ -64,6 +66,8 @@ record HttpToolArrayIndex(int value) {
         }
         /**
          * valid：处理该类内部的业务逻辑或辅助计算。
+         *
+         * @param index 参与 valid 处理的 index 输入值。
          */
         static ParseResult valid(HttpToolArrayIndex index) {
             return new ParseResult(Status.VALID, index);

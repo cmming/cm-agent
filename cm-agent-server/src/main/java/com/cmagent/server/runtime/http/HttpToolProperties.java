@@ -159,6 +159,8 @@ public class HttpToolProperties {
 
     /**
      * validateTimeoutBound：校验输入、状态或前置条件。
+     *
+     * @param timeout 本次操作使用的超时限制。
      */
     private static void validateTimeoutBound(Duration timeout) {
         if (timeout == null || timeout.compareTo(ABSOLUTE_MIN_TIMEOUT) < 0

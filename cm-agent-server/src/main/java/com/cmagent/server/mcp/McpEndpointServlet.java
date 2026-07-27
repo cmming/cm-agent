@@ -43,6 +43,12 @@ public class McpEndpointServlet extends HttpServlet {
     private final RequestServerFactory serverFactory;
     /**
      * McpEndpointServlet：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param properties 模块配置属性，用于读取运行参数。
+     * @param catalog 参与 McpEndpointServlet 处理的 catalog 输入值。
+     * @param permissions 参与 McpEndpointServlet 处理的 permissions 集合。
+     * @param audits 参与 McpEndpointServlet 处理的 audits 集合。
+     * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
      */
     public McpEndpointServlet(
             McpServerProperties properties,
@@ -55,6 +61,13 @@ public class McpEndpointServlet extends HttpServlet {
     }
     /**
      * McpEndpointServlet：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param properties 模块配置属性，用于读取运行参数。
+     * @param catalog 参与 McpEndpointServlet 处理的 catalog 输入值。
+     * @param permissions 参与 McpEndpointServlet 处理的 permissions 集合。
+     * @param audits 参与 McpEndpointServlet 处理的 audits 集合。
+     * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
+     * @param serverFactory 参与 McpEndpointServlet 处理的 serverFactory 输入值。
      */
     McpEndpointServlet(
             McpServerProperties properties,
@@ -75,6 +88,9 @@ public class McpEndpointServlet extends HttpServlet {
     @Override
     /**
      * service：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param request 当前业务请求参数，承载调用方提交的数据。
+     * @param response 参与 service 处理的 response 输入值。
      */
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
@@ -112,6 +128,8 @@ public class McpEndpointServlet extends HttpServlet {
 
     /**
      * createOfficialServer：创建并返回新的领域对象或配置。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
      */
     private RequestServer createOfficialServer(PrincipalRef principal) {
         JacksonMcpJsonMapper jsonMapper = new JacksonMcpJsonMapper(objectMapper);
@@ -145,6 +163,9 @@ public class McpEndpointServlet extends HttpServlet {
             @Override
             /**
              * service：处理该类内部的业务逻辑或辅助计算。
+             *
+             * @param request 当前业务请求参数，承载调用方提交的数据。
+             * @param response 参与 service 处理的 response 输入值。
              */
             public void service(HttpServletRequest request, HttpServletResponse response)
                     throws ServletException, IOException {
@@ -163,6 +184,10 @@ public class McpEndpointServlet extends HttpServlet {
 
     /**
      * rejectAmbiguousHeader：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param headers 参与 rejectAmbiguousHeader 处理的 headers 集合。
+     * @param headerName 参与 rejectAmbiguousHeader 处理的 headerName 输入值。
+     * @param status 当前处理状态，用于驱动状态分支或记录结果。
      */
     private void rejectAmbiguousHeader(Map<String, List<String>> headers, String headerName, int status)
             throws ServerTransportSecurityException {
@@ -179,6 +204,8 @@ public class McpEndpointServlet extends HttpServlet {
 
     /**
      * isAmbiguous：判断当前条件是否成立。
+     *
+     * @param value 参与 isAmbiguous 处理的 value 输入值。
      */
     private boolean isAmbiguous(String value) {
         return value == null || value.isBlank() || value.contains(",") || value.contains("\r") || value.contains("\n");
@@ -200,6 +227,10 @@ public class McpEndpointServlet extends HttpServlet {
 
     /**
      * writeError：转换并生成规范化输出。
+     *
+     * @param response 参与 writeError 处理的 response 输入值。
+     * @param status 当前处理状态，用于驱动状态分支或记录结果。
+     * @param message 处理结果或审计消息。
      */
     private void writeError(HttpServletResponse response, int status, String message) throws IOException {
         response.setStatus(status);
@@ -214,6 +245,8 @@ public class McpEndpointServlet extends HttpServlet {
     interface RequestServerFactory {
         /**
          * create：创建并返回新的领域对象或配置。
+         *
+         * @param principal 当前认证主体，提供租户、身份和权限上下文。
          */
         RequestServer create(PrincipalRef principal);
     }
@@ -224,6 +257,9 @@ public class McpEndpointServlet extends HttpServlet {
     interface RequestServer extends AutoCloseable {
         /**
          * service：处理该类内部的业务逻辑或辅助计算。
+         *
+         * @param request 当前业务请求参数，承载调用方提交的数据。
+         * @param response 参与 service 处理的 response 输入值。
          */
         void service(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException;
 

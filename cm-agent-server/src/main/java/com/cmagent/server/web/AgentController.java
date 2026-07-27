@@ -33,6 +33,11 @@ public class AgentController {
     private final ManagementCommandService managementCommandService;
     /**
      * AgentController：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param agentRepository 参与 AgentController 处理的 agentRepository 输入值。
+     * @param permissionEvaluator 参与 AgentController 处理的 permissionEvaluator 输入值。
+     * @param auditAppender 参与 AgentController 处理的 auditAppender 输入值。
+     * @param managementCommandService 参与 AgentController 处理的 managementCommandService 输入值。
      */
     public AgentController(
             AgentDefinitionRepository agentRepository,
@@ -47,7 +52,11 @@ public class AgentController {
     }
 
     @GetMapping
-    /** 查询当前租户可见的 Agent 列表。 */
+    /**
+     * 查询当前租户可见的 Agent 列表。
+     *
+     * @param authentication Spring Security 认证信息，用于解析当前登录主体。
+     */
     public List<AgentDefinition> list(Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:read", "AGENT", "list");
@@ -55,7 +64,12 @@ public class AgentController {
     }
 
     @GetMapping("/{id}")
-    /** 查询单个 Agent，并在返回前执行资源级权限校验。 */
+    /**
+     * 查询单个 Agent，并在返回前执行资源级权限校验。
+     *
+     * @param id 目标资源标识。
+     * @param authentication Spring Security 认证信息，用于解析当前登录主体。
+     */
     public AgentDefinition get(@PathVariable("id") UUID id, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:read", "AGENT", id.toString());
@@ -64,7 +78,12 @@ public class AgentController {
     }
 
     @PostMapping
-    /** 创建 Agent；业务编排和审计由命令服务统一处理。 */
+    /**
+     * 创建 Agent；业务编排和审计由命令服务统一处理。
+     *
+     * @param request 当前业务请求参数，承载调用方提交的数据。
+     * @param authentication Spring Security 认证信息，用于解析当前登录主体。
+     */
     public AgentDefinition create(@Valid @RequestBody AgentCreateRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:write", "AGENT", "create");
@@ -75,6 +94,8 @@ public class AgentController {
 
     /**
      * principal：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param authentication Spring Security 认证信息，用于解析当前登录主体。
      */
     private PrincipalRef principal(Authentication authentication) {
         // 只接受 JWT 过滤器创建的会话主体，避免信任客户端提交的租户或权限信息。
@@ -87,6 +108,11 @@ public class AgentController {
 
     /**
      * authorize：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param permission 参与 authorize 处理的 permission 输入值。
+     * @param resourceType 参与 authorize 处理的 resourceType 输入值。
+     * @param resourceId 目标 resource 标识，用于定位本次处理对象。
      */
     private void authorize(PrincipalRef principal, String permission, String resourceType, String resourceId) {
         AuthorizationDecision decision = permissionEvaluator.check(principal, permission);

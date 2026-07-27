@@ -47,6 +47,12 @@ public class RunPersistenceService {
     @Autowired
     /**
      * RunPersistenceService：执行当前流程并返回处理结果。
+     *
+     * @param runRepository 参与 RunPersistenceService 处理的 runRepository 输入值。
+     * @param toolCallRepository 参与 RunPersistenceService 处理的 toolCallRepository 输入值。
+     * @param auditAppender 参与 RunPersistenceService 处理的 auditAppender 输入值。
+     * @param redactor 参与 RunPersistenceService 处理的 redactor 输入值。
+     * @param transactionTemplate 参与 RunPersistenceService 处理的 transactionTemplate 输入值。
      */
     public RunPersistenceService(
             RunRepository runRepository,
@@ -97,6 +103,7 @@ public class RunPersistenceService {
      * @param runningRun 已存在的运行中记录
      * @param result     Agent 运行结果
      * @param toolCalls  本次运行产生的工具调用记录
+     * @param authorizedTools 参与 complete 处理的 authorizedTools 集合。
      * @return 完成后的运行记录
      * @throws RuntimeException 持久化或审计失败时抛出
      */
@@ -217,6 +224,8 @@ public class RunPersistenceService {
 
     /**
      * redactRun：清理或脱敏可能包含敏感信息的内容。
+     *
+     * @param run 当前处理的运行记录。
      */
     private RunRecord redactRun(RunRecord run) {
         return new RunRecord(
@@ -228,6 +237,8 @@ public class RunPersistenceService {
 
     /**
      * redactToolCall：清理或脱敏可能包含敏感信息的内容。
+     *
+     * @param toolCall 参与 redactToolCall 处理的 toolCall 输入值。
      */
     private RunToolCall redactToolCall(RunToolCall toolCall) {
         return new RunToolCall(
@@ -240,6 +251,12 @@ public class RunPersistenceService {
 
     /**
      * mapToolCalls：转换内部数据为目标表示。
+     *
+     * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+     * @param runId 目标运行记录标识，用于定位关联的执行数据。
+     * @param authorizedTools 参与 mapToolCalls 处理的 authorizedTools 集合。
+     * @param records 参与 mapToolCalls 处理的 records 集合。
+     * @param createdAt 参与 mapToolCalls 处理的 createdAt 输入值。
      */
     private List<RunToolCall> mapToolCalls(
             UUID tenantId,
@@ -290,6 +307,10 @@ public class RunPersistenceService {
 
     /**
      * resolveTool：解析并定位可用的目标对象。
+     *
+     * @param record 参与 resolveTool 处理的 record 输入值。
+     * @param byId 目标 by 标识，用于定位本次处理对象。
+     * @param byName 参与 resolveTool 处理的 byName 输入值。
      */
     private ToolDefinition resolveTool(
             ToolCallRecord record,
@@ -315,6 +336,11 @@ public class RunPersistenceService {
 
     /**
      * appendAudit：追加处理结果或审计记录。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param run 当前处理的运行记录。
+     * @param status 当前处理状态，用于驱动状态分支或记录结果。
+     * @param message 处理结果或审计消息。
      */
     private void appendAudit(PrincipalRef principal, RunRecord run, RunStatus status, String message) {
         auditAppender.append(
@@ -325,6 +351,8 @@ public class RunPersistenceService {
 
     /**
      * finalStatus：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param status 当前处理状态，用于驱动状态分支或记录结果。
      */
     private static RunStatus finalStatus(RunStatus status) {
         return status == null || status == RunStatus.RUNNING ? RunStatus.FAILED : status;
@@ -332,6 +360,9 @@ public class RunPersistenceService {
 
     /**
      * finishedAt：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param run 当前处理的运行记录。
+     * @param candidate 参与 finishedAt 处理的 candidate 输入值。
      */
     private static Instant finishedAt(RunRecord run, Instant candidate) {
         if (candidate != null && !candidate.isBefore(run.startedAt())) {
@@ -343,6 +374,8 @@ public class RunPersistenceService {
 
     /**
      * completionMessage：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param status 当前处理状态，用于驱动状态分支或记录结果。
      */
     private static String completionMessage(RunStatus status) {
         return switch (status) {
@@ -354,6 +387,8 @@ public class RunPersistenceService {
 
     /**
      * requireResult：校验输入、状态或前置条件。
+     *
+     * @param result 参与 requireResult 处理的 result 输入值。
      */
     private static <T> T requireResult(T result) {
         return Objects.requireNonNull(result, "事务未返回结果");

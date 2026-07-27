@@ -20,6 +20,8 @@ final class McpToolPublicationRules {
     }
     /**
      * validateName：校验输入、状态或前置条件。
+     *
+     * @param name 目标对象的名称。
      */
     static void validateName(String name) {
         if (name == null || !MCP_TOOL_NAME.matcher(name).matches()) {
@@ -28,6 +30,9 @@ final class McpToolPublicationRules {
     }
     /**
      * validateHttp：校验输入、状态或前置条件。
+     *
+     * @param tool 当前处理的工具定义。
+     * @param config 待处理的工具或运行时配置。
      */
     static void validateHttp(ToolDefinition tool, HttpToolConfig config) {
         validateName(tool.name());

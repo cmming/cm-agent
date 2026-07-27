@@ -33,12 +33,17 @@ final class HttpToolSchemaNavigator {
     private final ObjectMapper objectMapper;
     /**
      * HttpToolSchemaNavigator：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
      */
     HttpToolSchemaNavigator(ObjectMapper objectMapper) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
     }
     /**
      * projectSourceSchema：转换内部数据为目标表示。
+     *
+     * @param rootSchema 参与 projectSourceSchema 处理的 rootSchema 输入值。
+     * @param sourcePointer 参与 projectSourceSchema 处理的 sourcePointer 输入值。
      */
     JsonNode projectSourceSchema(JsonNode rootSchema, String sourcePointer) {
         Projection projection = projectSourceSchema(
@@ -56,12 +61,18 @@ final class HttpToolSchemaNavigator {
     }
     /**
      * analyzeSourceShape：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param rootSchema 参与 analyzeSourceShape 处理的 rootSchema 输入值。
+     * @param sourcePointer 参与 analyzeSourceShape 处理的 sourcePointer 输入值。
      */
     SchemaShape analyzeSourceShape(JsonNode rootSchema, String sourcePointer) {
         List<String> tokens = HttpToolConfigValidator.pointerTokens(sourcePointer, "sourcePointer");
         PathShape result = analyzePathShape(
                 /**
                  * SchemaNode：处理该类内部的业务逻辑或辅助计算。
+                 *
+                 * @param rootSchema 参与 SchemaNode 处理的 rootSchema 输入值。
+                 * @param of 参与 SchemaNode 处理的 of 输入值。
                  */
                 rootSchema, new SchemaNode(rootSchema, List.of()), tokens, 0, ALL_TYPES, new HashSet<>()
         );
@@ -72,6 +83,9 @@ final class HttpToolSchemaNavigator {
     }
     /**
      * validateTerminalLocalReferences：校验输入、状态或前置条件。
+     *
+     * @param rootSchema 参与 validateTerminalLocalReferences 处理的 rootSchema 输入值。
+     * @param sourcePointers 参与 validateTerminalLocalReferences 处理的 sourcePointers 集合。
      */
     void validateTerminalLocalReferences(JsonNode rootSchema, List<String> sourcePointers) {
         ReferenceTraversalContext context = new ReferenceTraversalContext();
@@ -86,6 +100,13 @@ final class HttpToolSchemaNavigator {
 
     /**
      * projectSourceSchema：转换内部数据为目标表示。
+     *
+     * @param rootSchema 参与 projectSourceSchema 处理的 rootSchema 输入值。
+     * @param current 参与 projectSourceSchema 处理的 current 输入值。
+     * @param tokens 参与 projectSourceSchema 处理的 tokens 集合。
+     * @param tokenIndex 参与 projectSourceSchema 处理的 tokenIndex 输入值。
+     * @param allowedContainerTypes 控制 allowedContainerTypes 对应处理分支的布尔开关。
+     * @param visited 参与 projectSourceSchema 处理的 visited 输入值。
      */
     private Projection projectSourceSchema(
             JsonNode rootSchema,
@@ -200,6 +221,9 @@ final class HttpToolSchemaNavigator {
 
     /**
      * alternativeSchema：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param keyword 参与 alternativeSchema 处理的 keyword 输入值。
+     * @param alternatives 参与 alternativeSchema 处理的 alternatives 集合。
      */
     private JsonNode alternativeSchema(String keyword, List<JsonNode> alternatives) {
         if (alternatives.size() == 1) {
@@ -213,6 +237,8 @@ final class HttpToolSchemaNavigator {
 
     /**
      * cumulativeSchema：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param constraints 参与 cumulativeSchema 处理的 constraints 集合。
      */
     private JsonNode cumulativeSchema(List<JsonNode> constraints) {
         if (constraints.size() == 1) {
@@ -226,6 +252,13 @@ final class HttpToolSchemaNavigator {
 
     /**
      * analyzePathShape：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param rootSchema 参与 analyzePathShape 处理的 rootSchema 输入值。
+     * @param current 参与 analyzePathShape 处理的 current 输入值。
+     * @param tokens 参与 analyzePathShape 处理的 tokens 集合。
+     * @param tokenIndex 参与 analyzePathShape 处理的 tokenIndex 输入值。
+     * @param allowedContainerTypes 控制 allowedContainerTypes 对应处理分支的布尔开关。
+     * @param visited 参与 analyzePathShape 处理的 visited 输入值。
      */
     private PathShape analyzePathShape(
             JsonNode rootSchema,
@@ -344,6 +377,9 @@ final class HttpToolSchemaNavigator {
 
     /**
      * resolveSourceNodes：解析并定位可用的目标对象。
+     *
+     * @param rootSchema 参与 resolveSourceNodes 处理的 rootSchema 输入值。
+     * @param sourcePointer 参与 resolveSourceNodes 处理的 sourcePointer 输入值。
      */
     private List<SchemaNode> resolveSourceNodes(JsonNode rootSchema, String sourcePointer) {
         List<String> tokens = HttpToolConfigValidator.pointerTokens(sourcePointer, "sourcePointer");
@@ -363,6 +399,13 @@ final class HttpToolSchemaNavigator {
 
     /**
      * findChildSchemas：查询并返回当前上下文中的匹配结果。
+     *
+     * @param rootSchema 参与 findChildSchemas 处理的 rootSchema 输入值。
+     * @param current 参与 findChildSchemas 处理的 current 输入值。
+     * @param token 参与 findChildSchemas 处理的 token 输入值。
+     * @param allowedContainerTypes 控制 allowedContainerTypes 对应处理分支的布尔开关。
+     * @param visited 参与 findChildSchemas 处理的 visited 输入值。
+     * @param matches 参与 findChildSchemas 处理的 matches 集合。
      */
     private void findChildSchemas(
             JsonNode rootSchema,
@@ -416,6 +459,9 @@ final class HttpToolSchemaNavigator {
 
     /**
      * resolveArrayItem：解析并定位可用的目标对象。
+     *
+     * @param current 参与 resolveArrayItem 处理的 current 输入值。
+     * @param itemIndex 参与 resolveArrayItem 处理的 itemIndex 输入值。
      */
     private SchemaNode resolveArrayItem(SchemaNode current, int itemIndex) {
         JsonNode prefixItems = current.node().get("prefixItems");
@@ -431,6 +477,9 @@ final class HttpToolSchemaNavigator {
 
     /**
      * parseArrayIndexForParent：读取并解析输入内容。
+     *
+     * @param parentTypes 参与 parseArrayIndexForParent 处理的 parentTypes 集合。
+     * @param token 参与 parseArrayIndexForParent 处理的 token 输入值。
      */
     private static HttpToolArrayIndex.ParseResult parseArrayIndexForParent(
             Set<ValueType> parentTypes,
@@ -448,6 +497,10 @@ final class HttpToolSchemaNavigator {
 
     /**
      * analyzeShape：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param rootSchema 参与 analyzeShape 处理的 rootSchema 输入值。
+     * @param schemaNode 参与 analyzeShape 处理的 schemaNode 输入值。
+     * @param visited 参与 analyzeShape 处理的 visited 输入值。
      */
     private SchemaShape analyzeShape(JsonNode rootSchema, SchemaNode schemaNode, Set<List<Object>> visited) {
         if (!visited.add(schemaNode.schemaPath())) {
@@ -540,6 +593,9 @@ final class HttpToolSchemaNavigator {
 
     /**
      * resolveLocalReference：解析并定位可用的目标对象。
+     *
+     * @param rootSchema 参与 resolveLocalReference 处理的 rootSchema 输入值。
+     * @param schemaNode 参与 resolveLocalReference 处理的 schemaNode 输入值。
      */
     private SchemaNode resolveLocalReference(JsonNode rootSchema, SchemaNode schemaNode) {
         JsonNode referenceNode = schemaNode.node().get("$ref");
@@ -575,6 +631,11 @@ final class HttpToolSchemaNavigator {
 
     /**
      * validateTerminalLocalReferences：校验输入、状态或前置条件。
+     *
+     * @param rootSchema 参与 validateTerminalLocalReferences 处理的 rootSchema 输入值。
+     * @param current 参与 validateTerminalLocalReferences 处理的 current 输入值。
+     * @param directReferenceChain 参与 validateTerminalLocalReferences 处理的 directReferenceChain 输入值。
+     * @param context 参与 validateTerminalLocalReferences 处理的 context 输入值。
      */
     private void validateTerminalLocalReferences(
             JsonNode rootSchema,
@@ -653,6 +714,12 @@ final class HttpToolSchemaNavigator {
 
     /**
      * validateSchemaMapChildren：校验输入、状态或前置条件。
+     *
+     * @param rootSchema 参与 validateSchemaMapChildren 处理的 rootSchema 输入值。
+     * @param current 参与 validateSchemaMapChildren 处理的 current 输入值。
+     * @param keyword 参与 validateSchemaMapChildren 处理的 keyword 输入值。
+     * @param directReferenceChain 参与 validateSchemaMapChildren 处理的 directReferenceChain 输入值。
+     * @param context 参与 validateSchemaMapChildren 处理的 context 输入值。
      */
     private void validateSchemaMapChildren(
             JsonNode rootSchema,
@@ -675,6 +742,12 @@ final class HttpToolSchemaNavigator {
 
     /**
      * validateSchemaChild：校验输入、状态或前置条件。
+     *
+     * @param rootSchema 参与 validateSchemaChild 处理的 rootSchema 输入值。
+     * @param current 参与 validateSchemaChild 处理的 current 输入值。
+     * @param keyword 参与 validateSchemaChild 处理的 keyword 输入值。
+     * @param directReferenceChain 参与 validateSchemaChild 处理的 directReferenceChain 输入值。
+     * @param context 参与 validateSchemaChild 处理的 context 输入值。
      */
     private void validateSchemaChild(
             JsonNode rootSchema,
@@ -697,6 +770,12 @@ final class HttpToolSchemaNavigator {
 
     /**
      * validateSchemaArrayChildren：校验输入、状态或前置条件。
+     *
+     * @param rootSchema 参与 validateSchemaArrayChildren 处理的 rootSchema 输入值。
+     * @param current 参与 validateSchemaArrayChildren 处理的 current 输入值。
+     * @param keyword 参与 validateSchemaArrayChildren 处理的 keyword 输入值。
+     * @param directReferenceChain 参与 validateSchemaArrayChildren 处理的 directReferenceChain 输入值。
+     * @param context 参与 validateSchemaArrayChildren 处理的 context 输入值。
      */
     private void validateSchemaArrayChildren(
             JsonNode rootSchema,
@@ -721,6 +800,9 @@ final class HttpToolSchemaNavigator {
 
     /**
      * resolveRequiredLocalReference：解析并定位可用的目标对象。
+     *
+     * @param rootSchema 参与 resolveRequiredLocalReference 处理的 rootSchema 输入值。
+     * @param reference 参与 resolveRequiredLocalReference 处理的 reference 输入值。
      */
     private SchemaNode resolveRequiredLocalReference(JsonNode rootSchema, String reference) {
         final List<String> tokens;
@@ -755,6 +837,8 @@ final class HttpToolSchemaNavigator {
 
     /**
      * typesFromType：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param typeNode 参与 typesFromType 处理的 typeNode 输入值。
      */
     private static Set<ValueType> typesFromType(JsonNode typeNode) {
         Set<ValueType> types = EnumSet.noneOf(ValueType.class);
@@ -772,6 +856,9 @@ final class HttpToolSchemaNavigator {
 
     /**
      * addDeclaredType：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param types 参与 addDeclaredType 处理的 types 集合。
+     * @param declaredType 参与 addDeclaredType 处理的 declaredType 输入值。
      */
     private static void addDeclaredType(Set<ValueType> types, String declaredType) {
         switch (declaredType) {
@@ -792,6 +879,8 @@ final class HttpToolSchemaNavigator {
 
     /**
      * typeOfValue：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param value 参与 typeOfValue 处理的 value 输入值。
      */
     private static ValueType typeOfValue(JsonNode value) {
         if (value.isTextual()) {
@@ -817,6 +906,9 @@ final class HttpToolSchemaNavigator {
 
     /**
      * addArrayItemTypes：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param itemTypes 参与 addArrayItemTypes 处理的 itemTypes 集合。
+     * @param value 参与 addArrayItemTypes 处理的 value 输入值。
      */
     private static void addArrayItemTypes(Set<ValueType> itemTypes, JsonNode value) {
         if (value.isArray()) {
@@ -826,6 +918,8 @@ final class HttpToolSchemaNavigator {
 
     /**
      * withoutNull：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param types 参与 withoutNull 处理的 types 集合。
      */
     private static Set<ValueType> withoutNull(Set<ValueType> types) {
         Set<ValueType> result = EnumSet.noneOf(ValueType.class);
@@ -836,6 +930,9 @@ final class HttpToolSchemaNavigator {
 
     /**
      * intersectTypes：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param left 参与 intersectTypes 处理的 left 输入值。
+     * @param right 参与 intersectTypes 处理的 right 输入值。
      */
     private static Set<ValueType> intersectTypes(Set<ValueType> left, Set<ValueType> right) {
         Set<ValueType> result = EnumSet.noneOf(ValueType.class);
@@ -936,6 +1033,8 @@ final class HttpToolSchemaNavigator {
 
         /**
          * intersect：处理该类内部的业务逻辑或辅助计算。
+         *
+         * @param other 参与 intersect 处理的 other 输入值。
          */
         private SchemaShape intersect(SchemaShape other) {
             Set<ValueType> intersectedTypes = EnumSet.noneOf(ValueType.class);
@@ -949,6 +1048,8 @@ final class HttpToolSchemaNavigator {
 
         /**
          * union：处理该类内部的业务逻辑或辅助计算。
+         *
+         * @param other 参与 union 处理的 other 输入值。
          */
         private SchemaShape union(SchemaShape other) {
             Set<ValueType> unionTypes = EnumSet.noneOf(ValueType.class);
@@ -975,6 +1076,9 @@ final class HttpToolSchemaNavigator {
 
         /**
          * append：追加处理结果或审计记录。
+         *
+         * @param pathElement 参与 append 处理的 pathElement 输入值。
+         * @param child 参与 append 处理的 child 输入值。
          */
         private SchemaNode append(Object pathElement, JsonNode child) {
             List<Object> childPath = new ArrayList<>(schemaPath);
@@ -1013,6 +1117,8 @@ final class HttpToolSchemaNavigator {
     private record Projection(boolean found, JsonNode schema) {
         /**
          * missing：处理该类内部的业务逻辑或辅助计算。
+         *
+         * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
          */
         private static Projection missing(ObjectMapper objectMapper) {
             return new Projection(false, objectMapper.getNodeFactory().booleanNode(true));
@@ -1055,6 +1161,8 @@ final class HttpToolSchemaNavigator {
 
         /**
          * isCompleted：判断当前条件是否成立。
+         *
+         * @param state 参与 isCompleted 处理的 state 输入值。
          */
         private boolean isCompleted(ReferenceTraversalState state) {
             return completedStates.contains(state);
@@ -1062,6 +1170,8 @@ final class HttpToolSchemaNavigator {
 
         /**
          * enter：处理该类内部的业务逻辑或辅助计算。
+         *
+         * @param schemaPath 参与 enter 处理的 schemaPath 输入值。
          */
         private boolean enter(List<Object> schemaPath) {
             return visitingPaths.add(schemaPath);
@@ -1069,6 +1179,8 @@ final class HttpToolSchemaNavigator {
 
         /**
          * exit：处理该类内部的业务逻辑或辅助计算。
+         *
+         * @param schemaPath 参与 exit 处理的 schemaPath 输入值。
          */
         private void exit(List<Object> schemaPath) {
             visitingPaths.remove(schemaPath);
@@ -1076,6 +1188,8 @@ final class HttpToolSchemaNavigator {
 
         /**
          * complete：处理该类内部的业务逻辑或辅助计算。
+         *
+         * @param state 参与 complete 处理的 state 输入值。
          */
         private void complete(ReferenceTraversalState state) {
             completedStates.add(state);

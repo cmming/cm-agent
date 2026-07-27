@@ -20,6 +20,8 @@ public class BootstrapAdminProperties {
     private String bootstrapAdminDisplayName = DEFAULT_DISPLAY_NAME;
     /**
      * BootstrapAdminProperties：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param environment 参与 BootstrapAdminProperties 处理的 environment 输入值。
      */
     public BootstrapAdminProperties(Environment environment) {
         this.environment = environment;
@@ -121,6 +123,9 @@ public class BootstrapAdminProperties {
 
     /**
      * blankToDefault：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param value 参与 blankToDefault 处理的 value 输入值。
+     * @param defaultValue 参与 blankToDefault 处理的 defaultValue 输入值。
      */
     private String blankToDefault(String value, String defaultValue) {
         return value == null || value.isBlank() ? defaultValue : value;

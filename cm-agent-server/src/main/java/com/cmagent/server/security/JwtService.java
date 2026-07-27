@@ -20,6 +20,8 @@ public class JwtService {
     private final SecretKey signingKey;
     /**
      * JwtService：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param jwtSigningKey 参与 JwtService 处理的 jwtSigningKey 输入值。
      */
     public JwtService(SecretKey jwtSigningKey) {
         this.signingKey = jwtSigningKey;

@@ -13,6 +13,8 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerA
 public class CmAgentServerApplication {
     /**
      * main：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param args 参与 main 处理的 args 集合。
      */
     public static void main(String[] args) {
         SpringApplication.run(CmAgentServerApplication.class, args);

@@ -18,6 +18,8 @@ public final class ExternalModelCredentialProvider implements ModelCredentialPro
     private final Map<CredentialKey, ModelCredential> credentials;
     /**
      * ExternalModelCredentialProvider：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param properties 模块配置属性，用于读取运行参数。
      */
     public ExternalModelCredentialProvider(AgentScopeRuntimeProperties properties) {
         Objects.requireNonNull(properties, "AgentScope 运行时配置不能为空");

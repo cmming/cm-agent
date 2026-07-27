@@ -44,6 +44,8 @@ public class HttpToolConfigValidator {
     private final HttpToolSchemaNavigator schemaNavigator;
     /**
      * HttpToolConfigValidator：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
      */
     public HttpToolConfigValidator(ObjectMapper objectMapper) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
@@ -69,6 +71,8 @@ public class HttpToolConfigValidator {
     }
     /**
      * parseAndValidateSchema：读取并解析输入内容。
+     *
+     * @param config 待处理的工具或运行时配置。
      */
     JsonNode parseAndValidateSchema(HttpToolConfig config) {
         validate(config);
@@ -76,6 +80,8 @@ public class HttpToolConfigValidator {
     }
     /**
      * compile：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param schemaNode 参与 compile 处理的 schemaNode 输入值。
      */
     Schema compile(JsonNode schemaNode) {
         try {
@@ -88,6 +94,9 @@ public class HttpToolConfigValidator {
     }
     /**
      * isArrayAt：判断当前条件是否成立。
+     *
+     * @param rootSchema 参与 isArrayAt 处理的 rootSchema 输入值。
+     * @param sourcePointer 参与 isArrayAt 处理的 sourcePointer 输入值。
      */
     boolean isArrayAt(JsonNode rootSchema, String sourcePointer) {
         HttpToolSchemaNavigator.SchemaShape shape = schemaNavigator.analyzeSourceShape(
@@ -106,6 +115,9 @@ public class HttpToolConfigValidator {
     }
     /**
      * pointerTokens：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param pointer 参与 pointerTokens 处理的 pointer 输入值。
+     * @param fieldName 参与 pointerTokens 处理的 fieldName 输入值。
      */
     static List<String> pointerTokens(String pointer, String fieldName) {
         if (pointer == null || (!pointer.isEmpty() && !pointer.startsWith("/"))) {
@@ -133,6 +145,9 @@ public class HttpToolConfigValidator {
 
     /**
      * parseJsonStrict：读取并解析输入内容。
+     *
+     * @param value 参与 parseJsonStrict 处理的 value 输入值。
+     * @param errorMessage 参与 parseJsonStrict 处理的 errorMessage 输入值。
      */
     private JsonNode parseJsonStrict(String value, String errorMessage) {
         try {
@@ -150,6 +165,8 @@ public class HttpToolConfigValidator {
 
     /**
      * validateSchemaDocument：校验输入、状态或前置条件。
+     *
+     * @param rootSchema 参与 validateSchemaDocument 处理的 rootSchema 输入值。
      */
     private void validateSchemaDocument(JsonNode rootSchema) {
         if (!rootSchema.isObject()) {
@@ -171,6 +188,9 @@ public class HttpToolConfigValidator {
 
     /**
      * validateMappings：校验输入、状态或前置条件。
+     *
+     * @param config 待处理的工具或运行时配置。
+     * @param rootSchema 参与 validateMappings 处理的 rootSchema 输入值。
      */
     private void validateMappings(HttpToolConfig config, JsonNode rootSchema) {
         Set<String> targets = new HashSet<>();
@@ -194,6 +214,9 @@ public class HttpToolConfigValidator {
 
     /**
      * validateDefault：校验输入、状态或前置条件。
+     *
+     * @param mapping 参与 validateDefault 处理的 mapping 输入值。
+     * @param rootSchema 参与 validateDefault 处理的 rootSchema 输入值。
      */
     private void validateDefault(HttpParameterMapping mapping, JsonNode rootSchema) {
         if (!mapping.hasDefaultValue()) {
@@ -219,6 +242,10 @@ public class HttpToolConfigValidator {
 
     /**
      * copyDefinitionKeyword：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param source 参与 copyDefinitionKeyword 处理的 source 输入值。
+     * @param target 参与 copyDefinitionKeyword 处理的 target 输入值。
+     * @param keyword 参与 copyDefinitionKeyword 处理的 keyword 输入值。
      */
     private static void copyDefinitionKeyword(JsonNode source, ObjectNode target, String keyword) {
         if (source.has(keyword)) {
@@ -228,6 +255,9 @@ public class HttpToolConfigValidator {
 
     /**
      * validateLocationType：校验输入、状态或前置条件。
+     *
+     * @param mapping 参与 validateLocationType 处理的 mapping 输入值。
+     * @param rootSchema 参与 validateLocationType 处理的 rootSchema 输入值。
      */
     private void validateLocationType(HttpParameterMapping mapping, JsonNode rootSchema) {
         if (mapping.location() == HttpParameterLocation.BODY) {
@@ -250,6 +280,12 @@ public class HttpToolConfigValidator {
 
     /**
      * validateTarget：校验输入、状态或前置条件。
+     *
+     * @param mapping 参与 validateTarget 处理的 mapping 输入值。
+     * @param targets 参与 validateTarget 处理的 targets 集合。
+     * @param bodyTargets 参与 validateTarget 处理的 bodyTargets 集合。
+     * @param bodyContainerShapes 参与 validateTarget 处理的 bodyContainerShapes 集合。
+     * @param pathTargets 参与 validateTarget 处理的 pathTargets 集合。
      */
     private void validateTarget(
             HttpParameterMapping mapping,
@@ -292,6 +328,9 @@ public class HttpToolConfigValidator {
 
     /**
      * validateBodyContainerShapes：校验输入、状态或前置条件。
+     *
+     * @param target 参与 validateBodyContainerShapes 处理的 target 输入值。
+     * @param bodyContainerShapes 参与 validateBodyContainerShapes 处理的 bodyContainerShapes 集合。
      */
     private void validateBodyContainerShapes(
             List<String> target,
@@ -311,6 +350,8 @@ public class HttpToolConfigValidator {
 
     /**
      * extractPathPlaceholders：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param urlTemplate 参与 extractPathPlaceholders 处理的 urlTemplate 输入值。
      */
     private static Set<String> extractPathPlaceholders(String urlTemplate) {
         Set<String> placeholders = new LinkedHashSet<>();
@@ -323,6 +364,9 @@ public class HttpToolConfigValidator {
 
     /**
      * isPrefix：判断当前条件是否成立。
+     *
+     * @param prefix 参与 isPrefix 处理的 prefix 输入值。
+     * @param value 参与 isPrefix 处理的 value 输入值。
      */
     private static boolean isPrefix(List<String> prefix, List<String> value) {
         return prefix.size() <= value.size() && value.subList(0, prefix.size()).equals(prefix);

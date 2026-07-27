@@ -61,6 +61,14 @@ public class ToolController {
     private final McpPublicationService mcpPublicationService;
     /**
      * ToolController：转换内部数据为目标表示。
+     *
+     * @param permissionEvaluator 参与 ToolController 处理的 permissionEvaluator 输入值。
+     * @param auditAppender 参与 ToolController 处理的 auditAppender 输入值。
+     * @param managementCommandService 参与 ToolController 处理的 managementCommandService 输入值。
+     * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
+     * @param toolQueryService 参与 ToolController 处理的 toolQueryService 输入值。
+     * @param toolDebugService 参与 ToolController 处理的 toolDebugService 输入值。
+     * @param mcpPublicationService 参与 ToolController 处理的 mcpPublicationService 输入值。
      */
     public ToolController(
             PermissionEvaluator permissionEvaluator,
@@ -198,6 +206,8 @@ public class ToolController {
 
     /**
      * principal：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param authentication Spring Security 认证信息，用于解析当前登录主体。
      */
     private PrincipalRef principal(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()
@@ -209,6 +219,11 @@ public class ToolController {
 
     /**
      * authorize：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param permission 参与 authorize 处理的 permission 输入值。
+     * @param resourceType 参与 authorize 处理的 resourceType 输入值。
+     * @param resourceId 目标 resource 标识，用于定位本次处理对象。
      */
     private void authorize(PrincipalRef principal, String permission, String resourceType, String resourceId) {
         AuthorizationDecision decision = permissionEvaluator.check(principal, permission);
@@ -220,6 +235,8 @@ public class ToolController {
 
     /**
      * toSummary：转换内部数据为目标表示。
+     *
+     * @param summary 参与 toSummary 处理的 summary 输入值。
      */
     private ToolSummaryResponse toSummary(ToolSummary summary) {
         var tool = summary.tool();
@@ -232,6 +249,8 @@ public class ToolController {
 
     /**
      * toHttpToolCreateSpec：转换内部数据为目标表示。
+     *
+     * @param request 当前业务请求参数，承载调用方提交的数据。
      */
     private HttpToolCreateSpec toHttpToolCreateSpec(HttpConfigRequest request) {
         if (request == null) {
@@ -259,6 +278,8 @@ public class ToolController {
 
     /**
      * toHttpConfigResponse：转换内部数据为目标表示。
+     *
+     * @param config 待处理的工具或运行时配置。
      */
     private HttpToolConfigResponse toHttpConfigResponse(com.cmagent.core.domain.HttpToolConfig config) {
         return new HttpToolConfigResponse(
@@ -269,6 +290,8 @@ public class ToolController {
 
     /**
      * canonicalJson：转换并生成规范化输出。
+     *
+     * @param value 参与 canonicalJson 处理的 value 输入值。
      */
     private String canonicalJson(JsonNode value) {
         try {
@@ -280,6 +303,8 @@ public class ToolController {
 
     /**
      * canonicalize：转换并生成规范化输出。
+     *
+     * @param value 参与 canonicalize 处理的 value 输入值。
      */
     private JsonNode canonicalize(JsonNode value) {
         if (value.isObject()) {

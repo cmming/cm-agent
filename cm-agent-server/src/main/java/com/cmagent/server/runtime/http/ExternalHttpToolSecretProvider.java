@@ -11,6 +11,8 @@ public final class ExternalHttpToolSecretProvider implements HttpToolSecretProvi
     private final HttpToolProperties properties;
     /**
      * ExternalHttpToolSecretProvider：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param properties 模块配置属性，用于读取运行参数。
      */
     public ExternalHttpToolSecretProvider(HttpToolProperties properties) {
         this.properties = Objects.requireNonNull(properties, "properties 不能为空");
@@ -33,6 +35,9 @@ public final class ExternalHttpToolSecretProvider implements HttpToolSecretProvi
     }
     /**
      * compositeKey：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+     * @param secretRef 参与 compositeKey 处理的 secretRef 输入值。
      */
     static String compositeKey(UUID tenantId, String secretRef) {
         return Objects.requireNonNull(tenantId, "tenantId 不能为空") + "|" +

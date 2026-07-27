@@ -51,6 +51,15 @@ public class RunExecutionService {
     @Autowired
     /**
      * RunExecutionService：执行当前流程并返回处理结果。
+     *
+     * @param runtime 参与 RunExecutionService 处理的 runtime 输入值。
+     * @param agentRepository 参与 RunExecutionService 处理的 agentRepository 输入值。
+     * @param modelConfigRepository 参与 RunExecutionService 处理的 modelConfigRepository 输入值。
+     * @param toolRepository 参与 RunExecutionService 处理的 toolRepository 输入值。
+     * @param grantRepository 参与 RunExecutionService 处理的 grantRepository 输入值。
+     * @param toolAuthorizationPolicy 参与 RunExecutionService 处理的 toolAuthorizationPolicy 输入值。
+     * @param persistenceService 参与 RunExecutionService 处理的 persistenceService 输入值。
+     * @param redactor 参与 RunExecutionService 处理的 redactor 输入值。
      */
     public RunExecutionService(
             AgentRuntime runtime,
@@ -133,6 +142,9 @@ public class RunExecutionService {
 
     /**
      * bestEffortFailureClosure：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param runningRun 参与 bestEffortFailureClosure 处理的 runningRun 输入值。
      */
     private void bestEffortFailureClosure(PrincipalRef principal, RunRecord runningRun) {
         try {
@@ -145,6 +157,9 @@ public class RunExecutionService {
 
     /**
      * bestEffortFailureAudit：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param runningRun 参与 bestEffortFailureAudit 处理的 runningRun 输入值。
      */
     private void bestEffortFailureAudit(PrincipalRef principal, RunRecord runningRun) {
         persistenceService.appendFailureAudit(principal, runningRun);
@@ -152,6 +167,9 @@ public class RunExecutionService {
 
     /**
      * authorizedTools：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param agent 当前处理的 Agent 定义。
      */
     private List<ToolDefinition> authorizedTools(PrincipalRef principal, AgentDefinition agent) {
         List<ToolGrant> grants = grantRepository.listByTenantAndAgent(principal.tenantId(), agent.id());
@@ -173,6 +191,9 @@ public class RunExecutionService {
 
     /**
      * responseWithPersistentId：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param completedRun 参与 responseWithPersistentId 处理的 completedRun 输入值。
+     * @param result 参与 responseWithPersistentId 处理的 result 输入值。
      */
     private AgentRunResult responseWithPersistentId(com.cmagent.core.domain.RunRecord completedRun, AgentRunResult result) {
         List<ToolCallRecord> toolCalls = result.toolCalls() == null
@@ -198,6 +219,8 @@ public class RunExecutionService {
     public static final class RuntimeExecutionException extends RuntimeException {
         /**
          * RuntimeExecutionException：执行当前流程并返回处理结果。
+         *
+         * @param cause 参与 RuntimeExecutionException 处理的 cause 输入值。
          */
         public RuntimeExecutionException(Throwable cause) {
             super(CONTROLLED_FAILURE, cause);

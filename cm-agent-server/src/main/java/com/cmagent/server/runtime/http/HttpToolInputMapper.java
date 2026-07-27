@@ -25,6 +25,9 @@ public class HttpToolInputMapper {
     private final HttpToolConfigValidator configValidator;
     /**
      * HttpToolInputMapper：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
+     * @param configValidator 参与 HttpToolInputMapper 处理的 configValidator 输入值。
      */
     public HttpToolInputMapper(ObjectMapper objectMapper, HttpToolConfigValidator configValidator) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
@@ -57,6 +60,10 @@ public class HttpToolInputMapper {
 
     /**
      * applyDefaults：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param config 待处理的工具或运行时配置。
+     * @param rootSchema 参与 applyDefaults 处理的 rootSchema 输入值。
+     * @param effectiveInput 参与 applyDefaults 处理的 effectiveInput 输入值。
      */
     private void applyDefaults(HttpToolConfig config, JsonNode rootSchema, ObjectNode effectiveInput) {
         for (HttpParameterMapping mapping : config.parameterMappings()) {
@@ -71,6 +78,9 @@ public class HttpToolInputMapper {
 
     /**
      * ensureRequiredMappings：校验输入、状态或前置条件。
+     *
+     * @param config 待处理的工具或运行时配置。
+     * @param effectiveInput 参与 ensureRequiredMappings 处理的 effectiveInput 输入值。
      */
     private void ensureRequiredMappings(HttpToolConfig config, ObjectNode effectiveInput) {
         for (HttpParameterMapping mapping : config.parameterMappings()) {
@@ -83,6 +93,9 @@ public class HttpToolInputMapper {
 
     /**
      * mapValues：转换内部数据为目标表示。
+     *
+     * @param config 待处理的工具或运行时配置。
+     * @param effectiveInput 参与 mapValues 处理的 effectiveInput 输入值。
      */
     private PreparedHttpToolRequest mapValues(HttpToolConfig config, ObjectNode effectiveInput) {
         Map<String, String> pathValues = new LinkedHashMap<>();
@@ -112,6 +125,8 @@ public class HttpToolInputMapper {
 
     /**
      * parseDefault：读取并解析输入内容。
+     *
+     * @param defaultValueJson 参与 parseDefault 处理的 defaultValueJson 输入值。
      */
     private JsonNode parseDefault(String defaultValueJson) {
         try {
@@ -123,6 +138,8 @@ public class HttpToolInputMapper {
 
     /**
      * scalarText：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param value 参与 scalarText 处理的 value 输入值。
      */
     private static String scalarText(JsonNode value) {
         if (!value.isValueNode() || value.isNull()) {
@@ -133,6 +150,8 @@ public class HttpToolInputMapper {
 
     /**
      * queryTexts：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param value 参与 queryTexts 处理的 value 输入值。
      */
     private static List<String> queryTexts(JsonNode value) {
         if (!value.isArray()) {
@@ -145,6 +164,10 @@ public class HttpToolInputMapper {
 
     /**
      * setObjectPath：更新当前配置或状态。
+     *
+     * @param root 参与 setObjectPath 处理的 root 输入值。
+     * @param tokens 参与 setObjectPath 处理的 tokens 集合。
+     * @param value 参与 setObjectPath 处理的 value 输入值。
      */
     private static void setObjectPath(ObjectNode root, List<String> tokens, JsonNode value) {
         if (tokens.isEmpty()) {
@@ -194,6 +217,11 @@ public class HttpToolInputMapper {
 
     /**
      * setInputPath：更新当前配置或状态。
+     *
+     * @param root 参与 setInputPath 处理的 root 输入值。
+     * @param rootSchema 参与 setInputPath 处理的 rootSchema 输入值。
+     * @param tokens 参与 setInputPath 处理的 tokens 集合。
+     * @param value 参与 setInputPath 处理的 value 输入值。
      */
     private void setInputPath(ObjectNode root, JsonNode rootSchema, List<String> tokens, JsonNode value) {
         if (tokens.isEmpty()) {
@@ -243,6 +271,10 @@ public class HttpToolInputMapper {
 
     /**
      * shouldCreateArray：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param rootSchema 参与 shouldCreateArray 处理的 rootSchema 输入值。
+     * @param tokens 参与 shouldCreateArray 处理的 tokens 集合。
+     * @param inclusiveIndex 参与 shouldCreateArray 处理的 inclusiveIndex 输入值。
      */
     private boolean shouldCreateArray(JsonNode rootSchema, List<String> tokens, int inclusiveIndex) {
         StringBuilder pointer = new StringBuilder();
@@ -254,6 +286,8 @@ public class HttpToolInputMapper {
 
     /**
      * objectMapperArrayNode：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param parent 参与 objectMapperArrayNode 处理的 parent 输入值。
      */
     private static ArrayNode objectMapperArrayNode(ArrayNode parent) {
         return parent.arrayNode();
@@ -261,6 +295,8 @@ public class HttpToolInputMapper {
 
     /**
      * objectMapperObjectNode：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param parent 参与 objectMapperObjectNode 处理的 parent 输入值。
      */
     private static ObjectNode objectMapperObjectNode(ArrayNode parent) {
         return parent.objectNode();

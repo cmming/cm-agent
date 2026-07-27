@@ -9,6 +9,8 @@ import java.util.List;
 public interface HostAddressResolver {
     /**
      * resolve：解析并定位可用的目标对象。
+     *
+     * @param host 参与 resolve 处理的 host 输入值。
      */
     List<InetAddress> resolve(String host) throws UnknownHostException;
 }

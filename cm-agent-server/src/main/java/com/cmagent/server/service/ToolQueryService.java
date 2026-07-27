@@ -21,6 +21,10 @@ public class ToolQueryService {
     private final McpToolPublicationRepository mcpToolPublicationRepository;
     /**
      * ToolQueryService：转换内部数据为目标表示。
+     *
+     * @param toolRepository 参与 ToolQueryService 处理的 toolRepository 输入值。
+     * @param httpToolConfigRepository 参与 ToolQueryService 处理的 httpToolConfigRepository 输入值。
+     * @param mcpToolPublicationRepository 参与 ToolQueryService 处理的 mcpToolPublicationRepository 输入值。
      */
     public ToolQueryService(
             ToolDefinitionRepository toolRepository,

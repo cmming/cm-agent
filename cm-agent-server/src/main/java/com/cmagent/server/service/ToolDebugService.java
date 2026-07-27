@@ -32,6 +32,12 @@ public class ToolDebugService {
     private final HttpToolProperties httpToolProperties;
     /**
      * ToolDebugService：转换内部数据为目标表示。
+     *
+     * @param toolRepository 参与 ToolDebugService 处理的 toolRepository 输入值。
+     * @param executionService 参与 ToolDebugService 处理的 executionService 输入值。
+     * @param auditAppender 参与 ToolDebugService 处理的 auditAppender 输入值。
+     * @param sanitizer 参与 ToolDebugService 处理的 sanitizer 输入值。
+     * @param httpToolProperties httpToolProperties 对应的配置数据，用于驱动本次处理。
      */
     public ToolDebugService(
             ToolDefinitionRepository toolRepository,
@@ -98,6 +104,10 @@ public class ToolDebugService {
 
     /**
      * isVisible：判断当前条件是否成立。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param toolId 目标工具标识，用于定位关联的工具定义。
+     * @param tool 当前处理的工具定义。
      */
     private boolean isVisible(PrincipalRef principal, UUID toolId, ToolDefinition tool) {
         return tool.enabled() && principal.tenantId().equals(tool.tenantId()) && toolId.equals(tool.id());
@@ -105,6 +115,9 @@ public class ToolDebugService {
 
     /**
      * validateDebugScope：校验输入、状态或前置条件。
+     *
+     * @param tool 当前处理的工具定义。
+     * @param confirmedToolName 参与 validateDebugScope 处理的 confirmedToolName 输入值。
      */
     private void validateDebugScope(ToolDefinition tool, String confirmedToolName) {
         if (tool.type() != ToolType.HTTP && tool.type() != ToolType.LOCAL) {
@@ -117,6 +130,8 @@ public class ToolDebugService {
 
     /**
      * safeOutput：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param output 本次处理产生或待处理的输出内容。
      */
     private String safeOutput(String output) {
         String sanitized = sanitizer.sanitize(output, List.of());
@@ -127,6 +142,8 @@ public class ToolDebugService {
 
     /**
      * elapsedMillis：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param startedAt 参与 elapsedMillis 处理的 startedAt 输入值。
      */
     private long elapsedMillis(long startedAt) {
         return Math.max(0L, (System.nanoTime() - startedAt) / 1_000_000L);

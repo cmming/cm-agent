@@ -25,6 +25,10 @@ public class GovernedToolExecutionService {
     private final ToolRegistry registry;
     /**
      * GovernedToolExecutionService：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param configs 参与 GovernedToolExecutionService 处理的 configs 集合。
+     * @param http 参与 GovernedToolExecutionService 处理的 http 输入值。
+     * @param registry 参与 GovernedToolExecutionService 处理的 registry 输入值。
      */
     public GovernedToolExecutionService(
             HttpToolConfigRepository configs,
@@ -78,6 +82,9 @@ public class GovernedToolExecutionService {
     }
     /**
      * prepare：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param tool 当前处理的工具定义。
+     * @param request 当前业务请求参数，承载调用方提交的数据。
      */
     PreparedToolExecution prepare(ToolDefinition tool, ToolExecutionRequest request) {
         Objects.requireNonNull(tool, "tool 不能为空");
@@ -106,6 +113,9 @@ public class GovernedToolExecutionService {
 
     /**
      * isMatchingHttpConfiguration：判断当前条件是否成立。
+     *
+     * @param tool 当前处理的工具定义。
+     * @param config 待处理的工具或运行时配置。
      */
     private boolean isMatchingHttpConfiguration(ToolDefinition tool, HttpToolConfig config) {
         return tool.endpoint() != null && tool.endpoint().equals(config.urlTemplate());
@@ -113,6 +123,9 @@ public class GovernedToolExecutionService {
 
     /**
      * isSameRegistration：判断当前条件是否成立。
+     *
+     * @param tool 当前处理的工具定义。
+     * @param registered 参与 isSameRegistration 处理的 registered 输入值。
      */
     private boolean isSameRegistration(ToolDefinition tool, ToolDefinition registered) {
         return registered != null
@@ -131,6 +144,9 @@ public class GovernedToolExecutionService {
 
         /**
          * PreparedToolExecution：处理该类内部的业务逻辑或辅助计算。
+         *
+         * @param execution 参与 PreparedToolExecution 处理的 execution 输入值。
+         * @param unavailableResult 参与 PreparedToolExecution 处理的 unavailableResult 输入值。
          */
         private PreparedToolExecution(Supplier<ToolExecutionResult> execution, ToolExecutionResult unavailableResult) {
             this.execution = execution;
@@ -139,6 +155,8 @@ public class GovernedToolExecutionService {
         }
         /**
          * ready：读取并解析输入内容。
+         *
+         * @param execution 参与 ready 处理的 execution 输入值。
          */
         static PreparedToolExecution ready(Supplier<ToolExecutionResult> execution) {
             return new PreparedToolExecution(Objects.requireNonNull(execution, "execution 不能为空"), null);

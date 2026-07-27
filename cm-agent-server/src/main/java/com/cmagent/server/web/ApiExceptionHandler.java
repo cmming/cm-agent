@@ -36,6 +36,8 @@ public class ApiExceptionHandler {
     @Autowired
     /**
      * ApiExceptionHandler：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param redactor 参与 ApiExceptionHandler 处理的 redactor 输入值。
      */
     public ApiExceptionHandler(SensitiveDataRedactor redactor) {
         this.redactor = redactor;
@@ -54,6 +56,8 @@ public class ApiExceptionHandler {
     })
     /**
      * validationFailure：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param ignored 参与 validationFailure 处理的 ignored 输入值。
      */
     public ResponseEntity<ApiErrorResponse> validationFailure(Exception ignored) {
         return response(HttpStatus.BAD_REQUEST, ApiErrorCode.VALIDATION_FAILED, "请求参数不合法");
@@ -62,6 +66,8 @@ public class ApiExceptionHandler {
     @ExceptionHandler(DataAccessException.class)
     /**
      * persistenceFailure：保存当前对象及其关联配置。
+     *
+     * @param ignored 参与 persistenceFailure 处理的 ignored 输入值。
      */
     public ResponseEntity<ApiErrorResponse> persistenceFailure(DataAccessException ignored) {
         return response(HttpStatus.SERVICE_UNAVAILABLE, ApiErrorCode.PERSISTENCE_UNAVAILABLE, "数据服务暂不可用");
@@ -70,6 +76,8 @@ public class ApiExceptionHandler {
     @ExceptionHandler(AuditPersistenceException.class)
     /**
      * auditPersistenceFailure：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param ignored 参与 auditPersistenceFailure 处理的 ignored 输入值。
      */
     public ResponseEntity<ApiErrorResponse> auditPersistenceFailure(AuditPersistenceException ignored) {
         return response(HttpStatus.SERVICE_UNAVAILABLE, ApiErrorCode.AUDIT_UNAVAILABLE, "审计服务暂不可用");
@@ -78,6 +86,8 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ResponseStatusException.class)
     /**
      * statusFailure：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param exception 当前捕获的异常，用于转换或记录失败信息。
      */
     public ResponseEntity<ApiErrorResponse> statusFailure(ResponseStatusException exception) {
         HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
@@ -94,6 +104,8 @@ public class ApiExceptionHandler {
     @ExceptionHandler(RuntimeException.class)
     /**
      * runtimeFailure：执行当前流程并返回处理结果。
+     *
+     * @param ignored 参与 runtimeFailure 处理的 ignored 输入值。
      */
     public ResponseEntity<ApiErrorResponse> runtimeFailure(RuntimeException ignored) {
         return response(HttpStatus.INTERNAL_SERVER_ERROR, ApiErrorCode.INTERNAL_ERROR, "服务内部错误");
@@ -101,6 +113,10 @@ public class ApiExceptionHandler {
 
     /**
      * response：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param status 当前处理状态，用于驱动状态分支或记录结果。
+     * @param code 参与 response 处理的 code 输入值。
+     * @param message 处理结果或审计消息。
      */
     private ResponseEntity<ApiErrorResponse> response(HttpStatus status, ApiErrorCode code, String message) {
         return ResponseEntity.status(status)

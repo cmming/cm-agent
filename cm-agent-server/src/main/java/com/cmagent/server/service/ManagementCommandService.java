@@ -44,6 +44,15 @@ public class ManagementCommandService {
     @Autowired
     /**
      * ManagementCommandService：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param agentRepository 参与 ManagementCommandService 处理的 agentRepository 输入值。
+     * @param toolRepository 参与 ManagementCommandService 处理的 toolRepository 输入值。
+     * @param httpToolConfigRepository 参与 ManagementCommandService 处理的 httpToolConfigRepository 输入值。
+     * @param mcpToolPublicationRepository 参与 ManagementCommandService 处理的 mcpToolPublicationRepository 输入值。
+     * @param grantRepository 参与 ManagementCommandService 处理的 grantRepository 输入值。
+     * @param auditAppender 参与 ManagementCommandService 处理的 auditAppender 输入值。
+     * @param httpToolConfigValidator 参与 ManagementCommandService 处理的 httpToolConfigValidator 输入值。
+     * @param transactionTemplate 参与 ManagementCommandService 处理的 transactionTemplate 输入值。
      */
     public ManagementCommandService(
             AgentDefinitionRepository agentRepository,
@@ -154,6 +163,14 @@ public class ManagementCommandService {
 
     /**
      * prepareToolCreate：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param name 目标对象的名称。
+     * @param description 参与 prepareToolCreate 处理的 description 输入值。
+     * @param type 参与 prepareToolCreate 处理的 type 输入值。
+     * @param riskLevel 参与 prepareToolCreate 处理的 riskLevel 输入值。
+     * @param httpToolCreateSpec 参与 prepareToolCreate 处理的 httpToolCreateSpec 输入值。
+     * @param mcpPublished 参与 prepareToolCreate 处理的 mcpPublished 输入值。
      */
     private PreparedToolCreate prepareToolCreate(
             PrincipalRef principal,
@@ -220,6 +237,9 @@ public class ManagementCommandService {
 
     /**
      * appendAgentAudit：追加处理结果或审计记录。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param agent 当前处理的 Agent 定义。
      */
     private void appendAgentAudit(PrincipalRef principal, AgentDefinition agent) {
         auditAppender.append(principal.tenantId(), principal.principalId(), "AGENT_CREATE", "AGENT",
@@ -228,6 +248,8 @@ public class ManagementCommandService {
 
     /**
      * saveToolWithHttpConfiguration：保存当前对象及其关联配置。
+     *
+     * @param prepared 参与 saveToolWithHttpConfiguration 处理的 prepared 输入值。
      */
     private ToolDefinition saveToolWithHttpConfiguration(PreparedToolCreate prepared) {
         ToolDefinition saved = toolRepository.save(prepared.tool());
@@ -243,6 +265,9 @@ public class ManagementCommandService {
 
     /**
      * saveToolWithCompensation：保存当前对象及其关联配置。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param prepared 参与 saveToolWithCompensation 处理的 prepared 输入值。
      */
     private ToolDefinition saveToolWithCompensation(PrincipalRef principal, PreparedToolCreate prepared) {
         boolean toolWriteAttempted = false;
@@ -269,6 +294,12 @@ public class ManagementCommandService {
 
     /**
      * compensateMemoryWrite：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param prepared 参与 compensateMemoryWrite 处理的 prepared 输入值。
+     * @param toolWriteAttempted 参与 compensateMemoryWrite 处理的 toolWriteAttempted 输入值。
+     * @param configurationWriteAttempted 参与 compensateMemoryWrite 处理的 configurationWriteAttempted 输入值。
+     * @param publicationWriteAttempted 参与 compensateMemoryWrite 处理的 publicationWriteAttempted 输入值。
+     * @param original 参与 compensateMemoryWrite 处理的 original 输入值。
      */
     private void compensateMemoryWrite(
             PreparedToolCreate prepared,
@@ -290,6 +321,9 @@ public class ManagementCommandService {
 
     /**
      * compensate：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param action 参与 compensate 处理的 action 输入值。
+     * @param original 参与 compensate 处理的 original 输入值。
      */
     private void compensate(Runnable action, RuntimeException original) {
         try {
@@ -301,6 +335,10 @@ public class ManagementCommandService {
 
     /**
      * validateToolCreateRequest：校验输入、状态或前置条件。
+     *
+     * @param type 参与 validateToolCreateRequest 处理的 type 输入值。
+     * @param httpToolCreateSpec 参与 validateToolCreateRequest 处理的 httpToolCreateSpec 输入值。
+     * @param mcpPublished 参与 validateToolCreateRequest 处理的 mcpPublished 输入值。
      */
     private void validateToolCreateRequest(
             ToolType type,
@@ -320,6 +358,9 @@ public class ManagementCommandService {
 
     /**
      * ensureToolNameAvailable：校验输入、状态或前置条件。
+     *
+     * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+     * @param name 目标对象的名称。
      */
     private void ensureToolNameAvailable(UUID tenantId, String name) {
         boolean nameExists = toolRepository.listByTenant(tenantId).stream()
@@ -331,6 +372,8 @@ public class ManagementCommandService {
 
     /**
      * isToolNameConflict：判断当前条件是否成立。
+     *
+     * @param exception 当前捕获的异常，用于转换或记录失败信息。
      */
     private boolean isToolNameConflict(DuplicateKeyException exception) {
         Throwable current = exception;
@@ -347,6 +390,10 @@ public class ManagementCommandService {
 
     /**
      * appendToolAudit：追加处理结果或审计记录。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param tool 当前处理的工具定义。
+     * @param mcpPublished 参与 appendToolAudit 处理的 mcpPublished 输入值。
      */
     private void appendToolAudit(PrincipalRef principal, ToolDefinition tool, boolean mcpPublished) {
         if (mcpPublished) {
@@ -368,6 +415,10 @@ public class ManagementCommandService {
 
     /**
      * appendGrantAudit：追加处理结果或审计记录。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param tool 当前处理的工具定义。
+     * @param agent 当前处理的 Agent 定义。
      */
     private void appendGrantAudit(PrincipalRef principal, ToolDefinition tool, AgentDefinition agent) {
         auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_GRANT", "TOOL",
@@ -376,6 +427,8 @@ public class ManagementCommandService {
 
     /**
      * requireResult：校验输入、状态或前置条件。
+     *
+     * @param result 参与 requireResult 处理的 result 输入值。
      */
     private static <T> T requireResult(T result) {
         return Objects.requireNonNull(result, "事务未返回结果");

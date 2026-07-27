@@ -63,6 +63,13 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     @Autowired
     /**
      * DynamicHttpToolExecutor：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param properties 模块配置属性，用于读取运行参数。
+     * @param secretProvider 参与 DynamicHttpToolExecutor 处理的 secretProvider 输入值。
+     * @param urlPolicy 参与 DynamicHttpToolExecutor 处理的 urlPolicy 输入值。
+     * @param inputMapper 参与 DynamicHttpToolExecutor 处理的 inputMapper 输入值。
+     * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
+     * @param sanitizer 参与 DynamicHttpToolExecutor 处理的 sanitizer 输入值。
      */
     public DynamicHttpToolExecutor(
             HttpToolProperties properties,
@@ -76,6 +83,12 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     }
     /**
      * DynamicHttpToolExecutor：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param properties 模块配置属性，用于读取运行参数。
+     * @param secretProvider 参与 DynamicHttpToolExecutor 处理的 secretProvider 输入值。
+     * @param urlPolicy 参与 DynamicHttpToolExecutor 处理的 urlPolicy 输入值。
+     * @param inputMapper 参与 DynamicHttpToolExecutor 处理的 inputMapper 输入值。
+     * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
      */
     public DynamicHttpToolExecutor(
             HttpToolProperties properties,
@@ -89,6 +102,13 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     }
     /**
      * DynamicHttpToolExecutor：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param properties 模块配置属性，用于读取运行参数。
+     * @param secretProvider 参与 DynamicHttpToolExecutor 处理的 secretProvider 输入值。
+     * @param urlPolicy 参与 DynamicHttpToolExecutor 处理的 urlPolicy 输入值。
+     * @param inputMapper 参与 DynamicHttpToolExecutor 处理的 inputMapper 输入值。
+     * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
+     * @param httpTransport 参与 DynamicHttpToolExecutor 处理的 httpTransport 输入值。
      */
     DynamicHttpToolExecutor(
             HttpToolProperties properties,
@@ -103,6 +123,14 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     }
     /**
      * DynamicHttpToolExecutor：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param properties 模块配置属性，用于读取运行参数。
+     * @param secretProvider 参与 DynamicHttpToolExecutor 处理的 secretProvider 输入值。
+     * @param urlPolicy 参与 DynamicHttpToolExecutor 处理的 urlPolicy 输入值。
+     * @param inputMapper 参与 DynamicHttpToolExecutor 处理的 inputMapper 输入值。
+     * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
+     * @param httpTransport 参与 DynamicHttpToolExecutor 处理的 httpTransport 输入值。
+     * @param sanitizer 参与 DynamicHttpToolExecutor 处理的 sanitizer 输入值。
      */
     DynamicHttpToolExecutor(
             HttpToolProperties properties,
@@ -126,6 +154,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * createTransport：创建并返回新的领域对象或配置。
+     *
+     * @param properties 模块配置属性，用于读取运行参数。
      */
     private static HttpTransport createTransport(HttpToolProperties properties) {
         HttpClient client = HttpClient.newBuilder()
@@ -136,6 +166,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
             @Override
             /**
              * send：处理该类内部的业务逻辑或辅助计算。
+             *
+             * @param request 当前业务请求参数，承载调用方提交的数据。
              */
             public HttpResponse<InputStream> send(HttpRequest request) throws IOException, InterruptedException {
                 return client.send(request, HttpResponse.BodyHandlers.ofInputStream());
@@ -156,6 +188,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
      *
      * @param tool    工具定义
      * @param request 工具调用请求
+     * @param config 待处理的工具或运行时配置。
+     * @param executionRequest 参与 execute 处理的 executionRequest 输入值。
      * @return HTTP 响应映射成的工具执行结果
      * @throws RuntimeException 请求构造、网络访问或响应处理失败时抛出
      */
@@ -224,6 +258,10 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * isMatchingContext：判断当前条件是否成立。
+     *
+     * @param tool 当前处理的工具定义。
+     * @param config 待处理的工具或运行时配置。
+     * @param request 当前业务请求参数，承载调用方提交的数据。
      */
     private boolean isMatchingContext(
             ToolDefinition tool,
@@ -238,6 +276,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * isAllowedTimeout：判断当前条件是否成立。
+     *
+     * @param timeout 本次操作使用的超时限制。
      */
     private boolean isAllowedTimeout(Duration timeout) {
         return timeout != null && properties.getMinTimeout() != null && properties.getMaxTimeout() != null
@@ -247,6 +287,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * resolveSecretHeaders：解析并定位可用的目标对象。
+     *
+     * @param config 待处理的工具或运行时配置。
      */
     private ResolvedHeaders resolveSecretHeaders(HttpToolConfig config) {
         Map<String, String> headers = new LinkedHashMap<>();
@@ -286,6 +328,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * mergeHeaders：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param dynamic 参与 mergeHeaders 处理的 dynamic 输入值。
+     * @param secrets 参与 mergeHeaders 处理的 secrets 集合。
      */
     private Map<String, String> mergeHeaders(Map<String, String> dynamic, Map<String, String> secrets) {
         Map<String, String> merged = new LinkedHashMap<>();
@@ -305,6 +350,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * isSafeHeader：判断当前条件是否成立。
+     *
+     * @param name 目标对象的名称。
      */
     private boolean isSafeHeader(String name) {
         return name != null && HEADER_NAME.matcher(name).matches()
@@ -313,6 +360,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * isSafeHeaderValue：判断当前条件是否成立。
+     *
+     * @param value 参与 isSafeHeaderValue 处理的 value 输入值。
      */
     private boolean isSafeHeaderValue(String value) {
         return value != null && value.indexOf('\r') < 0 && value.indexOf('\n') < 0;
@@ -320,6 +369,9 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * buildUri：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param urlTemplate 参与 buildUri 处理的 urlTemplate 输入值。
+     * @param prepared 参与 buildUri 处理的 prepared 输入值。
      */
     private URI buildUri(String urlTemplate, PreparedHttpToolRequest prepared) {
         String expanded = urlTemplate;
@@ -350,6 +402,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * encode：转换并生成规范化输出。
+     *
+     * @param value 参与 encode 处理的 value 输入值。
      */
     private String encode(String value) {
         char[] hex = "0123456789ABCDEF".toCharArray();
@@ -372,6 +426,13 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * send：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param initialMethod 参与 send 处理的 initialMethod 输入值。
+     * @param initialUri 参与 send 处理的 initialUri 输入值。
+     * @param body 参与 send 处理的 body 输入值。
+     * @param headers 参与 send 处理的 headers 集合。
+     * @param deadline 参与 send 处理的 deadline 输入值。
+     * @param secretValues 参与 send 处理的 secretValues 集合。
      */
     private ToolExecutionResult send(
             HttpToolMethod initialMethod,
@@ -491,6 +552,10 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * runWithinDeadline：执行当前流程并返回处理结果。
+     *
+     * @param supplier 参与 runWithinDeadline 处理的 supplier 输入值。
+     * @param deadline 参与 runWithinDeadline 处理的 deadline 输入值。
+     * @param timeoutCleanup 参与 runWithinDeadline 处理的 timeoutCleanup 输入值。
      */
     private <T> T runWithinDeadline(
             CheckedSupplier<T> supplier,
@@ -527,6 +592,12 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * buildRequest：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param method 参与 buildRequest 处理的 method 输入值。
+     * @param uri 参与 buildRequest 处理的 uri 输入值。
+     * @param body 参与 buildRequest 处理的 body 输入值。
+     * @param headers 参与 buildRequest 处理的 headers 集合。
+     * @param timeout 本次操作使用的超时限制。
      */
     private HttpRequest buildRequest(
             HttpToolMethod method,
@@ -550,6 +621,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * isSupportedContentType：判断当前条件是否成立。
+     *
+     * @param value 参与 isSupportedContentType 处理的 value 输入值。
      */
     private boolean isSupportedContentType(String value) {
         String mediaType = value.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
@@ -559,6 +632,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * isJsonContentType：判断当前条件是否成立。
+     *
+     * @param value 参与 isJsonContentType 处理的 value 输入值。
      */
     private boolean isJsonContentType(String value) {
         String mediaType = value.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
@@ -568,6 +643,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
 
     /**
      * closeQuietly：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param body 参与 closeQuietly 处理的 body 输入值。
      */
     private static void closeQuietly(InputStream body) {
         if (body == null) {
@@ -608,6 +685,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     ) {
         /**
          * failed：处理该类内部的业务逻辑或辅助计算。
+         *
+         * @param failure 参与 failed 处理的 failure 输入值。
          */
         private static ResolvedHeaders failed(ToolExecutionResult failure) {
             return new ResolvedHeaders(Map.of(), List.of(), failure, false);
@@ -628,6 +707,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     interface HttpTransport extends AutoCloseable {
         /**
          * send：处理该类内部的业务逻辑或辅助计算。
+         *
+         * @param request 当前业务请求参数，承载调用方提交的数据。
          */
         HttpResponse<InputStream> send(HttpRequest request) throws IOException, InterruptedException;
 
@@ -657,6 +738,8 @@ public class DynamicHttpToolExecutor implements DisposableBean, AutoCloseable {
     private record Deadline(long deadlineNanos) {
         /**
          * start：处理该类内部的业务逻辑或辅助计算。
+         *
+         * @param timeout 本次操作使用的超时限制。
          */
         private static Deadline start(Duration timeout) {
             long now = System.nanoTime();

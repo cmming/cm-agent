@@ -112,6 +112,8 @@ public class AgentScopeRuntimeProperties {
 
     /**
      * isPositive：判断当前条件是否成立。
+     *
+     * @param duration 参与 isPositive 处理的 duration 输入值。
      */
     private static boolean isPositive(Duration duration) {
         return duration != null && !duration.isZero() && !duration.isNegative();

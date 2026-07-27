@@ -32,6 +32,13 @@ public class McpPublicationService {
     private final TransactionTemplate transactionTemplate;
     /**
      * McpPublicationService：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param toolRepository 参与 McpPublicationService 处理的 toolRepository 输入值。
+     * @param httpToolConfigRepository 参与 McpPublicationService 处理的 httpToolConfigRepository 输入值。
+     * @param publicationRepository 参与 McpPublicationService 处理的 publicationRepository 输入值。
+     * @param registry 参与 McpPublicationService 处理的 registry 输入值。
+     * @param auditAppender 参与 McpPublicationService 处理的 auditAppender 输入值。
+     * @param transactionTemplate 参与 McpPublicationService 处理的 transactionTemplate 输入值。
      */
     public McpPublicationService(
             ToolDefinitionRepository toolRepository,
@@ -102,6 +109,9 @@ public class McpPublicationService {
 
     /**
      * publishAndAudit：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param publication 待保存或校验的 MCP 发布记录。
      */
     private McpToolPublication publishAndAudit(PrincipalRef principal, McpToolPublication publication) {
         McpToolPublication saved = publicationRepository.save(publication);
@@ -112,6 +122,9 @@ public class McpPublicationService {
 
     /**
      * unpublishAndAudit：删除或撤销当前目标的关联状态。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param tool 当前处理的工具定义。
      */
     private void unpublishAndAudit(PrincipalRef principal, ToolDefinition tool) {
         publicationRepository.delete(principal.tenantId(), tool.id());
@@ -121,6 +134,9 @@ public class McpPublicationService {
 
     /**
      * findVisibleTool：查询并返回当前上下文中的匹配结果。
+     *
+     * @param principal 当前认证主体，提供租户、身份和权限上下文。
+     * @param toolId 目标工具标识，用于定位关联的工具定义。
      */
     private ToolDefinition findVisibleTool(PrincipalRef principal, UUID toolId) {
         Objects.requireNonNull(principal, "principal 不能为空");
@@ -132,6 +148,8 @@ public class McpPublicationService {
 
     /**
      * validatePublishable：校验输入、状态或前置条件。
+     *
+     * @param tool 当前处理的工具定义。
      */
     private void validatePublishable(ToolDefinition tool) {
         if (tool.type() == ToolType.HTTP) {
@@ -148,6 +166,8 @@ public class McpPublicationService {
 
     /**
      * rejectConflictingEnabledName：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param tool 当前处理的工具定义。
      */
     private void rejectConflictingEnabledName(ToolDefinition tool) {
         // MCP 客户端按名称发现工具；同一租户内启用工具不能出现重名。
@@ -165,6 +185,8 @@ public class McpPublicationService {
 
     /**
      * isSameRegistration：判断当前条件是否成立。
+     *
+     * @param tool 当前处理的工具定义。
      */
     private boolean isSameRegistration(ToolDefinition tool) {
         return registry.snapshot(tool.id())
@@ -177,6 +199,10 @@ public class McpPublicationService {
 
     /**
      * restore：处理该类内部的业务逻辑或辅助计算。
+     *
+     * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+     * @param toolId 目标工具标识，用于定位关联的工具定义。
+     * @param previous 参与 restore 处理的 previous 集合。
      */
     private void restore(UUID tenantId, UUID toolId, Optional<McpToolPublication> previous) {
         if (previous.isPresent()) {

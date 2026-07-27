@@ -51,6 +51,8 @@ public class ToolOutputSanitizer {
     private final ObjectMapper objectMapper;
     /**
      * ToolOutputSanitizer：转换内部数据为目标表示。
+     *
+     * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
      */
     public ToolOutputSanitizer(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -92,6 +94,9 @@ public class ToolOutputSanitizer {
 
     /**
      * sanitizeJson：清理或脱敏可能包含敏感信息的内容。
+     *
+     * @param node 参与 sanitizeJson 处理的 node 输入值。
+     * @param secretValues 参与 sanitizeJson 处理的 secretValues 集合。
      */
     private JsonNode sanitizeJson(JsonNode node, List<String> secretValues) {
         if (node.isObject()) {
@@ -120,6 +125,9 @@ public class ToolOutputSanitizer {
 
     /**
      * sanitizeText：清理或脱敏可能包含敏感信息的内容。
+     *
+     * @param value 参与 sanitizeText 处理的 value 输入值。
+     * @param secretValues 参与 sanitizeText 处理的 secretValues 集合。
      */
     private String sanitizeText(String value, List<String> secretValues) {
         String redacted = value;
@@ -137,6 +145,8 @@ public class ToolOutputSanitizer {
 
     /**
      * normalizeSensitiveKey：规范化输入值以便后续处理。
+     *
+     * @param key 参与 normalizeSensitiveKey 处理的 key 输入值。
      */
     private String normalizeSensitiveKey(String key) {
         return key.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
@@ -144,6 +154,8 @@ public class ToolOutputSanitizer {
 
     /**
      * isSensitiveJsonKey：判断当前条件是否成立。
+     *
+     * @param normalizedKey 参与 isSensitiveJsonKey 处理的 normalizedKey 输入值。
      */
     private boolean isSensitiveJsonKey(String normalizedKey) {
         if (SENSITIVE_JSON_KEYS.contains(normalizedKey)) {

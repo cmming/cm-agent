@@ -61,6 +61,8 @@ public class CmAgentPersistenceProperties {
 
     /**
      * hasStrictPersistenceProfile：判断当前条件是否成立。
+     *
+     * @param environment 参与 hasStrictPersistenceProfile 处理的 environment 输入值。
      */
     private boolean hasStrictPersistenceProfile(Environment environment) {
         return Arrays.stream(environment.getActiveProfiles())
@@ -71,6 +73,8 @@ public class CmAgentPersistenceProperties {
 
     /**
      * hasSupabaseProfile：判断当前条件是否成立。
+     *
+     * @param environment 参与 hasSupabaseProfile 处理的 environment 输入值。
      */
     private boolean hasSupabaseProfile(Environment environment) {
         return Arrays.stream(environment.getActiveProfiles())
@@ -79,6 +83,8 @@ public class CmAgentPersistenceProperties {
 
     /**
      * isBlank：判断当前条件是否成立。
+     *
+     * @param value 参与 isBlank 处理的 value 输入值。
      */
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
