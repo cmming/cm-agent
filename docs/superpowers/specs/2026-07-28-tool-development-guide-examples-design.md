@@ -31,15 +31,16 @@ MCP 仅作为已创建 `LOCAL` 或 `HTTP` 工具的可选发布通道简要说�
 
 ### 2.2 LOCAL 示例
 
-扩充已有 `cm-agent-examples/starter-local-tool`，不新增职责重复的 LOCAL 模块。示例按职责拆分为：
+扩充已有 `cm-agent-examples/starter-local-tool`，不新增职责重复的 LOCAL 模块。示例同时提供 `echo` 和 `add` 两个独立 LOCAL 工具，用于演示一个应用注册多个工具。示例按职责拆分为：
 
 - Spring Boot 示例应用：负责启动和装配。
-- LOCAL 工具定义：提供固定的示例 tenant、tool ID、名称、JSON Schema、风险等级和启用状态。
+- LOCAL 工具定义：分别为 `echo` 和 `add` 提供固定的示例 tenant、不同的 tool ID、名称、JSON Schema、风险等级和启用状态。
 - `EchoToolExecutor`：解析并校验输入 JSON，执行业务逻辑并返回 `ToolExecutionResult`。
-- 注册组件：通过 `ToolRegistry.register` 绑定工具定义与执行器。
-- 演示调用组件：启动后发起一次示例调用并输出受控结果。
+- `AddToolExecutor`：读取必填数字字段 `left` 和 `right`，使用 `BigDecimal` 完成精确加法，并以 JSON 形式返回 `sum`。
+- 注册组件：分别通过 `ToolRegistry.register` 绑定两个工具定义与对应执行器。
+- 演示调用组件：启动后分别调用 `echo` 和 `add`，并输出受控结果。
 
-LOCAL 示例使用固定、明确标注为示例的数据，不包含生产凭据。业务执行逻辑不内联在注册表达式中，以便开发者理解定义、执行和注册三个独立职责。
+LOCAL 示例使用固定、明确标注为示例的数据，不包含生产凭据。两个工具的业务执行逻辑均不内联在注册表达式中，以便开发者理解定义、执行和注册三个独立职责，并掌握一个应用注册多个 LOCAL 工具的方式。
 
 开发指南明确区分两种场景：
 
@@ -67,12 +68,13 @@ HTTP 示例不固化公网目标、JWT、Secret 实际值或生产 URL。Secret 
 
 ```text
 Spring Boot 启动
-  → 构造 ToolDefinition
-  → 构造 EchoToolExecutor
+  → 构造 echo ToolDefinition 与 EchoToolExecutor
   → ToolRegistry.register
-  → ToolExecutionRequest
-  → EchoToolExecutor.execute
-  → ToolExecutionResult
+  → 构造 add ToolDefinition 与 AddToolExecutor
+  → ToolRegistry.register
+  → 分别构造 ToolExecutionRequest
+  → 对应 ToolExecutor.execute
+  → 对应 ToolExecutionResult
 ```
 
 正式 Server 运行时还会在执行前校验工具启用状态、tenant、注册快照、Agent 授权和调用上下文。示例不得暗示直接调用 `ToolRegistry` 可以替代生产治理链。
@@ -119,8 +121,11 @@ Server 侧前置条件在文档中明确列出：
 
 ### 5.1 LOCAL 示例
 
-- 输入必须是合法 JSON 对象。
-- 缺少 `message`、类型错误或空字符串时返回失败结果，不抛出包含输入原文的异常。
+- 两个工具的输入都必须是合法 JSON 对象。
+- `echo` 缺少 `message`、类型错误或空字符串时返回失败结果。
+- `add` 缺少 `left` 或 `right`、字段不是数字或输入不是 JSON 对象时返回失败结果。
+- `add` 使用 `BigDecimal` 计算，避免二进制浮点数造成结果偏差；成功结果为 JSON，例如 `{"sum":3.3}`。
+- 输入错误不抛出包含输入原文的异常。
 - 输出只包含示例业务结果，不记录完整执行上下文。
 
 ### 5.2 HTTP 示例
@@ -136,7 +141,8 @@ Server 侧前置条件在文档中明确列出：
 ### 6.1 LOCAL 示例测试
 
 - `EchoToolExecutor` 单元测试：成功输入、非法 JSON、字段缺失和字段类型错误。
-- 注册执行测试：启动示例上下文，通过 `ToolRegistry` 找到固定工具定义并执行成功。
+- `AddToolExecutor` 单元测试：整数、小数、负数、非法 JSON、字段缺失和字段类型错误；小数断言验证精确加法结果。
+- 注册执行测试：启动示例上下文，通过 `ToolRegistry` 找到两个固定工具定义，并分别执行成功。
 
 ### 6.2 HTTP 示例测试
 
@@ -169,7 +175,7 @@ Server 侧前置条件在文档中明确列出：
 
 - 开发者能根据文档判断应选择 LOCAL 还是 HTTP。
 - 两个示例在 JDK 21 环境下编译并通过测试。
-- LOCAL 示例能完成注册与调用。
+- LOCAL 示例能注册并调用独立的 `echo` 与 `add` 工具，其中 `add` 对整数、小数和负数给出精确结果。
 - HTTP 示例在提供合法运行参数和可用 Server 后能完成创建与调试。
 - 所有示例、文档和输出均不包含真实凭据。
 - 不改变现有生产 API、数据库 Schema 或工具治理语义。
