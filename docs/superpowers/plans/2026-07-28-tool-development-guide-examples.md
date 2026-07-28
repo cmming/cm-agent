@@ -104,7 +104,7 @@ void shouldRejectMissingOperand() {
 Run:
 
 ```powershell
-mvn -pl cm-agent-examples/starter-local-tool -am -Dtest=EchoToolExecutorTest,AddToolExecutorTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn -pl cm-agent-examples/starter-local-tool -am "-Dtest=EchoToolExecutorTest,AddToolExecutorTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
 ```
 
 Expected: FAIL，原因是执行器类尚不存在。
@@ -146,7 +146,7 @@ public final class AddToolExecutor implements ToolExecutor {
 Run:
 
 ```powershell
-mvn -pl cm-agent-examples/starter-local-tool -am -Dtest=EchoToolExecutorTest,AddToolExecutorTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn -pl cm-agent-examples/starter-local-tool -am "-Dtest=EchoToolExecutorTest,AddToolExecutorTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
 ```
 
 Expected: PASS。
@@ -474,7 +474,7 @@ Expected: Java 21，Maven 3.9+ 且 Maven 使用 JDK 21。
 Run:
 
 ```powershell
-mvn -pl cm-agent-examples -am test
+mvn -pl "cm-agent-examples/starter-local-tool,cm-agent-examples/http-tool-client" -am test
 ```
 
 Expected: PASS。
@@ -484,7 +484,7 @@ Expected: PASS。
 Run:
 
 ```powershell
-mvn -pl cm-agent-examples -am "-DskipTests" package
+mvn -pl "cm-agent-examples/starter-local-tool,cm-agent-examples/http-tool-client" -am "-DskipTests" package
 ```
 
 Expected: BUILD SUCCESS。

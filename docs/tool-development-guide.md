@@ -232,10 +232,11 @@ mvn -pl cm-agent-examples/starter-local-tool -am test
 启动示例：
 
 ```powershell
-mvn -pl cm-agent-examples/starter-local-tool -am spring-boot:run
+mvn -pl cm-agent-examples/starter-local-tool -am "-DskipTests" install
+mvn -pl cm-agent-examples/starter-local-tool spring-boot:run
 ```
 
-预期可以看到 `echo` 和 `add` 的成功结果。
+第一条命令把当前分支的 Starter 与 Core SNAPSHOT 安装到本地 Maven 仓库，第二条命令只在包含 main class 的叶子模块上执行 Boot goal。预期可以看到 `echo` 和 `add` 的成功结果。
 
 ### 3.6 接入正式 CM Agent Server
 
@@ -556,7 +557,8 @@ $env:CM_AGENT_HTTP_MESSAGE = '你好，CM Agent'
 运行：
 
 ```powershell
-mvn -pl cm-agent-examples/http-tool-client -am spring-boot:run
+mvn -pl cm-agent-examples/http-tool-client -am "-DskipTests" install
+mvn -pl cm-agent-examples/http-tool-client spring-boot:run
 ```
 
 如目标接口不需要认证，将两个 Secret 相关环境变量都留空。只设置其中一个会在发送请求前失败。
