@@ -1,0 +1,14 @@
+spring:
+  main:
+    web-application-type: none
+
+example:
+  http-tool:
+    enabled: ${CM_AGENT_HTTP_EXAMPLE_ENABLED:false}
+    base-url: ${CM_AGENT_BASE_URL:http://localhost:8080}
+    jwt: ${CM_AGENT_JWT:}
+    tool-name: ${CM_AGENT_HTTP_TOOL_NAME:developer-http-example}
+    target-url: ${CM_AGENT_HTTP_TARGET_URL:}
+    secret-header-name: ${CM_AGENT_HTTP_SECRET_HEADER_NAME:}
+    secret-ref: ${CM_AGENT_HTTP_SECRET_REF:}
+    message: ${CM_AGENT_HTTP_MESSAGE:你好，CM Agent}

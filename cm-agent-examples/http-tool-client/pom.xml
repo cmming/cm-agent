@@ -10,22 +10,13 @@
         <version>0.1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>starter-local-tool</artifactId>
-    <name>CM Agent Starter Local Tool Example</name>
+    <artifactId>http-tool-client</artifactId>
+    <name>CM Agent HTTP Tool Client Example</name>
 
     <dependencies>
         <dependency>
-            <groupId>com.cmagent</groupId>
-            <artifactId>cm-agent-spring-boot-starter</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
+            <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

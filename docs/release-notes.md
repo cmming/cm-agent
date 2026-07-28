@@ -6,6 +6,7 @@
 
 ### 本次变更
 
+- 新增面向开发者的 LOCAL 与 HTTP 工具开发指南；完善可运行的 LOCAL `echo`/`add` 多工具示例，并新增通过公开 REST API 创建和调试 HTTP 工具的客户端示例。本项不改变生产 API、数据库 Schema 或现有工具治理语义。
 - 新增动态 HTTP 工具：支持 GET/POST、嵌套 JSON Schema、本地引用、JSON Pointer 参数映射、缺失/null 默认值、PATH/QUERY/HEADER/BODY 目标及 `secret/...` Header 引用；创建与配置保存保持原子性和租户内工具名称唯一。
 - 新增受治理 HTTP 执行器，默认关闭并要求主机白名单；执行时校验 SSRF 风险地址、同源重定向、总超时和响应上限，输出经过结构化脱敏。部署仍需以 egress 防火墙、受控 DNS 或代理防御 DNS TOCTOU。
 - 新增默认关闭的 MCP 2.0 Streamable HTTP 服务端点。启用时必须配置 Origin/Host 白名单，端点保持 JWT 认证、`tool:mcp:invoke` 授权、多租户目录隔离和严格 MCP 调用审计；每个请求无状态构建并在完成后关闭 transport/server。
