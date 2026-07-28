@@ -1,10 +1,9 @@
 package com.cmagent.examples;
 
-import com.cmagent.core.domain.ToolDefinition;
-import com.cmagent.core.domain.ToolRiskLevel;
-import com.cmagent.core.domain.ToolType;
+import com.cmagent.core.tool.ToolExecutionRequest;
 import com.cmagent.core.tool.ToolExecutionResult;
 import com.cmagent.core.tool.ToolRegistry;
+import com.cmagent.examples.local.LocalToolDefinitions;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -18,23 +17,30 @@ public class LocalToolExampleApplication {
         SpringApplication.run(LocalToolExampleApplication.class, args);
     }
 
+    /**
+     * 应用启动后分别调用两个已注册工具，展示最小执行流程。
+     */
     @Bean
-    CommandLineRunner registerEchoTool(ToolRegistry registry) {
-        return args -> registry.register(
-                new ToolDefinition(
-                        UUID.fromString("00000000-0000-0000-0000-000000000101"),
-                        UUID.fromString("00000000-0000-0000-0000-000000000001"),
-                        "echo",
-                        "回显输入",
-                        ToolType.LOCAL,
-                        "{\"type\":\"object\"}",
-                        ToolRiskLevel.LOW,
-                        true,
-                        "",
-                        "example",
-                        "example"
-                ),
-                request -> new ToolExecutionResult("示例工具收到：" + request.inputJson(), true)
-        );
+    CommandLineRunner runLocalToolExamples(ToolRegistry registry) {
+        return args -> {
+            executeAndPrint(
+                    registry,
+                    "echo",
+                    LocalToolDefinitions.ECHO_TOOL_ID,
+                    "{\"message\":\"你好，CM Agent\"}"
+            );
+            executeAndPrint(
+                    registry,
+                    "add",
+                    LocalToolDefinitions.ADD_TOOL_ID,
+                    "{\"left\":0.1,\"right\":0.2}"
+            );
+        };
+    }
+
+    private static void executeAndPrint(ToolRegistry registry, String name, UUID toolId, String inputJson) {
+        ToolExecutionResult result = registry.execute(new ToolExecutionRequest(toolId, inputJson));
+        System.out.printf("LOCAL 工具 %s：success=%s，result=%s%n",
+                name, result.success(), result.success() ? result.outputSummary() : result.errorMessage());
     }
 }
