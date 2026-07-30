@@ -5,12 +5,16 @@ import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.repository.ToolDefinitionRepository;
+import com.cmagent.core.repository.HttpToolConfigRepository;
+import com.cmagent.core.tool.InMemoryToolRegistry;
 import com.cmagent.core.tool.ToolExecutionRequest;
 import com.cmagent.core.tool.ToolExecutionResult;
 import com.cmagent.core.tool.ToolInvocationSource;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.runtime.GovernedToolExecutionService;
+import com.cmagent.server.runtime.local.MysqlLocalExampleCatalog;
+import com.cmagent.server.runtime.http.DynamicHttpToolExecutor;
 import com.cmagent.server.runtime.ToolPreparationDataAccessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -226,6 +230,32 @@ class ToolDebugServiceTest {
                 TOOL_ID.toString(), "RUNNING", "工具调试已开始");
         verify(auditAppender).append(TENANT_ID, "admin", "TOOL_DEBUG_FAILED", "TOOL",
                 TOOL_ID.toString(), "FAILED", "工具调试失败");
+    }
+
+    @Test
+    void 已安装内置add通过现有调试链路执行() {
+        var objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var example = new MysqlLocalExampleCatalog(objectMapper).find("add").orElseThrow();
+        InMemoryToolRegistry registry = new InMemoryToolRegistry();
+        registry.register(example.definition(), example.executor());
+        HttpToolConfigRepository configs = org.mockito.Mockito.mock(HttpToolConfigRepository.class);
+        DynamicHttpToolExecutor http = org.mockito.Mockito.mock(DynamicHttpToolExecutor.class);
+        ToolDebugService localService = new ToolDebugService(
+                toolRepository,
+                new GovernedToolExecutionService(configs, http, registry),
+                auditAppender,
+                new com.cmagent.server.security.ToolOutputSanitizer(objectMapper),
+                new com.cmagent.server.runtime.http.HttpToolProperties()
+        );
+        when(toolRepository.findByTenantAndId(TENANT_ID, example.definition().id()))
+                .thenReturn(Optional.of(example.persistentDefinition("admin")));
+
+        ToolDebugResponse response = localService.debug(
+                principal, example.definition().id(), "{\"left\":0.1,\"right\":0.2}", null
+        );
+
+        assertThat(response.success()).isTrue();
+        assertThat(response.output()).isEqualTo("{\"sum\":0.3}");
     }
 
     private static ToolDefinition tool(UUID tenantId, ToolType type, ToolRiskLevel riskLevel, String name) {
