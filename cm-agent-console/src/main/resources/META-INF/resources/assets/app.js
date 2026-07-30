@@ -24,6 +24,7 @@
     const toolLoadRevision = core.createLoadRevisionGate();
     const localExampleInstallLock = core.createToolPublicationLock();
     const localExampleLoadRevision = core.createLoadRevisionGate();
+    const localExampleInstallRevision = core.createKeyedLoadRevisionGate();
 
     const pageInfo = {
         overviewPage: ["能力总览", "查看当前租户已交付的 Agent 能力与最近活动。"],
@@ -275,7 +276,7 @@
         return true;
     }
 
-    async function loadLocalExamples(revision = localExampleLoadRevision.issue()) {
+    async function loadLocalExamples(revision = localExampleLoadRevision.issue(), throwOnError = false) {
         try {
             const examples = await api.request("/api/tools/local-examples");
             if (!localExampleLoadRevision.isCurrent(revision)) {
@@ -292,6 +293,9 @@
             $("localExampleSection").hidden = false;
             $("localExampleList").replaceChildren(emptyState("内置 LOCAL 示例目录加载失败。"));
             setStatus($("localExampleStatus"), error.message, "error");
+            if (throwOnError) {
+                throw error;
+            }
             return false;
         }
     }
@@ -327,6 +331,7 @@
         if (!localExampleInstallLock.tryAcquire(example.key)) {
             return;
         }
+        let installRevision = localExampleInstallRevision.issue(example.key);
         localExampleLoadRevision.invalidate();
         try {
             await withSubmitState(button, async () => {
@@ -335,9 +340,10 @@
                 });
                 state.selectedToolId = installed.toolId;
                 const reloadRevision = localExampleLoadRevision.completeWrite();
-                const [localExamplesLoaded] = await Promise.all([loadLocalExamples(reloadRevision), loadTools()]);
-                if (!localExamplesLoaded) {
-                    throw new Error("内置 LOCAL 示例目录刷新失败。");
+                installRevision = localExampleInstallRevision.completeWrite(example.key);
+                await Promise.all([loadLocalExamples(reloadRevision, true), loadTools()]);
+                if (!localExampleInstallRevision.isCurrent(example.key, installRevision)) {
+                    return;
                 }
                 $("debugToolSelect").value = installed.toolId;
                 $("debugInput").value = core.formatJsonInput(installed.sampleInput);
@@ -348,6 +354,9 @@
         } catch (error) {
             setStatus($("localExampleStatus"), error.message, "error");
         } finally {
+            if (localExampleInstallRevision.isCurrent(example.key, installRevision)) {
+                localExampleInstallRevision.invalidate(example.key);
+            }
             localExampleInstallLock.release(example.key);
         }
     }

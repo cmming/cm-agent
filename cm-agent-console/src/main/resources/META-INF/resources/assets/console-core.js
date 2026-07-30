@@ -136,6 +136,32 @@
         };
     }
 
+    function createKeyedLoadRevisionGate() {
+        const revisions = new Map();
+
+        function next(key) {
+            const normalizedKey = String(key || "");
+            const revision = (revisions.get(normalizedKey) || 0) + 1;
+            revisions.set(normalizedKey, revision);
+            return revision;
+        }
+
+        return {
+            issue(key) {
+                return next(key);
+            },
+            invalidate(key) {
+                next(key);
+            },
+            completeWrite(key) {
+                return next(key);
+            },
+            isCurrent(key, candidate) {
+                return candidate === revisions.get(String(key || ""));
+            }
+        };
+    }
+
     function createApiClient({fetchImpl, getToken, onUnauthorized}) {
         if (typeof fetchImpl !== "function" || typeof getToken !== "function" || typeof onUnauthorized !== "function") {
             throw new TypeError("请求客户端依赖不完整");
@@ -213,6 +239,7 @@
         buildHttpToolPayload,
         createToolPublicationLock,
         createLoadRevisionGate,
+        createKeyedLoadRevisionGate,
         formatDateTime,
         statusMeta
     };

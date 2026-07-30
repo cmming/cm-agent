@@ -172,6 +172,18 @@ test("不同工具写入按完成顺序协调最终刷新", () => {
     assert.equal(revisions.isCurrent(aReload), true);
 });
 
+test("不同内置示例交错完成时各自目录刷新仍然有效", () => {
+    const revisions = core.createKeyedLoadRevisionGate();
+
+    revisions.invalidate("echo");
+    const echoReload = revisions.completeWrite("echo");
+    revisions.invalidate("add");
+    const addReload = revisions.completeWrite("add");
+
+    assert.equal(revisions.isCurrent("echo", echoReload), true);
+    assert.equal(revisions.isCurrent("add", addReload), true);
+});
+
 test("HTTP 与 LOCAL 工具都提供 MCP 发布管理入口", () => {
     const script = fs.readFileSync(
         path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
