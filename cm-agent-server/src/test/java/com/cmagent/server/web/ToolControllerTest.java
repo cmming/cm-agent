@@ -111,7 +111,8 @@ class ToolControllerTest {
                 .andExpect(jsonPath("$.httpConfig.secretHeaders.X-Api-Key").value("secret/integration/api-key"))
                 .andExpect(jsonPath("$.httpConfig.timeoutMillis").value(1000))
                 .andExpect(jsonPath("$.mcpPublished").value(true))
-                .andExpect(jsonPath("$.runtimeReady").value(true))
+                // 默认 HTTP 执行开关关闭时，配置可保存但运行时不能标记为就绪。
+                .andExpect(jsonPath("$.runtimeReady").value(false))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
