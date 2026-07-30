@@ -19,7 +19,7 @@
 - 通过 `tenantId + modelConfigId` 调用外部 `ModelCredentialProvider` 获取模型凭据；默认凭据为空时启动 fail-fast，`model_configs` 不保存明文 API Key。
 - 生产 profile 使用 `fake-runtime-enabled=false` 与 `agentscope-enabled=true`；fake runtime 继续仅服务本地和测试。
 - 工具每次调用重新授权并记录严格审计，endpoint 元数据不自动执行；模型、工具 timeout 和 Provider 故障按固定结果语义收口。
-- 非生产 `mysql` profile 新增固定 `echo`、`add` LOCAL 示例目录与控制台显式安装入口。启动只在当前 JVM 注册固定 Java 执行器，管理员操作后才写入 MySQL；工具摘要新增仅表示注册快照的 `runtimeReady`，实际调用仍重新执行治理校验。该入口不支持动态代码，正式业务 LOCAL 工具仍须在同一 Server JVM 中注册 `ToolExecutor`；不新增数据库 Schema 或 Flyway 迁移，`prod`、`production`、`supabase` 不启用此能力。
+- 非生产 `mysql` profile 为固定 bootstrap 示例租户 `00000000-0000-0000-0000-000000000001` 新增固定 `echo`、`add` LOCAL 示例目录与控制台显式安装入口；其他 tenant 的目录为空且安装返回 `404`。启动只在当前 JVM 注册固定 Java 执行器，示例租户中具有 `tool:grant` 权限的主体操作后才写入 MySQL；工具摘要新增仅表示注册快照的 `runtimeReady`，实际调用仍重新执行治理校验。该入口不支持动态代码，正式业务 LOCAL 工具仍须在同一 Server JVM 中注册 `ToolExecutor`；不新增数据库 Schema 或 Flyway 迁移，`prod`、`production`、`supabase` 不启用此能力。
 
 - Run、ToolCall、Audit 接入 JDBC Repository，并保持每次读写的 tenant 隔离。
 - 通过 Flyway 新增 `V2__add_runtime_query_indexes.sql` 和 `V3__add_tool_calls_created_at_index.sql`，为运行、工具调用和审计查询增加租户范围索引。

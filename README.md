@@ -45,7 +45,7 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 控制台支持对单个 HTTP 或 LOCAL 工具调试，需要 `tool:debug` 权限；HIGH 风险工具还必须输入与工具名称完全一致的二次确认。调试结果与失败信息只显示受控、脱敏后的摘要。已发布的 HTTP/LOCAL 工具可选择通过默认关闭的 MCP Streamable HTTP 端点提供；MCP 调用除 JWT 外还需要 `tool:mcp:invoke`，取消发布、禁用或运行配置漂移会立即使其不可调用。
 
-在非生产 `mysql` profile 下，工具治理页会展示固定的 `echo`、`add` 内置 LOCAL 示例。管理员点击“添加示例工具”后才会把定义写入 MySQL；安装成功后页面会自动填入示例输入并可通过现有调试入口调用。服务启动只注册固定 Java 执行器，不会自动写入数据库。
+在非生产 `mysql` profile 下，工具治理页只会向固定 bootstrap 示例租户 `00000000-0000-0000-0000-000000000001` 中具有 `tool:read` 权限的认证主体展示固定的 `echo`、`add` 内置 LOCAL 示例目录。这是 MySQL 调试的隔离演示边界，不是面向所有 tenant 的工具安装能力：其他 tenant 的目录为空，安装请求返回 `404`。该示例租户中具有 `tool:grant` 权限的主体点击“添加示例工具”后，定义才会写入 MySQL；安装成功后页面会自动填入示例输入，并可由具有 `tool:debug` 权限的主体通过现有调试入口调用。服务启动只注册固定 Java 执行器，不会自动写入数据库。
 
 该入口不支持上传或编写执行代码。正式业务 LOCAL 工具仍需在同一 Server JVM 中实现并注册 `ToolExecutor`；页面中的“运行时已就绪”只表示当前注册快照，实际调用仍会重新执行治理校验。
 
