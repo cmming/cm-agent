@@ -9,6 +9,7 @@ import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
+import com.cmagent.server.runtime.ToolRuntimeReadiness;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -39,6 +40,9 @@ class ToolQueryServiceTest {
     @Mock
     private McpToolPublicationRepository mcpToolPublicationRepository;
 
+    @Mock
+    private ToolRuntimeReadiness toolRuntimeReadiness;
+
     @Test
     void listsToolSummariesWithTenantScopedBulkConfigurationQueries() {
         ToolDefinition httpTool = tool(HTTP_TOOL_ID, "orders", ToolType.HTTP);
@@ -54,12 +58,15 @@ class ToolQueryServiceTest {
                 .thenReturn(Map.of(HTTP_TOOL_ID, httpConfig));
         when(mcpToolPublicationRepository.findByTenantAndToolIds(TENANT_ID, toolIds))
                 .thenReturn(Map.of(HTTP_TOOL_ID, publication));
+        when(toolRuntimeReadiness.isReady(httpTool, httpConfig)).thenReturn(true);
+        when(toolRuntimeReadiness.isReady(localTool, null)).thenReturn(false);
 
         List<ToolSummary> summaries = new ToolQueryService(
-                toolRepository, httpToolConfigRepository, mcpToolPublicationRepository
+                toolRepository, httpToolConfigRepository, mcpToolPublicationRepository, toolRuntimeReadiness
         ).listByTenant(TENANT_ID);
 
         assertThat(summaries).extracting(summary -> summary.tool().name()).containsExactly("orders", "echo");
+        assertThat(summaries).extracting(ToolSummary::runtimeReady).containsExactly(true, false);
         assertThat(summaries).first().satisfies(summary -> {
             assertThat(summary.httpConfig()).isEqualTo(httpConfig);
             assertThat(summary.mcpPublished()).isTrue();

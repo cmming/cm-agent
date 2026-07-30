@@ -89,7 +89,8 @@ class ToolControllerTest {
                 .andExpect(jsonPath("$[0].createdBy").value("admin"))
                 .andExpect(jsonPath("$[0].updatedBy").value("admin"))
                 .andExpect(jsonPath("$[0].httpConfig").doesNotExist())
-                .andExpect(jsonPath("$[0].mcpPublished").value(false));
+                .andExpect(jsonPath("$[0].mcpPublished").value(false))
+                .andExpect(jsonPath("$[0].runtimeReady").value(false));
     }
 
     @Test
@@ -110,6 +111,7 @@ class ToolControllerTest {
                 .andExpect(jsonPath("$.httpConfig.secretHeaders.X-Api-Key").value("secret/integration/api-key"))
                 .andExpect(jsonPath("$.httpConfig.timeoutMillis").value(1000))
                 .andExpect(jsonPath("$.mcpPublished").value(true))
+                .andExpect(jsonPath("$.runtimeReady").value(true))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
@@ -244,7 +246,7 @@ class ToolControllerTest {
         when(managementCommandService.createTool(any(), anyString(), anyString(), any(), any(), isNull(), anyBoolean()))
                 .thenReturn(created);
         when(toolQueryService.findByTenantAndId(TENANT_A, created.id()))
-                .thenReturn(Optional.of(new ToolSummary(created, null, false)));
+                .thenReturn(Optional.of(new ToolSummary(created, null, false, false)));
         org.springframework.security.core.Authentication authentication = mock(org.springframework.security.core.Authentication.class);
         when(authentication.isAuthenticated()).thenReturn(true);
         when(authentication.getPrincipal()).thenReturn(new JwtService.JwtSession(TENANT_A, "admin", "管理员", List.of("tool:grant")));
