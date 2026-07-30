@@ -293,6 +293,28 @@ InitializingBean registerServerLocalAddTool(
 
 `GovernedToolExecutionService` 执行 LOCAL 工具前会重新检查启用状态、tenant、ID、名称和当前注册快照。外部进程中的另一个 `ToolRegistry` 不会自动注册到 Server。
 
+### 3.7 通过 MySQL profile 安装内置示例
+
+工具治理页在非生产 `mysql` profile 下提供固定目录中的 `echo`、`add` 内置 LOCAL 示例。此能力只在激活 `mysql` 且未激活 `prod`、`production`、`supabase` 时可用；生产和类生产 profile 不会注册这些执行器，也不能将其作为生产工具接入方式。
+
+具有 `tool:read`、`tool:grant`、`tool:debug` 权限的当前租户管理员可在控制台的“内置 LOCAL 示例”区域点击“添加示例工具”。页面先读取固定目录，再通过 `POST /api/tools/local-examples/{key}` 显式安装；服务启动仅在当前 JVM 注册固定 Java 执行器，不会自动向 MySQL 写入工具定义。安装成功后，页面会选择相应工具、自动填入示例输入，并可使用现有调试入口调用。
+
+`echo` 的示例输入为：
+
+```json
+{"message":"你好，CM Agent"}
+```
+
+`add` 的示例输入为：
+
+```json
+{"left":0.1,"right":0.2}
+```
+
+安装会以当前认证主体的 tenant 为边界，不能通过请求指定其他 tenant。已存在同名或同 ID 但定义不兼容的工具时，接口返回 `409`；应先核对该 tenant 下现有治理定义，而不是删除或覆盖未知工具。MySQL 保存的定义在重启后仍存在；每次 MySQL 非生产 profile 启动都会重新注册固定执行器，因此定义与注册快照一致时会再次显示“运行时已就绪”。该字段只是查询快照，调试和 Agent 调用仍会重新执行状态、租户、身份、授权和审计校验。
+
+此页面入口不能上传、编译或解释执行代码。它只安装项目固定的两个示例定义；正式业务 LOCAL 工具仍必须在同一 Server JVM 中以 Java 实现并注册 `ToolExecutor`，并复用持久化定义的 tenant、ID 和名称。
+
 ## 4. 创建 HTTP 工具
 
 完整客户端示例位于 `cm-agent-examples/http-tool-client`。它不调用 Server 内部 Service 或 Repository，而是使用公开 REST API：
