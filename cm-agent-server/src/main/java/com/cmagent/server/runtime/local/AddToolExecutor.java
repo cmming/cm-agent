@@ -27,7 +27,7 @@ public final class AddToolExecutor implements ToolExecutor {
             JsonNode input = objectMapper.readTree(request.inputJson());
             JsonNode left = input == null || !input.isObject() ? null : input.get("left");
             JsonNode right = input == null || !input.isObject() ? null : input.get("right");
-            if (left == null || right == null || !left.isNumber() || !right.isNumber()) {
+            if (!isFiniteNumber(left) || !isFiniteNumber(right)) {
                 return ToolExecutionResult.failed("left 和 right 必须是数字", null);
             }
             BigDecimal sum = left.decimalValue().add(right.decimalValue());
@@ -35,6 +35,14 @@ public final class AddToolExecutor implements ToolExecutor {
             return ToolExecutionResult.succeeded(objectMapper.writeValueAsString(output), null);
         } catch (JsonProcessingException exception) {
             return ToolExecutionResult.failed("工具输入必须是合法 JSON 对象", null);
+        } catch (NumberFormatException exception) {
+            return ToolExecutionResult.failed("left 和 right 必须是数字", null);
         }
+    }
+
+    private boolean isFiniteNumber(JsonNode value) {
+        return value != null
+                && value.isNumber()
+                && (!value.isFloatingPointNumber() || Double.isFinite(value.doubleValue()));
     }
 }
