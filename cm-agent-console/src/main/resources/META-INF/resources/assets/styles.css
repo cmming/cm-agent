@@ -109,6 +109,8 @@ textarea { resize: vertical; min-height: 90px; }
 .panel { padding: 20px; }
 .panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 16px; }
 .panel-heading h2 { margin: 0; font-size: 17px; }
+.section-heading { margin-bottom: 12px; }
+.section-heading h3 { margin: 0; font-size: 16px; }
 .overview-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(240px, .75fr); gap: 16px; margin-top: 16px; }
 .quick-actions { display: flex; flex-direction: column; align-items: stretch; gap: 9px; }
 .quick-actions .panel-heading { margin-bottom: 2px; }
@@ -125,6 +127,13 @@ textarea { resize: vertical; min-height: 90px; }
 .checkbox-label input { width: auto; }
 .tool-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .tool-actions .button { min-height: 32px; padding: 6px 10px; font-size: 12px; }
+.local-example-list { display: grid; gap: 10px; margin-top: 16px; }
+.local-example-card { display: grid; gap: 5px; padding: 13px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
+.local-example-card > span { color: var(--muted); font-size: 12px; }
+.local-example-card .button { justify-self: start; margin-top: 4px; }
+.runtime-ready, .runtime-unavailable { display: inline-flex; align-items: center; width: fit-content; border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 700; }
+.runtime-ready { background: #e8f7f0; color: var(--success) !important; }
+.runtime-unavailable { background: #fdeceb; color: var(--error) !important; }
 .debug-result { margin-top: 16px; }
 .debug-result dl { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 8px 12px; margin: 0; }
 .debug-result dt { color: var(--muted); font-size: 12px; }

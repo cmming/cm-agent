@@ -105,6 +105,25 @@ class ConsoleResourceTest {
         ).doesNotContain(".innerHTML", "localStorage", "sessionStorage");
     }
 
+    @Test
+    void 控制台提供内置Local示例安装和运行时就绪提示() throws IOException {
+        String html = resource("META-INF/resources/index.html");
+        String core = resource("META-INF/resources/assets/console-core.js");
+        String script = resource("META-INF/resources/assets/app.js");
+
+        assertThat(html).contains(
+                "id=\"localExampleSection\"", "id=\"localExampleList\"", "id=\"localExampleStatus\"",
+                "普通 LOCAL 工具表单只保存治理元数据"
+        );
+        assertThat(core).contains(
+                "buildLocalExampleInstallPath", "formatJsonInput", "runtimeReady"
+        );
+        assertThat(script).contains(
+                "/api/tools/local-examples", "loadLocalExamples", "installLocalExample",
+                "调用/调试", "未注册执行器"
+        ).doesNotContain(".innerHTML");
+    }
+
     private String resource(String path) throws IOException {
         try (InputStream input = getClass().getClassLoader().getResourceAsStream(path)) {
             assertThat(input).as("资源应存在：%s", path).isNotNull();

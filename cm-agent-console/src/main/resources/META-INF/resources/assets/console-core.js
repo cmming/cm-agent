@@ -53,10 +53,18 @@
     }
 
     function canDebugTool(tool, confirmedToolName) {
-        if (!tool || (tool.type !== "HTTP" && tool.type !== "LOCAL")) {
+        if (!tool || (tool.type !== "HTTP" && tool.type !== "LOCAL") || tool.runtimeReady !== true) {
             return false;
         }
         return tool.riskLevel !== "HIGH" || confirmedToolName === tool.name;
+    }
+
+    function buildLocalExampleInstallPath(key) {
+        return `/api/tools/local-examples/${encodeURIComponent(String(key || ""))}`;
+    }
+
+    function formatJsonInput(value) {
+        return JSON.stringify(value ?? {}, null, 2);
     }
 
     function buildHttpToolPayload(fields) {
@@ -200,6 +208,8 @@
         buildCursorPath,
         parseJsonField,
         canDebugTool,
+        buildLocalExampleInstallPath,
+        formatJsonInput,
         buildHttpToolPayload,
         createToolPublicationLock,
         createLoadRevisionGate,

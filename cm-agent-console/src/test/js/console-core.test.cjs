@@ -69,10 +69,30 @@ test("解析 HTTP 配置 JSON 并在非法输入时给出中文提示", () => {
 });
 
 test("仅 HTTP 和 LOCAL 工具允许调试，HIGH 必须完全匹配工具名称", () => {
-    assert.equal(core.canDebugTool({type: "HTTP", riskLevel: "LOW", name: "orders"}, ""), true);
-    assert.equal(core.canDebugTool({type: "LOCAL", riskLevel: "HIGH", name: "dangerous-tool"}, "dangerous-tool"), true);
-    assert.equal(core.canDebugTool({type: "HTTP", riskLevel: "HIGH", name: "dangerous-tool"}, "Dangerous-tool"), false);
-    assert.equal(core.canDebugTool({type: "MCP", riskLevel: "LOW", name: "remote-tool"}, ""), false);
+    assert.equal(core.canDebugTool({type: "HTTP", riskLevel: "LOW", name: "orders", runtimeReady: true}, ""), true);
+    assert.equal(core.canDebugTool({type: "LOCAL", riskLevel: "HIGH", name: "dangerous-tool", runtimeReady: true}, "dangerous-tool"), true);
+    assert.equal(core.canDebugTool({type: "HTTP", riskLevel: "HIGH", name: "dangerous-tool", runtimeReady: true}, "Dangerous-tool"), false);
+    assert.equal(core.canDebugTool({type: "MCP", riskLevel: "LOW", name: "remote-tool", runtimeReady: true}, ""), false);
+});
+
+test("LOCAL 工具只有运行时就绪后才能调试", () => {
+    assert.equal(core.canDebugTool({
+        type: "LOCAL", riskLevel: "LOW", name: "echo", runtimeReady: false
+    }, ""), false);
+    assert.equal(core.canDebugTool({
+        type: "LOCAL", riskLevel: "LOW", name: "echo", runtimeReady: true
+    }, ""), true);
+});
+
+test("内置示例安装路径编码 key 且示例输入格式化", () => {
+    assert.equal(
+        core.buildLocalExampleInstallPath("echo/add"),
+        "/api/tools/local-examples/echo%2Fadd"
+    );
+    assert.equal(
+        core.formatJsonInput({left: 0.1, right: 0.2}),
+        "{\n  \"left\": 0.1,\n  \"right\": 0.2\n}"
+    );
 });
 
 test("构建 HTTP 工具请求体时保留 MCP 发布和 Secret 引用", () => {

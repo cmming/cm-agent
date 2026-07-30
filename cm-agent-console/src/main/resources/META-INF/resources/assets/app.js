@@ -11,6 +11,7 @@
         currentUser: null,
         agents: [],
         tools: [],
+        localExamples: [],
         selectedAgentId: "",
         selectedToolId: "",
         runs: [],
@@ -21,6 +22,8 @@
     };
     const toolPublicationLock = core.createToolPublicationLock();
     const toolLoadRevision = core.createLoadRevisionGate();
+    const localExampleInstallLock = core.createToolPublicationLock();
+    const localExampleLoadRevision = core.createLoadRevisionGate();
 
     const pageInfo = {
         overviewPage: ["能力总览", "查看当前租户已交付的 Agent 能力与最近活动。"],
@@ -99,6 +102,7 @@
         state.currentUser = null;
         state.agents = [];
         state.tools = [];
+        state.localExamples = [];
         state.selectedAgentId = "";
         state.selectedToolId = "";
         state.runs = [];
@@ -112,6 +116,7 @@
         $("currentUser").textContent = "—";
         renderAgents();
         renderTools();
+        renderLocalExamples();
         updateAgentOptions();
         renderRuns();
         renderAudit();
@@ -127,7 +132,8 @@
         $("debugConfirmedToolName").value = "";
         renderMessage($("runDetail"), "选择一条运行记录查看详情。");
         renderMessage($("debugResult"), "调试结果将显示在这里。");
-        ["agentFormStatus", "toolFormStatus", "grantFormStatus", "runFormStatus", "debugFormStatus"].forEach((id) => setStatus($(id)));
+        ["agentFormStatus", "toolFormStatus", "grantFormStatus", "runFormStatus", "debugFormStatus", "localExampleStatus"]
+            .forEach((id) => setStatus($(id)));
     }
 
     function showConsole() {
@@ -163,7 +169,7 @@
     async function loadInitialData() {
         setStatus($("globalStatus"), "正在加载当前租户资源…");
         try {
-            await Promise.all([loadAgents(), loadTools()]);
+            await Promise.all([loadAgents(), loadTools(), loadLocalExamples()]);
             if (state.selectedAgentId) await loadRuns({append: false});
             setStatus($("globalStatus"));
         } catch (error) {
@@ -269,6 +275,83 @@
         return true;
     }
 
+    async function loadLocalExamples(revision = localExampleLoadRevision.issue()) {
+        try {
+            const examples = await api.request("/api/tools/local-examples");
+            if (!localExampleLoadRevision.isCurrent(revision)) {
+                return false;
+            }
+            state.localExamples = Array.isArray(examples) ? examples : [];
+            renderLocalExamples();
+            return true;
+        } catch (error) {
+            if (!localExampleLoadRevision.isCurrent(revision)) {
+                return false;
+            }
+            state.localExamples = [];
+            $("localExampleSection").hidden = false;
+            $("localExampleList").replaceChildren(emptyState("内置 LOCAL 示例目录加载失败。"));
+            setStatus($("localExampleStatus"), error.message, "error");
+            return false;
+        }
+    }
+
+    function renderLocalExamples() {
+        const section = $("localExampleSection");
+        const container = $("localExampleList");
+        section.hidden = state.localExamples.length === 0;
+        container.replaceChildren();
+        state.localExamples.forEach((example) => {
+            const card = element("article", {className: "local-example-card"});
+            card.append(element("strong", {text: example.name}));
+            card.append(element("span", {text: example.description}));
+            card.append(element("span", {
+                className: example.runtimeReady ? "runtime-ready" : "runtime-unavailable",
+                text: example.installed
+                    ? (example.runtimeReady ? "已安装 · 运行时已就绪" : "已安装 · 未注册执行器")
+                    : "未安装"
+            }));
+            const button = element("button", {
+                className: "button",
+                type: "button",
+                text: example.installed ? "已安装" : "添加示例工具"
+            });
+            button.disabled = Boolean(example.installed);
+            button.addEventListener("click", () => installLocalExample(example, button));
+            card.append(button);
+            container.append(card);
+        });
+    }
+
+    async function installLocalExample(example, button) {
+        if (!localExampleInstallLock.tryAcquire(example.key)) {
+            return;
+        }
+        localExampleLoadRevision.invalidate();
+        try {
+            await withSubmitState(button, async () => {
+                const installed = await api.request(core.buildLocalExampleInstallPath(example.key), {
+                    method: "POST"
+                });
+                state.selectedToolId = installed.toolId;
+                const reloadRevision = localExampleLoadRevision.completeWrite();
+                const [localExamplesLoaded] = await Promise.all([loadLocalExamples(reloadRevision), loadTools()]);
+                if (!localExamplesLoaded) {
+                    throw new Error("内置 LOCAL 示例目录刷新失败。");
+                }
+                $("debugToolSelect").value = installed.toolId;
+                $("debugInput").value = core.formatJsonInput(installed.sampleInput);
+                $("debugToolForm").scrollIntoView({behavior: "smooth", block: "start"});
+                $("debugInput").focus();
+                setStatus($("localExampleStatus"), `示例“${installed.name}”已安装，可调用调试。`, "success");
+            });
+        } catch (error) {
+            setStatus($("localExampleStatus"), error.message, "error");
+        } finally {
+            localExampleInstallLock.release(example.key);
+        }
+    }
+
     function renderTools() {
         const container = $("toolList");
         container.replaceChildren();
@@ -284,6 +367,12 @@
             item.append(element("span", {text: `${tool.type || "未知类型"} · ${tool.riskLevel || "未知风险"} · ${tool.enabled ? "已启用" : "已停用"}`}));
             item.append(element("span", {text: `Endpoint：${tool.endpoint || tool.httpConfig?.urlTemplate || "—"}`}));
             item.append(element("span", {text: `MCP：${tool.mcpPublished ? "已发布" : "未发布"}`}));
+            if (tool.type === "LOCAL") {
+                item.append(element("span", {
+                    className: tool.runtimeReady ? "runtime-ready" : "runtime-unavailable",
+                    text: tool.runtimeReady ? "运行时已就绪" : "未注册执行器"
+                }));
+            }
             item.addEventListener("click", () => {
                 state.selectedToolId = tool.id;
                 renderTools();
@@ -303,6 +392,20 @@
                     action(tool, publicationButton);
                 });
                 actions.append(publicationButton);
+                if (tool.runtimeReady === true && (core.canDebugTool(tool, "") || tool.riskLevel === "HIGH")) {
+                    const debugButton = element("button", {
+                        className: "button ghost",
+                        type: "button",
+                        text: "调用/调试"
+                    });
+                    debugButton.addEventListener("click", () => {
+                        state.selectedToolId = tool.id;
+                        $("debugToolSelect").value = tool.id;
+                        $("debugToolForm").scrollIntoView({behavior: "smooth", block: "start"});
+                        $("debugInput").focus();
+                    });
+                    actions.append(debugButton);
+                }
                 card.append(actions);
             }
             container.append(card);
@@ -400,7 +503,8 @@
 
     function updateDebugToolOptions() {
         const select = $("debugToolSelect");
-        const debugTools = state.tools.filter((tool) => tool.type === "HTTP" || tool.type === "LOCAL");
+        const debugTools = state.tools.filter((tool) => tool.runtimeReady === true
+            && (tool.type === "HTTP" || tool.type === "LOCAL"));
         select.replaceChildren();
         if (!debugTools.length) {
             select.append(option("", "暂无可调试 Tool"));
@@ -468,8 +572,12 @@
             return;
         }
         if (!core.canDebugTool(tool, confirmedToolName)) {
-            setStatus($("debugFormStatus"), tool.riskLevel === "HIGH"
-                ? "HIGH 风险 Tool 的确认名称必须与 Tool 名称完全一致。" : "该 Tool 类型不支持调试。", "error");
+            const message = tool.runtimeReady !== true
+                ? "该 Tool 尚未就绪，未注册执行器或运行配置不可用。"
+                : tool.riskLevel === "HIGH"
+                    ? "HIGH 风险 Tool 的确认名称必须与 Tool 名称完全一致。"
+                    : "该 Tool 类型不支持调试。";
+            setStatus($("debugFormStatus"), message, "error");
             return;
         }
         let input;
