@@ -39,6 +39,7 @@
     const api = core.createApiClient({
         fetchImpl: window.fetch.bind(window),
         getToken: () => state.token,
+        getSessionEpoch: () => sessionEpoch.capture(),
         onUnauthorized: () => logout("登录状态已失效，请重新登录。")
     });
 
@@ -98,6 +99,7 @@
                 await loadInitialData(activeSession);
             });
         } catch (error) {
+            if (!sessionEpoch.isCurrent(loginSession)) return;
             state.token = "";
             state.currentUser = null;
             setStatus($("loginStatus"), error.message, "error");

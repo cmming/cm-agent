@@ -26,6 +26,66 @@ test("401 会通知认证失效且不暴露响应体", async () => {
     assert.equal(unauthorized, true);
 });
 
+test("旧token和旧会话代际的迟到401只拒绝原请求且不注销新会话", async () => {
+    let token = "old-token";
+    let epoch = 1;
+    let unauthorizedCount = 0;
+    let respond;
+    const api = core.createApiClient({
+        fetchImpl: () => new Promise((resolve) => { respond = () => resolve(response(401, {message: "旧令牌失效"})); }),
+        getToken: () => token,
+        getSessionEpoch: () => epoch,
+        onUnauthorized: () => {
+            unauthorizedCount += 1;
+            token = "";
+        }
+    });
+
+    const oldRequest = api.request("/api/tools/local-examples");
+    token = "new-token";
+    epoch = 2;
+    respond();
+
+    await assert.rejects(() => oldRequest, /未登录或令牌已失效/);
+    assert.equal(unauthorizedCount, 0);
+    assert.equal(token, "new-token");
+});
+
+test("当前token和当前会话代际的401仍只触发一次注销", async () => {
+    let token = "current-token";
+    let epoch = 3;
+    let unauthorizedCount = 0;
+    const api = core.createApiClient({
+        fetchImpl: async () => response(401, {message: "令牌失效"}),
+        getToken: () => token,
+        getSessionEpoch: () => epoch,
+        onUnauthorized: () => { unauthorizedCount += 1; }
+    });
+
+    await assert.rejects(() => api.request("/api/auth/me"), /未登录或令牌已失效/);
+    assert.equal(unauthorizedCount, 1);
+});
+
+test("同一token但新会话代际的迟到401不得注销", async () => {
+    const token = "reused-token";
+    let epoch = 4;
+    let unauthorizedCount = 0;
+    let respond;
+    const api = core.createApiClient({
+        fetchImpl: () => new Promise((resolve) => { respond = () => resolve(response(401, {message: "旧请求失效"})); }),
+        getToken: () => token,
+        getSessionEpoch: () => epoch,
+        onUnauthorized: () => { unauthorizedCount += 1; }
+    });
+
+    const oldRequest = api.request("/api/tools");
+    epoch = 5;
+    respond();
+
+    await assert.rejects(() => oldRequest, /未登录或令牌已失效/);
+    assert.equal(unauthorizedCount, 0);
+});
+
 test("请求自动附加 Bearer 令牌", async () => {
     let authorization = "";
     const api = core.createApiClient({

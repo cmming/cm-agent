@@ -181,8 +181,9 @@
         };
     }
 
-    function createApiClient({fetchImpl, getToken, onUnauthorized}) {
-        if (typeof fetchImpl !== "function" || typeof getToken !== "function" || typeof onUnauthorized !== "function") {
+    function createApiClient({fetchImpl, getToken, getSessionEpoch = () => undefined, onUnauthorized}) {
+        if (typeof fetchImpl !== "function" || typeof getToken !== "function"
+                || typeof getSessionEpoch !== "function" || typeof onUnauthorized !== "function") {
             throw new TypeError("请求客户端依赖不完整");
         }
 
@@ -192,6 +193,7 @@
             const headers = new Headers(options.headers || {});
             headers.set("Content-Type", "application/json");
             const token = getToken();
+            const sessionEpoch = getSessionEpoch();
             if (token) {
                 headers.set("Authorization", `Bearer ${token}`);
             }
@@ -209,7 +211,9 @@
 
             if (!response.ok) {
                 if (response.status === 401) {
-                    onUnauthorized();
+                    if (token === getToken() && sessionEpoch === getSessionEpoch()) {
+                        onUnauthorized();
+                    }
                     throw new Error("未登录或令牌已失效，请重新登录。");
                 }
                 throw new Error(formatError(response.status, body, rawBody));

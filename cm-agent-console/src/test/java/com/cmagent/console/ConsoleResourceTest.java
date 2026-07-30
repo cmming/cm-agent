@@ -116,11 +116,11 @@ class ConsoleResourceTest {
                 "普通 LOCAL 工具表单只保存治理元数据"
         );
         assertThat(core).contains(
-                "buildLocalExampleInstallPath", "formatJsonInput", "runtimeReady"
+                "buildLocalExampleInstallPath", "formatJsonInput", "runtimeReady", "getSessionEpoch"
         );
         assertThat(script).contains(
                 "/api/tools/local-examples", "loadLocalExamples", "installLocalExample",
-                "调用/调试", "未注册执行器"
+                "调用/调试", "未注册执行器", "getSessionEpoch: () => sessionEpoch.capture()"
         ).doesNotContain(".innerHTML");
     }
 
