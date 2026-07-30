@@ -25,6 +25,7 @@
     const localExampleInstallLock = core.createToolPublicationLock();
     const localExampleLoadRevision = core.createLoadRevisionGate();
     const localExampleInstallRevision = core.createKeyedLoadRevisionGate();
+    const sessionEpoch = core.createSessionEpochGate();
 
     const pageInfo = {
         overviewPage: ["能力总览", "查看当前租户已交付的 Agent 能力与最近活动。"],
@@ -70,6 +71,7 @@
     }
 
     async function login() {
+        const loginSession = sessionEpoch.capture();
         const username = $("loginUsername").value.trim();
         const password = $("loginPassword").value;
         if (!username || !password) {
@@ -84,12 +86,16 @@
                     method: "POST",
                     body: JSON.stringify({username, password})
                 });
+                if (!sessionEpoch.isCurrent(loginSession)) return;
                 state.token = result?.accessToken || "";
                 if (!state.token) throw new Error("登录响应未包含访问令牌。");
                 state.currentUser = await api.request("/api/auth/me");
+                if (!sessionEpoch.isCurrent(loginSession)) return;
+                sessionEpoch.invalidate();
+                const activeSession = sessionEpoch.capture();
                 $("loginPassword").value = "";
                 showConsole();
-                await loadInitialData();
+                await loadInitialData(activeSession);
             });
         } catch (error) {
             state.token = "";
@@ -99,6 +105,10 @@
     }
 
     function logout(message = "已安全退出。") {
+        sessionEpoch.invalidate();
+        toolLoadRevision.invalidate();
+        localExampleLoadRevision.invalidate();
+        localExampleInstallRevision.invalidateAll();
         state.token = "";
         state.currentUser = null;
         state.agents = [];
@@ -167,13 +177,16 @@
         }
     }
 
-    async function loadInitialData() {
+    async function loadInitialData(session = sessionEpoch.capture()) {
         setStatus($("globalStatus"), "正在加载当前租户资源…");
         try {
-            await Promise.all([loadAgents(), loadTools(), loadLocalExamples()]);
+            await Promise.all([loadAgents(), loadTools(undefined, session), loadLocalExamples(undefined, false, session)]);
+            if (!sessionEpoch.isCurrent(session)) return;
             if (state.selectedAgentId) await loadRuns({append: false});
+            if (!sessionEpoch.isCurrent(session)) return;
             setStatus($("globalStatus"));
         } catch (error) {
+            if (!sessionEpoch.isCurrent(session)) return;
             setStatus($("globalStatus"), error.message, "error");
         }
     }
@@ -260,9 +273,9 @@
         }
     }
 
-    async function loadTools(revision = toolLoadRevision.issue()) {
+    async function loadTools(revision = toolLoadRevision.issue(), session = sessionEpoch.capture()) {
         const tools = await api.request("/api/tools");
-        if (!toolLoadRevision.isCurrent(revision)) {
+        if (!sessionEpoch.isCurrent(session) || !toolLoadRevision.isCurrent(revision)) {
             return false;
         }
         state.tools = Array.isArray(tools) ? tools : [];
@@ -276,17 +289,21 @@
         return true;
     }
 
-    async function loadLocalExamples(revision = localExampleLoadRevision.issue(), throwOnError = false) {
+    async function loadLocalExamples(
+        revision = localExampleLoadRevision.issue(),
+        throwOnError = false,
+        session = sessionEpoch.capture()
+    ) {
         try {
             const examples = await api.request("/api/tools/local-examples");
-            if (!localExampleLoadRevision.isCurrent(revision)) {
+            if (!sessionEpoch.isCurrent(session) || !localExampleLoadRevision.isCurrent(revision)) {
                 return false;
             }
             state.localExamples = Array.isArray(examples) ? examples : [];
             renderLocalExamples();
             return true;
         } catch (error) {
-            if (!localExampleLoadRevision.isCurrent(revision)) {
+            if (!sessionEpoch.isCurrent(session) || !localExampleLoadRevision.isCurrent(revision)) {
                 return false;
             }
             state.localExamples = [];
@@ -332,17 +349,23 @@
             return;
         }
         let installRevision = localExampleInstallRevision.issue(example.key);
+        const installSession = sessionEpoch.capture();
         localExampleLoadRevision.invalidate();
         try {
             await withSubmitState(button, async () => {
                 const installed = await api.request(core.buildLocalExampleInstallPath(example.key), {
                     method: "POST"
                 });
+                if (!sessionEpoch.isCurrent(installSession)) return;
                 state.selectedToolId = installed.toolId;
                 const reloadRevision = localExampleLoadRevision.completeWrite();
                 installRevision = localExampleInstallRevision.completeWrite(example.key);
-                await Promise.all([loadLocalExamples(reloadRevision, true), loadTools()]);
-                if (!localExampleInstallRevision.isCurrent(example.key, installRevision)) {
+                await Promise.all([
+                    loadLocalExamples(reloadRevision, true, installSession),
+                    loadTools(undefined, installSession)
+                ]);
+                if (!sessionEpoch.isCurrent(installSession)
+                        || !localExampleInstallRevision.isCurrent(example.key, installRevision)) {
                     return;
                 }
                 $("debugToolSelect").value = installed.toolId;
@@ -352,9 +375,11 @@
                 setStatus($("localExampleStatus"), `示例“${installed.name}”已安装，可调用调试。`, "success");
             });
         } catch (error) {
+            if (!sessionEpoch.isCurrent(installSession)) return;
             setStatus($("localExampleStatus"), error.message, "error");
         } finally {
-            if (localExampleInstallRevision.isCurrent(example.key, installRevision)) {
+            if (sessionEpoch.isCurrent(installSession)
+                    && localExampleInstallRevision.isCurrent(example.key, installRevision)) {
                 localExampleInstallRevision.invalidate(example.key);
             }
             localExampleInstallLock.release(example.key);

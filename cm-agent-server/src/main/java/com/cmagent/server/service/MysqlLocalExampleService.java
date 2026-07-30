@@ -10,6 +10,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Profile;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,7 @@ import java.util.Objects;
 /** 编排内置 LOCAL 示例的查询、安装、审计和事务一致性。 */
 @Service
 @Profile("mysql & !prod & !production & !supabase")
+@ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "jdbc")
 public class MysqlLocalExampleService {
     private final ToolDefinitionRepository toolRepository;
     private final TransactionOperations transactionOperations;

@@ -8,6 +8,7 @@ import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.tool.InMemoryToolRegistry;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.runtime.ToolRuntimeReadiness;
+import com.cmagent.server.runtime.http.HttpToolProperties;
 import com.cmagent.server.runtime.local.MysqlLocalExampleCatalog;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -59,7 +60,7 @@ class MysqlLocalExampleServiceTest {
         InMemoryToolRegistry registry = new InMemoryToolRegistry();
         catalog.list().forEach(example -> registry.register(example.definition(), example.executor()));
         service = new MysqlLocalExampleService(repository, transactionOperations, auditAppender, catalog,
-                new ToolRuntimeReadiness(registry), new ObjectMapper());
+                new ToolRuntimeReadiness(registry, new HttpToolProperties()), new ObjectMapper());
         lenient().doAnswer(invocation -> {
             invocation.getArgument(0, java.util.function.Consumer.class).accept(null);
             return null;

@@ -7,7 +7,8 @@ import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.service.LocalToolExampleSummary;
 import com.cmagent.server.service.MysqlLocalExampleService;
-import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,37 +25,34 @@ import java.util.Set;
 /** 提供固定内置 LOCAL 示例的只读目录和显式安装入口。 */
 @RestController
 @RequestMapping("/api/tools/local-examples")
+@Profile("mysql & !prod & !production & !supabase")
+@ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "jdbc")
 public class LocalToolExampleController {
     private final PermissionEvaluator permissionEvaluator;
     private final AuditAppender auditAppender;
-    private final ObjectProvider<MysqlLocalExampleService> serviceProvider;
+    private final MysqlLocalExampleService service;
 
     public LocalToolExampleController(
             PermissionEvaluator permissionEvaluator,
             AuditAppender auditAppender,
-            ObjectProvider<MysqlLocalExampleService> serviceProvider
+            MysqlLocalExampleService service
     ) {
         this.permissionEvaluator = Objects.requireNonNull(permissionEvaluator, "permissionEvaluator 不能为空");
         this.auditAppender = Objects.requireNonNull(auditAppender, "auditAppender 不能为空");
-        this.serviceProvider = Objects.requireNonNull(serviceProvider, "serviceProvider 不能为空");
+        this.service = Objects.requireNonNull(service, "service 不能为空");
     }
 
     @GetMapping
     public List<LocalToolExampleSummary> list(Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:read", "local-examples");
-        MysqlLocalExampleService service = serviceProvider.getIfAvailable();
-        return service == null ? List.of() : service.list(principal);
+        return service.list(principal);
     }
 
     @PostMapping("/{key}")
     public LocalToolExampleSummary install(@PathVariable("key") String key, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", key);
-        MysqlLocalExampleService service = serviceProvider.getIfAvailable();
-        if (service == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "内置 LOCAL 示例不可用");
-        }
         return service.install(principal, key);
     }
 

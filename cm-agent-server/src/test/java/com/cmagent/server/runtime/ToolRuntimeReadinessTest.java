@@ -7,6 +7,7 @@ import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.tool.InMemoryToolRegistry;
 import com.cmagent.core.tool.ToolExecutionResult;
+import com.cmagent.server.runtime.http.HttpToolProperties;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -24,7 +25,7 @@ class ToolRuntimeReadinessTest {
     @Test
     void local只有注册身份完全匹配且启用时才就绪() {
         InMemoryToolRegistry registry = new InMemoryToolRegistry();
-        ToolRuntimeReadiness readiness = new ToolRuntimeReadiness(registry);
+        ToolRuntimeReadiness readiness = new ToolRuntimeReadiness(registry, new HttpToolProperties());
         ToolDefinition stored = localTool(TOOL_ID, TENANT_ID, "echo", true);
 
         assertThat(readiness.isReady(stored, null)).isFalse();
@@ -38,14 +39,24 @@ class ToolRuntimeReadinessTest {
     }
 
     @Test
-    void http要求配置身份和地址模板一致() {
-        ToolRuntimeReadiness readiness = new ToolRuntimeReadiness(new InMemoryToolRegistry());
+    void http全局执行开关关闭时即使配置匹配也不就绪() {
+        ToolRuntimeReadiness readiness = new ToolRuntimeReadiness(new InMemoryToolRegistry(), new HttpToolProperties());
         ToolDefinition tool = httpTool(TOOL_ID, TENANT_ID, "https://api.example.test/orders", true);
         HttpToolConfig matching = httpConfig(TOOL_ID, TENANT_ID, "https://api.example.test/orders");
 
-        assertThat(readiness.isReady(tool, matching)).isTrue();
+        assertThat(readiness.isReady(tool, matching)).isFalse();
         assertThat(readiness.isReady(tool, null)).isFalse();
         assertThat(readiness.isReady(tool, httpConfig(TOOL_ID, TENANT_ID, "https://api.example.test/other"))).isFalse();
+    }
+
+    @Test
+    void http全局执行开关开启且配置匹配时就绪() {
+        HttpToolProperties properties = new HttpToolProperties();
+        properties.setEnabled(true);
+        ToolRuntimeReadiness readiness = new ToolRuntimeReadiness(new InMemoryToolRegistry(), properties);
+        ToolDefinition tool = httpTool(TOOL_ID, TENANT_ID, "https://api.example.test/orders", true);
+
+        assertThat(readiness.isReady(tool, httpConfig(TOOL_ID, TENANT_ID, "https://api.example.test/orders"))).isTrue();
     }
 
     private static ToolDefinition localTool(UUID id, UUID tenantId, String name, boolean enabled) {

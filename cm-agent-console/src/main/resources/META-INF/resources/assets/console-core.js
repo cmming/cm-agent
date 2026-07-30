@@ -153,11 +153,30 @@
             invalidate(key) {
                 next(key);
             },
+            invalidateAll() {
+                revisions.clear();
+            },
             completeWrite(key) {
                 return next(key);
             },
             isCurrent(key, candidate) {
                 return candidate === revisions.get(String(key || ""));
+            }
+        };
+    }
+
+    function createSessionEpochGate() {
+        let epoch = 0;
+        return {
+            capture() {
+                return epoch;
+            },
+            invalidate() {
+                epoch += 1;
+                return epoch;
+            },
+            isCurrent(candidate) {
+                return candidate === epoch;
             }
         };
     }
@@ -240,6 +259,7 @@
         createToolPublicationLock,
         createLoadRevisionGate,
         createKeyedLoadRevisionGate,
+        createSessionEpochGate,
         formatDateTime,
         statusMeta
     };

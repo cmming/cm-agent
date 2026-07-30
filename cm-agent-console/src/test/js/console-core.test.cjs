@@ -184,6 +184,42 @@ test("不同内置示例交错完成时各自目录刷新仍然有效", () => {
     assert.equal(revisions.isCurrent("add", addReload), true);
 });
 
+test("会话切换会阻止旧安装请求在乱序完成后继续刷新或写入界面", async () => {
+    const sessions = core.createSessionEpochGate();
+    const oldSession = sessions.capture();
+    let reloads = 0;
+    let uiWrites = 0;
+    let complete;
+    const delayedInstall = new Promise((resolve) => { complete = resolve; });
+
+    const oldRequest = delayedInstall.then(() => {
+        if (!sessions.isCurrent(oldSession)) return;
+        reloads += 1;
+        uiWrites += 1;
+    });
+    sessions.invalidate();
+    const newSession = sessions.capture();
+    complete();
+    await oldRequest;
+
+    assert.equal(sessions.isCurrent(oldSession), false);
+    assert.equal(sessions.isCurrent(newSession), true);
+    assert.equal(reloads, 0);
+    assert.equal(uiWrites, 0);
+});
+
+test("内置示例安装在写入和后续刷新前都应用会话代际门控", () => {
+    const script = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+
+    assert.match(script, /const sessionEpoch = core\.createSessionEpochGate\(\)/);
+    assert.match(script, /if \(!sessionEpoch\.isCurrent\(installSession\)\) return;/);
+    assert.match(script, /loadLocalExamples\(reloadRevision, true, installSession\)/);
+    assert.match(script, /loadTools\(undefined, installSession\)/);
+});
+
 test("HTTP 与 LOCAL 工具都提供 MCP 发布管理入口", () => {
     const script = fs.readFileSync(
         path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),

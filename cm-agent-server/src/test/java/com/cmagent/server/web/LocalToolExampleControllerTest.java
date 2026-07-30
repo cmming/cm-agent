@@ -11,7 +11,6 @@ import com.cmagent.server.service.MysqlLocalExampleService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.web.servlet.MockMvc;
@@ -28,37 +27,21 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class LocalToolExampleControllerTest {
     private PermissionEvaluator permissions;
     private AuditAppender auditAppender;
-    private ObjectProvider<MysqlLocalExampleService> serviceProvider;
     private MysqlLocalExampleService service;
     private MockMvc mvc;
 
     @BeforeEach
-    @SuppressWarnings("unchecked")
     void setUp() {
         permissions = mock(PermissionEvaluator.class);
         auditAppender = mock(AuditAppender.class);
-        serviceProvider = mock(ObjectProvider.class);
         service = mock(MysqlLocalExampleService.class);
-        mvc = MockMvcBuilders.standaloneSetup(new LocalToolExampleController(permissions, auditAppender, serviceProvider)).build();
-    }
-
-    @Test
-    void 未启用服务时目录为空且安装返回未找到() throws Exception {
-        when(serviceProvider.getIfAvailable()).thenReturn(null);
-        allow();
-
-        mvc.perform(get("/api/tools/local-examples").principal(authentication("tool:read")))
-                .andExpect(status().isOk())
-                .andExpect(content().json("[]"));
-        mvc.perform(post("/api/tools/local-examples/echo").principal(authentication("tool:grant")))
-                .andExpect(status().isNotFound());
+        mvc = MockMvcBuilders.standaloneSetup(new LocalToolExampleController(permissions, auditAppender, service)).build();
     }
 
     @Test
@@ -79,7 +62,6 @@ class LocalToolExampleControllerTest {
 
     @Test
     void 具备权限时返回目录并安装固定工具() throws Exception {
-        when(serviceProvider.getIfAvailable()).thenReturn(service);
         allow();
         when(service.list(any())).thenReturn(List.of(summary(false)));
         when(service.install(any(), eq("echo"))).thenReturn(summary(true));
