@@ -229,18 +229,19 @@ public class ManagementCommandService {
     }
 
     private ToolGrant grantToolWithLock(PrincipalRef principal, UUID toolId, UUID agentId) {
-        ToolDefinition tool = toolRepository.findByTenantAndId(principal.tenantId(), toolId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
-        AgentDefinition agent = agentRepository.findByTenantAndId(principal.tenantId(), agentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
-        ToolGrant grant = new ToolGrant(principal.tenantId(), tool.id(), agent.id(), null, true);
         if (transactionTemplate == null) {
+            ToolDefinition tool = findTool(principal.tenantId(), toolId);
+            AgentDefinition agent = findAgent(principal.tenantId(), agentId);
+            ToolGrant grant = new ToolGrant(principal.tenantId(), tool.id(), agent.id(), null, true);
             appendGrantAudit(principal, tool, agent);
             ToolGrant saved = grantRepository.save(grant);
             agentRepository.addToolToAgent(principal.tenantId(), agent.id(), tool.id());
             return saved;
         }
         return requireResult(transactionTemplate.execute(status -> {
+            ToolDefinition tool = lockTool(principal.tenantId(), toolId);
+            AgentDefinition agent = findAgent(principal.tenantId(), agentId);
+            ToolGrant grant = new ToolGrant(principal.tenantId(), tool.id(), agent.id(), null, true);
             ToolGrant saved = grantRepository.save(grant);
             agentRepository.addToolToAgent(principal.tenantId(), agent.id(), tool.id());
             appendGrantAudit(principal, tool, agent);
@@ -416,8 +417,7 @@ public class ManagementCommandService {
 
     private void deleteToolAndAudit(PrincipalRef principal, UUID toolId) {
         UUID tenantId = principal.tenantId();
-        ToolDefinition tool = toolRepository.findByTenantAndId(tenantId, toolId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
+        ToolDefinition tool = lockTool(tenantId, toolId);
         validateToolNotReferenced(tenantId, toolId);
         deleteToolStateAndAudit(principal, tool);
     }
@@ -687,6 +687,21 @@ public class ManagementCommandService {
         }
         compensate(() -> grantRepository.delete(agent.tenantId(), agent.id(), toolId), original);
         grants.forEach(grant -> compensate(() -> grantRepository.save(grant), original));
+    }
+
+    private ToolDefinition findTool(UUID tenantId, UUID toolId) {
+        return toolRepository.findByTenantAndId(tenantId, toolId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
+    }
+
+    private ToolDefinition lockTool(UUID tenantId, UUID toolId) {
+        return toolRepository.findByTenantAndIdForUpdate(tenantId, toolId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
+    }
+
+    private AgentDefinition findAgent(UUID tenantId, UUID agentId) {
+        return agentRepository.findByTenantAndId(tenantId, agentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
     }
 
     private static ReentrantLock[] createToolLocks() {
