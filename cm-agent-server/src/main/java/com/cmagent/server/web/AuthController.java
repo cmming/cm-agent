@@ -30,6 +30,7 @@ public class AuthController {
             "agent:write",
             "tool:read",
             "tool:grant",
+            "tool:delete",
             "tool:debug",
             "tool:mcp:invoke",
             "audit:read",

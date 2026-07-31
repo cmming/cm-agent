@@ -1,6 +1,7 @@
 package com.cmagent.server.web;
 
 import com.cmagent.api.PrincipalRef;
+import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.HttpParameterLocation;
@@ -131,6 +132,57 @@ public class ToolController {
     }
 
     /**
+     * 更新当前租户中的工具定义及其附属配置。
+     *
+     * @param id             工具标识
+     * @param request        工具更新请求
+     * @param authentication 当前请求认证信息
+     * @return 更新后的工具摘要
+     * @throws ResponseStatusException 未认证、无权限、资源不存在或名称冲突时抛出
+     */
+    @PutMapping("/{id}")
+    public ToolSummaryResponse update(
+            @PathVariable("id") UUID id,
+            @Valid @RequestBody ToolUpdateRequest request,
+            Authentication authentication
+    ) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "tool:grant", "TOOL", id.toString());
+        ToolDefinition updated = managementCommandService.updateTool(
+                principal,
+                id,
+                new ManagementCommandService.ToolUpdateSpec(
+                        request.name(),
+                        request.description(),
+                        request.type(),
+                        request.riskLevel(),
+                        request.enabled(),
+                        toHttpToolCreateSpec(request.httpConfig()),
+                        Boolean.TRUE.equals(request.mcpPublished())
+                )
+        );
+        return toolQueryService.findByTenantAndId(principal.tenantId(), updated.id())
+                .map(this::toSummary)
+                .orElseThrow(() -> new IllegalStateException("已更新工具未找到"));
+    }
+
+    /**
+     * 删除当前租户中未被 Agent 引用的工具。
+     *
+     * @param id             工具标识
+     * @param authentication 当前请求认证信息
+     * @return 无内容响应
+     * @throws ResponseStatusException 未认证、无权限、资源不存在或工具仍被引用时抛出
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable("id") UUID id, Authentication authentication) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "tool:delete", "TOOL", id.toString());
+        managementCommandService.deleteTool(principal, id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * 将工具授权给指定 Agent。
      *
      * @param id             工具标识
@@ -148,6 +200,26 @@ public class ToolController {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", "TOOL", id.toString());
         return managementCommandService.grantTool(principal, id, request.agentId());
+    }
+
+    /**
+     * 解除指定 Agent 与工具的关联。
+     *
+     * @param id             工具标识
+     * @param agentId        Agent 标识
+     * @param authentication 当前请求认证信息
+     * @return 更新后的 Agent
+     * @throws ResponseStatusException 未认证、无权限或资源不存在时抛出
+     */
+    @DeleteMapping("/{id}/grants/{agentId}")
+    public AgentDefinition revoke(
+            @PathVariable("id") UUID id,
+            @PathVariable("agentId") UUID agentId,
+            Authentication authentication
+    ) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "tool:grant", "TOOL", id.toString());
+        return managementCommandService.revokeTool(principal, id, agentId);
     }
 
     /**
@@ -331,6 +403,20 @@ public class ToolController {
             @NotBlank String description,
             @NotNull ToolType type,
             @NotNull ToolRiskLevel riskLevel,
+            Boolean mcpPublished,
+            @Valid HttpConfigRequest httpConfig
+    ) {
+    }
+
+    /**
+     * ToolUpdateRequest：工具更新请求。
+     */
+    public record ToolUpdateRequest(
+            @NotBlank String name,
+            @NotBlank String description,
+            @NotNull ToolType type,
+            @NotNull ToolRiskLevel riskLevel,
+            @NotNull Boolean enabled,
             Boolean mcpPublished,
             @Valid HttpConfigRequest httpConfig
     ) {

@@ -45,6 +45,7 @@ class AuthControllerTest {
             "agent:write",
             "tool:read",
             "tool:grant",
+            "tool:delete",
             "tool:debug",
             "tool:mcp:invoke",
             "audit:read",
@@ -64,6 +65,7 @@ class AuthControllerTest {
                         .content(loginBody(TEST_PASSWORD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("系统管理员"))
+                .andExpect(jsonPath("$.permissions.length()").value(EXPECTED_PERMISSIONS.length))
                 .andExpect(jsonPath("$.permissions[0]").value(EXPECTED_PERMISSIONS[0]))
                 .andExpect(jsonPath("$.permissions[1]").value(EXPECTED_PERMISSIONS[1]))
                 .andExpect(jsonPath("$.permissions[2]").value(EXPECTED_PERMISSIONS[2]))
@@ -73,6 +75,7 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.permissions[6]").value(EXPECTED_PERMISSIONS[6]))
                 .andExpect(jsonPath("$.permissions[7]").value(EXPECTED_PERMISSIONS[7]))
                 .andExpect(jsonPath("$.permissions[8]").value(EXPECTED_PERMISSIONS[8]))
+                .andExpect(jsonPath("$.permissions[9]").value(EXPECTED_PERMISSIONS[9]))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
@@ -84,6 +87,7 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.principalId").value("admin"))
                 .andExpect(jsonPath("$.displayName").value("系统管理员"))
+                .andExpect(jsonPath("$.permissions.length()").value(EXPECTED_PERMISSIONS.length))
                 .andExpect(jsonPath("$.permissions[0]").value(EXPECTED_PERMISSIONS[0]))
                 .andExpect(jsonPath("$.permissions[1]").value(EXPECTED_PERMISSIONS[1]))
                 .andExpect(jsonPath("$.permissions[2]").value(EXPECTED_PERMISSIONS[2]))
@@ -93,6 +97,7 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.permissions[6]").value(EXPECTED_PERMISSIONS[6]))
                 .andExpect(jsonPath("$.permissions[7]").value(EXPECTED_PERMISSIONS[7]))
                 .andExpect(jsonPath("$.permissions[8]").value(EXPECTED_PERMISSIONS[8]))
+                .andExpect(jsonPath("$.permissions[9]").value(EXPECTED_PERMISSIONS[9]))
                 .andExpect(jsonPath("$.accessToken").doesNotExist());
     }
 
