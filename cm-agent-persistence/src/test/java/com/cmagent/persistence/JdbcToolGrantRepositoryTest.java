@@ -26,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 class JdbcToolGrantRepositoryTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID OTHER_TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
     private static final UUID MODEL_PROVIDER_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
     private static final UUID AGENT_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
     private static final UUID TOOL_ID = UUID.fromString("20000000-0000-0000-0000-000000000001");
@@ -90,6 +91,26 @@ class JdbcToolGrantRepositoryTest {
         assertThat(repository.listByTenantAgentAndTool(TENANT_ID, AGENT_ID, TOOL_ID)).isEmpty();
         assertThat(repository.listByTenantAgentAndTool(TENANT_ID, otherAgentId, TOOL_ID)).isEmpty();
         assertThat(repository.listByTenantAgentAndTool(TENANT_ID, AGENT_ID, otherToolId)).containsExactly(retained);
+    }
+
+    @Test
+    void deleteWithWrongTenantLeavesGrantUnchanged() {
+        ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true);
+        repository.save(grant);
+
+        repository.delete(OTHER_TENANT_ID, AGENT_ID, TOOL_ID);
+
+        assertThat(repository.listByTenantAgentAndTool(TENANT_ID, AGENT_ID, TOOL_ID)).containsExactly(grant);
+    }
+
+    @Test
+    void deleteByTenantAndToolIdWithWrongTenantLeavesGrantsUnchanged() {
+        ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true);
+        repository.save(grant);
+
+        repository.deleteByTenantAndToolId(OTHER_TENANT_ID, TOOL_ID);
+
+        assertThat(repository.listByTenantAgentAndTool(TENANT_ID, AGENT_ID, TOOL_ID)).containsExactly(grant);
     }
 
     private static void seedData(DataSource dataSource) {

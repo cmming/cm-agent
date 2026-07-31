@@ -193,6 +193,10 @@ class ServerRepositoryConfigurationTest {
                     AgentDefinitionRepository agents = context.getBean(AgentDefinitionRepository.class);
                     ToolDefinition original = toolDefinition(TOOL_A, TENANT_A);
                     ToolDefinition updated = new ToolDefinition(
+                            TOOL_A, TENANT_A, "echo-v2", "已更新", ToolType.HTTP, "{\"type\":\"object\"}",
+                            ToolRiskLevel.HIGH, false, "https://api.invalid/echo", "replacement-creator", "editor"
+                    );
+                    ToolDefinition expectedUpdated = new ToolDefinition(
                             TOOL_A, TENANT_A, "echo-v2", "已更新", ToolType.LOCAL, "{\"type\":\"object\"}",
                             ToolRiskLevel.HIGH, false, "https://api.invalid/echo", "tester", "editor"
                     );
@@ -207,6 +211,23 @@ class ServerRepositoryConfigurationTest {
                     grants.save(new ToolGrant(TENANT_A, TOOL_A, AGENT_B, null, true));
 
                     assertThat(tools.update(updated)).isEqualTo(updated);
+                    assertThat(tools.findByTenantAndId(TENANT_A, TOOL_A)).contains(expectedUpdated);
+                    tools.update(new ToolDefinition(
+                            TOOL_A, TENANT_B, "other-tenant", "不应写入", ToolType.HTTP, "{}",
+                            ToolRiskLevel.LOW, true, "", "other", "other"
+                    ));
+                    assertThat(tools.findByTenantAndId(TENANT_A, TOOL_A)).contains(expectedUpdated);
+                    grants.delete(TENANT_B, AGENT_A, TOOL_A);
+                    grants.deleteByTenantAndToolId(TENANT_B, TOOL_A);
+                    assertThat(grants.listByTenantAgentAndTool(TENANT_A, AGENT_A, TOOL_A))
+                            .containsExactly(new ToolGrant(TENANT_A, TOOL_A, AGENT_A, null, true));
+                    assertThat(grants.listByTenantAgentAndTool(TENANT_A, AGENT_B, TOOL_A))
+                            .containsExactly(new ToolGrant(TENANT_A, TOOL_A, AGENT_B, null, true));
+                    assertThatThrownBy(() -> agents.removeToolFromAgent(TENANT_B, AGENT_A, TOOL_A))
+                            .isInstanceOf(java.util.NoSuchElementException.class)
+                            .hasMessage("Agent 不存在");
+                    assertThat(agents.findByTenantAndId(TENANT_A, AGENT_A).orElseThrow().toolIds())
+                            .containsExactly(TOOL_A, otherToolId);
                     grants.delete(TENANT_A, AGENT_B, TOOL_A);
                     assertThat(grants.listByTenantAgentAndTool(TENANT_A, AGENT_A, TOOL_A))
                             .containsExactly(new ToolGrant(TENANT_A, TOOL_A, AGENT_A, null, true));
@@ -215,7 +236,7 @@ class ServerRepositoryConfigurationTest {
                     assertThat(agents.removeToolFromAgent(TENANT_A, AGENT_A, TOOL_A).toolIds())
                             .containsExactly(otherToolId);
 
-                    assertThat(tools.findByTenantAndId(TENANT_A, TOOL_A)).contains(updated);
+                    assertThat(tools.findByTenantAndId(TENANT_A, TOOL_A)).contains(expectedUpdated);
                     assertThat(grants.listByTenantAgentAndTool(TENANT_A, AGENT_A, TOOL_A)).isEmpty();
                     assertThat(grants.listByTenantAgentAndTool(TENANT_A, AGENT_B, TOOL_A)).isEmpty();
                     assertThat(agents.findByTenantAndId(TENANT_A, AGENT_A).orElseThrow().toolIds())

@@ -314,7 +314,20 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                 }
                 toolIdsByTenantAndName.remove(originalName, tool.id());
             }
-            tools.put(tool.id(), tool);
+            ToolDefinition merged = new ToolDefinition(
+                    existing.id(),
+                    existing.tenantId(),
+                    tool.name(),
+                    tool.description(),
+                    existing.type(),
+                    tool.inputSchema(),
+                    tool.riskLevel(),
+                    tool.enabled(),
+                    tool.endpoint(),
+                    existing.createdBy(),
+                    tool.updatedBy()
+            );
+            tools.put(tool.id(), merged);
             return tool;
         }
     }

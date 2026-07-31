@@ -69,25 +69,37 @@ class JdbcToolDefinitionRepositoryTest {
     }
 
     @Test
-    void updatePersistsEditableFieldsWithoutCrossTenantMutation() {
+    void updatePersistsOnlyEditableFields() {
         UUID toolId = UUID.fromString("20000000-0000-0000-0000-000000000003");
         ToolDefinition original = tool(toolId, TENANT_A, "echo");
-        ToolDefinition updated = new ToolDefinition(
+        ToolDefinition requested = new ToolDefinition(
+                toolId, TENANT_A, "echo-v2", "更新后的描述", ToolType.HTTP,
+                "{\"type\":\"object\",\"required\":[\"message\"]}", ToolRiskLevel.HIGH,
+                false, "https://api.invalid/echo", "replacement-creator", "editor"
+        );
+        ToolDefinition expected = new ToolDefinition(
                 toolId, TENANT_A, "echo-v2", "更新后的描述", ToolType.LOCAL,
                 "{\"type\":\"object\",\"required\":[\"message\"]}", ToolRiskLevel.HIGH,
                 false, "https://api.invalid/echo", "tester", "editor"
         );
+        repository.save(original);
+
+        assertThat(repository.update(requested)).isEqualTo(requested);
+        assertThat(repository.findByTenantAndId(TENANT_A, toolId)).contains(expected);
+    }
+
+    @Test
+    void updateWithWrongTenantLeavesExistingToolUnchanged() {
+        UUID toolId = UUID.fromString("20000000-0000-0000-0000-000000000004");
+        ToolDefinition original = tool(toolId, TENANT_A, "echo");
         ToolDefinition crossTenant = new ToolDefinition(
-                toolId, TENANT_B, "other-tenant", "不应写入", ToolType.LOCAL,
-                "{}", ToolRiskLevel.LOW, true, "", "tester", "editor"
+                toolId, TENANT_B, "other-tenant", "不应写入", ToolType.HTTP,
+                "{}", ToolRiskLevel.HIGH, false, "https://api.invalid/other", "other", "editor"
         );
         repository.save(original);
 
-        assertThat(repository.update(updated)).isEqualTo(updated);
-        assertThat(repository.findByTenantAndId(TENANT_A, toolId)).contains(updated);
-
         assertThat(repository.update(crossTenant)).isEqualTo(crossTenant);
-        assertThat(repository.findByTenantAndId(TENANT_A, toolId)).contains(updated);
+        assertThat(repository.findByTenantAndId(TENANT_A, toolId)).contains(original);
         assertThat(repository.findByTenantAndId(TENANT_B, toolId)).isEmpty();
     }
 

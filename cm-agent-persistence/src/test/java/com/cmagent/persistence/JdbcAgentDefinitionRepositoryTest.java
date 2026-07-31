@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 class JdbcAgentDefinitionRepositoryTest {
@@ -109,6 +110,20 @@ class JdbcAgentDefinitionRepositoryTest {
         assertThat(repository.findByTenantAndId(TENANT_A, agentId).orElseThrow().toolIds())
                 .containsExactly(otherToolId);
         assertThat(repository.findByTenantAndId(TENANT_B, agentId)).isEmpty();
+    }
+
+    @Test
+    void removeToolFromAgentWithWrongTenantLeavesToolIdsUnchanged() {
+        UUID agentId = UUID.fromString("10000000-0000-0000-0000-000000000005");
+        UUID otherToolId = UUID.fromString("00000000-0000-0000-0000-000000000403");
+        AgentDefinition original = agent(agentId, TENANT_A, MODEL_PROVIDER_A, "工具助手", List.of(TOOL_ID, otherToolId));
+        repository.save(original);
+
+        assertThatThrownBy(() -> repository.removeToolFromAgent(TENANT_B, agentId, TOOL_ID))
+                .isInstanceOf(java.util.NoSuchElementException.class)
+                .hasMessage("Agent 不存在");
+
+        assertThat(repository.findByTenantAndId(TENANT_A, agentId)).contains(original);
     }
 
     private static AgentDefinition agent(UUID id, UUID tenantId, UUID modelProviderId, String name, List<UUID> toolIds) {
