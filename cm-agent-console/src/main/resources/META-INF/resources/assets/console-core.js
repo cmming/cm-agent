@@ -100,6 +100,38 @@
         };
     }
 
+    function buildToolUpdatePayload(tool, fields) {
+        if (tool?.type === "LOCAL" && String(fields.name || "").trim() !== tool.name) {
+            throw new Error("LOCAL 工具不支持改名。");
+        }
+        const payload = tool?.type === "HTTP"
+            ? buildHttpToolPayload(fields)
+            : {
+                name: String(fields.name || "").trim(),
+                description: String(fields.description || "").trim(),
+                type: tool?.type,
+                riskLevel: fields.riskLevel,
+                mcpPublished: Boolean(fields.mcpPublished)
+            };
+        return {...payload, type: tool?.type, enabled: Boolean(fields.enabled)};
+    }
+
+    function buildToolUpdatePath(toolId) {
+        return `/api/tools/${encodeURIComponent(String(toolId || ""))}`;
+    }
+
+    function buildToolDeletePath(toolId) {
+        return `/api/tools/${encodeURIComponent(String(toolId || ""))}`;
+    }
+
+    function buildToolGrantDeletePath(toolId, agentId) {
+        return `${buildToolDeletePath(toolId)}/grants/${encodeURIComponent(String(agentId || ""))}`;
+    }
+
+    function isToolDeleteConflict(error) {
+        return error?.status === 409;
+    }
+
     function createToolPublicationLock() {
         const activeToolIds = new Set();
         return {
@@ -216,7 +248,9 @@
                     }
                     throw new Error("未登录或令牌已失效，请重新登录。");
                 }
-                throw new Error(formatError(response.status, body, rawBody));
+                const error = new Error(formatError(response.status, body, rawBody));
+                error.status = response.status;
+                throw error;
             }
             return body;
         }
@@ -260,6 +294,11 @@
         buildLocalExampleInstallPath,
         formatJsonInput,
         buildHttpToolPayload,
+        buildToolUpdatePayload,
+        buildToolUpdatePath,
+        buildToolDeletePath,
+        buildToolGrantDeletePath,
+        isToolDeleteConflict,
         createToolPublicationLock,
         createLoadRevisionGate,
         createKeyedLoadRevisionGate,

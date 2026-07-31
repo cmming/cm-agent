@@ -196,6 +196,66 @@ test("HTTP 工具请求拒绝 Secret 非引用和无效超时", () => {
     assert.throws(() => core.buildHttpToolPayload({...base, secretHeadersText: '{"Authorization":"secret/integration/api-key"}'}), /超时时间/);
 });
 
+test("构建 HTTP 工具更新载荷时保留 MCP 发布和 Secret 引用", () => {
+    const payload = core.buildToolUpdatePayload({id: "tool-1", type: "HTTP", name: "orders"}, {
+        name: "orders-v2",
+        description: "订单查询（新版）",
+        riskLevel: "HIGH",
+        enabled: false,
+        mcpPublished: true,
+        method: "PUT",
+        urlTemplate: "https://api.example.test/orders/{id}",
+        inputSchemaText: '{"type":"object"}',
+        parameterMappingsText: '[{"sourcePointer":"/id","location":"PATH","targetName":"id","required":true}]',
+        secretHeadersText: '{"Authorization":"secret/integration/token"}',
+        timeoutMillis: "2000"
+    });
+
+    assert.deepEqual(payload, {
+        name: "orders-v2",
+        description: "订单查询（新版）",
+        type: "HTTP",
+        riskLevel: "HIGH",
+        enabled: false,
+        mcpPublished: true,
+        httpConfig: {
+            method: "PUT",
+            urlTemplate: "https://api.example.test/orders/{id}",
+            inputSchema: {type: "object"},
+            parameterMappings: [{sourcePointer: "/id", location: "PATH", targetName: "id", required: true}],
+            secretHeaders: {Authorization: "secret/integration/token"},
+            timeoutMillis: 2000
+        }
+    });
+});
+
+test("构建 LOCAL 工具更新载荷时拒绝改名", () => {
+    const localTool = {id: "tool-2", type: "LOCAL", name: "echo"};
+    const fields = {name: "echo", description: "本地回显", riskLevel: "LOW", enabled: true, mcpPublished: false};
+
+    assert.throws(() => core.buildToolUpdatePayload(localTool, {...fields, name: "renamed"}), /LOCAL/);
+    assert.deepEqual(core.buildToolUpdatePayload(localTool, fields), {
+        name: "echo",
+        description: "本地回显",
+        type: "LOCAL",
+        riskLevel: "LOW",
+        enabled: true,
+        mcpPublished: false
+    });
+});
+
+test("工具更新、删除和解除关联路径会编码资源标识", () => {
+    assert.equal(core.buildToolUpdatePath("tool/id"), "/api/tools/tool%2Fid");
+    assert.equal(core.buildToolDeletePath("tool/id"), "/api/tools/tool%2Fid");
+    assert.equal(core.buildToolGrantDeletePath("tool", "agent/id"), "/api/tools/tool/grants/agent%2Fid");
+});
+
+test("仅将明确的 409 工具删除响应识别为关联冲突", () => {
+    assert.equal(core.isToolDeleteConflict({status: 409}), true);
+    assert.equal(core.isToolDeleteConflict({status: 400}), false);
+    assert.equal(core.isToolDeleteConflict(new Error("请求失败(409)：工具仍被 Agent 关联")), false);
+});
+
 test("HTTP 地址模板使用文本输入以支持路径参数占位符", () => {
     const html = fs.readFileSync(path.join(__dirname, "../../main/resources/META-INF/resources/index.html"), "utf8");
 
