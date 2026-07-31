@@ -303,7 +303,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         synchronized (toolLock) {
             ToolDefinition existing = tools.get(tool.id());
             if (existing == null || !existing.tenantId().equals(tool.tenantId())) {
-                return tool;
+                throw new NoSuchElementException("工具不存在");
             }
             TenantToolName originalName = new TenantToolName(existing.tenantId(), existing.name());
             TenantToolName updatedName = new TenantToolName(tool.tenantId(), tool.name());
@@ -371,6 +371,17 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                 .sorted(Comparator.comparing(ToolDefinition::name, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(tool -> tool.id().toString()))
                 .toList();
+    }
+
+    /**
+     * 判断指定工具是否已经产生需要保留的调用历史。
+     */
+    public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
+        synchronized (toolCalls) {
+            return toolCalls.stream()
+                    .anyMatch(toolCall -> tenantId.equals(toolCall.tenantId())
+                            && toolId.equals(toolCall.toolId()));
+        }
     }
     /**
      * saveGrant：保存当前对象及其关联配置。

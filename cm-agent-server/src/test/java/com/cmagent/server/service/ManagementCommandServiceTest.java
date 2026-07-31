@@ -159,6 +159,61 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    void concurrentMemoryGrantAndRevokeForDifferentToolsKeepBothChanges() throws Exception {
+        UUID removedToolId = UUID.fromString("00000000-0000-0000-0000-000000000102");
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        ToolDefinition addedTool = httpTool("orders");
+        ToolDefinition removedTool = new ToolDefinition(
+                removedToolId,
+                TENANT_ID,
+                "inventory",
+                "库存工具",
+                ToolType.LOCAL,
+                "{\"type\":\"object\"}",
+                ToolRiskLevel.LOW,
+                true,
+                "",
+                "creator",
+                "previous-editor"
+        );
+        store.saveTool(addedTool);
+        store.saveTool(removedTool);
+        store.saveAgent(agent(List.of(removedToolId)));
+        store.saveGrant(new ToolGrant(TENANT_ID, removedToolId, AGENT_ID, null, true));
+        ManagementCommandService grantService =
+                statefulMemoryService(store, new AuditAppender(store));
+        ManagementCommandService revokeService =
+                statefulMemoryService(store, new AuditAppender(store));
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            var grantResult = executor.submit(() -> {
+                awaitLatch(start, "并发授权未开始");
+                return grantService.grantTool(PRINCIPAL, TOOL_ID, AGENT_ID);
+            });
+            var revokeResult = executor.submit(() -> {
+                awaitLatch(start, "并发撤销未开始");
+                return revokeService.revokeTool(PRINCIPAL, removedToolId, AGENT_ID);
+            });
+
+            start.countDown();
+
+            assertThat(grantResult.get(5, TimeUnit.SECONDS).toolId()).isEqualTo(TOOL_ID);
+            assertThat(revokeResult.get(5, TimeUnit.SECONDS).toolIds()).doesNotContain(removedToolId);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+
+        assertThat(store.findAgent(TENANT_ID, AGENT_ID)).get()
+                .extracting(AgentDefinition::toolIds)
+                .asList()
+                .containsExactly(TOOL_ID);
+        assertThat(store.listGrants(TENANT_ID, AGENT_ID, TOOL_ID)).hasSize(1);
+        assertThat(store.listGrants(TENANT_ID, AGENT_ID, removedToolId)).isEmpty();
+    }
+
+    @Test
     void concurrentGrantCannotLeaveAgentPointingToDeletedTool() throws Exception {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         ToolDefinition existing = httpTool("orders");
@@ -339,6 +394,119 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    void updatePublishedLocalToolPreservesPublicationWithoutHttpConfiguration() {
+        ToolDefinition existing = localTool("local_search");
+        McpToolPublication publication =
+                new McpToolPublication(TENANT_ID, TOOL_ID, true, "publisher");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
+        when(toolRepository.listByTenant(TENANT_ID)).thenReturn(List.of(existing));
+        when(toolRepository.update(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(mcpToolPublicationRepository.findByTenantAndToolId(TENANT_ID, TOOL_ID))
+                .thenReturn(Optional.of(publication));
+
+        ToolDefinition updated = mockedService().updateTool(
+                PRINCIPAL,
+                TOOL_ID,
+                new ManagementCommandService.ToolUpdateSpec(
+                        existing.name(),
+                        "更新后的本地搜索",
+                        ToolType.LOCAL,
+                        ToolRiskLevel.MEDIUM,
+                        true,
+                        null,
+                        true
+                )
+        );
+
+        assertThat(updated.description()).isEqualTo("更新后的本地搜索");
+        verify(httpToolConfigRepository, never()).save(any());
+        verify(mcpToolPublicationRepository, never()).save(any());
+        verify(mcpToolPublicationRepository, never()).delete(any(), any());
+    }
+
+    @Test
+    void updatePublishedLocalToolCanCancelPublication() {
+        ToolDefinition existing = localTool("local_search");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
+        when(toolRepository.listByTenant(TENANT_ID)).thenReturn(List.of(existing));
+        when(toolRepository.update(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(mcpToolPublicationRepository.findByTenantAndToolId(TENANT_ID, TOOL_ID))
+                .thenReturn(Optional.of(new McpToolPublication(TENANT_ID, TOOL_ID, true, "publisher")));
+
+        mockedService().updateTool(
+                PRINCIPAL,
+                TOOL_ID,
+                new ManagementCommandService.ToolUpdateSpec(
+                        existing.name(),
+                        existing.description(),
+                        ToolType.LOCAL,
+                        existing.riskLevel(),
+                        existing.enabled(),
+                        null,
+                        false
+                )
+        );
+
+        verify(httpToolConfigRepository, never()).save(any());
+        verify(mcpToolPublicationRepository).delete(TENANT_ID, TOOL_ID);
+    }
+
+    @Test
+    void updateUnpublishedLocalToolCannotBypassDedicatedPublicationValidation() {
+        ToolDefinition existing = localTool("local_search");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
+        when(mcpToolPublicationRepository.findByTenantAndToolId(TENANT_ID, TOOL_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> mockedService().updateTool(
+                PRINCIPAL,
+                TOOL_ID,
+                new ManagementCommandService.ToolUpdateSpec(
+                        existing.name(),
+                        existing.description(),
+                        ToolType.LOCAL,
+                        existing.riskLevel(),
+                        existing.enabled(),
+                        null,
+                        true
+                )
+        )).isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+            assertThat(exception.getStatusCode().value()).isEqualTo(400);
+            assertThat(exception.getReason()).contains("MCP 发布操作");
+        });
+
+        verify(toolRepository, never()).update(any());
+        verify(mcpToolPublicationRepository, never()).save(any());
+    }
+
+    @Test
+    void updateDisabledLocalPublicationCannotBeMistakenForPublishedState() {
+        ToolDefinition existing = localTool("local_search");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
+        when(mcpToolPublicationRepository.findByTenantAndToolId(TENANT_ID, TOOL_ID))
+                .thenReturn(Optional.of(new McpToolPublication(TENANT_ID, TOOL_ID, false, "publisher")));
+
+        assertThatThrownBy(() -> mockedService().updateTool(
+                PRINCIPAL,
+                TOOL_ID,
+                new ManagementCommandService.ToolUpdateSpec(
+                        existing.name(),
+                        existing.description(),
+                        ToolType.LOCAL,
+                        existing.riskLevel(),
+                        existing.enabled(),
+                        null,
+                        true
+                )
+        )).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                assertThat(exception.getStatusCode().value()).isEqualTo(400))
+                .hasMessageContaining("MCP 发布操作");
+
+        verify(toolRepository, never()).update(any());
+        verify(mcpToolPublicationRepository, never()).save(any());
+    }
+
+    @Test
     void updateToolRejectsTypeChangeWithoutWritingAnything() {
         ToolDefinition existing = localTool("local_search");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
@@ -516,6 +684,26 @@ class ManagementCommandServiceTest {
                 .isInstanceOfSatisfying(ResponseStatusException.class, exception ->
                         assertThat(exception.getStatusCode().value()).isEqualTo(409))
                 .hasMessageContaining("请先解除关联");
+
+        verify(httpToolConfigRepository, never()).delete(TENANT_ID, TOOL_ID);
+        verify(mcpToolPublicationRepository, never()).delete(TENANT_ID, TOOL_ID);
+        verify(grantRepository, never()).deleteByTenantAndToolId(TENANT_ID, TOOL_ID);
+        verify(toolRepository, never()).delete(TENANT_ID, TOOL_ID);
+        verify(auditAppender, never()).append(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void deleteToolWithCallHistoryReturnsExplicitConflictWithoutSideEffects() {
+        ToolDefinition tool = httpTool("orders");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
+        when(agentRepository.listByTenant(TENANT_ID)).thenReturn(List.of());
+        when(toolRepository.hasToolCallHistory(TENANT_ID, TOOL_ID)).thenReturn(true);
+
+        assertThatThrownBy(() -> mockedService().deleteTool(PRINCIPAL, TOOL_ID))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+                    assertThat(exception.getStatusCode().value()).isEqualTo(409);
+                    assertThat(exception.getReason()).isEqualTo("工具已有调用历史，为保留运行记录不能删除");
+                });
 
         verify(httpToolConfigRepository, never()).delete(TENANT_ID, TOOL_ID);
         verify(mcpToolPublicationRepository, never()).delete(TENANT_ID, TOOL_ID);
@@ -1131,6 +1319,11 @@ class ManagementCommandServiceTest {
             }
 
             @Override
+            public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
+                return store.hasToolCallHistory(tenantId, toolId);
+            }
+
+            @Override
             public void delete(UUID tenantId, UUID toolId) {
                 store.deleteTool(tenantId, toolId);
             }
@@ -1174,6 +1367,11 @@ class ManagementCommandServiceTest {
                 throw new IllegalStateException("并发名称检查被中断", exception);
             }
             return tools;
+        }
+
+        @Override
+        public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
+            return delegate.hasToolCallHistory(tenantId, toolId);
         }
 
         @Override

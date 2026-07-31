@@ -212,10 +212,12 @@ class ServerRepositoryConfigurationTest {
 
                     assertThat(tools.update(updated)).isEqualTo(updated);
                     assertThat(tools.findByTenantAndId(TENANT_A, TOOL_A)).contains(expectedUpdated);
-                    tools.update(new ToolDefinition(
-                            TOOL_A, TENANT_B, "other-tenant", "不应写入", ToolType.HTTP, "{}",
-                            ToolRiskLevel.LOW, true, "", "other", "other"
-                    ));
+                    assertThatThrownBy(() -> tools.update(new ToolDefinition(
+                                    TOOL_A, TENANT_B, "other-tenant", "不应写入", ToolType.HTTP, "{}",
+                                    ToolRiskLevel.LOW, true, "", "other", "other"
+                            )))
+                            .isInstanceOf(java.util.NoSuchElementException.class)
+                            .hasMessage("工具不存在");
                     assertThat(tools.findByTenantAndId(TENANT_A, TOOL_A)).contains(expectedUpdated);
                     grants.delete(TENANT_B, AGENT_A, TOOL_A);
                     grants.deleteByTenantAndToolId(TENANT_B, TOOL_A);

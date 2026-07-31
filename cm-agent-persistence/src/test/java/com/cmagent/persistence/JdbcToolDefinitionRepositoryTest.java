@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 class JdbcToolDefinitionRepositoryTest {
@@ -98,7 +99,9 @@ class JdbcToolDefinitionRepositoryTest {
         );
         repository.save(original);
 
-        assertThat(repository.update(crossTenant)).isEqualTo(crossTenant);
+        assertThatThrownBy(() -> repository.update(crossTenant))
+                .isInstanceOf(java.util.NoSuchElementException.class)
+                .hasMessage("工具不存在");
         assertThat(repository.findByTenantAndId(TENANT_A, toolId)).contains(original);
         assertThat(repository.findByTenantAndId(TENANT_B, toolId)).isEmpty();
     }

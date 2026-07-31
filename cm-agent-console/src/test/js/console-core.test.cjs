@@ -291,7 +291,7 @@ test("HTTP 编辑表单原始字段只解析一次并直接生成更新请求", 
 
 test("构建 LOCAL 工具更新载荷时拒绝改名", () => {
     const localTool = {id: "tool-2", type: "LOCAL", name: "echo"};
-    const fields = {name: "echo", description: "本地回显", riskLevel: "LOW", enabled: true, mcpPublished: false};
+    const fields = {name: "echo", description: "本地回显", riskLevel: "LOW", enabled: true, mcpPublished: true};
 
     assert.throws(() => core.buildToolUpdatePayload(localTool, {...fields, name: "renamed"}), /LOCAL/);
     assert.deepEqual(core.buildToolUpdatePayload(localTool, fields), {
@@ -300,7 +300,7 @@ test("构建 LOCAL 工具更新载荷时拒绝改名", () => {
         type: "LOCAL",
         riskLevel: "LOW",
         enabled: true,
-        mcpPublished: false
+        mcpPublished: true
     });
 });
 
@@ -401,7 +401,15 @@ test("工具更新、删除和解除关联路径会编码资源标识", () => {
 });
 
 test("仅将明确的 409 工具删除响应识别为关联冲突", () => {
-    assert.equal(core.isToolDeleteConflict({status: 409}), true);
+    assert.equal(core.isToolDeleteConflict({
+        status: 409,
+        message: "请求失败(409)：工具仍被 Agent 关联，请先解除关联后再删除"
+    }), true);
+    assert.equal(core.isToolDeleteConflict({
+        status: 409,
+        message: "请求失败(409)：工具已有调用历史，为保留运行记录不能删除"
+    }), false);
+    assert.equal(core.isToolDeleteConflict({status: 409}), false);
     assert.equal(core.isToolDeleteConflict({status: 400}), false);
     assert.equal(core.isToolDeleteConflict(new Error("请求失败(409)：工具仍被 Agent 关联")), false);
 });

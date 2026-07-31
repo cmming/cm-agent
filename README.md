@@ -45,7 +45,9 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 控制台支持对单个 HTTP 或 LOCAL 工具调试，需要 `tool:debug` 权限；HIGH 风险工具还必须输入与工具名称完全一致的二次确认。调试结果与失败信息只显示受控、脱敏后的摘要。已发布的 HTTP/LOCAL 工具可选择通过默认关闭的 MCP Streamable HTTP 端点提供；MCP 调用除 JWT 外还需要 `tool:mcp:invoke`，取消发布、禁用或运行配置漂移会立即使其不可调用。
 
-工具编辑需要 `tool:grant` 权限，编辑时工具类型保持锁定，LOCAL 工具名称也不可修改；页面只回填 Secret 引用，不展示真实 Secret。删除需要 `tool:delete` 权限并经过确认。只要工具仍被同租户任一 Agent 引用，删除就会返回 `409 Conflict` 且不产生副作用；需先在 Agent 详情中确认解除关联（需要 `tool:grant`），随后才能删除。
+工具编辑需要 `tool:grant` 权限，编辑时工具类型保持锁定，LOCAL 工具名称也不可修改；HTTP 工具必须提交完整且有效的 HTTP 配置，其他类型不能携带 HTTP 配置。编辑已发布的 LOCAL 工具会保持原 MCP 发布状态，也可在本次编辑中取消发布；未发布的 LOCAL 工具仍须使用独立的 MCP 发布操作。页面只回填 Secret 引用，不展示真实 Secret。
+
+删除需要 `tool:delete` 权限并经过确认。只要工具仍被同租户任一 Agent 引用，删除就会返回明确的 `409 Conflict` 且不产生副作用；需先在 Agent 详情中确认解除关联（需要 `tool:grant`），随后才能删除。工具一旦产生调用历史，也会返回另一条明确的 `409 Conflict`，并保留工具定义、运行历史、调用记录和审计链路；这种冲突不能通过解除 Agent 关联来消除，控制台不会将其误提示为关联冲突。
 
 在非生产 `mysql` profile 下，工具治理页只会向固定 bootstrap 示例租户 `00000000-0000-0000-0000-000000000001` 中具有 `tool:read` 权限的认证主体展示固定的 `echo`、`add` 内置 LOCAL 示例目录。这是 MySQL 调试的隔离演示边界，不是面向所有 tenant 的工具安装能力：其他 tenant 的目录为空，安装请求返回 `404`。该示例租户中具有 `tool:grant` 权限的主体点击“添加示例工具”后，定义才会写入 MySQL；安装成功后页面会自动填入示例输入，并可由具有 `tool:debug` 权限的主体通过现有调试入口调用。服务启动只注册固定 Java 执行器，不会自动写入数据库。
 

@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -74,7 +75,7 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
 
     @Override
     public ToolDefinition update(ToolDefinition tool) {
-        jdbcClient.sql("""
+        int updated = jdbcClient.sql("""
                         UPDATE tool_definitions
                         SET name = :name,
                             description = :description,
@@ -97,6 +98,9 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
                 .param("tenantId", tool.tenantId().toString())
                 .param("id", tool.id().toString())
                 .update();
+        if (updated == 0) {
+            throw new NoSuchElementException("工具不存在");
+        }
         return tool;
     }
 
@@ -171,6 +175,21 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
                 .param("tenantId", tenantId.toString())
                 .query(this::mapTool)
                 .list();
+    }
+
+    @Override
+    public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
+        return jdbcClient.sql("""
+                        SELECT 1
+                        FROM tool_calls
+                        WHERE tenant_id = :tenantId AND tool_id = :toolId
+                        LIMIT 1
+                        """)
+                .param("tenantId", tenantId.toString())
+                .param("toolId", toolId.toString())
+                .query(Integer.class)
+                .optional()
+                .isPresent();
     }
 
     @Override

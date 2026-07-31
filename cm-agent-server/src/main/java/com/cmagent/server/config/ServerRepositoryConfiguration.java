@@ -358,6 +358,11 @@ public class ServerRepositoryConfiguration {
             }
 
             @Override
+            public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
+                return store.hasToolCallHistory(tenantId, toolId);
+            }
+
+            @Override
             /**
              * delete：删除或撤销当前目标的关联状态。
              *

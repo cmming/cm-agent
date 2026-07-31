@@ -119,6 +119,36 @@ class ManagementCommandServiceJdbcPersistenceTest {
         assertConcurrentExistingGrantAndDeleteNeverLeaveDanglingAgentTool(mysqlDataSource());
     }
 
+    @Test
+    void toolCallHistoryBlocksDeleteAndRemainsInPostgreSql() {
+        assertToolCallHistoryBlocksDeleteAndRemains(postgresDataSource());
+    }
+
+    @Test
+    void toolCallHistoryBlocksDeleteAndRemainsInMySql() {
+        assertToolCallHistoryBlocksDeleteAndRemains(mysqlDataSource());
+    }
+
+    @Test
+    void crossInstanceDifferentToolGrantAndRevokeKeepAllChangesInPostgreSql() throws Exception {
+        assertCrossInstanceDifferentToolGrantAndRevokeKeepAllChanges(postgresDataSource());
+    }
+
+    @Test
+    void crossInstanceDifferentToolGrantAndRevokeKeepAllChangesInMySql() throws Exception {
+        assertCrossInstanceDifferentToolGrantAndRevokeKeepAllChanges(mysqlDataSource());
+    }
+
+    @Test
+    void concurrentUpdateAndDeleteSerializeOnToolRowInPostgreSql() throws Exception {
+        assertConcurrentUpdateAndDeleteSerializeOnToolRow(postgresDataSource());
+    }
+
+    @Test
+    void concurrentUpdateAndDeleteSerializeOnToolRowInMySql() throws Exception {
+        assertConcurrentUpdateAndDeleteSerializeOnToolRow(mysqlDataSource());
+    }
+
     private void assertConcurrentNameConflict(DataSource dataSource) throws Exception {
         migrateAndSeedTenant(dataSource);
         TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -177,7 +207,8 @@ class ManagementCommandServiceJdbcPersistenceTest {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
         com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
         JdbcToolDefinitionRepository tools = new JdbcToolDefinitionRepository(jdbcClient);
-        JdbcAgentDefinitionRepository agents = new JdbcAgentDefinitionRepository(jdbcClient, objectMapper);
+        JdbcAgentDefinitionRepository agents =
+                new JdbcAgentDefinitionRepository(jdbcClient, objectMapper, transactionTemplate);
         JdbcToolGrantRepository grants = new JdbcToolGrantRepository(jdbcClient);
         JdbcHttpToolConfigRepository httpConfigs =
                 new JdbcHttpToolConfigRepository(jdbcClient, objectMapper, transactionTemplate);
@@ -229,7 +260,8 @@ class ManagementCommandServiceJdbcPersistenceTest {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
         com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
         JdbcToolDefinitionRepository tools = new JdbcToolDefinitionRepository(jdbcClient);
-        JdbcAgentDefinitionRepository agents = new JdbcAgentDefinitionRepository(jdbcClient, objectMapper);
+        JdbcAgentDefinitionRepository agents =
+                new JdbcAgentDefinitionRepository(jdbcClient, objectMapper, transactionTemplate);
         JdbcToolGrantRepository grants = new JdbcToolGrantRepository(jdbcClient);
         JdbcHttpToolConfigRepository httpConfigs =
                 new JdbcHttpToolConfigRepository(jdbcClient, objectMapper, transactionTemplate);
@@ -301,7 +333,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
         JdbcClient setupClient = JdbcClient.create(dataSource);
         JdbcToolDefinitionRepository setupTools = new JdbcToolDefinitionRepository(setupClient);
         JdbcAgentDefinitionRepository setupAgents =
-                new JdbcAgentDefinitionRepository(setupClient, new com.fasterxml.jackson.databind.ObjectMapper());
+                new JdbcAgentDefinitionRepository(
+                        setupClient,
+                        new com.fasterxml.jackson.databind.ObjectMapper(),
+                        new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+                );
         JdbcToolGrantRepository setupGrants = new JdbcToolGrantRepository(setupClient);
         UUID toolId = UUID.randomUUID();
         UUID agentId = UUID.randomUUID();
@@ -324,7 +360,8 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 blockingGrantAgentRepository(
                         new JdbcAgentDefinitionRepository(
                                 grantClient,
-                                new com.fasterxml.jackson.databind.ObjectMapper()
+                                new com.fasterxml.jackson.databind.ObjectMapper(),
+                                grantTransaction
                         ),
                         grantReadAgent,
                         deleteSawNoReference,
@@ -345,7 +382,8 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 blockingDeleteAgentRepository(
                         new JdbcAgentDefinitionRepository(
                                 deleteClient,
-                                new com.fasterxml.jackson.databind.ObjectMapper()
+                                new com.fasterxml.jackson.databind.ObjectMapper(),
+                                deleteTransaction
                         ),
                         toolId,
                         deleteSawNoReference,
@@ -387,6 +425,198 @@ class ManagementCommandServiceJdbcPersistenceTest {
         assertThat(setupTools.findByTenantAndId(TENANT_ID, toolId)).isPresent();
         assertThat(persistedAgent.toolIds()).contains(toolId);
         assertThat(setupGrants.listByTenantAgentAndTool(TENANT_ID, agentId, toolId)).hasSize(1);
+    }
+
+    private void assertToolCallHistoryBlocksDeleteAndRemains(DataSource dataSource) {
+        migrateAndSeedTenant(dataSource);
+        TransactionTemplate transactionTemplate =
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        JdbcClient jdbcClient = JdbcClient.create(dataSource);
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        JdbcToolDefinitionRepository tools = new JdbcToolDefinitionRepository(jdbcClient);
+        JdbcAgentDefinitionRepository agents =
+                new JdbcAgentDefinitionRepository(jdbcClient, objectMapper, transactionTemplate);
+        JdbcToolGrantRepository grants = new JdbcToolGrantRepository(jdbcClient);
+        JdbcHttpToolConfigRepository httpConfigs =
+                new JdbcHttpToolConfigRepository(jdbcClient, objectMapper, transactionTemplate);
+        JdbcMcpToolPublicationRepository publications =
+                new JdbcMcpToolPublicationRepository(jdbcClient, transactionTemplate);
+        JdbcAuditEventRepository audits = new JdbcAuditEventRepository(jdbcClient, transactionTemplate);
+        ManagementCommandService service = service(
+                transactionTemplate, agents, tools, httpConfigs, publications, grants, new AuditAppender(audits)
+        );
+        UUID toolId = UUID.randomUUID();
+        UUID agentId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        tools.save(localTool(toolId, "history_tool"));
+        agents.save(agent(agentId, List.of()));
+        Timestamp now = Timestamp.from(Instant.parse("2026-07-31T00:00:00Z"));
+        jdbcClient.sql("""
+                        INSERT INTO runs (
+                            id, tenant_id, agent_id, principal_id, input_text, status,
+                            output_text, error_message, started_at, finished_at
+                        ) VALUES (
+                            :id, :tenantId, :agentId, :principalId, :input, :status,
+                            :output, :errorMessage, :startedAt, :finishedAt
+                        )
+                        """)
+                .param("id", runId.toString())
+                .param("tenantId", TENANT_ID.toString())
+                .param("agentId", agentId.toString())
+                .param("principalId", PRINCIPAL.principalId())
+                .param("input", "历史调用")
+                .param("status", "SUCCEEDED")
+                .param("output", "完成")
+                .param("errorMessage", "")
+                .param("startedAt", now)
+                .param("finishedAt", now)
+                .update();
+        jdbcClient.sql("""
+                        INSERT INTO tool_calls (
+                            id, tenant_id, run_id, tool_id, tool_name, input_summary,
+                            output_summary, status, authorized, duration_ms, error_message, created_at
+                        ) VALUES (
+                            :id, :tenantId, :runId, :toolId, :toolName, :inputSummary,
+                            :outputSummary, :status, true, :durationMs, :errorMessage, :createdAt
+                        )
+                        """)
+                .param("id", UUID.randomUUID().toString())
+                .param("tenantId", TENANT_ID.toString())
+                .param("runId", runId.toString())
+                .param("toolId", toolId.toString())
+                .param("toolName", "history_tool")
+                .param("inputSummary", "输入摘要")
+                .param("outputSummary", "输出摘要")
+                .param("status", "SUCCEEDED")
+                .param("durationMs", 10L)
+                .param("errorMessage", "")
+                .param("createdAt", now)
+                .update();
+
+        assertThatThrownBy(() -> service.deleteTool(PRINCIPAL, toolId))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+                    assertThat(exception.getStatusCode().value()).isEqualTo(409);
+                    assertThat(exception.getReason()).isEqualTo("工具已有调用历史，为保留运行记录不能删除");
+                });
+
+        assertThat(tools.findByTenantAndId(TENANT_ID, toolId)).isPresent();
+        assertThat(countRows(jdbcClient, "tool_calls")).isEqualTo(1);
+        assertThat(audits.listByTenant(TENANT_ID, 100))
+                .extracting(AuditEvent::eventType)
+                .doesNotContain("TOOL_DELETE");
+    }
+
+    private void assertCrossInstanceDifferentToolGrantAndRevokeKeepAllChanges(DataSource dataSource)
+            throws Exception {
+        migrateAndSeedTenant(dataSource);
+        JdbcClient setupClient = JdbcClient.create(dataSource);
+        TransactionTemplate setupTransaction =
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        JdbcToolDefinitionRepository setupTools = new JdbcToolDefinitionRepository(setupClient);
+        JdbcAgentDefinitionRepository setupAgents = new JdbcAgentDefinitionRepository(
+                setupClient, new com.fasterxml.jackson.databind.ObjectMapper(), setupTransaction
+        );
+        JdbcToolGrantRepository setupGrants = new JdbcToolGrantRepository(setupClient);
+        UUID addToolId = UUID.randomUUID();
+        UUID removeToolId = UUID.randomUUID();
+        UUID agentId = UUID.randomUUID();
+        setupTools.save(localTool(addToolId, "grant_tool"));
+        setupTools.save(localTool(removeToolId, "revoke_tool"));
+        setupAgents.save(agent(agentId, List.of(removeToolId)));
+        setupGrants.save(new ToolGrant(TENANT_ID, removeToolId, agentId, null, true));
+
+        CountDownLatch mutationsReady = new CountDownLatch(2);
+        TransactionTemplate grantTransaction =
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        TransactionTemplate revokeTransaction =
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        Object grantService = isolatedServiceWithMutationBarrier(
+                dataSource, grantTransaction, mutationsReady
+        );
+        Object revokeService = isolatedServiceWithMutationBarrier(
+                dataSource, revokeTransaction, mutationsReady
+        );
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            var grantResult = executor.submit(() -> grantWithStatus(grantService, addToolId, agentId));
+            var revokeResult = executor.submit(() -> revokeWithStatus(revokeService, removeToolId, agentId));
+
+            assertThat(grantResult.get(30, TimeUnit.SECONDS)).isEqualTo(200);
+            assertThat(revokeResult.get(30, TimeUnit.SECONDS)).isEqualTo(200);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        AgentDefinition persisted = setupAgents.findByTenantAndId(TENANT_ID, agentId).orElseThrow();
+        assertThat(persisted.toolIds()).containsExactly(addToolId);
+        assertThat(setupGrants.listByTenantAgentAndTool(TENANT_ID, agentId, addToolId)).hasSize(1);
+        assertThat(setupGrants.listByTenantAgentAndTool(TENANT_ID, agentId, removeToolId)).isEmpty();
+    }
+
+    private void assertConcurrentUpdateAndDeleteSerializeOnToolRow(DataSource dataSource) throws Exception {
+        migrateAndSeedTenant(dataSource);
+        JdbcClient setupClient = JdbcClient.create(dataSource);
+        UUID toolId = UUID.randomUUID();
+        new JdbcToolDefinitionRepository(setupClient).save(localTool(toolId, "serialized_tool"));
+        CountDownLatch updateLocked = new CountDownLatch(1);
+        CountDownLatch deleteAttemptedLock = new CountDownLatch(1);
+        TransactionTemplate updateTransaction =
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        TransactionTemplate deleteTransaction =
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        JdbcClient updateClient = JdbcClient.create(dataSource);
+        JdbcClient deleteClient = JdbcClient.create(dataSource);
+        Object updateService = isolatedService(
+                updateTransaction,
+                emptyAgentRepository(),
+                pausingUpdateToolRepository(
+                        new JdbcToolDefinitionRepository(updateClient),
+                        updateLocked,
+                        deleteAttemptedLock
+                ),
+                new JdbcHttpToolConfigRepository(
+                        updateClient, new com.fasterxml.jackson.databind.ObjectMapper(), updateTransaction
+                ),
+                new JdbcMcpToolPublicationRepository(updateClient, updateTransaction),
+                new JdbcToolGrantRepository(updateClient),
+                new AuditAppender(new JdbcAuditEventRepository(updateClient, updateTransaction))
+        );
+        Object deleteService = isolatedService(
+                deleteTransaction,
+                emptyAgentRepository(),
+                signalingDeleteToolRepository(
+                        new JdbcToolDefinitionRepository(deleteClient),
+                        deleteAttemptedLock
+                ),
+                new JdbcHttpToolConfigRepository(
+                        deleteClient, new com.fasterxml.jackson.databind.ObjectMapper(), deleteTransaction
+                ),
+                new JdbcMcpToolPublicationRepository(deleteClient, deleteTransaction),
+                new JdbcToolGrantRepository(deleteClient),
+                new AuditAppender(new JdbcAuditEventRepository(deleteClient, deleteTransaction))
+        );
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            var updateResult = executor.submit(
+                    () -> updateLocalWithStatus(updateService, toolId, "serialized_tool")
+            );
+            awaitLatch(updateLocked, "并发更新未持有工具行锁");
+            var deleteResult = executor.submit(() -> deleteWithStatus(deleteService, toolId));
+
+            assertThat(updateResult.get(30, TimeUnit.SECONDS)).isEqualTo(200);
+            assertThat(deleteResult.get(30, TimeUnit.SECONDS)).isEqualTo(200);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(new JdbcToolDefinitionRepository(setupClient)
+                .findByTenantAndId(TENANT_ID, toolId)).isEmpty();
+        assertThat(new JdbcAuditEventRepository(setupClient, updateTransaction)
+                .listByTenant(TENANT_ID, 100))
+                .extracting(AuditEvent::eventType)
+                .contains("TOOL_UPDATE", "TOOL_DELETE");
     }
 
     private static AuditAppender failingDatabaseAuditAppender(JdbcClient jdbcClient) {
@@ -454,6 +684,54 @@ class ManagementCommandServiceJdbcPersistenceTest {
             return responseStatus(exception.getCause());
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("调用隔离服务授权失败", exception);
+        }
+    }
+
+    private static int revokeWithStatus(Object service, UUID toolId, UUID agentId) {
+        try {
+            service.getClass()
+                    .getMethod("revokeTool", PrincipalRef.class, UUID.class, UUID.class)
+                    .invoke(service, PRINCIPAL, toolId, agentId);
+            return 200;
+        } catch (InvocationTargetException exception) {
+            return responseStatus(exception.getCause());
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("调用隔离服务撤销授权失败", exception);
+        }
+    }
+
+    private static int updateLocalWithStatus(Object service, UUID toolId, String toolName) {
+        try {
+            Class<?> specClass = java.util.Arrays.stream(service.getClass().getDeclaredClasses())
+                    .filter(candidate -> candidate.getSimpleName().equals("ToolUpdateSpec"))
+                    .findFirst()
+                    .orElseThrow();
+            Object spec = specClass.getConstructor(
+                            String.class,
+                            String.class,
+                            ToolType.class,
+                            ToolRiskLevel.class,
+                            boolean.class,
+                            HttpToolCreateSpec.class,
+                            boolean.class
+                    )
+                    .newInstance(
+                            toolName,
+                            "并发更新后的描述",
+                            ToolType.LOCAL,
+                            ToolRiskLevel.MEDIUM,
+                            true,
+                            null,
+                            false
+                    );
+            service.getClass()
+                    .getMethod("updateTool", PrincipalRef.class, UUID.class, specClass)
+                    .invoke(service, PRINCIPAL, toolId, spec);
+            return 200;
+        } catch (InvocationTargetException exception) {
+            return responseStatus(exception.getCause());
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("调用隔离服务更新失败", exception);
         }
     }
 
@@ -569,6 +847,57 @@ class ManagementCommandServiceJdbcPersistenceTest {
             }
 
             @Override
+            public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
+                return delegate.hasToolCallHistory(tenantId, toolId);
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID toolId) {
+                delegate.delete(tenantId, toolId);
+            }
+        };
+    }
+
+    private static ToolDefinitionRepository pausingUpdateToolRepository(
+            ToolDefinitionRepository delegate,
+            CountDownLatch updateLocked,
+            CountDownLatch deleteAttemptedLock
+    ) {
+        return new ToolDefinitionRepository() {
+            @Override
+            public ToolDefinition save(ToolDefinition tool) {
+                return delegate.save(tool);
+            }
+
+            @Override
+            public ToolDefinition update(ToolDefinition tool) {
+                return delegate.update(tool);
+            }
+
+            @Override
+            public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
+                return delegate.findByTenantAndId(tenantId, toolId);
+            }
+
+            @Override
+            public Optional<ToolDefinition> findByTenantAndIdForUpdate(UUID tenantId, UUID toolId) {
+                Optional<ToolDefinition> result = delegate.findByTenantAndIdForUpdate(tenantId, toolId);
+                updateLocked.countDown();
+                awaitLatch(deleteAttemptedLock, "并发删除未发起工具行锁请求");
+                return result;
+            }
+
+            @Override
+            public List<ToolDefinition> listByTenant(UUID tenantId) {
+                return delegate.listByTenant(tenantId);
+            }
+
+            @Override
+            public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
+                return delegate.hasToolCallHistory(tenantId, toolId);
+            }
+
+            @Override
             public void delete(UUID tenantId, UUID toolId) {
                 delegate.delete(tenantId, toolId);
             }
@@ -625,6 +954,51 @@ class ManagementCommandServiceJdbcPersistenceTest {
         );
     }
 
+    private static Object isolatedServiceWithMutationBarrier(
+            DataSource dataSource,
+            TransactionTemplate transactionTemplate,
+            CountDownLatch mutationsReady
+    ) {
+        JdbcClient jdbcClient = JdbcClient.create(dataSource);
+        AgentDefinitionRepository agents = new DelegatingAgentDefinitionRepository(
+                new JdbcAgentDefinitionRepository(
+                        jdbcClient,
+                        new com.fasterxml.jackson.databind.ObjectMapper(),
+                        transactionTemplate
+                )
+        ) {
+            @Override
+            public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
+                awaitConcurrentMutation();
+                return super.addToolToAgent(tenantId, agentId, toolId);
+            }
+
+            @Override
+            public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
+                awaitConcurrentMutation();
+                return super.removeToolFromAgent(tenantId, agentId, toolId);
+            }
+
+            private void awaitConcurrentMutation() {
+                mutationsReady.countDown();
+                awaitLatch(mutationsReady, "同一 Agent 的并发授权与撤销未同时到达");
+            }
+        };
+        return isolatedService(
+                transactionTemplate,
+                agents,
+                new JdbcToolDefinitionRepository(jdbcClient),
+                new JdbcHttpToolConfigRepository(
+                        jdbcClient,
+                        new com.fasterxml.jackson.databind.ObjectMapper(),
+                        transactionTemplate
+                ),
+                new JdbcMcpToolPublicationRepository(jdbcClient, transactionTemplate),
+                new JdbcToolGrantRepository(jdbcClient),
+                new AuditAppender(new JdbcAuditEventRepository(jdbcClient, transactionTemplate))
+        );
+    }
+
     private static ManagementCommandService service(
             TransactionTemplate transactionTemplate,
             AgentDefinitionRepository agents,
@@ -665,10 +1039,14 @@ class ManagementCommandServiceJdbcPersistenceTest {
     }
 
     private static ToolDefinition localTool(UUID toolId) {
+        return localTool(toolId, "并发本地工具");
+    }
+
+    private static ToolDefinition localTool(UUID toolId, String name) {
         return new ToolDefinition(
                 toolId,
                 TENANT_ID,
-                "并发本地工具",
+                name,
                 "用于验证授权与删除并发一致性",
                 ToolType.LOCAL,
                 "{\"type\":\"object\"}",
@@ -821,6 +1199,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 throw new IllegalStateException("并发名称检查被中断", exception);
             }
             return tools;
+        }
+
+        @Override
+        public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
+            return delegate.hasToolCallHistory(tenantId, toolId);
         }
 
         @Override

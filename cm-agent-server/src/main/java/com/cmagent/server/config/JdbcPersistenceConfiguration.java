@@ -115,8 +115,12 @@ public class JdbcPersistenceConfiguration {
      * @param cmAgentJdbcClient JDBC 客户端 @return Agent 定义 Repository
      */
     @Bean
-    AgentDefinitionRepository jdbcAgentDefinitionRepository(JdbcClient cmAgentJdbcClient) {
-        return new JdbcAgentDefinitionRepository(cmAgentJdbcClient, new ObjectMapper());
+    AgentDefinitionRepository jdbcAgentDefinitionRepository(
+            JdbcClient cmAgentJdbcClient,
+            ObjectMapper objectMapper,
+            TransactionTemplate cmAgentTransactionTemplate
+    ) {
+        return new JdbcAgentDefinitionRepository(cmAgentJdbcClient, objectMapper, cmAgentTransactionTemplate);
     }
 
     /**

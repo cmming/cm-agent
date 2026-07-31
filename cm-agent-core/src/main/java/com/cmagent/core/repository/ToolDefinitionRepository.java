@@ -40,6 +40,13 @@ public interface ToolDefinitionRepository {
     List<ToolDefinition> listByTenant(UUID tenantId);
 
     /**
+     * 判断工具是否已经产生需要长期保留的调用历史。
+     *
+     * <p>调用历史存在时不得物理删除工具定义，否则会破坏运行历史的可追溯性。</p>
+     */
+    boolean hasToolCallHistory(UUID tenantId, UUID toolId);
+
+    /**
      * 定义 delete 操作。
      */
     void delete(UUID tenantId, UUID toolId);

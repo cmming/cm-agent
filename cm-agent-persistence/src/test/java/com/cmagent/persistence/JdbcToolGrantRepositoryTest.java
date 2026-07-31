@@ -11,6 +11,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -133,7 +135,7 @@ class JdbcToolGrantRepositoryTest {
                 .param("tenantId", TENANT_ID.toString())
                 .param("createdAt", now)
                 .update();
-        new JdbcAgentDefinitionRepository(JdbcClient.create(dataSource), new ObjectMapper()).save(new AgentDefinition(
+        newAgentRepository(dataSource).save(new AgentDefinition(
                 AGENT_ID,
                 TENANT_ID,
                 "企业助手",
@@ -148,7 +150,7 @@ class JdbcToolGrantRepositoryTest {
                 "tester",
                 "tester"
         ));
-        new JdbcAgentDefinitionRepository(JdbcClient.create(dataSource), new ObjectMapper()).save(new AgentDefinition(
+        newAgentRepository(dataSource).save(new AgentDefinition(
                 UUID.fromString("10000000-0000-0000-0000-000000000002"),
                 TENANT_ID,
                 "其他助手",
@@ -163,7 +165,7 @@ class JdbcToolGrantRepositoryTest {
                 "tester",
                 "tester"
         ));
-        new JdbcAgentDefinitionRepository(JdbcClient.create(dataSource), new ObjectMapper()).save(new AgentDefinition(
+        newAgentRepository(dataSource).save(new AgentDefinition(
                 UUID.fromString("10000000-0000-0000-0000-000000000003"),
                 TENANT_ID,
                 "第三助手",
@@ -204,5 +206,13 @@ class JdbcToolGrantRepositoryTest {
                 "tester",
                 "tester"
         ));
+    }
+
+    private static JdbcAgentDefinitionRepository newAgentRepository(DataSource dataSource) {
+        return new JdbcAgentDefinitionRepository(
+                JdbcClient.create(dataSource),
+                new ObjectMapper(),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+        );
     }
 }

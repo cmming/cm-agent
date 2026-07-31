@@ -7,6 +7,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -55,7 +57,11 @@ class JdbcAgentDefinitionRepositoryTest {
                 .migrate();
 
         seedTenantAndModelConfigs(dataSource);
-        repository = new JdbcAgentDefinitionRepository(JdbcClient.create(dataSource), new ObjectMapper());
+        repository = new JdbcAgentDefinitionRepository(
+                JdbcClient.create(dataSource),
+                new ObjectMapper(),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+        );
     }
 
     @Test

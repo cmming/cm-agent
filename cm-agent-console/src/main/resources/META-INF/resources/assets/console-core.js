@@ -161,7 +161,9 @@
     }
 
     function isToolDeleteConflict(error) {
-        return error?.status === 409;
+        return error?.status === 409
+            && typeof error?.message === "string"
+            && error.message.includes("工具仍被 Agent 关联");
     }
 
     function createToolPublicationLock() {
