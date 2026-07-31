@@ -38,6 +38,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     private final ConcurrentHashMap<UUID, AgentDefinition> agents = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, ModelConfig> modelConfigs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, ToolDefinition> tools = new ConcurrentHashMap<>();
+    private final java.util.Set<UUID> deletedToolIds = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<TenantToolName, UUID> toolIdsByTenantAndName = new ConcurrentHashMap<>();
     private final Object toolLock = new Object();
     private final List<ToolGrant> grants = Collections.synchronizedList(new ArrayList<>());
@@ -282,6 +283,16 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
             if (existingToolId != null && !existingToolId.equals(tool.id())) {
                 throw new DuplicateKeyException("duplicate key ux_tool_definitions_tenant_name");
             }
+            if (deletedToolIds.contains(tool.id())) {
+                ToolDefinition deleted = tools.get(tool.id());
+                if (deleted == null || !deleted.tenantId().equals(tool.tenantId())) {
+                    toolIdsByTenantAndName.remove(name, tool.id());
+                    throw new DuplicateKeyException("duplicate key tool_definitions_pkey");
+                }
+                tools.put(tool.id(), tool);
+                deletedToolIds.remove(tool.id());
+                return tool;
+            }
             ToolDefinition existing = tools.putIfAbsent(tool.id(), tool);
             if (existing != null) {
                 if (!existing.tenantId().equals(tool.tenantId()) || !existing.name().equals(tool.name())) {
@@ -302,7 +313,8 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         Objects.requireNonNull(tool, "tool 不能为空");
         synchronized (toolLock) {
             ToolDefinition existing = tools.get(tool.id());
-            if (existing == null || !existing.tenantId().equals(tool.tenantId())) {
+            if (existing == null || deletedToolIds.contains(tool.id())
+                    || !existing.tenantId().equals(tool.tenantId())) {
                 throw new NoSuchElementException("工具不存在");
             }
             TenantToolName originalName = new TenantToolName(existing.tenantId(), existing.name());
@@ -339,7 +351,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
      */
     public Optional<ToolDefinition> findTool(UUID tenantId, UUID toolId) {
         ToolDefinition tool = tools.get(toolId);
-        if (tool == null || !tool.tenantId().equals(tenantId)) {
+        if (tool == null || deletedToolIds.contains(toolId) || !tool.tenantId().equals(tenantId)) {
             return Optional.empty();
         }
         return Optional.of(tool);
@@ -356,7 +368,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
             if (tool == null || !tenantId.equals(tool.tenantId())) {
                 return;
             }
-            tools.remove(toolId, tool);
+            deletedToolIds.add(toolId);
             toolIdsByTenantAndName.remove(new TenantToolName(tenantId, tool.name()), toolId);
         }
     }
@@ -367,7 +379,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
      */
     public List<ToolDefinition> listTools(UUID tenantId) {
         return tools.values().stream()
-                .filter(tool -> tool.tenantId().equals(tenantId))
+                .filter(tool -> tool.tenantId().equals(tenantId) && !deletedToolIds.contains(tool.id()))
                 .sorted(Comparator.comparing(ToolDefinition::name, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(tool -> tool.id().toString()))
                 .toList();

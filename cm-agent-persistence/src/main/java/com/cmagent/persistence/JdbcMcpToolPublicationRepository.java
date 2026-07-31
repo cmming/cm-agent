@@ -69,7 +69,7 @@ public class JdbcMcpToolPublicationRepository implements McpToolPublicationRepos
         boolean exists = jdbcClient.sql("""
                         SELECT id
                         FROM tool_definitions
-                        WHERE tenant_id = :tenantId AND id = :toolId
+                        WHERE tenant_id = :tenantId AND id = :toolId AND deleted_at IS NULL
                         FOR UPDATE
                         """)
                 .param("tenantId", tenantId.toString())
@@ -85,9 +85,14 @@ public class JdbcMcpToolPublicationRepository implements McpToolPublicationRepos
     @Override
     public Optional<McpToolPublication> findByTenantAndToolId(UUID tenantId, UUID toolId) {
         return jdbcClient.sql("""
-                        SELECT tenant_id, tool_id, enabled, published_by
-                        FROM tool_mcp_publications
-                        WHERE tenant_id = :tenantId AND tool_id = :toolId
+                        SELECT publication.tenant_id, publication.tool_id,
+                               publication.enabled, publication.published_by
+                        FROM tool_mcp_publications publication
+                        INNER JOIN tool_definitions tool
+                            ON tool.id = publication.tool_id AND tool.tenant_id = publication.tenant_id
+                        WHERE publication.tenant_id = :tenantId
+                          AND publication.tool_id = :toolId
+                          AND tool.deleted_at IS NULL
                         """)
                 .param("tenantId", tenantId.toString())
                 .param("toolId", toolId.toString())
@@ -101,9 +106,14 @@ public class JdbcMcpToolPublicationRepository implements McpToolPublicationRepos
             return Map.of();
         }
         List<McpToolPublication> publications = jdbcClient.sql("""
-                        SELECT tenant_id, tool_id, enabled, published_by
-                        FROM tool_mcp_publications
-                        WHERE tenant_id = :tenantId AND tool_id IN (:toolIds)
+                        SELECT publication.tenant_id, publication.tool_id,
+                               publication.enabled, publication.published_by
+                        FROM tool_mcp_publications publication
+                        INNER JOIN tool_definitions tool
+                            ON tool.id = publication.tool_id AND tool.tenant_id = publication.tenant_id
+                        WHERE publication.tenant_id = :tenantId
+                          AND publication.tool_id IN (:toolIds)
+                          AND tool.deleted_at IS NULL
                         """)
                 .param("tenantId", tenantId.toString())
                 .param("toolIds", toolIds.stream().map(UUID::toString).toList())
@@ -117,10 +127,15 @@ public class JdbcMcpToolPublicationRepository implements McpToolPublicationRepos
     @Override
     public List<McpToolPublication> listEnabledByTenant(UUID tenantId) {
         return jdbcClient.sql("""
-                        SELECT tenant_id, tool_id, enabled, published_by
-                        FROM tool_mcp_publications
-                        WHERE tenant_id = :tenantId AND enabled = true
-                        ORDER BY tool_id ASC
+                        SELECT publication.tenant_id, publication.tool_id,
+                               publication.enabled, publication.published_by
+                        FROM tool_mcp_publications publication
+                        INNER JOIN tool_definitions tool
+                            ON tool.id = publication.tool_id AND tool.tenant_id = publication.tenant_id
+                        WHERE publication.tenant_id = :tenantId
+                          AND publication.enabled = true
+                          AND tool.deleted_at IS NULL
+                        ORDER BY publication.tool_id ASC
                         """)
                 .param("tenantId", tenantId.toString())
                 .query(this::mapPublication)

@@ -261,10 +261,10 @@ public class ManagementCommandService {
      * @param principal 当前认证主体
      * @param toolId    工具标识
      * @param spec      工具可编辑配置
-     * @return 更新后的工具定义
+     * @return 本次命令提交的完整工具响应快照
      * @throws ResponseStatusException 工具不存在、不可变字段被修改或名称冲突时抛出
      */
-    public ToolDefinition updateTool(PrincipalRef principal, UUID toolId, ToolUpdateSpec spec) {
+    public ToolUpdateResult updateTool(PrincipalRef principal, UUID toolId, ToolUpdateSpec spec) {
         Objects.requireNonNull(principal, "principal 不能为空");
         Objects.requireNonNull(toolId, "toolId 不能为空");
         Objects.requireNonNull(spec, "spec 不能为空");
@@ -331,12 +331,12 @@ public class ManagementCommandService {
         );
     }
 
-    private ToolDefinition updateToolAndAudit(PrincipalRef principal, UUID toolId, ToolUpdateSpec spec) {
+    private ToolUpdateResult updateToolAndAudit(PrincipalRef principal, UUID toolId, ToolUpdateSpec spec) {
         PreparedToolUpdate prepared = prepareToolUpdateCommand(principal, toolId, spec, true);
         return applyToolUpdateAndAudit(principal, prepared);
     }
 
-    private ToolDefinition updateToolWithCompensation(PrincipalRef principal, UUID toolId, ToolUpdateSpec spec) {
+    private ToolUpdateResult updateToolWithCompensation(PrincipalRef principal, UUID toolId, ToolUpdateSpec spec) {
         PreparedToolUpdate prepared = prepareToolUpdateCommand(principal, toolId, spec, false);
         UUID tenantId = principal.tenantId();
         ToolStateSnapshot snapshot = new ToolStateSnapshot(
@@ -374,7 +374,7 @@ public class ManagementCommandService {
         return prepareToolUpdate(principal, existing, spec);
     }
 
-    private ToolDefinition applyToolUpdateAndAudit(PrincipalRef principal, PreparedToolUpdate prepared) {
+    private ToolUpdateResult applyToolUpdateAndAudit(PrincipalRef principal, PreparedToolUpdate prepared) {
         UUID tenantId = principal.tenantId();
         ToolDefinition updated;
         try {
@@ -391,7 +391,7 @@ public class ManagementCommandService {
             mcpToolPublicationRepository.delete(tenantId, prepared.tool().id());
         }
         appendToolUpdateAudit(principal, updated);
-        return updated;
+        return new ToolUpdateResult(updated, prepared.httpToolConfig(), prepared.mcpPublished());
     }
 
     private PreparedToolUpdate prepareToolUpdate(
@@ -419,7 +419,7 @@ public class ManagementCommandService {
             PublicationMutation publicationMutation = existing.type() == ToolType.LOCAL && !spec.mcpPublished()
                     ? PublicationMutation.DELETE
                     : PublicationMutation.KEEP;
-            return new PreparedToolUpdate(existing, updated, null, null, publicationMutation);
+            return new PreparedToolUpdate(existing, updated, null, null, publicationMutation, spec.mcpPublished());
         }
 
         HttpToolConfig configuration = new HttpToolConfig(
@@ -444,7 +444,8 @@ public class ManagementCommandService {
                 updated,
                 configuration,
                 publication,
-                publication == null ? PublicationMutation.DELETE : PublicationMutation.UPSERT
+                publication == null ? PublicationMutation.DELETE : PublicationMutation.UPSERT,
+                spec.mcpPublished()
         );
     }
 
@@ -931,7 +932,8 @@ public class ManagementCommandService {
             ToolDefinition tool,
             @Nullable HttpToolConfig httpToolConfig,
             @Nullable McpToolPublication mcpToolPublication,
-            PublicationMutation publicationMutation
+            PublicationMutation publicationMutation,
+            boolean mcpPublished
     ) {
     }
 
@@ -969,6 +971,19 @@ public class ManagementCommandService {
             Objects.requireNonNull(description, "description 不能为空");
             Objects.requireNonNull(type, "type 不能为空");
             Objects.requireNonNull(riskLevel, "riskLevel 不能为空");
+        }
+    }
+
+    /**
+     * 工具更新命令提交的稳定快照，供 Controller 直接构造响应。
+     */
+    public record ToolUpdateResult(
+            ToolDefinition tool,
+            @Nullable HttpToolConfig httpToolConfig,
+            boolean mcpPublished
+    ) {
+        public ToolUpdateResult {
+            Objects.requireNonNull(tool, "tool 不能为空");
         }
     }
 }

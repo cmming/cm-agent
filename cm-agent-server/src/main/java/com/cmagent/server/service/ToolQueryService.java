@@ -82,16 +82,27 @@ public class ToolQueryService {
                 });
     }
 
+    /**
+     * 将写命令返回的同一份持久化快照转换为响应摘要，不再发起第二次仓储查询。
+     *
+     * @param tool         写命令已提交的工具定义
+     * @param httpConfig   写命令已提交的 HTTP 配置
+     * @param mcpPublished 写命令已提交的 MCP 发布状态
+     * @return 与本次命令一致的工具摘要
+     */
+    public ToolSummary summarize(ToolDefinition tool, HttpToolConfig httpConfig, boolean mcpPublished) {
+        return toSummary(tool, httpConfig, mcpPublished);
+    }
+
     private ToolSummary toSummary(
             ToolDefinition tool,
             HttpToolConfig httpConfig,
             McpToolPublication publication
     ) {
-        return new ToolSummary(
-                tool,
-                httpConfig,
-                publication != null && publication.enabled(),
-                toolRuntimeReadiness.isReady(tool, httpConfig)
-        );
+        return toSummary(tool, httpConfig, publication != null && publication.enabled());
+    }
+
+    private ToolSummary toSummary(ToolDefinition tool, HttpToolConfig httpConfig, boolean mcpPublished) {
+        return new ToolSummary(tool, httpConfig, mcpPublished, toolRuntimeReadiness.isReady(tool, httpConfig));
     }
 }

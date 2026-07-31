@@ -400,6 +400,28 @@ test("工具更新、删除和解除关联路径会编码资源标识", () => {
     assert.equal(core.buildToolGrantDeletePath("tool", "agent/id"), "/api/tools/tool/grants/agent%2Fid");
 });
 
+test("解除关联完成后只刷新仍被选中的原 Agent", () => {
+    assert.equal(core.shouldReloadRevokedAgent("agent-a", "agent-a"), true);
+    assert.equal(core.shouldReloadRevokedAgent("agent-b", "agent-a"), false);
+
+    const app = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+    assert.match(app, /core\.shouldReloadRevokedAgent\(state\.selectedAgentId, agent\.id\)/);
+});
+
+test("工具保存完成后只重置仍在编辑同一工具的表单", () => {
+    assert.equal(core.shouldResetSavedToolForm("tool-a", "tool-a"), true);
+    assert.equal(core.shouldResetSavedToolForm("tool-b", "tool-a"), false);
+
+    const app = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+    assert.match(app, /core\.shouldResetSavedToolForm\(state\.editingToolId, editingTool\.id\)/);
+});
+
 test("仅将明确的 409 工具删除响应识别为关联冲突", () => {
     assert.equal(core.isToolDeleteConflict({
         status: 409,

@@ -29,9 +29,15 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import jakarta.validation.Validator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -39,6 +45,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -67,8 +74,14 @@ class ToolControllerTest {
     @Autowired
     private InMemoryPlatformStore store;
 
+    @Autowired
+    private Validator validator;
+
     @SpyBean
     private AuditAppender auditAppender;
+
+    @SpyBean
+    private ManagementCommandService managementCommandService;
 
     @Test
     void localCreateKeepsExistingFieldsAndHasNoHttpConfiguration() throws Exception {
@@ -163,6 +176,43 @@ class ToolControllerTest {
     }
 
     @Test
+    void httpCreateRejectsNullSecretHeaderValueAndBlankKeyAsBadRequest() throws Exception {
+        String token = token(TENANT_A, "admin");
+
+        mockMvc.perform(post("/api/tools")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"null-secret-value","description":"空值","type":"HTTP","riskLevel":"LOW",
+                                 "httpConfig":{"method":"POST","urlTemplate":"https://api.example.test","inputSchema":{},
+                                 "secretHeaders":{"Authorization":null},"timeoutMillis":1000}}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/tools")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"blank-secret-key","description":"空键","type":"HTTP","riskLevel":"LOW",
+                                 "httpConfig":{"method":"POST","urlTemplate":"https://api.example.test","inputSchema":{},
+                                 "secretHeaders":{"":"secret/integration/token"},"timeoutMillis":1000}}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        HashMap<String, String> secretHeadersWithNullKey = new HashMap<>();
+        secretHeadersWithNullKey.put(null, "secret/integration/token");
+        ToolController.HttpConfigRequest request = new ToolController.HttpConfigRequest(
+                com.cmagent.core.domain.HttpToolMethod.POST,
+                "https://api.example.test",
+                new ObjectMapper().createObjectNode(),
+                List.of(),
+                secretHeadersWithNullKey,
+                1000L
+        );
+        assertThat(validator.validate(request)).isNotEmpty();
+    }
+
+    @Test
     void duplicateNameIsRejectedWithinTenantButAllowedAcrossTenants() throws Exception {
         String tenantAToken = token(TENANT_A, "admin-a");
         String tenantBToken = token(TENANT_B, "admin-b");
@@ -254,6 +304,61 @@ class ToolControllerTest {
                 .andExpect(jsonPath("$.httpConfig.secretHeaders.Authorization").value("secret/integration/updated-token"))
                 .andExpect(jsonPath("$.httpConfig.timeoutMillis").value(2000))
                 .andExpect(jsonPath("$.mcpPublished").value(true));
+    }
+
+    @Test
+    void concurrentHttpUpdatesEachReturnTheirOwnCommittedSnapshot() throws Exception {
+        String managerToken = token(TENANT_A, "manager");
+        String toolId = createHttp(managerToken, "orders-before-concurrent-update");
+        UUID id = UUID.fromString(toolId);
+        CountDownLatch firstCommandCompleted = new CountDownLatch(1);
+        CountDownLatch releaseFirstResponse = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            Object result = invocation.callRealMethod();
+            ManagementCommandService.ToolUpdateSpec spec = invocation.getArgument(2);
+            if ("orders-first-update".equals(spec.name())) {
+                firstCommandCompleted.countDown();
+                if (!releaseFirstResponse.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("并发测试未释放第一个更新响应");
+                }
+            }
+            return result;
+        }).when(managementCommandService).updateTool(any(), org.mockito.ArgumentMatchers.eq(id), any());
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> mockMvc.perform(put("/api/tools/{id}", toolId)
+                            .header("Authorization", bearer(managerToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(httpUpdateRequest("orders-first-update")))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString());
+            assertThat(firstCommandCompleted.await(5, TimeUnit.SECONDS)).isTrue();
+
+            String second = mockMvc.perform(put("/api/tools/{id}", toolId)
+                            .header("Authorization", bearer(managerToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(httpUpdateRequest("orders-second-update")))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString();
+            releaseFirstResponse.countDown();
+            String firstResponse = first.get(5, TimeUnit.SECONDS);
+
+            assertThat(JsonPath.<String>read(firstResponse, "$.name")).isEqualTo("orders-first-update");
+            assertThat(JsonPath.<String>read(second, "$.name")).isEqualTo("orders-second-update");
+        } finally {
+            releaseFirstResponse.countDown();
+        }
+        assertThat(store.findTool(TENANT_A, id)).get()
+                .extracting(ToolDefinition::name)
+                .isEqualTo("orders-second-update");
+        assertThat(store.listAuditEvents(TENANT_A).stream()
+                .filter(event -> "TOOL_UPDATE".equals(event.eventType()))
+                .filter(event -> toolId.equals(event.resourceId())))
+                .hasSize(2);
     }
 
     @Test

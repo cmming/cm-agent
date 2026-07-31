@@ -47,7 +47,7 @@ public interface ToolDefinitionRepository {
     boolean hasToolCallHistory(UUID tenantId, UUID toolId);
 
     /**
-     * 定义 delete 操作。
+     * 从管理面删除工具，但实现必须保留运行中调用稍后写入历史所需的引用锚点。
      */
     void delete(UUID tenantId, UUID toolId);
 }

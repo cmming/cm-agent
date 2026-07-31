@@ -331,10 +331,12 @@
             await withSubmitState(button, async () => {
                 await api.request(core.buildToolGrantDeletePath(tool.id, agent.id), {method: "DELETE"});
                 if (!sessionEpoch.isCurrent(operationSession)) return;
-                const agentRevision = agentDetailRevision.completeWrite();
                 const toolRevision = toolLoadRevision.completeWrite();
+                const reloadRevokedAgent = core.shouldReloadRevokedAgent(state.selectedAgentId, agent.id);
                 const [agentReloaded, toolsReloaded] = await Promise.all([
-                    selectAgent(agent.id, agentRevision, operationSession),
+                    reloadRevokedAgent
+                        ? selectAgent(agent.id, agentDetailRevision.completeWrite(), operationSession)
+                        : Promise.resolve(true),
                     loadTools(toolRevision, operationSession)
                 ]);
                 if (!agentReloaded || !toolsReloaded || !sessionEpoch.isCurrent(operationSession)) return;
@@ -660,11 +662,15 @@
                     {method: editingTool ? "PUT" : "POST", body: JSON.stringify(payload)}
                 );
                 if (!sessionEpoch.isCurrent(operationSession)) return;
-                state.selectedToolId = saved.id || editingTool?.id || "";
+                const resetSavedEdit = !editingTool
+                    || core.shouldResetSavedToolForm(state.editingToolId, editingTool.id);
+                if (resetSavedEdit) {
+                    state.selectedToolId = saved.id || editingTool?.id || "";
+                }
                 const successText = editingTool
                     ? `Tool“${saved.name || payload.name}”已更新。`
                     : `Tool“${saved.name || payload.name}”已注册。`;
-                resetToolForm(false);
+                if (resetSavedEdit) resetToolForm(false);
                 const reloadRevision = toolLoadRevision.completeWrite();
                 const toolsReloaded = await loadTools(reloadRevision, operationSession);
                 if (!toolsReloaded || !sessionEpoch.isCurrent(operationSession)) return;

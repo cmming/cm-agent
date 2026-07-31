@@ -148,7 +148,7 @@ public class ToolController {
     ) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", "TOOL", id.toString());
-        ToolDefinition updated = managementCommandService.updateTool(
+        ManagementCommandService.ToolUpdateResult updated = managementCommandService.updateTool(
                 principal,
                 id,
                 new ManagementCommandService.ToolUpdateSpec(
@@ -161,9 +161,11 @@ public class ToolController {
                         Boolean.TRUE.equals(request.mcpPublished())
                 )
         );
-        return toolQueryService.findByTenantAndId(principal.tenantId(), updated.id())
-                .map(this::toSummary)
-                .orElseThrow(() -> new IllegalStateException("已更新工具未找到"));
+        return toSummary(toolQueryService.summarize(
+                updated.tool(),
+                updated.httpToolConfig(),
+                updated.mcpPublished()
+        ));
     }
 
     /**
@@ -430,7 +432,7 @@ public class ToolController {
             @NotBlank String urlTemplate,
             @NotNull JsonNode inputSchema,
             List<@NotNull @Valid HttpParameterMappingRequest> parameterMappings,
-            Map<String, String> secretHeaders,
+            Map<@NotBlank String, @NotBlank String> secretHeaders,
             @NotNull @Min(100) @Max(30000) Long timeoutMillis
     ) {
     }

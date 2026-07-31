@@ -160,6 +160,14 @@
         return `${buildToolDeletePath(toolId)}/grants/${encodeURIComponent(String(agentId || ""))}`;
     }
 
+    function shouldReloadRevokedAgent(selectedAgentId, revokedAgentId) {
+        return Boolean(selectedAgentId) && selectedAgentId === revokedAgentId;
+    }
+
+    function shouldResetSavedToolForm(currentEditingToolId, savedEditingToolId) {
+        return Boolean(currentEditingToolId) && currentEditingToolId === savedEditingToolId;
+    }
+
     function isToolDeleteConflict(error) {
         return error?.status === 409
             && typeof error?.message === "string"
@@ -359,6 +367,8 @@
         buildToolUpdatePath,
         buildToolDeletePath,
         buildToolGrantDeletePath,
+        shouldReloadRevokedAgent,
+        shouldResetSavedToolForm,
         isToolDeleteConflict,
         createToolPublicationLock,
         createLoadRevisionGate,

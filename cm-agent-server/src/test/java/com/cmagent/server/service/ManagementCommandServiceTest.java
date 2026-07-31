@@ -7,6 +7,10 @@ import com.cmagent.core.domain.HttpParameterMapping;
 import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.HttpToolMethod;
 import com.cmagent.core.domain.McpToolPublication;
+import com.cmagent.core.domain.RunRecord;
+import com.cmagent.core.domain.RunStatus;
+import com.cmagent.core.domain.RunToolCall;
+import com.cmagent.core.domain.RunToolCallBatch;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.ToolRiskLevel;
@@ -31,6 +35,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -309,6 +314,44 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    void memoryInFlightToolCallCanPersistAfterRevokeAndDelete() {
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        ToolDefinition existing = httpTool("in-flight-orders");
+        AgentDefinition existingAgent = agent(List.of(TOOL_ID));
+        UUID runId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        Instant startedAt = Instant.parse("2026-07-31T00:00:00Z");
+        store.saveTool(existing);
+        store.saveAgent(existingAgent);
+        store.saveGrant(new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true));
+        store.save(TENANT_ID, RunRecord.create(runId, TENANT_ID, AGENT_ID, PRINCIPAL.principalId(), "执行", startedAt));
+        ManagementCommandService service = statefulMemoryService(store, new AuditAppender(store));
+
+        service.revokeTool(PRINCIPAL, TOOL_ID, AGENT_ID);
+        service.deleteTool(PRINCIPAL, TOOL_ID);
+        RunToolCall call = new RunToolCall(
+                UUID.fromString("00000000-0000-0000-0000-000000000501"),
+                TENANT_ID,
+                runId,
+                TOOL_ID,
+                existing.name(),
+                "输入",
+                "输出",
+                RunStatus.SUCCEEDED,
+                true,
+                10L,
+                "",
+                startedAt.plusSeconds(1)
+        );
+
+        store.saveAll(TENANT_ID, new RunToolCallBatch(TENANT_ID, List.of(call)));
+
+        assertThat(store.findTool(TENANT_ID, TOOL_ID)).isEmpty();
+        assertThat(store.listTools(TENANT_ID)).isEmpty();
+        assertThat(store.listByTenantAndRun(TENANT_ID, runId)).containsExactly(call);
+        assertThat(store.hasToolCallHistory(TENANT_ID, TOOL_ID)).isTrue();
+    }
+
+    @Test
     void updateHttpToolReplacesEditableDefinitionConfigurationAndMcpState() {
         ToolDefinition existing = httpTool("orders-old");
         HttpToolCreateSpec replacement = new HttpToolCreateSpec(
@@ -327,7 +370,7 @@ class ManagementCommandServiceTest {
         when(httpToolConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(mcpToolPublicationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ToolDefinition updated = mockedService().updateTool(
+        ManagementCommandService.ToolUpdateResult result = mockedService().updateTool(
                 PRINCIPAL,
                 TOOL_ID,
                 new ManagementCommandService.ToolUpdateSpec(
@@ -340,6 +383,7 @@ class ManagementCommandServiceTest {
                         true
                 )
         );
+        ToolDefinition updated = result.tool();
 
         assertThat(updated.id()).isEqualTo(existing.id());
         assertThat(updated.tenantId()).isEqualTo(existing.tenantId());
@@ -352,6 +396,8 @@ class ManagementCommandServiceTest {
         assertThat(updated.enabled()).isFalse();
         assertThat(updated.endpoint()).isEqualTo(replacement.urlTemplate());
         assertThat(updated.updatedBy()).isEqualTo(PRINCIPAL.principalId());
+        assertThat(result.httpToolConfig()).isNotNull();
+        assertThat(result.mcpPublished()).isTrue();
 
         ArgumentCaptor<HttpToolConfig> configurationCaptor = ArgumentCaptor.forClass(HttpToolConfig.class);
         verify(httpToolConfigRepository).save(configurationCaptor.capture());
@@ -404,7 +450,7 @@ class ManagementCommandServiceTest {
         when(mcpToolPublicationRepository.findByTenantAndToolId(TENANT_ID, TOOL_ID))
                 .thenReturn(Optional.of(publication));
 
-        ToolDefinition updated = mockedService().updateTool(
+        ManagementCommandService.ToolUpdateResult result = mockedService().updateTool(
                 PRINCIPAL,
                 TOOL_ID,
                 new ManagementCommandService.ToolUpdateSpec(
@@ -418,7 +464,9 @@ class ManagementCommandServiceTest {
                 )
         );
 
-        assertThat(updated.description()).isEqualTo("更新后的本地搜索");
+        assertThat(result.tool().description()).isEqualTo("更新后的本地搜索");
+        assertThat(result.httpToolConfig()).isNull();
+        assertThat(result.mcpPublished()).isTrue();
         verify(httpToolConfigRepository, never()).save(any());
         verify(mcpToolPublicationRepository, never()).save(any());
         verify(mcpToolPublicationRepository, never()).delete(any(), any());

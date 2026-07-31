@@ -85,7 +85,7 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
                             endpoint = :endpoint,
                             updated_by = :updatedBy,
                             updated_at = :updatedAt
-                        WHERE tenant_id = :tenantId AND id = :id
+                        WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL
                         """)
                 .param("name", tool.name())
                 .param("description", tool.description())
@@ -120,7 +120,7 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
                             created_by,
                             updated_by
                         FROM tool_definitions
-                        WHERE tenant_id = :tenantId AND id = :id
+                        WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL
                         """)
                 .param("tenantId", tenantId.toString())
                 .param("id", toolId.toString())
@@ -144,7 +144,7 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
                             created_by,
                             updated_by
                         FROM tool_definitions
-                        WHERE tenant_id = :tenantId AND id = :id
+                        WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL
                         FOR UPDATE
                         """)
                 .param("tenantId", tenantId.toString())
@@ -169,7 +169,7 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
                             created_by,
                             updated_by
                         FROM tool_definitions
-                        WHERE tenant_id = :tenantId
+                        WHERE tenant_id = :tenantId AND deleted_at IS NULL
                         ORDER BY name ASC, id ASC
                         """)
                 .param("tenantId", tenantId.toString())
@@ -194,7 +194,18 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
 
     @Override
     public void delete(UUID tenantId, UUID toolId) {
-        jdbcClient.sql("DELETE FROM tool_definitions WHERE tenant_id = :tenantId AND id = :toolId")
+        Instant deletedAt = Instant.now();
+        jdbcClient.sql("""
+                        UPDATE tool_definitions
+                        SET deleted_name = name,
+                            name = :tombstoneName,
+                            enabled = false,
+                            deleted_at = :deletedAt,
+                            updated_at = :deletedAt
+                        WHERE tenant_id = :tenantId AND id = :toolId AND deleted_at IS NULL
+                        """)
+                .param("tombstoneName", "~deleted~" + toolId + "~" + UUID.randomUUID())
+                .param("deletedAt", Timestamp.from(deletedAt))
                 .param("tenantId", tenantId.toString())
                 .param("toolId", toolId.toString())
                 .update();

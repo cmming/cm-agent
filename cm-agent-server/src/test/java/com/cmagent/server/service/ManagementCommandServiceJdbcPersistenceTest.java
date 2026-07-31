@@ -11,6 +11,9 @@ import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
+import com.cmagent.core.domain.RunStatus;
+import com.cmagent.core.domain.RunToolCall;
+import com.cmagent.core.domain.RunToolCallBatch;
 import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.repository.McpToolPublicationRepository;
@@ -22,6 +25,7 @@ import com.cmagent.persistence.JdbcHttpToolConfigRepository;
 import com.cmagent.persistence.JdbcMcpToolPublicationRepository;
 import com.cmagent.persistence.JdbcToolDefinitionRepository;
 import com.cmagent.persistence.JdbcToolGrantRepository;
+import com.cmagent.persistence.JdbcToolCallRepository;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.runtime.http.HttpToolConfigValidator;
 import com.cmagent.server.audit.AuditPersistenceException;
@@ -149,6 +153,93 @@ class ManagementCommandServiceJdbcPersistenceTest {
         assertConcurrentUpdateAndDeleteSerializeOnToolRow(mysqlDataSource());
     }
 
+    @Test
+    void inFlightToolCallPersistsAfterRevokeAndDeleteInPostgreSql() {
+        assertInFlightToolCallPersistsAfterRevokeAndDelete(postgresDataSource());
+    }
+
+    @Test
+    void inFlightToolCallPersistsAfterRevokeAndDeleteInMySql() {
+        assertInFlightToolCallPersistsAfterRevokeAndDelete(mysqlDataSource());
+    }
+
+    private void assertInFlightToolCallPersistsAfterRevokeAndDelete(DataSource dataSource) {
+        migrateAndSeedTenant(dataSource);
+        TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        JdbcClient jdbcClient = JdbcClient.create(dataSource);
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        JdbcToolDefinitionRepository tools = new JdbcToolDefinitionRepository(jdbcClient);
+        JdbcAgentDefinitionRepository agents = new JdbcAgentDefinitionRepository(jdbcClient, objectMapper, transactionTemplate);
+        JdbcToolGrantRepository grants = new JdbcToolGrantRepository(jdbcClient);
+        JdbcAuditEventRepository audits = new JdbcAuditEventRepository(jdbcClient, transactionTemplate);
+        ManagementCommandService service = service(
+                transactionTemplate,
+                agents,
+                tools,
+                new JdbcHttpToolConfigRepository(jdbcClient, objectMapper, transactionTemplate),
+                new JdbcMcpToolPublicationRepository(jdbcClient, transactionTemplate),
+                grants,
+                new AuditAppender(audits)
+        );
+        UUID toolId = UUID.fromString("20000000-0000-0000-0000-000000000091");
+        UUID agentId = UUID.fromString("30000000-0000-0000-0000-000000000091");
+        UUID runId = UUID.fromString("40000000-0000-0000-0000-000000000091");
+        ToolDefinition tool = localTool(toolId, "in_flight_tool");
+        tools.save(tool);
+        agents.save(agent(agentId, List.of(toolId)));
+        grants.save(new ToolGrant(TENANT_ID, toolId, agentId, null, true));
+        Instant startedAt = Instant.parse("2026-07-31T00:00:00Z");
+        insertRunningRun(jdbcClient, runId, agentId, startedAt);
+
+        service.revokeTool(PRINCIPAL, toolId, agentId);
+        service.deleteTool(PRINCIPAL, toolId);
+        RunToolCall call = new RunToolCall(
+                UUID.fromString("50000000-0000-0000-0000-000000000091"),
+                TENANT_ID,
+                runId,
+                toolId,
+                tool.name(),
+                "输入摘要",
+                "输出摘要",
+                RunStatus.SUCCEEDED,
+                true,
+                12L,
+                "",
+                startedAt.plusSeconds(1)
+        );
+        JdbcToolCallRepository toolCalls = new JdbcToolCallRepository(jdbcClient, transactionTemplate);
+
+        toolCalls.saveAll(TENANT_ID, new RunToolCallBatch(TENANT_ID, List.of(call)));
+
+        assertThat(tools.findByTenantAndId(TENANT_ID, toolId)).isEmpty();
+        assertThat(tools.listByTenant(TENANT_ID)).isEmpty();
+        assertThat(tools.hasToolCallHistory(TENANT_ID, toolId)).isTrue();
+        assertThat(toolCalls.listByTenantAndRun(TENANT_ID, runId)).containsExactly(call);
+        assertThat(jdbcClient.sql("SELECT COUNT(*) FROM tool_definitions WHERE id = :id AND deleted_at IS NOT NULL")
+                .param("id", toolId.toString())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+    }
+
+    private void insertRunningRun(JdbcClient jdbcClient, UUID runId, UUID agentId, Instant startedAt) {
+        jdbcClient.sql("""
+                        INSERT INTO runs (
+                            id, tenant_id, agent_id, principal_id, status, input_text,
+                            output_text, error_message, started_at, finished_at
+                        ) VALUES (
+                            :id, :tenantId, :agentId, :principalId, 'RUNNING', :input,
+                            NULL, NULL, :startedAt, NULL
+                        )
+                        """)
+                .param("id", runId.toString())
+                .param("tenantId", TENANT_ID.toString())
+                .param("agentId", agentId.toString())
+                .param("principalId", PRINCIPAL.principalId())
+                .param("input", "运行中调用")
+                .param("startedAt", Timestamp.from(startedAt))
+                .update();
+    }
+
     private void assertConcurrentNameConflict(DataSource dataSource) throws Exception {
         migrateAndSeedTenant(dataSource);
         TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -226,7 +317,7 @@ class ManagementCommandServiceJdbcPersistenceTest {
         grants.save(new ToolGrant(TENANT_ID, tool.id(), agent.id(), null, true));
         HttpToolCreateSpec replacement = replacementHttpToolSpec();
 
-        ToolDefinition updated = service.updateTool(
+        ManagementCommandService.ToolUpdateResult updateResult = service.updateTool(
                 PRINCIPAL,
                 tool.id(),
                 new ManagementCommandService.ToolUpdateSpec(
@@ -239,6 +330,7 @@ class ManagementCommandServiceJdbcPersistenceTest {
                         false
                 )
         );
+        ToolDefinition updated = updateResult.tool();
         AgentDefinition revoked = service.revokeTool(PRINCIPAL, tool.id(), agent.id());
         service.deleteTool(PRINCIPAL, tool.id());
 
