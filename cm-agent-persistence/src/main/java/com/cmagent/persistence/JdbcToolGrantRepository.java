@@ -97,6 +97,26 @@ public class JdbcToolGrantRepository implements ToolGrantRepository {
                 .list();
     }
 
+    @Override
+    public void delete(UUID tenantId, UUID agentId, UUID toolId) {
+        jdbcClient.sql("""
+                        DELETE FROM tool_grants
+                        WHERE tenant_id = :tenantId AND agent_id = :agentId AND tool_id = :toolId
+                        """)
+                .param("tenantId", tenantId.toString())
+                .param("agentId", agentId.toString())
+                .param("toolId", toolId.toString())
+                .update();
+    }
+
+    @Override
+    public void deleteByTenantAndToolId(UUID tenantId, UUID toolId) {
+        jdbcClient.sql("DELETE FROM tool_grants WHERE tenant_id = :tenantId AND tool_id = :toolId")
+                .param("tenantId", tenantId.toString())
+                .param("toolId", toolId.toString())
+                .update();
+    }
+
     private ToolGrant mapGrant(ResultSet rs, int rowNum) throws SQLException {
         return new ToolGrant(
                 UUID.fromString(rs.getString("tenant_id")),

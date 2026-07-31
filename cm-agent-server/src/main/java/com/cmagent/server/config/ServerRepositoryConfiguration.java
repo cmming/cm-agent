@@ -302,6 +302,11 @@ public class ServerRepositoryConfiguration {
             public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.addToolToAgent(tenantId, agentId, toolId);
             }
+
+            @Override
+            public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
+                return store.removeToolFromAgent(tenantId, agentId, toolId);
+            }
         };
     }
 
@@ -324,6 +329,11 @@ public class ServerRepositoryConfiguration {
              */
             public ToolDefinition save(ToolDefinition tool) {
                 return store.saveTool(tool);
+            }
+
+            @Override
+            public ToolDefinition update(ToolDefinition tool) {
+                return store.updateTool(tool);
             }
 
             @Override
@@ -412,6 +422,16 @@ public class ServerRepositoryConfiguration {
              */
             public List<ToolGrant> listByTenantAgentAndTool(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.listGrants(tenantId, agentId, toolId);
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID agentId, UUID toolId) {
+                store.deleteGrant(tenantId, agentId, toolId);
+            }
+
+            @Override
+            public void deleteByTenantAndToolId(UUID tenantId, UUID toolId) {
+                store.deleteGrantsByTenantAndToolId(tenantId, toolId);
             }
         };
     }

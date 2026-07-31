@@ -28,4 +28,14 @@ public interface ToolGrantRepository {
      * 定义 listByTenantAgentAndTool 操作。
      */
     List<ToolGrant> listByTenantAgentAndTool(UUID tenantId, UUID agentId, UUID toolId);
+
+    /**
+     * 删除指定租户中 Agent 对工具的授权。
+     */
+    void delete(UUID tenantId, UUID agentId, UUID toolId);
+
+    /**
+     * 删除指定租户中工具的全部授权。
+     */
+    void deleteByTenantAndToolId(UUID tenantId, UUID toolId);
 }

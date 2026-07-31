@@ -29,4 +29,9 @@ public interface AgentDefinitionRepository {
      * 定义 addToolToAgent 操作。
      */
     AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId);
+
+    /**
+     * 移除指定 Agent 关联的工具。
+     */
+    AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId);
 }

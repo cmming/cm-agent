@@ -73,6 +73,34 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
     }
 
     @Override
+    public ToolDefinition update(ToolDefinition tool) {
+        jdbcClient.sql("""
+                        UPDATE tool_definitions
+                        SET name = :name,
+                            description = :description,
+                            input_schema = :inputSchema,
+                            risk_level = :riskLevel,
+                            enabled = :enabled,
+                            endpoint = :endpoint,
+                            updated_by = :updatedBy,
+                            updated_at = :updatedAt
+                        WHERE tenant_id = :tenantId AND id = :id
+                        """)
+                .param("name", tool.name())
+                .param("description", tool.description())
+                .param("inputSchema", tool.inputSchema())
+                .param("riskLevel", tool.riskLevel().name())
+                .param("enabled", tool.enabled())
+                .param("endpoint", tool.endpoint())
+                .param("updatedBy", tool.updatedBy())
+                .param("updatedAt", Timestamp.from(Instant.now()))
+                .param("tenantId", tool.tenantId().toString())
+                .param("id", tool.id().toString())
+                .update();
+        return tool;
+    }
+
+    @Override
     public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
         return jdbcClient.sql("""
                         SELECT

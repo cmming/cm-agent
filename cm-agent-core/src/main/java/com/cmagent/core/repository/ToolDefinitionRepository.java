@@ -16,6 +16,11 @@ public interface ToolDefinitionRepository {
     ToolDefinition save(ToolDefinition tool);
 
     /**
+     * 更新指定租户中的工具定义。
+     */
+    ToolDefinition update(ToolDefinition tool);
+
+    /**
      * 定义 findByTenantAndId 操作。
      */
     Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId);

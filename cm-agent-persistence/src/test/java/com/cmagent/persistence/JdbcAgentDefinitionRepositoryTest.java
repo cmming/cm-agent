@@ -97,6 +97,20 @@ class JdbcAgentDefinitionRepositoryTest {
         assertThat(saved.toolIds()).containsExactly(TOOL_ID, newToolId);
     }
 
+    @Test
+    void removeToolFromAgentPersistsRemainingToolIds() {
+        UUID agentId = UUID.fromString("10000000-0000-0000-0000-000000000004");
+        UUID otherToolId = UUID.fromString("00000000-0000-0000-0000-000000000402");
+        repository.save(agent(agentId, TENANT_A, MODEL_PROVIDER_A, "工具助手", List.of(TOOL_ID, otherToolId)));
+
+        AgentDefinition updated = repository.removeToolFromAgent(TENANT_A, agentId, TOOL_ID);
+
+        assertThat(updated.toolIds()).containsExactly(otherToolId);
+        assertThat(repository.findByTenantAndId(TENANT_A, agentId).orElseThrow().toolIds())
+                .containsExactly(otherToolId);
+        assertThat(repository.findByTenantAndId(TENANT_B, agentId)).isEmpty();
+    }
+
     private static AgentDefinition agent(UUID id, UUID tenantId, UUID modelProviderId, String name, List<UUID> toolIds) {
         return new AgentDefinition(
                 id,

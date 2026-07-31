@@ -84,6 +84,11 @@ class ManagementCommandServiceTest {
             public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.addToolToAgent(tenantId, agentId, toolId);
             }
+
+            @Override
+            public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
+                return store.removeToolFromAgent(tenantId, agentId, toolId);
+            }
         };
         doThrow(new AuditPersistenceException("审计写入失败", new IllegalStateException("database unavailable")))
                 .when(auditAppender)
@@ -405,6 +410,11 @@ class ManagementCommandServiceTest {
             }
 
             @Override
+            public ToolDefinition update(ToolDefinition tool) {
+                return store.updateTool(tool);
+            }
+
+            @Override
             public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
                 return store.findTool(tenantId, toolId);
             }
@@ -433,6 +443,11 @@ class ManagementCommandServiceTest {
         @Override
         public ToolDefinition save(ToolDefinition tool) {
             return delegate.save(tool);
+        }
+
+        @Override
+        public ToolDefinition update(ToolDefinition tool) {
+            return delegate.update(tool);
         }
 
         @Override
@@ -480,6 +495,11 @@ class ManagementCommandServiceTest {
 
             @Override
             public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 throw new UnsupportedOperationException();
             }
         };

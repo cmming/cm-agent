@@ -68,6 +68,29 @@ class JdbcToolDefinitionRepositoryTest {
                 .containsExactly(toolA.id());
     }
 
+    @Test
+    void updatePersistsEditableFieldsWithoutCrossTenantMutation() {
+        UUID toolId = UUID.fromString("20000000-0000-0000-0000-000000000003");
+        ToolDefinition original = tool(toolId, TENANT_A, "echo");
+        ToolDefinition updated = new ToolDefinition(
+                toolId, TENANT_A, "echo-v2", "更新后的描述", ToolType.LOCAL,
+                "{\"type\":\"object\",\"required\":[\"message\"]}", ToolRiskLevel.HIGH,
+                false, "https://api.invalid/echo", "tester", "editor"
+        );
+        ToolDefinition crossTenant = new ToolDefinition(
+                toolId, TENANT_B, "other-tenant", "不应写入", ToolType.LOCAL,
+                "{}", ToolRiskLevel.LOW, true, "", "tester", "editor"
+        );
+        repository.save(original);
+
+        assertThat(repository.update(updated)).isEqualTo(updated);
+        assertThat(repository.findByTenantAndId(TENANT_A, toolId)).contains(updated);
+
+        assertThat(repository.update(crossTenant)).isEqualTo(crossTenant);
+        assertThat(repository.findByTenantAndId(TENANT_A, toolId)).contains(updated);
+        assertThat(repository.findByTenantAndId(TENANT_B, toolId)).isEmpty();
+    }
+
     private static ToolDefinition tool(UUID id, UUID tenantId, String name) {
         return new ToolDefinition(
                 id,

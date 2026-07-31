@@ -229,6 +229,47 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         return result;
     }
     /**
+     * removeToolFromAgent：移除 Agent 与工具的关联。
+     *
+     * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+     * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
+     * @param toolId 目标工具标识，用于定位关联的工具定义。
+     */
+    public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
+        AtomicReference<AgentDefinition> updated = new AtomicReference<>();
+        agents.computeIfPresent(agentId, (id, agent) -> {
+            if (!agent.tenantId().equals(tenantId)) {
+                throw new NoSuchElementException("Agent 不存在");
+            }
+            if (!agent.toolIds().contains(toolId)) {
+                updated.set(agent);
+                return agent;
+            }
+            AgentDefinition reduced = new AgentDefinition(
+                    agent.id(),
+                    agent.tenantId(),
+                    agent.name(),
+                    agent.description(),
+                    agent.systemPrompt(),
+                    agent.modelProviderId(),
+                    agent.modelName(),
+                    agent.temperature(),
+                    agent.maxIterations(),
+                    agent.enabled(),
+                    agent.toolIds().stream().filter(idToKeep -> !idToKeep.equals(toolId)).toList(),
+                    agent.createdBy(),
+                    agent.updatedBy()
+            );
+            updated.set(reduced);
+            return reduced;
+        });
+        AgentDefinition result = updated.get();
+        if (result == null) {
+            throw new NoSuchElementException("Agent 不存在");
+        }
+        return result;
+    }
+    /**
      * saveTool：保存当前对象及其关联配置。
      *
      * @param tool 当前处理的工具定义。
@@ -249,6 +290,31 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                 }
                 return existing;
             }
+            return tool;
+        }
+    }
+    /**
+     * updateTool：更新已存在工具的可编辑字段。
+     *
+     * @param tool 当前处理的工具定义。
+     */
+    public ToolDefinition updateTool(ToolDefinition tool) {
+        Objects.requireNonNull(tool, "tool 不能为空");
+        synchronized (toolLock) {
+            ToolDefinition existing = tools.get(tool.id());
+            if (existing == null || !existing.tenantId().equals(tool.tenantId())) {
+                return tool;
+            }
+            TenantToolName originalName = new TenantToolName(existing.tenantId(), existing.name());
+            TenantToolName updatedName = new TenantToolName(tool.tenantId(), tool.name());
+            if (!originalName.equals(updatedName)) {
+                UUID existingToolId = toolIdsByTenantAndName.putIfAbsent(updatedName, tool.id());
+                if (existingToolId != null && !existingToolId.equals(tool.id())) {
+                    throw new DuplicateKeyException("duplicate key ux_tool_definitions_tenant_name");
+                }
+                toolIdsByTenantAndName.remove(originalName, tool.id());
+            }
+            tools.put(tool.id(), tool);
             return tool;
         }
     }
@@ -350,6 +416,33 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                             && grant.agentId().equals(agentId)
                             && grant.toolId().equals(toolId))
                     .toList();
+        }
+    }
+
+    /**
+     * deleteGrant：移除指定 Agent 与工具的授权关系。
+     *
+     * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+     * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
+     * @param toolId 目标工具标识，用于定位关联的工具定义。
+     */
+    public void deleteGrant(UUID tenantId, UUID agentId, UUID toolId) {
+        synchronized (grants) {
+            grants.removeIf(grant -> grant.tenantId().equals(tenantId)
+                    && grant.agentId().equals(agentId)
+                    && grant.toolId().equals(toolId));
+        }
+    }
+
+    /**
+     * deleteGrantsByTenantAndToolId：移除指定工具的全部授权关系。
+     *
+     * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+     * @param toolId 目标工具标识，用于定位关联的工具定义。
+     */
+    public void deleteGrantsByTenantAndToolId(UUID tenantId, UUID toolId) {
+        synchronized (grants) {
+            grants.removeIf(grant -> grant.tenantId().equals(tenantId) && grant.toolId().equals(toolId));
         }
     }
 

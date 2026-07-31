@@ -237,6 +237,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
             public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 throw new UnsupportedOperationException();
             }
+
+            @Override
+            public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
+                throw new UnsupportedOperationException();
+            }
         };
     }
 
@@ -261,6 +266,16 @@ class ManagementCommandServiceJdbcPersistenceTest {
             public List<ToolGrant> listByTenantAgentAndTool(UUID tenantId, UUID agentId, UUID toolId) {
                 return List.of();
             }
+
+            @Override
+            public void delete(UUID tenantId, UUID agentId, UUID toolId) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public void deleteByTenantAndToolId(UUID tenantId, UUID toolId) {
+                throw new UnsupportedOperationException();
+            }
         };
     }
 
@@ -276,6 +291,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
         @Override
         public ToolDefinition save(ToolDefinition tool) {
             return delegate.save(tool);
+        }
+
+        @Override
+        public ToolDefinition update(ToolDefinition tool) {
+            return delegate.update(tool);
         }
 
         @Override

@@ -175,6 +175,47 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
         return updated;
     }
 
+    @Override
+    public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
+        AgentDefinition agent = findByTenantAndId(tenantId, agentId)
+                .orElseThrow(() -> new NoSuchElementException("Agent 不存在"));
+        if (!agent.toolIds().contains(toolId)) {
+            return agent;
+        }
+
+        List<UUID> toolIds = agent.toolIds().stream()
+                .filter(id -> !id.equals(toolId))
+                .toList();
+        AgentDefinition updated = new AgentDefinition(
+                agent.id(),
+                agent.tenantId(),
+                agent.name(),
+                agent.description(),
+                agent.systemPrompt(),
+                agent.modelProviderId(),
+                agent.modelName(),
+                agent.temperature(),
+                agent.maxIterations(),
+                agent.enabled(),
+                toolIds,
+                agent.createdBy(),
+                agent.updatedBy()
+        );
+
+        jdbcClient.sql("""
+                        UPDATE agent_definitions
+                        SET tool_ids_json = :toolIdsJson,
+                            updated_at = :updatedAt
+                        WHERE tenant_id = :tenantId AND id = :id
+                        """)
+                .param("toolIdsJson", writeToolIds(updated.toolIds()))
+                .param("updatedAt", Timestamp.from(Instant.now()))
+                .param("tenantId", tenantId.toString())
+                .param("id", agentId.toString())
+                .update();
+        return updated;
+    }
+
     private AgentDefinition mapAgent(ResultSet rs, int rowNum) throws SQLException {
         return new AgentDefinition(
                 UUID.fromString(rs.getString("id")),
