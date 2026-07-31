@@ -4,7 +4,9 @@ import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.HttpParameterLocation;
 import com.cmagent.core.domain.HttpParameterMapping;
+import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.HttpToolMethod;
+import com.cmagent.core.domain.McpToolPublication;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
@@ -20,6 +22,8 @@ import com.cmagent.server.store.InMemoryPlatformStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DuplicateKeyException;
@@ -39,12 +43,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ManagementCommandServiceTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID TOOL_ID = UUID.fromString("00000000-0000-0000-0000-000000000101");
+    private static final UUID AGENT_ID = UUID.fromString("00000000-0000-0000-0000-000000000201");
+    private static final UUID MODEL_PROVIDER_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
+    private static final PrincipalRef PRINCIPAL =
+            new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant", "tool:delete"));
+
+    @Mock
+    private AgentDefinitionRepository agentRepository;
 
     @Mock
     private ToolDefinitionRepository toolRepository;
@@ -60,6 +74,219 @@ class ManagementCommandServiceTest {
 
     @Mock
     private AuditAppender auditAppender;
+
+    @Test
+    void updateHttpToolReplacesEditableDefinitionConfigurationAndMcpState() {
+        ToolDefinition existing = httpTool("orders-old");
+        HttpToolCreateSpec replacement = new HttpToolCreateSpec(
+                HttpToolMethod.POST,
+                "https://api.example.test/v2/orders",
+                "{\"type\":\"object\",\"properties\":{\"orderId\":{\"type\":\"string\"}}}",
+                List.of(new HttpParameterMapping(
+                        "/orderId", HttpParameterLocation.QUERY, "orderId", "", true, ""
+                )),
+                java.util.Map.of("X-Api-Key", "secret/tools/orders"),
+                Duration.ofSeconds(3)
+        );
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
+        when(toolRepository.listByTenant(TENANT_ID)).thenReturn(List.of(existing));
+        when(toolRepository.update(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(httpToolConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(mcpToolPublicationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ToolDefinition updated = mockedService().updateTool(
+                PRINCIPAL,
+                TOOL_ID,
+                new ManagementCommandService.ToolUpdateSpec(
+                        "orders_v2",
+                        "新版订单工具",
+                        ToolType.HTTP,
+                        ToolRiskLevel.HIGH,
+                        false,
+                        replacement,
+                        true
+                )
+        );
+
+        assertThat(updated.id()).isEqualTo(existing.id());
+        assertThat(updated.tenantId()).isEqualTo(existing.tenantId());
+        assertThat(updated.type()).isEqualTo(existing.type());
+        assertThat(updated.createdBy()).isEqualTo(existing.createdBy());
+        assertThat(updated.name()).isEqualTo("orders_v2");
+        assertThat(updated.description()).isEqualTo("新版订单工具");
+        assertThat(updated.inputSchema()).isEqualTo(replacement.inputSchema());
+        assertThat(updated.riskLevel()).isEqualTo(ToolRiskLevel.HIGH);
+        assertThat(updated.enabled()).isFalse();
+        assertThat(updated.endpoint()).isEqualTo(replacement.urlTemplate());
+        assertThat(updated.updatedBy()).isEqualTo(PRINCIPAL.principalId());
+
+        ArgumentCaptor<HttpToolConfig> configurationCaptor = ArgumentCaptor.forClass(HttpToolConfig.class);
+        verify(httpToolConfigRepository).save(configurationCaptor.capture());
+        assertThat(configurationCaptor.getValue().tenantId()).isEqualTo(TENANT_ID);
+        assertThat(configurationCaptor.getValue().toolId()).isEqualTo(TOOL_ID);
+        assertThat(configurationCaptor.getValue().urlTemplate()).isEqualTo(replacement.urlTemplate());
+        assertThat(configurationCaptor.getValue().secretHeaders()).isEqualTo(replacement.secretHeaders());
+        verify(mcpToolPublicationRepository).save(
+                new McpToolPublication(TENANT_ID, TOOL_ID, true, PRINCIPAL.principalId())
+        );
+        verify(auditAppender).append(
+                TENANT_ID, PRINCIPAL.principalId(), "TOOL_UPDATE", "TOOL",
+                TOOL_ID.toString(), "SUCCEEDED", "工具更新成功"
+        );
+    }
+
+    @Test
+    void updateLocalToolRejectsRenameWithoutWritingAnything() {
+        ToolDefinition existing = localTool("local_search");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> mockedService().updateTool(
+                PRINCIPAL,
+                TOOL_ID,
+                new ManagementCommandService.ToolUpdateSpec(
+                        "renamed_local_search",
+                        "本地搜索",
+                        ToolType.LOCAL,
+                        ToolRiskLevel.MEDIUM,
+                        true,
+                        null,
+                        false
+                )
+        )).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                assertThat(exception.getStatusCode().value()).isEqualTo(400))
+                .hasMessageContaining("LOCAL 工具名称不可修改");
+
+        verify(toolRepository, never()).update(any());
+        verify(auditAppender, never()).append(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void updateToolRejectsTypeChangeWithoutWritingAnything() {
+        ToolDefinition existing = localTool("local_search");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> mockedService().updateTool(
+                PRINCIPAL,
+                TOOL_ID,
+                new ManagementCommandService.ToolUpdateSpec(
+                        existing.name(),
+                        existing.description(),
+                        ToolType.HTTP,
+                        existing.riskLevel(),
+                        existing.enabled(),
+                        validHttpSpec(),
+                        false
+                )
+        )).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                assertThat(exception.getStatusCode().value()).isEqualTo(400))
+                .hasMessageContaining("工具类型不可修改");
+
+        verify(toolRepository, never()).update(any());
+    }
+
+    @Test
+    void updateToolRejectsAnotherToolWithSameTenantName() {
+        ToolDefinition existing = httpTool("orders-old");
+        ToolDefinition duplicate = new ToolDefinition(
+                UUID.fromString("00000000-0000-0000-0000-000000000102"),
+                TENANT_ID,
+                "orders_v2",
+                "已存在工具",
+                ToolType.HTTP,
+                "{\"type\":\"object\"}",
+                ToolRiskLevel.LOW,
+                true,
+                "https://api.example.test/existing",
+                "creator",
+                "creator"
+        );
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
+        when(toolRepository.listByTenant(TENANT_ID)).thenReturn(List.of(existing, duplicate));
+
+        assertThatThrownBy(() -> mockedService().updateTool(
+                PRINCIPAL,
+                TOOL_ID,
+                new ManagementCommandService.ToolUpdateSpec(
+                        duplicate.name(),
+                        "重复名称",
+                        ToolType.HTTP,
+                        ToolRiskLevel.MEDIUM,
+                        true,
+                        validHttpSpec(),
+                        false
+                )
+        )).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                assertThat(exception.getStatusCode().value()).isEqualTo(409))
+                .hasMessageContaining("工具名称已存在");
+
+        verify(toolRepository, never()).update(any());
+        verify(httpToolConfigRepository, never()).save(any());
+    }
+
+    @Test
+    void deleteReferencedToolReturnsConflictWithoutSideEffects() {
+        ToolDefinition tool = httpTool("orders");
+        AgentDefinition agent = agent(List.of(TOOL_ID));
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
+        when(agentRepository.listByTenant(TENANT_ID)).thenReturn(List.of(agent));
+
+        assertThatThrownBy(() -> mockedService().deleteTool(PRINCIPAL, TOOL_ID))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                        assertThat(exception.getStatusCode().value()).isEqualTo(409))
+                .hasMessageContaining("请先解除关联");
+
+        verify(httpToolConfigRepository, never()).delete(TENANT_ID, TOOL_ID);
+        verify(mcpToolPublicationRepository, never()).delete(TENANT_ID, TOOL_ID);
+        verify(grantRepository, never()).deleteByTenantAndToolId(TENANT_ID, TOOL_ID);
+        verify(toolRepository, never()).delete(TENANT_ID, TOOL_ID);
+        verify(auditAppender, never()).append(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void deleteUnreferencedToolCleansAttachedDataAndWritesAudit() {
+        ToolDefinition tool = httpTool("orders");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
+        when(agentRepository.listByTenant(TENANT_ID)).thenReturn(List.of());
+
+        mockedService().deleteTool(PRINCIPAL, TOOL_ID);
+
+        InOrder order = inOrder(
+                httpToolConfigRepository,
+                mcpToolPublicationRepository,
+                grantRepository,
+                toolRepository,
+                auditAppender
+        );
+        order.verify(httpToolConfigRepository).delete(TENANT_ID, TOOL_ID);
+        order.verify(mcpToolPublicationRepository).delete(TENANT_ID, TOOL_ID);
+        order.verify(grantRepository).deleteByTenantAndToolId(TENANT_ID, TOOL_ID);
+        order.verify(toolRepository).delete(TENANT_ID, TOOL_ID);
+        order.verify(auditAppender).append(
+                TENANT_ID, PRINCIPAL.principalId(), "TOOL_DELETE", "TOOL",
+                TOOL_ID.toString(), "SUCCEEDED", "工具删除成功"
+        );
+    }
+
+    @Test
+    void revokeToolRemovesGrantAndAgentAssociationAndWritesAudit() {
+        ToolDefinition tool = httpTool("orders");
+        AgentDefinition existingAgent = agent(List.of(TOOL_ID));
+        AgentDefinition updatedAgent = agent(List.of());
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
+        when(agentRepository.findByTenantAndId(TENANT_ID, AGENT_ID)).thenReturn(Optional.of(existingAgent));
+        when(agentRepository.removeToolFromAgent(TENANT_ID, AGENT_ID, TOOL_ID)).thenReturn(updatedAgent);
+
+        AgentDefinition updated = mockedService().revokeTool(PRINCIPAL, TOOL_ID, AGENT_ID);
+
+        assertThat(updated.toolIds()).doesNotContain(TOOL_ID);
+        InOrder order = inOrder(grantRepository, agentRepository, auditAppender);
+        order.verify(grantRepository).delete(TENANT_ID, AGENT_ID, TOOL_ID);
+        order.verify(agentRepository).removeToolFromAgent(TENANT_ID, AGENT_ID, TOOL_ID);
+        order.verify(auditAppender).append(
+                TENANT_ID, PRINCIPAL.principalId(), "TOOL_GRANT_REVOKE", "TOOL",
+                TOOL_ID.toString(), "SUCCEEDED", "已解除 Agent " + AGENT_ID + " 的工具授权"
+        );
+    }
 
     @Test
     void memoryFallbackDoesNotPersistAgentWhenAuditFails() {
@@ -307,6 +534,69 @@ class ManagementCommandServiceTest {
         } catch (ResponseStatusException exception) {
             return exception.getStatusCode().value();
         }
+    }
+
+    private ManagementCommandService mockedService() {
+        return new ManagementCommandService(
+                agentRepository,
+                toolRepository,
+                httpToolConfigRepository,
+                mcpToolPublicationRepository,
+                grantRepository,
+                auditAppender,
+                httpToolConfigValidator(),
+                null
+        );
+    }
+
+    private static ToolDefinition httpTool(String name) {
+        return new ToolDefinition(
+                TOOL_ID,
+                TENANT_ID,
+                name,
+                "旧版订单工具",
+                ToolType.HTTP,
+                "{\"type\":\"object\"}",
+                ToolRiskLevel.LOW,
+                true,
+                "https://api.example.test/v1/orders",
+                "creator",
+                "previous-editor"
+        );
+    }
+
+    private static ToolDefinition localTool(String name) {
+        return new ToolDefinition(
+                TOOL_ID,
+                TENANT_ID,
+                name,
+                "本地搜索工具",
+                ToolType.LOCAL,
+                "{\"type\":\"object\"}",
+                ToolRiskLevel.LOW,
+                true,
+                "",
+                "creator",
+                "previous-editor"
+        );
+    }
+
+    private static AgentDefinition agent(List<UUID> toolIds) {
+        return new AgentDefinition(
+                AGENT_ID,
+                TENANT_ID,
+                "订单助手",
+                "",
+                "处理订单",
+                MODEL_PROVIDER_ID,
+                "qwen-max",
+                0.2d,
+                6,
+                true,
+                toolIds,
+                "creator",
+                "previous-editor"
+        );
     }
 
     private ManagementCommandService memoryBackedService(InMemoryPlatformStore store) {

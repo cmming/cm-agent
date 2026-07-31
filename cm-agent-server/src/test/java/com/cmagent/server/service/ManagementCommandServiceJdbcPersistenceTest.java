@@ -14,10 +14,12 @@ import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
+import com.cmagent.persistence.JdbcAgentDefinitionRepository;
 import com.cmagent.persistence.JdbcAuditEventRepository;
 import com.cmagent.persistence.JdbcHttpToolConfigRepository;
 import com.cmagent.persistence.JdbcMcpToolPublicationRepository;
 import com.cmagent.persistence.JdbcToolDefinitionRepository;
+import com.cmagent.persistence.JdbcToolGrantRepository;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.runtime.http.HttpToolConfigValidator;
 import com.cmagent.server.audit.AuditPersistenceException;
@@ -51,6 +53,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Testcontainers
 class ManagementCommandServiceJdbcPersistenceTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID MODEL_PROVIDER_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
+    private static final PrincipalRef PRINCIPAL =
+            new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant", "tool:delete"));
 
     @Container
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
@@ -76,6 +81,26 @@ class ManagementCommandServiceJdbcPersistenceTest {
     @Test
     void auditWriteFailureRollsBackHttpToolDataInMySql() {
         assertAuditWriteFailureRollsBackHttpToolData(mysqlDataSource());
+    }
+
+    @Test
+    void toolUpdateRevokeAndDeletePersistAtomicallyInPostgreSql() {
+        assertToolMutationsPersistAtomically(postgresDataSource());
+    }
+
+    @Test
+    void toolUpdateRevokeAndDeletePersistAtomicallyInMySql() {
+        assertToolMutationsPersistAtomically(mysqlDataSource());
+    }
+
+    @Test
+    void auditFailuresRollBackAllToolMutationsInPostgreSql() {
+        assertAuditFailuresRollBackAllToolMutations(postgresDataSource());
+    }
+
+    @Test
+    void auditFailuresRollBackAllToolMutationsInMySql() {
+        assertAuditFailuresRollBackAllToolMutations(mysqlDataSource());
     }
 
     private void assertConcurrentNameConflict(DataSource dataSource) throws Exception {
@@ -130,6 +155,130 @@ class ManagementCommandServiceJdbcPersistenceTest {
         assertThat(countRows(jdbcClient, "audit_events")).isZero();
     }
 
+    private void assertToolMutationsPersistAtomically(DataSource dataSource) {
+        migrateAndSeedTenant(dataSource);
+        TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        JdbcClient jdbcClient = JdbcClient.create(dataSource);
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        JdbcToolDefinitionRepository tools = new JdbcToolDefinitionRepository(jdbcClient);
+        JdbcAgentDefinitionRepository agents = new JdbcAgentDefinitionRepository(jdbcClient, objectMapper);
+        JdbcToolGrantRepository grants = new JdbcToolGrantRepository(jdbcClient);
+        JdbcHttpToolConfigRepository httpConfigs =
+                new JdbcHttpToolConfigRepository(jdbcClient, objectMapper, transactionTemplate);
+        JdbcMcpToolPublicationRepository publications =
+                new JdbcMcpToolPublicationRepository(jdbcClient, transactionTemplate);
+        JdbcAuditEventRepository audits = new JdbcAuditEventRepository(jdbcClient, transactionTemplate);
+        ManagementCommandService service = service(
+                transactionTemplate, agents, tools, httpConfigs, publications, grants, new AuditAppender(audits)
+        );
+
+        ToolDefinition tool = service.createTool(
+                PRINCIPAL, "orders", "订单工具", ToolType.HTTP, ToolRiskLevel.MEDIUM, httpToolSpec(), true
+        );
+        AgentDefinition agent = agents.save(agent(UUID.randomUUID(), List.of(tool.id())));
+        grants.save(new ToolGrant(TENANT_ID, tool.id(), agent.id(), null, true));
+        HttpToolCreateSpec replacement = replacementHttpToolSpec();
+
+        ToolDefinition updated = service.updateTool(
+                PRINCIPAL,
+                tool.id(),
+                new ManagementCommandService.ToolUpdateSpec(
+                        "orders_v2",
+                        "新版订单工具",
+                        ToolType.HTTP,
+                        ToolRiskLevel.HIGH,
+                        false,
+                        replacement,
+                        false
+                )
+        );
+        AgentDefinition revoked = service.revokeTool(PRINCIPAL, tool.id(), agent.id());
+        service.deleteTool(PRINCIPAL, tool.id());
+
+        assertThat(updated.name()).isEqualTo("orders_v2");
+        assertThat(updated.createdBy()).isEqualTo(tool.createdBy());
+        assertThat(revoked.toolIds()).doesNotContain(tool.id());
+        assertThat(tools.findByTenantAndId(TENANT_ID, tool.id())).isEmpty();
+        assertThat(httpConfigs.findByTenantAndToolId(TENANT_ID, tool.id())).isEmpty();
+        assertThat(publications.findByTenantAndToolId(TENANT_ID, tool.id())).isEmpty();
+        assertThat(grants.listByTenantAgentAndTool(TENANT_ID, agent.id(), tool.id())).isEmpty();
+        assertThat(audits.listByTenant(TENANT_ID, 100))
+                .extracting(AuditEvent::eventType)
+                .contains("TOOL_UPDATE", "TOOL_GRANT_REVOKE", "TOOL_DELETE");
+    }
+
+    private void assertAuditFailuresRollBackAllToolMutations(DataSource dataSource) {
+        migrateAndSeedTenant(dataSource);
+        TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        JdbcClient jdbcClient = JdbcClient.create(dataSource);
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        JdbcToolDefinitionRepository tools = new JdbcToolDefinitionRepository(jdbcClient);
+        JdbcAgentDefinitionRepository agents = new JdbcAgentDefinitionRepository(jdbcClient, objectMapper);
+        JdbcToolGrantRepository grants = new JdbcToolGrantRepository(jdbcClient);
+        JdbcHttpToolConfigRepository httpConfigs =
+                new JdbcHttpToolConfigRepository(jdbcClient, objectMapper, transactionTemplate);
+        JdbcMcpToolPublicationRepository publications =
+                new JdbcMcpToolPublicationRepository(jdbcClient, transactionTemplate);
+        JdbcAuditEventRepository audits = new JdbcAuditEventRepository(jdbcClient, transactionTemplate);
+        ManagementCommandService normalService = service(
+                transactionTemplate, agents, tools, httpConfigs, publications, grants, new AuditAppender(audits)
+        );
+        ManagementCommandService failingService = service(
+                transactionTemplate, agents, tools, httpConfigs, publications, grants,
+                failingDatabaseAuditAppender(jdbcClient)
+        );
+        ToolDefinition updateTarget = normalService.createTool(
+                PRINCIPAL, "update_target", "更新目标", ToolType.HTTP, ToolRiskLevel.LOW, httpToolSpec(), true
+        );
+        ToolDefinition revokeTarget = normalService.createTool(
+                PRINCIPAL, "revoke_target", "撤销目标", ToolType.HTTP, ToolRiskLevel.LOW, httpToolSpec(), true
+        );
+        ToolDefinition deleteTarget = normalService.createTool(
+                PRINCIPAL, "delete_target", "删除目标", ToolType.HTTP, ToolRiskLevel.LOW, httpToolSpec(), true
+        );
+        AgentDefinition agent = agents.save(agent(UUID.randomUUID(), List.of(revokeTarget.id())));
+        grants.save(new ToolGrant(TENANT_ID, revokeTarget.id(), agent.id(), null, true));
+
+        assertThatThrownBy(() -> failingService.updateTool(
+                PRINCIPAL,
+                updateTarget.id(),
+                new ManagementCommandService.ToolUpdateSpec(
+                        "updated_name",
+                        "不应提交",
+                        ToolType.HTTP,
+                        ToolRiskLevel.HIGH,
+                        false,
+                        replacementHttpToolSpec(),
+                        false
+                )
+        )).isInstanceOf(AuditPersistenceException.class);
+        assertThatThrownBy(() -> failingService.revokeTool(PRINCIPAL, revokeTarget.id(), agent.id()))
+                .isInstanceOf(AuditPersistenceException.class);
+        assertThatThrownBy(() -> failingService.deleteTool(PRINCIPAL, deleteTarget.id()))
+                .isInstanceOf(AuditPersistenceException.class);
+
+        assertThat(tools.findByTenantAndId(TENANT_ID, updateTarget.id()))
+                .get()
+                .extracting(ToolDefinition::name)
+                .isEqualTo("update_target");
+        assertThat(httpConfigs.findByTenantAndToolId(TENANT_ID, updateTarget.id()))
+                .get()
+                .extracting(com.cmagent.core.domain.HttpToolConfig::urlTemplate)
+                .isEqualTo(httpToolSpec().urlTemplate());
+        assertThat(publications.findByTenantAndToolId(TENANT_ID, updateTarget.id())).isPresent();
+        assertThat(agents.findByTenantAndId(TENANT_ID, agent.id())).get()
+                .extracting(AgentDefinition::toolIds)
+                .asList()
+                .contains(revokeTarget.id());
+        assertThat(grants.listByTenantAgentAndTool(TENANT_ID, agent.id(), revokeTarget.id())).hasSize(1);
+        assertThat(tools.findByTenantAndId(TENANT_ID, deleteTarget.id())).isPresent();
+        assertThat(httpConfigs.findByTenantAndToolId(TENANT_ID, deleteTarget.id())).isPresent();
+        assertThat(publications.findByTenantAndToolId(TENANT_ID, deleteTarget.id())).isPresent();
+        assertThat(audits.listByTenant(TENANT_ID, 100))
+                .extracting(AuditEvent::eventType)
+                .doesNotContain("TOOL_UPDATE", "TOOL_GRANT_REVOKE", "TOOL_DELETE");
+    }
+
     private static AuditAppender failingDatabaseAuditAppender(JdbcClient jdbcClient) {
         AuditEventRepository repository = new AuditEventRepository() {
             @Override
@@ -158,10 +307,21 @@ class ManagementCommandServiceJdbcPersistenceTest {
         return new HttpToolCreateSpec(
                 HttpToolMethod.POST,
                 "https://api.example.test/orders",
-                "{\"type\":\"object\"}",
+                "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}}}",
                 List.of(new HttpParameterMapping("/id", HttpParameterLocation.QUERY, "id", "", true, "")),
                 java.util.Map.of("X-Api-Key", "secret/integration/api-key"),
                 java.time.Duration.ofSeconds(1)
+        );
+    }
+
+    private static HttpToolCreateSpec replacementHttpToolSpec() {
+        return new HttpToolCreateSpec(
+                HttpToolMethod.POST,
+                "https://api.example.test/v2/orders",
+                "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}}}",
+                List.of(new HttpParameterMapping("/id", HttpParameterLocation.QUERY, "orderId", "", true, "")),
+                java.util.Map.of("X-Api-Key", "secret/integration/api-key-v2"),
+                java.time.Duration.ofSeconds(2)
         );
     }
 
@@ -193,6 +353,45 @@ class ManagementCommandServiceJdbcPersistenceTest {
         );
     }
 
+    private static ManagementCommandService service(
+            TransactionTemplate transactionTemplate,
+            AgentDefinitionRepository agents,
+            ToolDefinitionRepository tools,
+            JdbcHttpToolConfigRepository httpConfigs,
+            JdbcMcpToolPublicationRepository publications,
+            ToolGrantRepository grants,
+            AuditAppender auditAppender
+    ) {
+        return new ManagementCommandService(
+                agents,
+                tools,
+                httpConfigs,
+                publications,
+                grants,
+                auditAppender,
+                new HttpToolConfigValidator(new com.fasterxml.jackson.databind.ObjectMapper()),
+                transactionTemplate
+        );
+    }
+
+    private static AgentDefinition agent(UUID agentId, List<UUID> toolIds) {
+        return new AgentDefinition(
+                agentId,
+                TENANT_ID,
+                "订单助手",
+                "",
+                "处理订单",
+                MODEL_PROVIDER_ID,
+                "qwen-max",
+                0.2d,
+                6,
+                true,
+                toolIds,
+                PRINCIPAL.principalId(),
+                PRINCIPAL.principalId()
+        );
+    }
+
     private static void migrateAndSeedTenant(DataSource dataSource) {
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
                 .cleanDisabled(false).load().clean();
@@ -204,6 +403,24 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 .param("id", TENANT_ID.toString())
                 .param("code", "tenant-a")
                 .param("name", "租户A")
+                .param("createdAt", Timestamp.from(Instant.parse("2026-07-22T00:00:00Z")))
+                .update();
+        JdbcClient.create(dataSource).sql("""
+                        INSERT INTO model_configs (
+                            id, tenant_id, provider_type, display_name, base_url,
+                            model_name, encrypted_api_key, enabled, created_at
+                        ) VALUES (
+                            :id, :tenantId, :providerType, :displayName, :baseUrl,
+                            :modelName, :encryptedApiKey, true, :createdAt
+                        )
+                        """)
+                .param("id", MODEL_PROVIDER_ID.toString())
+                .param("tenantId", TENANT_ID.toString())
+                .param("providerType", "OPENAI_COMPATIBLE")
+                .param("displayName", "测试模型")
+                .param("baseUrl", "https://api.example.test")
+                .param("modelName", "qwen-max")
+                .param("encryptedApiKey", "test-only-placeholder")
                 .param("createdAt", Timestamp.from(Instant.parse("2026-07-22T00:00:00Z")))
                 .update();
     }
