@@ -116,6 +116,21 @@
         return {...payload, type: tool?.type, enabled: Boolean(fields.enabled)};
     }
 
+    function buildToolFormPayload(tool, fields) {
+        if (tool) {
+            return buildToolUpdatePayload(tool, fields);
+        }
+        if (fields?.type === "HTTP") {
+            return buildHttpToolPayload(fields);
+        }
+        return {
+            name: String(fields?.name || "").trim(),
+            description: String(fields?.description || "").trim(),
+            type: fields?.type,
+            riskLevel: fields?.riskLevel
+        };
+    }
+
     function prepareHttpParameterMappingsForEdit(mappings) {
         return (Array.isArray(mappings) ? mappings : []).map((mapping) => {
             const editable = {...mapping};
@@ -337,6 +352,7 @@
         formatJsonInput,
         buildHttpToolPayload,
         buildToolUpdatePayload,
+        buildToolFormPayload,
         prepareHttpParameterMappingsForEdit,
         buildToolUpdatePath,
         buildToolDeletePath,

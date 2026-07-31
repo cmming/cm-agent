@@ -229,6 +229,66 @@ test("构建 HTTP 工具更新载荷时保留 MCP 发布和 Secret 引用", () =
     });
 });
 
+test("HTTP 编辑表单原始字段只解析一次并直接生成更新请求", () => {
+    const rawFormFields = {
+        name: "orders-v3",
+        description: "订单查询（第三版）",
+        type: "HTTP",
+        riskLevel: "HIGH",
+        enabled: true,
+        mcpPublished: true,
+        method: "POST",
+        urlTemplate: "https://api.example.test/orders/{id}",
+        inputSchemaText: "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}}}",
+        parameterMappingsText: JSON.stringify(core.prepareHttpParameterMappingsForEdit([{
+            sourcePointer: "/id",
+            location: "PATH",
+            targetName: "id",
+            targetPointer: "",
+            required: false,
+            defaultValueJson: "\"fallback-id\""
+        }])),
+        secretHeadersText: "{\"Authorization\":\"secret/integration/orders-token\"}",
+        timeoutMillis: "2500"
+    };
+
+    const payload = core.buildToolFormPayload(
+        {id: "tool-http", type: "HTTP", name: "orders"},
+        rawFormFields
+    );
+
+    assert.deepEqual(payload, {
+        name: "orders-v3",
+        description: "订单查询（第三版）",
+        type: "HTTP",
+        riskLevel: "HIGH",
+        enabled: true,
+        mcpPublished: true,
+        httpConfig: {
+            method: "POST",
+            urlTemplate: "https://api.example.test/orders/{id}",
+            inputSchema: {type: "object", properties: {id: {type: "string"}}},
+            parameterMappings: [{
+                sourcePointer: "/id",
+                location: "PATH",
+                targetName: "id",
+                targetPointer: "",
+                required: false,
+                defaultValue: "fallback-id"
+            }],
+            secretHeaders: {Authorization: "secret/integration/orders-token"},
+            timeoutMillis: 2500
+        }
+    });
+
+    const script = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+    assert.match(script, /payload = core\.buildToolFormPayload\(editingTool, rawFormFields\)/);
+    assert.doesNotMatch(script, /core\.buildToolUpdatePayload\(editingTool,\s*\{\s*\.\.\.editableFields/);
+});
+
 test("构建 LOCAL 工具更新载荷时拒绝改名", () => {
     const localTool = {id: "tool-2", type: "LOCAL", name: "echo"};
     const fields = {name: "echo", description: "本地回显", riskLevel: "LOW", enabled: true, mcpPublished: false};

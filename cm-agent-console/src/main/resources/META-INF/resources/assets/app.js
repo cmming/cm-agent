@@ -621,13 +621,19 @@
     }
 
     async function submitTool() {
-        const fields = {
+        const rawFormFields = {
             name: $("toolName").value.trim(),
             description: $("toolDescription").value.trim(),
             type: $("toolType").value,
             riskLevel: $("toolRiskLevel").value,
             enabled: $("toolEnabled").checked,
-            mcpPublished: $("toolMcpPublished").checked
+            mcpPublished: $("toolMcpPublished").checked,
+            method: $("httpMethod").value,
+            urlTemplate: $("httpUrlTemplate").value,
+            inputSchemaText: $("httpInputSchema").value,
+            parameterMappingsText: $("httpParameterMappings").value,
+            secretHeadersText: $("httpSecretHeaders").value,
+            timeoutMillis: $("httpTimeoutMillis").value
         };
         const editingTool = state.tools.find((tool) => tool.id === state.editingToolId);
         if (state.editingToolId && !editingTool) {
@@ -636,31 +642,7 @@
         }
         let payload;
         try {
-            const editableFields = fields.type === "HTTP"
-                ? core.buildHttpToolPayload({
-                    ...fields,
-                    method: $("httpMethod").value,
-                    urlTemplate: $("httpUrlTemplate").value,
-                    inputSchemaText: $("httpInputSchema").value,
-                    parameterMappingsText: $("httpParameterMappings").value,
-                    secretHeadersText: $("httpSecretHeaders").value,
-                    timeoutMillis: $("httpTimeoutMillis").value
-                })
-                : fields;
-            payload = editingTool
-                ? core.buildToolUpdatePayload(editingTool, {
-                    ...editableFields,
-                    enabled: fields.enabled,
-                    mcpPublished: fields.mcpPublished
-                })
-                : fields.type === "HTTP"
-                    ? editableFields
-                    : {
-                        name: fields.name,
-                        description: fields.description,
-                        type: fields.type,
-                        riskLevel: fields.riskLevel
-                    };
+            payload = core.buildToolFormPayload(editingTool, rawFormFields);
         } catch (error) {
             setStatus($("toolFormStatus"), error.message, "error");
             return;
