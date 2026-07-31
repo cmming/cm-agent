@@ -244,6 +244,96 @@ test("构建 LOCAL 工具更新载荷时拒绝改名", () => {
     });
 });
 
+test("HTTP 工具编辑会将摘要中的 defaultValueJson 还原为请求 defaultValue", () => {
+    const mappings = core.prepareHttpParameterMappingsForEdit([
+        {
+            sourcePointer: "/filter",
+            location: "QUERY",
+            targetName: "filter",
+            targetPointer: "",
+            required: false,
+            defaultValueJson: "{\"kind\":\"primary\"}"
+        },
+        {
+            sourcePointer: "/enabled",
+            location: "QUERY",
+            targetName: "enabled",
+            targetPointer: "",
+            required: false,
+            defaultValueJson: "false"
+        },
+        {
+            sourcePointer: "/limit",
+            location: "QUERY",
+            targetName: "limit",
+            targetPointer: "",
+            required: false,
+            defaultValueJson: "0"
+        },
+        {
+            sourcePointer: "/optional",
+            location: "BODY",
+            targetName: "",
+            targetPointer: "/optional",
+            required: false,
+            defaultValueJson: "null"
+        },
+        {
+            sourcePointer: "/without-default",
+            location: "QUERY",
+            targetName: "without-default",
+            targetPointer: "",
+            required: false,
+            defaultValueJson: ""
+        }
+    ]);
+
+    assert.deepEqual(mappings, [
+        {
+            sourcePointer: "/filter", location: "QUERY", targetName: "filter", targetPointer: "",
+            required: false, defaultValue: {kind: "primary"}
+        },
+        {
+            sourcePointer: "/enabled", location: "QUERY", targetName: "enabled", targetPointer: "",
+            required: false, defaultValue: false
+        },
+        {
+            sourcePointer: "/limit", location: "QUERY", targetName: "limit", targetPointer: "",
+            required: false, defaultValue: 0
+        },
+        {
+            sourcePointer: "/optional", location: "BODY", targetName: "", targetPointer: "/optional",
+            required: false, defaultValue: null
+        },
+        {
+            sourcePointer: "/without-default", location: "QUERY", targetName: "without-default",
+            targetPointer: "", required: false
+        }
+    ]);
+    const payload = core.buildHttpToolPayload({
+        name: "orders",
+        description: "订单查询",
+        riskLevel: "LOW",
+        mcpPublished: false,
+        method: "GET",
+        urlTemplate: "https://api.example.test/orders",
+        inputSchemaText: "{\"type\":\"object\"}",
+        parameterMappingsText: JSON.stringify(mappings),
+        secretHeadersText: "{}",
+        timeoutMillis: "1000"
+    });
+    assert.deepEqual(
+        payload.httpConfig.parameterMappings.map((mapping) => mapping.defaultValue),
+        [{kind: "primary"}, false, 0, null, undefined]
+    );
+
+    const script = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+    assert.match(script, /core\.prepareHttpParameterMappingsForEdit\(mappings\)/);
+});
+
 test("工具更新、删除和解除关联路径会编码资源标识", () => {
     assert.equal(core.buildToolUpdatePath("tool/id"), "/api/tools/tool%2Fid");
     assert.equal(core.buildToolDeletePath("tool/id"), "/api/tools/tool%2Fid");
@@ -308,6 +398,62 @@ test("不同工具写入按完成顺序协调最终刷新", () => {
 
     assert.equal(revisions.isCurrent(bReload), false);
     assert.equal(revisions.isCurrent(aReload), true);
+});
+
+test("旧会话提交结束不得取得当前会话共享按钮的收尾权", () => {
+    const guard = core.createSubmitStateGuard();
+    const button = {};
+    const oldTicket = guard.begin(button, 1);
+
+    guard.invalidate(button);
+    const currentTicket = guard.begin(button, 2);
+
+    assert.equal(guard.finish(oldTicket, 2), false);
+    assert.equal(guard.finish(currentTicket, 2), true);
+
+    const script = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+    assert.match(script, /const submitStateGuard = core\.createSubmitStateGuard\(\)/);
+    assert.match(script, /if \(!submitStateGuard\.finish\(ticket, sessionEpoch\.capture\(\)\)\) return;/);
+    assert.match(script, /submitStateGuard\.invalidateAll\(\)/);
+});
+
+test("交错工具刷新只允许已应用的最新操作写成功提示", async () => {
+    const revisions = core.createLoadRevisionGate();
+    const successMessages = [];
+    let finishOld;
+    let finishLatest;
+    const oldResponse = new Promise((resolve) => { finishOld = resolve; });
+    const latestResponse = new Promise((resolve) => { finishLatest = resolve; });
+
+    const oldRevision = revisions.completeWrite();
+    const oldOperation = oldResponse.then(() => {
+        const toolsReloaded = revisions.isCurrent(oldRevision);
+        if (toolsReloaded) successMessages.push("旧操作成功");
+    });
+    const latestRevision = revisions.completeWrite();
+    const latestOperation = latestResponse.then(() => {
+        const toolsReloaded = revisions.isCurrent(latestRevision);
+        if (toolsReloaded) successMessages.push("最新操作成功");
+    });
+
+    finishLatest();
+    await latestOperation;
+    finishOld();
+    await oldOperation;
+
+    assert.deepEqual(successMessages, ["最新操作成功"]);
+
+    const script = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+    assert.equal((script.match(/const toolsReloaded = await loadTools/g) || []).length, 2);
+    assert.match(script, /if \(!toolsReloaded \|\| !sessionEpoch\.isCurrent\(operationSession\)\) return;/);
+    assert.match(script, /const \[agentReloaded, toolsReloaded\] = await Promise\.all/);
+    assert.match(script, /if \(!agentReloaded \|\| !toolsReloaded \|\| !sessionEpoch\.isCurrent\(operationSession\)\) return;/);
 });
 
 test("不同内置示例交错完成时各自目录刷新仍然有效", () => {

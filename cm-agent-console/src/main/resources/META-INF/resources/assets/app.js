@@ -29,6 +29,7 @@
     const localExampleLoadRevision = core.createLoadRevisionGate();
     const localExampleInstallRevision = core.createKeyedLoadRevisionGate();
     const sessionEpoch = core.createSessionEpochGate();
+    const submitStateGuard = core.createSubmitStateGuard();
 
     const pageInfo = {
         overviewPage: ["能力总览", "查看当前租户已交付的 Agent 能力与最近活动。"],
@@ -64,13 +65,16 @@
 
     async function withSubmitState(button, action) {
         const originalText = button.textContent;
+        const pendingText = "处理中…";
+        const ticket = submitStateGuard.begin(button, sessionEpoch.capture());
         button.disabled = true;
-        button.textContent = "处理中…";
+        button.textContent = pendingText;
         try {
             return await action();
         } finally {
+            if (!submitStateGuard.finish(ticket, sessionEpoch.capture())) return;
             button.disabled = false;
-            button.textContent = originalText;
+            if (button.textContent === pendingText) button.textContent = originalText;
         }
     }
 
@@ -111,6 +115,7 @@
 
     function logout(message = "已安全退出。") {
         sessionEpoch.invalidate();
+        submitStateGuard.invalidateAll();
         toolLoadRevision.invalidate();
         agentDetailRevision.invalidate();
         localExampleLoadRevision.invalidate();
@@ -146,6 +151,19 @@
     }
 
     function resetSessionViews() {
+        [
+            ["loginBtn", "登录控制台"],
+            ["createAgentBtn", "创建 Agent"],
+            ["createToolBtn", "注册 Tool"],
+            ["grantToolBtn", "确认授权"],
+            ["debugToolBtn", "执行调试"],
+            ["runBtn", "执行运行"]
+        ].forEach(([id, text]) => {
+            const button = $(id);
+            submitStateGuard.invalidate(button);
+            button.disabled = false;
+            button.textContent = text;
+        });
         $("runInput").value = "";
         $("debugInput").value = "{}";
         $("debugConfirmedToolName").value = "";
@@ -315,11 +333,11 @@
                 if (!sessionEpoch.isCurrent(operationSession)) return;
                 const agentRevision = agentDetailRevision.completeWrite();
                 const toolRevision = toolLoadRevision.completeWrite();
-                await Promise.all([
+                const [agentReloaded, toolsReloaded] = await Promise.all([
                     selectAgent(agent.id, agentRevision, operationSession),
                     loadTools(toolRevision, operationSession)
                 ]);
-                if (!sessionEpoch.isCurrent(operationSession)) return;
+                if (!agentReloaded || !toolsReloaded || !sessionEpoch.isCurrent(operationSession)) return;
                 setStatus($("globalStatus"), `已解除 Agent“${agent.name || agent.id}”与 Tool“${tool.name || tool.id}”的关联。`, "success");
             });
         } catch (error) {
@@ -598,21 +616,7 @@
     }
 
     function formatStoredMappings(mappings) {
-        const editable = (Array.isArray(mappings) ? mappings : []).map((mapping) => {
-            if (typeof mapping?.defaultValue !== "string") {
-                return mapping;
-            }
-            const normalized = {...mapping};
-            if (!mapping.defaultValue.trim()) {
-                delete normalized.defaultValue;
-                return normalized;
-            }
-            try {
-                return {...normalized, defaultValue: JSON.parse(mapping.defaultValue)};
-            } catch {
-                return normalized;
-            }
-        });
+        const editable = core.prepareHttpParameterMappingsForEdit(mappings);
         return core.formatJsonInput(editable);
     }
 
@@ -680,8 +684,8 @@
                     : `Tool“${saved.name || payload.name}”已注册。`;
                 resetToolForm(false);
                 const reloadRevision = toolLoadRevision.completeWrite();
-                await loadTools(reloadRevision, operationSession);
-                if (!sessionEpoch.isCurrent(operationSession)) return;
+                const toolsReloaded = await loadTools(reloadRevision, operationSession);
+                if (!toolsReloaded || !sessionEpoch.isCurrent(operationSession)) return;
                 setStatus($("toolFormStatus"), successText, "success");
             });
         } catch (error) {
@@ -702,8 +706,8 @@
                 if (!sessionEpoch.isCurrent(operationSession)) return;
                 if (state.editingToolId === tool.id) resetToolForm();
                 const reloadRevision = toolLoadRevision.completeWrite();
-                await loadTools(reloadRevision, operationSession);
-                if (!sessionEpoch.isCurrent(operationSession)) return;
+                const toolsReloaded = await loadTools(reloadRevision, operationSession);
+                if (!toolsReloaded || !sessionEpoch.isCurrent(operationSession)) return;
                 setStatus($("globalStatus"), `Tool“${tool.name || tool.id}”已删除。`, "success");
             });
         } catch (error) {

@@ -116,6 +116,23 @@
         return {...payload, type: tool?.type, enabled: Boolean(fields.enabled)};
     }
 
+    function prepareHttpParameterMappingsForEdit(mappings) {
+        return (Array.isArray(mappings) ? mappings : []).map((mapping) => {
+            const editable = {...mapping};
+            const defaultValueJson = editable.defaultValueJson;
+            delete editable.defaultValueJson;
+            if (typeof defaultValueJson !== "string" || !defaultValueJson.trim()) {
+                return editable;
+            }
+            try {
+                editable.defaultValue = JSON.parse(defaultValueJson);
+                return editable;
+            } catch {
+                throw new Error("参数映射默认值必须是有效 JSON。");
+            }
+        });
+    }
+
     function buildToolUpdatePath(toolId) {
         return `/api/tools/${encodeURIComponent(String(toolId || ""))}`;
     }
@@ -213,6 +230,31 @@
         };
     }
 
+    function createSubmitStateGuard() {
+        const activeTickets = new Map();
+        let sequence = 0;
+        return {
+            begin(key, session) {
+                const ticket = Object.freeze({key, session, sequence: ++sequence});
+                activeTickets.set(key, ticket);
+                return ticket;
+            },
+            invalidate(key) {
+                activeTickets.delete(key);
+            },
+            invalidateAll() {
+                activeTickets.clear();
+            },
+            finish(ticket, currentSession) {
+                if (!ticket || activeTickets.get(ticket.key) !== ticket) {
+                    return false;
+                }
+                activeTickets.delete(ticket.key);
+                return ticket.session === currentSession;
+            }
+        };
+    }
+
     function createApiClient({fetchImpl, getToken, getSessionEpoch = () => undefined, onUnauthorized}) {
         if (typeof fetchImpl !== "function" || typeof getToken !== "function"
                 || typeof getSessionEpoch !== "function" || typeof onUnauthorized !== "function") {
@@ -295,6 +337,7 @@
         formatJsonInput,
         buildHttpToolPayload,
         buildToolUpdatePayload,
+        prepareHttpParameterMappingsForEdit,
         buildToolUpdatePath,
         buildToolDeletePath,
         buildToolGrantDeletePath,
@@ -303,6 +346,7 @@
         createLoadRevisionGate,
         createKeyedLoadRevisionGate,
         createSessionEpochGate,
+        createSubmitStateGuard,
         formatDateTime,
         statusMeta
     };
