@@ -130,7 +130,7 @@ class RunControllerJdbcPersistenceTest {
                         .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"echo","description":"回显输入","type":"LOCAL","riskLevel":"LOW"}
+                                {"name":"jdbc-run-echo","description":"回显输入","type":"LOCAL","riskLevel":"LOW"}
                                 """))
                 .andExpect(status().isOk())
                 .andReturn()
@@ -174,7 +174,7 @@ class RunControllerJdbcPersistenceTest {
 
         assertThat(controlledExecutor.lastRequest()).isNotNull();
         assertThat(controlledExecutor.lastRequest().tools())
-                .extracting(ToolDefinition::name).containsExactly("echo");
+                .extracting(ToolDefinition::name).containsExactly("jdbc-run-echo");
     }
 
     @Test
