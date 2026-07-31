@@ -183,6 +183,56 @@ class ServerRepositoryConfigurationTest {
     }
 
     @Test
+    void memoryToolRepositoryGenericSaveCannotRestoreDeletedTool() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ServerRepositoryConfiguration.class)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    ToolDefinitionRepository repository = context.getBean(ToolDefinitionRepository.class);
+                    ToolDefinition original = toolDefinition(TOOL_A, TENANT_A);
+                    repository.save(original);
+                    repository.delete(TENANT_A, original.id());
+
+                    assertThatThrownBy(() -> repository.save(original))
+                            .isInstanceOf(DuplicateKeyException.class);
+                    assertThat(repository.findByTenantAndId(TENANT_A, original.id())).isEmpty();
+                    assertThat(repository.listByTenant(TENANT_A)).isEmpty();
+                });
+    }
+
+    @Test
+    void memoryToolRepositoryOnlyRestoresMatchingManagedLocalTombstone() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ServerRepositoryConfiguration.class)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    ToolDefinitionRepository repository = context.getBean(ToolDefinitionRepository.class);
+                    ToolDefinition original = toolDefinition(TOOL_A, TENANT_A);
+                    ToolDefinition wrongName = new ToolDefinition(
+                            TOOL_A, TENANT_A, "other", "不应恢复", ToolType.LOCAL, "{}", ToolRiskLevel.LOW,
+                            true, "", "restorer", "restorer"
+                    );
+                    ToolDefinition restored = new ToolDefinition(
+                            TOOL_A, TENANT_A, original.name(), "受管定义", ToolType.LOCAL,
+                            "{\"type\":\"object\"}", ToolRiskLevel.HIGH,
+                            true, "", "restorer", "restorer"
+                    );
+                    ToolDefinition expected = new ToolDefinition(
+                            TOOL_A, TENANT_A, original.name(), "受管定义", ToolType.LOCAL,
+                            "{\"type\":\"object\"}", ToolRiskLevel.HIGH,
+                            true, "", original.createdBy(), "restorer"
+                    );
+                    repository.save(original);
+                    repository.delete(TENANT_A, original.id());
+
+                    assertThat(repository.restoreManagedLocalTool(wrongName)).isFalse();
+                    assertThat(repository.findByTenantAndId(TENANT_A, original.id())).isEmpty();
+                    assertThat(repository.restoreManagedLocalTool(restored)).isTrue();
+                    assertThat(repository.findByTenantAndId(TENANT_A, original.id())).contains(expected);
+                });
+    }
+
+    @Test
     void memoryRepositoriesSupportToolUpdateGrantCleanupAndAgentToolRemoval() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ServerRepositoryConfiguration.class)

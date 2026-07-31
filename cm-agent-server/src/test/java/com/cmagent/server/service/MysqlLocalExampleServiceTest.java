@@ -31,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -90,6 +91,22 @@ class MysqlLocalExampleServiceTest {
         assertThat(repeated.toolId()).isEqualTo(installed.toolId());
         assertThat(saved).hasSize(1);
         verifyNoMoreInteractions(auditAppender);
+    }
+
+    @Test
+    void 已删除固定示例通过受控能力原位恢复() {
+        when(repository.restoreManagedLocalTool(any())).thenAnswer(invocation -> {
+            saved.add(invocation.getArgument(0));
+            return true;
+        });
+
+        LocalToolExampleSummary restored = service.install(PRINCIPAL, "echo");
+
+        assertThat(restored.installed()).isTrue();
+        verify(repository).restoreManagedLocalTool(any());
+        verify(repository, never()).save(any());
+        verify(auditAppender).append(TENANT_ID, "admin", "LOCAL_EXAMPLE_INSTALL", "TOOL",
+                MysqlLocalExampleCatalog.ECHO_TOOL_ID.toString(), "SUCCEEDED", "内置 LOCAL 示例安装成功");
     }
 
     @Test

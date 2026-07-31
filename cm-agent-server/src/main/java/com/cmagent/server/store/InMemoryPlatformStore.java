@@ -14,6 +14,7 @@ import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.McpToolPublication;
+import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.repository.RunRepository;
 import com.cmagent.core.repository.ToolCallRepository;
 import org.springframework.dao.DuplicateKeyException;
@@ -279,19 +280,12 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         Objects.requireNonNull(tool, "tool 不能为空");
         TenantToolName name = new TenantToolName(tool.tenantId(), tool.name());
         synchronized (toolLock) {
+            if (deletedToolIds.contains(tool.id())) {
+                throw new DuplicateKeyException("duplicate key tool_definitions_pkey");
+            }
             UUID existingToolId = toolIdsByTenantAndName.putIfAbsent(name, tool.id());
             if (existingToolId != null && !existingToolId.equals(tool.id())) {
                 throw new DuplicateKeyException("duplicate key ux_tool_definitions_tenant_name");
-            }
-            if (deletedToolIds.contains(tool.id())) {
-                ToolDefinition deleted = tools.get(tool.id());
-                if (deleted == null || !deleted.tenantId().equals(tool.tenantId())) {
-                    toolIdsByTenantAndName.remove(name, tool.id());
-                    throw new DuplicateKeyException("duplicate key tool_definitions_pkey");
-                }
-                tools.put(tool.id(), tool);
-                deletedToolIds.remove(tool.id());
-                return tool;
             }
             ToolDefinition existing = tools.putIfAbsent(tool.id(), tool);
             if (existing != null) {
@@ -302,6 +296,70 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                 return existing;
             }
             return tool;
+        }
+    }
+
+    /**
+     * 原位恢复与墓碑身份完全匹配的受管 LOCAL 工具。
+     */
+    public boolean restoreManagedLocalTool(ToolDefinition tool) {
+        Objects.requireNonNull(tool, "tool 不能为空");
+        if (tool.type() != ToolType.LOCAL) {
+            throw new IllegalArgumentException("只能恢复受管 LOCAL 工具");
+        }
+        synchronized (toolLock) {
+            ToolDefinition deleted = tools.get(tool.id());
+            if (deleted == null || !deletedToolIds.contains(tool.id())
+                    || !deleted.tenantId().equals(tool.tenantId())
+                    || !deleted.name().equals(tool.name())
+                    || deleted.type() != ToolType.LOCAL) {
+                return false;
+            }
+            TenantToolName name = new TenantToolName(tool.tenantId(), tool.name());
+            UUID existingToolId = toolIdsByTenantAndName.putIfAbsent(name, tool.id());
+            if (existingToolId != null && !existingToolId.equals(tool.id())) {
+                throw new DuplicateKeyException("duplicate key ux_tool_definitions_tenant_name");
+            }
+            ToolDefinition restored = new ToolDefinition(
+                    deleted.id(),
+                    deleted.tenantId(),
+                    tool.name(),
+                    tool.description(),
+                    deleted.type(),
+                    tool.inputSchema(),
+                    tool.riskLevel(),
+                    tool.enabled(),
+                    tool.endpoint(),
+                    deleted.createdBy(),
+                    tool.updatedBy()
+            );
+            tools.put(tool.id(), restored);
+            deletedToolIds.remove(tool.id());
+            return true;
+        }
+    }
+
+    /**
+     * 恢复当前命令刚软删除的完整快照，仅供无事务命令失败补偿。
+     */
+    public boolean restoreDeletedToolForCompensation(ToolDefinition tool) {
+        Objects.requireNonNull(tool, "tool 不能为空");
+        synchronized (toolLock) {
+            ToolDefinition deleted = tools.get(tool.id());
+            if (deleted == null || !deletedToolIds.contains(tool.id())
+                    || !deleted.tenantId().equals(tool.tenantId())
+                    || !deleted.name().equals(tool.name())
+                    || deleted.type() != tool.type()) {
+                return false;
+            }
+            TenantToolName name = new TenantToolName(tool.tenantId(), tool.name());
+            UUID existingToolId = toolIdsByTenantAndName.putIfAbsent(name, tool.id());
+            if (existingToolId != null && !existingToolId.equals(tool.id())) {
+                throw new DuplicateKeyException("duplicate key ux_tool_definitions_tenant_name");
+            }
+            tools.put(tool.id(), tool);
+            deletedToolIds.remove(tool.id());
+            return true;
         }
     }
     /**

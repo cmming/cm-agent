@@ -3,6 +3,7 @@ package com.cmagent.server.service;
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.core.audit.AuditEventRepository;
+import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.tool.InMemoryToolRegistry;
@@ -24,6 +25,7 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -48,6 +50,9 @@ class MysqlLocalExampleServiceJdbcPersistenceTest {
 
     @Container
     static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4");
+
+    @Container
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Test
     void mysql首次安装持久化且重建Registry后仍通过治理调试链调用add() {
@@ -90,6 +95,69 @@ class MysqlLocalExampleServiceJdbcPersistenceTest {
         assertThat(fixture.tools().listByTenant(TENANT_ID)).isEmpty();
     }
 
+    @Test
+    void postgresql删除后重装原位恢复且失败审计回滚() {
+        assertDeletedExampleCanBeRestored(postgresDataSource());
+    }
+
+    @Test
+    void mysql删除后重装原位恢复且失败审计回滚() {
+        assertDeletedExampleCanBeRestored(migratedAndSeededDataSource());
+    }
+
+    private static void assertDeletedExampleCanBeRestored(DataSource dataSource) {
+        TestFixture installed = fixture(dataSource, false);
+        installed.service().install(PRINCIPAL, "echo");
+        ToolDefinition original = installed.tools().findByTenantAndId(
+                TENANT_ID, MysqlLocalExampleCatalog.ECHO_TOOL_ID).orElseThrow();
+        installed.tools().delete(TENANT_ID, original.id());
+        JdbcClient jdbcClient = JdbcClient.create(dataSource);
+
+        assertThatThrownBy(() -> installed.tools().save(original))
+                .isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+        assertThat(installed.tools().findByTenantAndId(TENANT_ID, original.id())).isEmpty();
+
+        TestFixture failing = fixture(dataSource, true);
+        assertThatThrownBy(() -> failing.service().install(PRINCIPAL, "echo"))
+                .isInstanceOf(AuditPersistenceException.class);
+        assertThat(failing.tools().findByTenantAndId(TENANT_ID, original.id())).isEmpty();
+        assertThat(jdbcClient.sql("""
+                        SELECT COUNT(*)
+                        FROM tool_definitions
+                        WHERE tenant_id = :tenantId AND id = :id
+                          AND deleted_at IS NOT NULL AND deleted_name = :name
+                        """)
+                .param("tenantId", TENANT_ID.toString())
+                .param("id", original.id().toString())
+                .param("name", original.name())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+
+        TestFixture restored = fixture(dataSource, false);
+        LocalToolExampleSummary summary = restored.service().install(PRINCIPAL, "echo");
+
+        assertThat(summary.installed()).isTrue();
+        assertThat(restored.tools().findByTenantAndId(TENANT_ID, original.id())).contains(original);
+        assertThat(jdbcClient.sql("SELECT COUNT(*) FROM tool_definitions WHERE tenant_id = :tenantId AND id = :id")
+                .param("tenantId", TENANT_ID.toString())
+                .param("id", original.id().toString())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("""
+                        SELECT COUNT(*)
+                        FROM tool_definitions
+                        WHERE tenant_id = :tenantId AND id = :id
+                          AND deleted_at IS NULL AND deleted_name IS NULL
+                        """)
+                .param("tenantId", TENANT_ID.toString())
+                .param("id", original.id().toString())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(restored.auditEvents().listByTenant(TENANT_ID, 10))
+                .extracting(AuditEvent::eventType)
+                .containsExactly("LOCAL_EXAMPLE_INSTALL", "LOCAL_EXAMPLE_INSTALL");
+    }
+
     private static TestFixture fixture(DataSource dataSource, boolean failAudit) {
         ObjectMapper objectMapper = new ObjectMapper();
         TransactionTemplate transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -129,7 +197,15 @@ class MysqlLocalExampleServiceJdbcPersistenceTest {
     }
 
     private static DataSource migratedAndSeededDataSource() {
-        DataSource dataSource = new DriverManagerDataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
+        return migratedAndSeededDataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
+    }
+
+    private static DataSource postgresDataSource() {
+        return migratedAndSeededDataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+    }
+
+    private static DataSource migratedAndSeededDataSource(String url, String username, String password) {
+        DataSource dataSource = new DriverManagerDataSource(url, username, password);
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").cleanDisabled(false).load().clean();
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
         JdbcClient.create(dataSource).sql("""

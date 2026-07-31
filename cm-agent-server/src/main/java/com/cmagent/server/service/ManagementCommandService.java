@@ -680,7 +680,9 @@ public class ManagementCommandService {
     private void restoreToolState(ToolStateSnapshot snapshot, RuntimeException original) {
         compensate(() -> {
             if (toolRepository.findByTenantAndId(snapshot.tool().tenantId(), snapshot.tool().id()).isEmpty()) {
-                toolRepository.save(snapshot.tool());
+                if (!toolRepository.restoreDeletedToolForCompensation(snapshot.tool())) {
+                    toolRepository.save(snapshot.tool());
+                }
             } else {
                 toolRepository.update(snapshot.tool());
             }

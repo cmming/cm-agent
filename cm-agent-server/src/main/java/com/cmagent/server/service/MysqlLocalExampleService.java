@@ -57,7 +57,7 @@ public class MysqlLocalExampleService {
         return catalog.list().stream().map(example -> summary(principal, example)).toList();
     }
 
-    /** 在一个事务内保存固定定义并写入严格审计。 */
+    /** 在一个事务内安装或原位恢复固定定义，并写入严格审计。 */
     public LocalToolExampleSummary install(PrincipalRef principal, String key) {
         Objects.requireNonNull(principal, "principal 不能为空");
         requireExampleTenant(principal);
@@ -77,7 +77,9 @@ public class MysqlLocalExampleService {
         }
         try {
             transactionOperations.executeWithoutResult(status -> {
-                toolRepository.save(target);
+                if (!toolRepository.restoreManagedLocalTool(target)) {
+                    toolRepository.save(target);
+                }
                 auditAppender.append(principal.tenantId(), principal.principalId(), "LOCAL_EXAMPLE_INSTALL", "TOOL",
                         target.id().toString(), "SUCCEEDED", "内置 LOCAL 示例安装成功");
             });

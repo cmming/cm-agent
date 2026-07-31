@@ -16,6 +16,29 @@ public interface ToolDefinitionRepository {
     ToolDefinition save(ToolDefinition tool);
 
     /**
+     * 尝试原位恢复受管的固定 LOCAL 工具定义。
+     *
+     * <p>该能力只供经过固定目录校验的内置示例安装流程使用。实现只能恢复租户、ID、原名称和
+     * LOCAL 类型均与墓碑匹配的记录；普通创建必须继续使用 {@link #save(ToolDefinition)}，不得借此
+     * 复活任意已删除工具。</p>
+     *
+     * @return 匹配墓碑并完成恢复时返回 {@code true}，没有匹配墓碑时返回 {@code false}
+     */
+    default boolean restoreManagedLocalTool(ToolDefinition tool) {
+        return false;
+    }
+
+    /**
+     * 尝试恢复当前命令刚软删除的工具快照，仅用于无事务存储的失败补偿。
+     *
+     * <p>实现必须要求租户、ID、墓碑原名称和类型与快照完全匹配。业务创建和重新安装流程不得
+     * 调用该方法。</p>
+     */
+    default boolean restoreDeletedToolForCompensation(ToolDefinition tool) {
+        return false;
+    }
+
+    /**
      * 更新指定租户中的工具定义。
      */
     ToolDefinition update(ToolDefinition tool);

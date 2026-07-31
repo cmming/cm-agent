@@ -1352,6 +1352,11 @@ class ManagementCommandServiceTest {
             }
 
             @Override
+            public boolean restoreDeletedToolForCompensation(ToolDefinition tool) {
+                return store.restoreDeletedToolForCompensation(tool);
+            }
+
+            @Override
             public ToolDefinition update(ToolDefinition tool) {
                 return store.updateTool(tool);
             }

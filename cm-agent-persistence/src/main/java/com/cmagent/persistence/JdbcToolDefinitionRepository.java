@@ -74,6 +74,43 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
     }
 
     @Override
+    public boolean restoreManagedLocalTool(ToolDefinition tool) {
+        if (tool.type() != ToolType.LOCAL) {
+            throw new IllegalArgumentException("只能恢复受管 LOCAL 工具");
+        }
+        int restored = jdbcClient.sql("""
+                        UPDATE tool_definitions
+                        SET name = :name,
+                            description = :description,
+                            input_schema = :inputSchema,
+                            risk_level = :riskLevel,
+                            enabled = :enabled,
+                            endpoint = :endpoint,
+                            updated_by = :updatedBy,
+                            updated_at = :updatedAt,
+                            deleted_at = NULL,
+                            deleted_name = NULL
+                        WHERE tenant_id = :tenantId
+                          AND id = :id
+                          AND type = 'LOCAL'
+                          AND deleted_at IS NOT NULL
+                          AND deleted_name = :name
+                        """)
+                .param("name", tool.name())
+                .param("description", tool.description())
+                .param("inputSchema", tool.inputSchema())
+                .param("riskLevel", tool.riskLevel().name())
+                .param("enabled", tool.enabled())
+                .param("endpoint", tool.endpoint())
+                .param("updatedBy", tool.updatedBy())
+                .param("updatedAt", Timestamp.from(Instant.now()))
+                .param("tenantId", tool.tenantId().toString())
+                .param("id", tool.id().toString())
+                .update();
+        return restored == 1;
+    }
+
+    @Override
     public ToolDefinition update(ToolDefinition tool) {
         int updated = jdbcClient.sql("""
                         UPDATE tool_definitions
