@@ -263,6 +263,24 @@ test("HTTP 地址模板使用文本输入以支持路径参数占位符", () => 
     assert.doesNotMatch(html, /id="httpUrlTemplate" type="url"/);
 });
 
+test("控制台和中文文档提供工具编辑、删除与 Agent 解除关联入口", () => {
+    const resources = path.join(__dirname, "../../main/resources/META-INF/resources");
+    const html = fs.readFileSync(path.join(resources, "index.html"), "utf8");
+    const app = fs.readFileSync(path.join(resources, "assets/app.js"), "utf8");
+    const readme = fs.readFileSync(path.join(__dirname, "../../../../README.md"), "utf8");
+    const releaseNotes = fs.readFileSync(path.join(__dirname, "../../../../docs/release-notes.md"), "utf8");
+
+    assert.match(html, /id="cancelToolEditBtn"/);
+    assert.match(app, /state\.editingToolId/);
+    assert.match(app, /core\.buildToolUpdatePath/);
+    assert.match(app, /core\.buildToolDeletePath/);
+    assert.match(app, /core\.buildToolGrantDeletePath/);
+    assert.match(app, /window\.confirm/);
+    assert.match(app, /请先到 Agent 详情解除关联/);
+    assert.doesNotMatch(readme, /不提供编辑、删除/);
+    assert.match(releaseNotes, /工具编辑、删除与 Agent 解除关联/);
+});
+
 test("工具发布锁拒绝同一工具的重复操作并在释放后允许重试", () => {
     const lock = core.createToolPublicationLock();
 
