@@ -243,7 +243,8 @@ public class ToolController {
         return new ToolSummaryResponse(
                 tool.id(), tool.tenantId(), tool.name(), tool.description(), tool.type(), tool.inputSchema(),
                 tool.riskLevel(), tool.enabled(), tool.endpoint(), tool.createdBy(), tool.updatedBy(),
-                summary.httpConfig() == null ? null : toHttpConfigResponse(summary.httpConfig()), summary.mcpPublished()
+                summary.httpConfig() == null ? null : toHttpConfigResponse(summary.httpConfig()), summary.mcpPublished(),
+                summary.runtimeReady()
         );
     }
 
@@ -390,7 +391,8 @@ public class ToolController {
             String createdBy,
             String updatedBy,
             HttpToolConfigResponse httpConfig,
-            boolean mcpPublished
+            boolean mcpPublished,
+            boolean runtimeReady
     ) {
     }
 

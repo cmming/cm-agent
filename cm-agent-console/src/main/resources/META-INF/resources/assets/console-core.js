@@ -53,10 +53,18 @@
     }
 
     function canDebugTool(tool, confirmedToolName) {
-        if (!tool || (tool.type !== "HTTP" && tool.type !== "LOCAL")) {
+        if (!tool || (tool.type !== "HTTP" && tool.type !== "LOCAL") || tool.runtimeReady !== true) {
             return false;
         }
         return tool.riskLevel !== "HIGH" || confirmedToolName === tool.name;
+    }
+
+    function buildLocalExampleInstallPath(key) {
+        return `/api/tools/local-examples/${encodeURIComponent(String(key || ""))}`;
+    }
+
+    function formatJsonInput(value) {
+        return JSON.stringify(value ?? {}, null, 2);
     }
 
     function buildHttpToolPayload(fields) {
@@ -128,8 +136,54 @@
         };
     }
 
-    function createApiClient({fetchImpl, getToken, onUnauthorized}) {
-        if (typeof fetchImpl !== "function" || typeof getToken !== "function" || typeof onUnauthorized !== "function") {
+    function createKeyedLoadRevisionGate() {
+        const revisions = new Map();
+
+        function next(key) {
+            const normalizedKey = String(key || "");
+            const revision = (revisions.get(normalizedKey) || 0) + 1;
+            revisions.set(normalizedKey, revision);
+            return revision;
+        }
+
+        return {
+            issue(key) {
+                return next(key);
+            },
+            invalidate(key) {
+                next(key);
+            },
+            invalidateAll() {
+                revisions.clear();
+            },
+            completeWrite(key) {
+                return next(key);
+            },
+            isCurrent(key, candidate) {
+                return candidate === revisions.get(String(key || ""));
+            }
+        };
+    }
+
+    function createSessionEpochGate() {
+        let epoch = 0;
+        return {
+            capture() {
+                return epoch;
+            },
+            invalidate() {
+                epoch += 1;
+                return epoch;
+            },
+            isCurrent(candidate) {
+                return candidate === epoch;
+            }
+        };
+    }
+
+    function createApiClient({fetchImpl, getToken, getSessionEpoch = () => undefined, onUnauthorized}) {
+        if (typeof fetchImpl !== "function" || typeof getToken !== "function"
+                || typeof getSessionEpoch !== "function" || typeof onUnauthorized !== "function") {
             throw new TypeError("请求客户端依赖不完整");
         }
 
@@ -139,6 +193,7 @@
             const headers = new Headers(options.headers || {});
             headers.set("Content-Type", "application/json");
             const token = getToken();
+            const sessionEpoch = getSessionEpoch();
             if (token) {
                 headers.set("Authorization", `Bearer ${token}`);
             }
@@ -156,7 +211,9 @@
 
             if (!response.ok) {
                 if (response.status === 401) {
-                    onUnauthorized();
+                    if (token === getToken() && sessionEpoch === getSessionEpoch()) {
+                        onUnauthorized();
+                    }
                     throw new Error("未登录或令牌已失效，请重新登录。");
                 }
                 throw new Error(formatError(response.status, body, rawBody));
@@ -200,9 +257,13 @@
         buildCursorPath,
         parseJsonField,
         canDebugTool,
+        buildLocalExampleInstallPath,
+        formatJsonInput,
         buildHttpToolPayload,
         createToolPublicationLock,
         createLoadRevisionGate,
+        createKeyedLoadRevisionGate,
+        createSessionEpochGate,
         formatDateTime,
         statusMeta
     };

@@ -9,6 +9,7 @@ import com.cmagent.core.domain.ToolDefinition;
 public record ToolSummary(
         ToolDefinition tool,
         HttpToolConfig httpConfig,
-        boolean mcpPublished
+        boolean mcpPublished,
+        boolean runtimeReady
 ) {
 }
