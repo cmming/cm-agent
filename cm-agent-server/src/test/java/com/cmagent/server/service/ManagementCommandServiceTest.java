@@ -8,6 +8,7 @@ import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.HttpToolMethod;
 import com.cmagent.core.domain.McpToolPublication;
 import com.cmagent.core.domain.ToolDefinition;
+import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.repository.AgentDefinitionRepository;
@@ -74,6 +75,183 @@ class ManagementCommandServiceTest {
 
     @Mock
     private AuditAppender auditAppender;
+
+    @Test
+    void memoryUpdateAuditFailureRestoresDefinitionHttpConfigurationAndMcpPublication() {
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        ToolDefinition existing = httpTool("orders-old");
+        HttpToolConfig existingConfiguration = httpConfiguration(existing, validHttpSpec());
+        McpToolPublication existingPublication =
+                new McpToolPublication(TENANT_ID, TOOL_ID, true, "publisher");
+        store.saveTool(existing);
+        store.saveHttpToolConfig(existingConfiguration);
+        store.saveMcpToolPublication(existingPublication);
+        doThrow(new AuditPersistenceException("审计写入失败", new IllegalStateException("memory unavailable")))
+                .when(auditAppender).append(any(), any(), any(), any(), any(), any(), any());
+
+        assertThatThrownBy(() -> statefulMemoryService(store, auditAppender).updateTool(
+                PRINCIPAL,
+                TOOL_ID,
+                new ManagementCommandService.ToolUpdateSpec(
+                        "orders_v2",
+                        "不应保留",
+                        ToolType.HTTP,
+                        ToolRiskLevel.HIGH,
+                        false,
+                        updatedHttpSpec(),
+                        false
+                )
+        )).isInstanceOf(AuditPersistenceException.class);
+
+        assertThat(store.findTool(TENANT_ID, TOOL_ID)).contains(existing);
+        assertThat(store.findHttpToolConfig(TENANT_ID, TOOL_ID)).contains(existingConfiguration);
+        assertThat(store.findMcpToolPublication(TENANT_ID, TOOL_ID)).contains(existingPublication);
+    }
+
+    @Test
+    void memoryDeleteAuditFailureRestoresToolAndAllAttachedData() {
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        ToolDefinition existing = httpTool("orders");
+        HttpToolConfig existingConfiguration = httpConfiguration(existing, validHttpSpec());
+        McpToolPublication existingPublication =
+                new McpToolPublication(TENANT_ID, TOOL_ID, true, "publisher");
+        AgentDefinition agent = agent(List.of());
+        ToolGrant residualGrant = new com.cmagent.core.domain.ToolGrant(
+                TENANT_ID, TOOL_ID, AGENT_ID, null, true
+        );
+        store.saveTool(existing);
+        store.saveAgent(agent);
+        store.saveHttpToolConfig(existingConfiguration);
+        store.saveMcpToolPublication(existingPublication);
+        store.saveGrant(residualGrant);
+        doThrow(new AuditPersistenceException("审计写入失败", new IllegalStateException("memory unavailable")))
+                .when(auditAppender).append(any(), any(), any(), any(), any(), any(), any());
+
+        assertThatThrownBy(() -> statefulMemoryService(store, auditAppender).deleteTool(PRINCIPAL, TOOL_ID))
+                .isInstanceOf(AuditPersistenceException.class);
+
+        assertThat(store.findTool(TENANT_ID, TOOL_ID)).contains(existing);
+        assertThat(store.findHttpToolConfig(TENANT_ID, TOOL_ID)).contains(existingConfiguration);
+        assertThat(store.findMcpToolPublication(TENANT_ID, TOOL_ID)).contains(existingPublication);
+        assertThat(store.listGrants(TENANT_ID, AGENT_ID, TOOL_ID)).containsExactly(residualGrant);
+    }
+
+    @Test
+    void memoryRevokeAuditFailureRestoresGrantAndAgentAssociation() {
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        ToolDefinition existing = httpTool("orders");
+        AgentDefinition existingAgent = agent(List.of(TOOL_ID));
+        com.cmagent.core.domain.ToolGrant existingGrant = new com.cmagent.core.domain.ToolGrant(
+                TENANT_ID, TOOL_ID, AGENT_ID, null, true
+        );
+        store.saveTool(existing);
+        store.saveAgent(existingAgent);
+        store.saveGrant(existingGrant);
+        doThrow(new AuditPersistenceException("审计写入失败", new IllegalStateException("memory unavailable")))
+                .when(auditAppender).append(any(), any(), any(), any(), any(), any(), any());
+
+        assertThatThrownBy(() -> statefulMemoryService(store, auditAppender)
+                .revokeTool(PRINCIPAL, TOOL_ID, AGENT_ID))
+                .isInstanceOf(AuditPersistenceException.class);
+
+        assertThat(store.findAgent(TENANT_ID, AGENT_ID)).contains(existingAgent);
+        assertThat(store.listGrants(TENANT_ID, AGENT_ID, TOOL_ID)).containsExactly(existingGrant);
+    }
+
+    @Test
+    void concurrentGrantCannotLeaveAgentPointingToDeletedTool() throws Exception {
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        ToolDefinition existing = httpTool("orders");
+        AgentDefinition existingAgent = agent(List.of());
+        store.saveTool(existing);
+        store.saveAgent(existingAgent);
+        AgentDefinitionRepository delegate = memoryAgentRepository(store);
+        CountDownLatch deleteReadReferences = new CountDownLatch(1);
+        CountDownLatch continueDelete = new CountDownLatch(1);
+        CountDownLatch grantReachedRepository = new CountDownLatch(1);
+        AgentDefinitionRepository coordinatedAgents = new AgentDefinitionRepository() {
+            @Override
+            public AgentDefinition save(AgentDefinition agent) {
+                return delegate.save(agent);
+            }
+
+            @Override
+            public Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId) {
+                grantReachedRepository.countDown();
+                return delegate.findByTenantAndId(tenantId, agentId);
+            }
+
+            @Override
+            public List<AgentDefinition> listByTenant(UUID tenantId) {
+                List<AgentDefinition> snapshot = delegate.listByTenant(tenantId);
+                deleteReadReferences.countDown();
+                awaitLatch(continueDelete, "删除流程未获准继续");
+                return snapshot;
+            }
+
+            @Override
+            public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
+                return delegate.addToolToAgent(tenantId, agentId, toolId);
+            }
+
+            @Override
+            public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
+                return delegate.removeToolFromAgent(tenantId, agentId, toolId);
+            }
+        };
+        ManagementCommandService deleteService = statefulMemoryService(
+                store, coordinatedAgents, new AuditAppender(store)
+        );
+        ManagementCommandService grantService = statefulMemoryService(
+                store, coordinatedAgents, new AuditAppender(store)
+        );
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            var deleteResult = executor.submit(() -> {
+                deleteService.deleteTool(PRINCIPAL, TOOL_ID);
+                return 204;
+            });
+            assertThat(deleteReadReferences.await(5, TimeUnit.SECONDS)).isTrue();
+            var grantResult = executor.submit(() -> {
+                try {
+                    grantService.grantTool(PRINCIPAL, TOOL_ID, AGENT_ID);
+                    return 200;
+                } catch (ResponseStatusException exception) {
+                    return exception.getStatusCode().value();
+                }
+            });
+
+            if (grantReachedRepository.await(500, TimeUnit.MILLISECONDS)) {
+                assertThat(grantResult.get(5, TimeUnit.SECONDS)).isEqualTo(200);
+            }
+            continueDelete.countDown();
+
+            assertThat(deleteResult.get(5, TimeUnit.SECONDS)).isEqualTo(204);
+            assertThat(grantResult.get(5, TimeUnit.SECONDS)).isEqualTo(404);
+        } finally {
+            continueDelete.countDown();
+            executor.shutdownNow();
+        }
+        assertThat(store.findTool(TENANT_ID, TOOL_ID)).isEmpty();
+        assertThat(store.findAgent(TENANT_ID, AGENT_ID)).get()
+                .extracting(AgentDefinition::toolIds)
+                .asList()
+                .doesNotContain(TOOL_ID);
+    }
+
+    @Test
+    void successfulMemoryDeleteRemovesExistingMcpPublicationBeforeToolDefinition() {
+        InMemoryPlatformStore store = new InMemoryPlatformStore();
+        ToolDefinition existing = httpTool("orders");
+        store.saveTool(existing);
+        store.saveHttpToolConfig(httpConfiguration(existing, validHttpSpec()));
+        store.saveMcpToolPublication(new McpToolPublication(TENANT_ID, TOOL_ID, true, "publisher"));
+
+        statefulMemoryService(store, new AuditAppender(store)).deleteTool(PRINCIPAL, TOOL_ID);
+
+        assertThat(store.findMcpToolPublication(TENANT_ID, TOOL_ID)).isEmpty();
+        assertThat(store.findTool(TENANT_ID, TOOL_ID)).isEmpty();
+    }
 
     @Test
     void updateHttpToolReplacesEditableDefinitionConfigurationAndMcpState() {
@@ -221,6 +399,110 @@ class ManagementCommandServiceTest {
 
         verify(toolRepository, never()).update(any());
         verify(httpToolConfigRepository, never()).save(any());
+    }
+
+    @Test
+    void updateHttpToolRejectsMissingHttpConfiguration() {
+        ToolDefinition existing = httpTool("orders");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> mockedService().updateTool(
+                PRINCIPAL,
+                TOOL_ID,
+                new ManagementCommandService.ToolUpdateSpec(
+                        existing.name(),
+                        existing.description(),
+                        ToolType.HTTP,
+                        existing.riskLevel(),
+                        existing.enabled(),
+                        null,
+                        false
+                )
+        )).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                assertThat(exception.getStatusCode().value()).isEqualTo(400))
+                .hasMessageContaining("HTTP 工具必须提供配置");
+
+        verify(toolRepository, never()).update(any());
+        verify(httpToolConfigRepository, never()).save(any());
+    }
+
+    @Test
+    void updateLocalToolRejectsHttpConfiguration() {
+        ToolDefinition existing = localTool("local_search");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> mockedService().updateTool(
+                PRINCIPAL,
+                TOOL_ID,
+                new ManagementCommandService.ToolUpdateSpec(
+                        existing.name(),
+                        existing.description(),
+                        ToolType.LOCAL,
+                        existing.riskLevel(),
+                        existing.enabled(),
+                        validHttpSpec(),
+                        false
+                )
+        )).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                assertThat(exception.getStatusCode().value()).isEqualTo(400))
+                .hasMessageContaining("仅 HTTP 工具可以提供 HTTP 配置");
+
+        verify(toolRepository, never()).update(any());
+        verify(httpToolConfigRepository, never()).save(any());
+    }
+
+    @Test
+    void updateToolDoesNotSeeAnotherTenantResource() {
+        UUID otherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> mockedService().updateTool(
+                PRINCIPAL,
+                TOOL_ID,
+                new ManagementCommandService.ToolUpdateSpec(
+                        "orders",
+                        "跨租户工具",
+                        ToolType.HTTP,
+                        ToolRiskLevel.LOW,
+                        true,
+                        validHttpSpec(),
+                        false
+                )
+        )).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                assertThat(exception.getStatusCode().value()).isEqualTo(404));
+
+        verify(toolRepository).findByTenantAndId(TENANT_ID, TOOL_ID);
+        verify(toolRepository, never()).findByTenantAndId(otherTenantId, TOOL_ID);
+        verify(toolRepository, never()).update(any());
+    }
+
+    @Test
+    void deleteToolDoesNotSeeAnotherTenantResource() {
+        UUID otherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> mockedService().deleteTool(PRINCIPAL, TOOL_ID))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                        assertThat(exception.getStatusCode().value()).isEqualTo(404));
+
+        verify(toolRepository).findByTenantAndId(TENANT_ID, TOOL_ID);
+        verify(toolRepository, never()).findByTenantAndId(otherTenantId, TOOL_ID);
+        verify(toolRepository, never()).delete(any(), any());
+    }
+
+    @Test
+    void revokeToolDoesNotSeeAnotherTenantResource() {
+        UUID otherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> mockedService().revokeTool(PRINCIPAL, TOOL_ID, AGENT_ID))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                        assertThat(exception.getStatusCode().value()).isEqualTo(404));
+
+        verify(toolRepository).findByTenantAndId(TENANT_ID, TOOL_ID);
+        verify(toolRepository, never()).findByTenantAndId(otherTenantId, TOOL_ID);
+        verify(grantRepository, never()).delete(any(), any(), any());
+        verify(agentRepository, never()).removeToolFromAgent(any(), any(), any());
     }
 
     @Test
@@ -599,6 +881,30 @@ class ManagementCommandServiceTest {
         );
     }
 
+    private ManagementCommandService statefulMemoryService(
+            InMemoryPlatformStore store,
+            AuditAppender memoryAuditAppender
+    ) {
+        return statefulMemoryService(store, memoryAgentRepository(store), memoryAuditAppender);
+    }
+
+    private ManagementCommandService statefulMemoryService(
+            InMemoryPlatformStore store,
+            AgentDefinitionRepository agents,
+            AuditAppender memoryAuditAppender
+    ) {
+        return new ManagementCommandService(
+                agents,
+                memoryToolRepository(store),
+                memoryHttpConfigRepository(store),
+                memoryMcpPublicationRepository(store),
+                memoryGrantRepository(store),
+                memoryAuditAppender,
+                httpToolConfigValidator(),
+                null
+        );
+    }
+
     private ManagementCommandService memoryBackedService(InMemoryPlatformStore store) {
         return memoryBackedService(store, memoryToolRepository(store));
     }
@@ -612,67 +918,12 @@ class ManagementCommandServiceTest {
             ToolDefinitionRepository memoryTools,
             AuditAppender memoryAuditAppender
     ) {
-        HttpToolConfigRepository memoryHttpConfigs = new HttpToolConfigRepository() {
-            @Override
-            public com.cmagent.core.domain.HttpToolConfig save(com.cmagent.core.domain.HttpToolConfig config) {
-                return store.saveHttpToolConfig(config);
-            }
-
-            @Override
-            public Optional<com.cmagent.core.domain.HttpToolConfig> findByTenantAndToolId(UUID tenantId, UUID toolId) {
-                return store.findHttpToolConfig(tenantId, toolId);
-            }
-
-            @Override
-            public java.util.Map<UUID, com.cmagent.core.domain.HttpToolConfig> findByTenantAndToolIds(
-                    UUID tenantId, List<UUID> toolIds
-            ) {
-                return toolIds.stream().map(toolId -> store.findHttpToolConfig(tenantId, toolId))
-                        .flatMap(Optional::stream)
-                        .collect(java.util.stream.Collectors.toUnmodifiableMap(
-                                com.cmagent.core.domain.HttpToolConfig::toolId, config -> config
-                        ));
-            }
-
-            @Override
-            public void delete(UUID tenantId, UUID toolId) {
-                store.deleteHttpToolConfig(tenantId, toolId);
-            }
-        };
-        McpToolPublicationRepository memoryPublications = new McpToolPublicationRepository() {
-            @Override
-            public com.cmagent.core.domain.McpToolPublication save(com.cmagent.core.domain.McpToolPublication publication) {
-                return store.saveMcpToolPublication(publication);
-            }
-
-            @Override
-            public Optional<com.cmagent.core.domain.McpToolPublication> findByTenantAndToolId(UUID tenantId, UUID toolId) {
-                return store.findMcpToolPublication(tenantId, toolId);
-            }
-
-            @Override
-            public java.util.Map<UUID, com.cmagent.core.domain.McpToolPublication> findByTenantAndToolIds(
-                    UUID tenantId, List<UUID> toolIds
-            ) {
-                return toolIds.stream().map(toolId -> store.findMcpToolPublication(tenantId, toolId))
-                        .flatMap(Optional::stream)
-                        .collect(java.util.stream.Collectors.toUnmodifiableMap(
-                                com.cmagent.core.domain.McpToolPublication::toolId, publication -> publication
-                        ));
-            }
-
-            @Override
-            public List<com.cmagent.core.domain.McpToolPublication> listEnabledByTenant(UUID tenantId) {
-                return store.listEnabledMcpToolPublications(tenantId);
-            }
-
-            @Override
-            public void delete(UUID tenantId, UUID toolId) {
-                store.deleteMcpToolPublication(tenantId, toolId);
-            }
-        };
         return new ManagementCommandService(
-                emptyAgentRepository(), memoryTools, memoryHttpConfigs, memoryPublications, grantRepository,
+                emptyAgentRepository(),
+                memoryTools,
+                memoryHttpConfigRepository(store),
+                memoryMcpPublicationRepository(store),
+                grantRepository,
                 memoryAuditAppender, httpToolConfigValidator(), null
         );
     }
@@ -690,6 +941,171 @@ class ManagementCommandServiceTest {
                 java.util.Map.of(),
                 Duration.ofSeconds(1)
         );
+    }
+
+    private static HttpToolCreateSpec updatedHttpSpec() {
+        return new HttpToolCreateSpec(
+                HttpToolMethod.POST,
+                "https://api.example.test/v2/orders",
+                "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}}}",
+                List.of(new HttpParameterMapping("/id", HttpParameterLocation.QUERY, "id", "", true, "")),
+                java.util.Map.of("X-Api-Key", "secret/tools/orders-v2"),
+                Duration.ofSeconds(2)
+        );
+    }
+
+    private static HttpToolConfig httpConfiguration(ToolDefinition tool, HttpToolCreateSpec spec) {
+        return new HttpToolConfig(
+                tool.tenantId(),
+                tool.id(),
+                spec.method(),
+                spec.urlTemplate(),
+                spec.inputSchema(),
+                spec.parameterMappings(),
+                spec.secretHeaders(),
+                spec.timeout()
+        );
+    }
+
+    private static void awaitLatch(CountDownLatch latch, String failureMessage) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException(failureMessage);
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(failureMessage, exception);
+        }
+    }
+
+    private static AgentDefinitionRepository memoryAgentRepository(InMemoryPlatformStore store) {
+        return new AgentDefinitionRepository() {
+            @Override
+            public AgentDefinition save(AgentDefinition agent) {
+                return store.saveAgent(agent);
+            }
+
+            @Override
+            public Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId) {
+                return store.findAgent(tenantId, agentId);
+            }
+
+            @Override
+            public List<AgentDefinition> listByTenant(UUID tenantId) {
+                return store.listAgents(tenantId);
+            }
+
+            @Override
+            public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
+                return store.addToolToAgent(tenantId, agentId, toolId);
+            }
+
+            @Override
+            public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
+                return store.removeToolFromAgent(tenantId, agentId, toolId);
+            }
+        };
+    }
+
+    private static HttpToolConfigRepository memoryHttpConfigRepository(InMemoryPlatformStore store) {
+        return new HttpToolConfigRepository() {
+            @Override
+            public HttpToolConfig save(HttpToolConfig config) {
+                return store.saveHttpToolConfig(config);
+            }
+
+            @Override
+            public Optional<HttpToolConfig> findByTenantAndToolId(UUID tenantId, UUID toolId) {
+                return store.findHttpToolConfig(tenantId, toolId);
+            }
+
+            @Override
+            public java.util.Map<UUID, HttpToolConfig> findByTenantAndToolIds(
+                    UUID tenantId, List<UUID> toolIds
+            ) {
+                return toolIds.stream().map(toolId -> store.findHttpToolConfig(tenantId, toolId))
+                        .flatMap(Optional::stream)
+                        .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                                HttpToolConfig::toolId, config -> config
+                        ));
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID toolId) {
+                store.deleteHttpToolConfig(tenantId, toolId);
+            }
+        };
+    }
+
+    private static McpToolPublicationRepository memoryMcpPublicationRepository(InMemoryPlatformStore store) {
+        return new McpToolPublicationRepository() {
+            @Override
+            public McpToolPublication save(McpToolPublication publication) {
+                return store.saveMcpToolPublication(publication);
+            }
+
+            @Override
+            public Optional<McpToolPublication> findByTenantAndToolId(UUID tenantId, UUID toolId) {
+                return store.findMcpToolPublication(tenantId, toolId);
+            }
+
+            @Override
+            public java.util.Map<UUID, McpToolPublication> findByTenantAndToolIds(
+                    UUID tenantId, List<UUID> toolIds
+            ) {
+                return toolIds.stream().map(toolId -> store.findMcpToolPublication(tenantId, toolId))
+                        .flatMap(Optional::stream)
+                        .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                                McpToolPublication::toolId, publication -> publication
+                        ));
+            }
+
+            @Override
+            public List<McpToolPublication> listEnabledByTenant(UUID tenantId) {
+                return store.listEnabledMcpToolPublications(tenantId);
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID toolId) {
+                store.deleteMcpToolPublication(tenantId, toolId);
+            }
+        };
+    }
+
+    private static ToolGrantRepository memoryGrantRepository(InMemoryPlatformStore store) {
+        return new ToolGrantRepository() {
+            @Override
+            public com.cmagent.core.domain.ToolGrant save(com.cmagent.core.domain.ToolGrant grant) {
+                return store.saveGrant(grant);
+            }
+
+            @Override
+            public List<com.cmagent.core.domain.ToolGrant> listByTenant(UUID tenantId) {
+                return store.listGrants(tenantId);
+            }
+
+            @Override
+            public List<com.cmagent.core.domain.ToolGrant> listByTenantAndAgent(UUID tenantId, UUID agentId) {
+                return store.listGrants(tenantId, agentId);
+            }
+
+            @Override
+            public List<com.cmagent.core.domain.ToolGrant> listByTenantAgentAndTool(
+                    UUID tenantId, UUID agentId, UUID toolId
+            ) {
+                return store.listGrants(tenantId, agentId, toolId);
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID agentId, UUID toolId) {
+                store.deleteGrant(tenantId, agentId, toolId);
+            }
+
+            @Override
+            public void deleteByTenantAndToolId(UUID tenantId, UUID toolId) {
+                store.deleteGrantsByTenantAndToolId(tenantId, toolId);
+            }
+        };
     }
 
     private static ToolDefinitionRepository memoryToolRepository(InMemoryPlatformStore store) {

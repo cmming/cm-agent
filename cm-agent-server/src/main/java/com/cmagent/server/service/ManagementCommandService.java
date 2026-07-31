@@ -25,12 +25,17 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 @Service
 /** 管理类写操作的统一编排层，负责校验、持久化和必要的审计动作。 */
 public class ManagementCommandService {
     private static final UUID MODEL_PROVIDER_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
+    private static final int TOOL_LOCK_STRIPE_COUNT = 256;
+    private static final ReentrantLock[] TOOL_LOCKS = createToolLocks();
 
     private final AgentDefinitionRepository agentRepository;
     private final ToolDefinitionRepository toolRepository;
@@ -216,6 +221,14 @@ public class ManagementCommandService {
      * @throws RuntimeException        授权、关联或审计失败时抛出
      */
     public ToolGrant grantTool(PrincipalRef principal, UUID toolId, UUID agentId) {
+        return withToolLock(
+                principal.tenantId(),
+                toolId,
+                () -> grantToolWithLock(principal, toolId, agentId)
+        );
+    }
+
+    private ToolGrant grantToolWithLock(PrincipalRef principal, UUID toolId, UUID agentId) {
         ToolDefinition tool = toolRepository.findByTenantAndId(principal.tenantId(), toolId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
         AgentDefinition agent = agentRepository.findByTenantAndId(principal.tenantId(), agentId)
@@ -248,19 +261,21 @@ public class ManagementCommandService {
         Objects.requireNonNull(principal, "principal 不能为空");
         Objects.requireNonNull(toolId, "toolId 不能为空");
         Objects.requireNonNull(spec, "spec 不能为空");
-        try {
-            if (transactionTemplate == null) {
-                return updateToolAndAudit(principal, toolId, spec);
+        return withToolLock(principal.tenantId(), toolId, () -> {
+            try {
+                if (transactionTemplate == null) {
+                    return updateToolWithCompensation(principal, toolId, spec);
+                }
+                return requireResult(transactionTemplate.execute(
+                        status -> updateToolAndAudit(principal, toolId, spec)
+                ));
+            } catch (DuplicateKeyException exception) {
+                if (isToolNameConflict(exception)) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "当前租户下工具名称已存在", exception);
+                }
+                throw exception;
             }
-            return requireResult(transactionTemplate.execute(
-                    status -> updateToolAndAudit(principal, toolId, spec)
-            ));
-        } catch (DuplicateKeyException exception) {
-            if (isToolNameConflict(exception)) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前租户下工具名称已存在", exception);
-            }
-            throw exception;
-        }
+        });
     }
 
     /**
@@ -273,11 +288,13 @@ public class ManagementCommandService {
     public void deleteTool(PrincipalRef principal, UUID toolId) {
         Objects.requireNonNull(principal, "principal 不能为空");
         Objects.requireNonNull(toolId, "toolId 不能为空");
-        if (transactionTemplate == null) {
-            deleteToolAndAudit(principal, toolId);
-            return;
-        }
-        transactionTemplate.executeWithoutResult(status -> deleteToolAndAudit(principal, toolId));
+        withToolLock(principal.tenantId(), toolId, () -> {
+            if (transactionTemplate == null) {
+                deleteToolWithCompensation(principal, toolId);
+                return;
+            }
+            transactionTemplate.executeWithoutResult(status -> deleteToolAndAudit(principal, toolId));
+        });
     }
 
     /**
@@ -293,27 +310,57 @@ public class ManagementCommandService {
         Objects.requireNonNull(principal, "principal 不能为空");
         Objects.requireNonNull(toolId, "toolId 不能为空");
         Objects.requireNonNull(agentId, "agentId 不能为空");
-        if (transactionTemplate == null) {
-            return revokeToolAndAudit(principal, toolId, agentId);
-        }
-        return requireResult(transactionTemplate.execute(
-                status -> revokeToolAndAudit(principal, toolId, agentId)
-        ));
+        return withToolLock(principal.tenantId(), toolId, () -> {
+            if (transactionTemplate == null) {
+                return revokeToolWithCompensation(principal, toolId, agentId);
+            }
+            return requireResult(transactionTemplate.execute(
+                    status -> revokeToolAndAudit(principal, toolId, agentId)
+            ));
+        });
     }
 
     private ToolDefinition updateToolAndAudit(PrincipalRef principal, UUID toolId, ToolUpdateSpec spec) {
+        PreparedToolUpdate prepared = prepareToolUpdateCommand(principal, toolId, spec);
+        return applyToolUpdateAndAudit(principal, prepared);
+    }
+
+    private ToolDefinition updateToolWithCompensation(PrincipalRef principal, UUID toolId, ToolUpdateSpec spec) {
+        PreparedToolUpdate prepared = prepareToolUpdateCommand(principal, toolId, spec);
         UUID tenantId = principal.tenantId();
-        ToolDefinition existing = toolRepository.findByTenantAndId(tenantId, toolId)
+        ToolStateSnapshot snapshot = new ToolStateSnapshot(
+                prepared.originalTool(),
+                httpToolConfigRepository.findByTenantAndToolId(tenantId, toolId),
+                mcpToolPublicationRepository.findByTenantAndToolId(tenantId, toolId),
+                List.of()
+        );
+        try {
+            return applyToolUpdateAndAudit(principal, prepared);
+        } catch (RuntimeException exception) {
+            restoreToolState(snapshot, exception);
+            throw exception;
+        }
+    }
+
+    private PreparedToolUpdate prepareToolUpdateCommand(
+            PrincipalRef principal,
+            UUID toolId,
+            ToolUpdateSpec spec
+    ) {
+        ToolDefinition existing = toolRepository.findByTenantAndId(principal.tenantId(), toolId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
         validateToolUpdateRequest(existing, spec);
-        ensureToolNameAvailable(tenantId, toolId, spec.name());
+        ensureToolNameAvailable(principal.tenantId(), toolId, spec.name());
+        return prepareToolUpdate(principal, existing, spec);
+    }
 
-        PreparedToolUpdate prepared = prepareToolUpdate(principal, existing, spec);
+    private ToolDefinition applyToolUpdateAndAudit(PrincipalRef principal, PreparedToolUpdate prepared) {
+        UUID tenantId = principal.tenantId();
         ToolDefinition updated = toolRepository.update(prepared.tool());
         if (prepared.httpToolConfig() != null) {
             httpToolConfigRepository.save(prepared.httpToolConfig());
             if (prepared.mcpToolPublication() == null) {
-                mcpToolPublicationRepository.delete(tenantId, toolId);
+                mcpToolPublicationRepository.delete(tenantId, prepared.tool().id());
             } else {
                 mcpToolPublicationRepository.save(prepared.mcpToolPublication());
             }
@@ -344,7 +391,7 @@ public class ManagementCommandService {
                 principal.principalId()
         );
         if (httpSpec == null) {
-            return new PreparedToolUpdate(updated, null, null);
+            return new PreparedToolUpdate(existing, updated, null, null);
         }
 
         HttpToolConfig configuration = new HttpToolConfig(
@@ -364,13 +411,40 @@ public class ManagementCommandService {
         McpToolPublication publication = spec.mcpPublished()
                 ? new McpToolPublication(existing.tenantId(), existing.id(), true, principal.principalId())
                 : null;
-        return new PreparedToolUpdate(updated, configuration, publication);
+        return new PreparedToolUpdate(existing, updated, configuration, publication);
     }
 
     private void deleteToolAndAudit(PrincipalRef principal, UUID toolId) {
         UUID tenantId = principal.tenantId();
         ToolDefinition tool = toolRepository.findByTenantAndId(tenantId, toolId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
+        validateToolNotReferenced(tenantId, toolId);
+        deleteToolStateAndAudit(principal, tool);
+    }
+
+    private void deleteToolWithCompensation(PrincipalRef principal, UUID toolId) {
+        UUID tenantId = principal.tenantId();
+        ToolDefinition tool = toolRepository.findByTenantAndId(tenantId, toolId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
+        validateToolNotReferenced(tenantId, toolId);
+        ToolStateSnapshot snapshot = new ToolStateSnapshot(
+                tool,
+                httpToolConfigRepository.findByTenantAndToolId(tenantId, toolId),
+                mcpToolPublicationRepository.findByTenantAndToolId(tenantId, toolId),
+                grantRepository.listByTenant(tenantId).stream()
+                        .filter(grant -> grant.toolId().equals(toolId))
+                        .toList()
+        );
+        try {
+            deleteToolStateAndAudit(principal, tool);
+        } catch (RuntimeException exception) {
+            restoreToolState(snapshot, exception);
+            restoreToolGrants(snapshot.tool(), snapshot.grants(), exception);
+            throw exception;
+        }
+    }
+
+    private void validateToolNotReferenced(UUID tenantId, UUID toolId) {
         boolean referenced = agentRepository.listByTenant(tenantId).stream()
                 .anyMatch(agent -> agent.toolIds().contains(toolId));
         if (referenced) {
@@ -379,7 +453,10 @@ public class ManagementCommandService {
                     "工具仍被 Agent 关联，请先解除关联后再删除"
             );
         }
+    }
 
+    private void deleteToolStateAndAudit(PrincipalRef principal, ToolDefinition tool) {
+        UUID tenantId = principal.tenantId();
         httpToolConfigRepository.delete(tenantId, tool.id());
         mcpToolPublicationRepository.delete(tenantId, tool.id());
         grantRepository.deleteByTenantAndToolId(tenantId, tool.id());
@@ -401,7 +478,30 @@ public class ManagementCommandService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
         AgentDefinition agent = agentRepository.findByTenantAndId(tenantId, agentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
+        return revokeToolStateAndAudit(principal, tool, agent);
+    }
 
+    private AgentDefinition revokeToolWithCompensation(PrincipalRef principal, UUID toolId, UUID agentId) {
+        UUID tenantId = principal.tenantId();
+        ToolDefinition tool = toolRepository.findByTenantAndId(tenantId, toolId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
+        AgentDefinition agent = agentRepository.findByTenantAndId(tenantId, agentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
+        List<ToolGrant> grants = grantRepository.listByTenantAgentAndTool(tenantId, agentId, toolId);
+        try {
+            return revokeToolStateAndAudit(principal, tool, agent);
+        } catch (RuntimeException exception) {
+            restoreAgentToolState(agent, tool.id(), grants, exception);
+            throw exception;
+        }
+    }
+
+    private AgentDefinition revokeToolStateAndAudit(
+            PrincipalRef principal,
+            ToolDefinition tool,
+            AgentDefinition agent
+    ) {
+        UUID tenantId = principal.tenantId();
         grantRepository.delete(tenantId, agent.id(), tool.id());
         AgentDefinition updated = agentRepository.removeToolFromAgent(tenantId, agent.id(), tool.id());
         auditAppender.append(
@@ -537,6 +637,88 @@ public class ManagementCommandService {
         }
     }
 
+    private void restoreToolState(ToolStateSnapshot snapshot, RuntimeException original) {
+        compensate(() -> {
+            if (toolRepository.findByTenantAndId(snapshot.tool().tenantId(), snapshot.tool().id()).isEmpty()) {
+                toolRepository.save(snapshot.tool());
+            } else {
+                toolRepository.update(snapshot.tool());
+            }
+        }, original);
+        compensate(() -> restoreHttpToolConfig(snapshot), original);
+        compensate(() -> restoreMcpToolPublication(snapshot), original);
+    }
+
+    private void restoreHttpToolConfig(ToolStateSnapshot snapshot) {
+        if (snapshot.httpToolConfig().isPresent()) {
+            httpToolConfigRepository.save(snapshot.httpToolConfig().orElseThrow());
+            return;
+        }
+        httpToolConfigRepository.delete(snapshot.tool().tenantId(), snapshot.tool().id());
+    }
+
+    private void restoreMcpToolPublication(ToolStateSnapshot snapshot) {
+        if (snapshot.mcpToolPublication().isPresent()) {
+            mcpToolPublicationRepository.save(snapshot.mcpToolPublication().orElseThrow());
+            return;
+        }
+        mcpToolPublicationRepository.delete(snapshot.tool().tenantId(), snapshot.tool().id());
+    }
+
+    private void restoreToolGrants(
+            ToolDefinition tool,
+            List<ToolGrant> grants,
+            RuntimeException original
+    ) {
+        compensate(() -> grantRepository.deleteByTenantAndToolId(tool.tenantId(), tool.id()), original);
+        grants.forEach(grant -> compensate(() -> grantRepository.save(grant), original));
+    }
+
+    private void restoreAgentToolState(
+            AgentDefinition agent,
+            UUID toolId,
+            List<ToolGrant> grants,
+            RuntimeException original
+    ) {
+        if (agent.toolIds().contains(toolId)) {
+            compensate(() -> agentRepository.addToolToAgent(agent.tenantId(), agent.id(), toolId), original);
+        } else {
+            compensate(() -> agentRepository.removeToolFromAgent(agent.tenantId(), agent.id(), toolId), original);
+        }
+        compensate(() -> grantRepository.delete(agent.tenantId(), agent.id(), toolId), original);
+        grants.forEach(grant -> compensate(() -> grantRepository.save(grant), original));
+    }
+
+    private static ReentrantLock[] createToolLocks() {
+        ReentrantLock[] locks = new ReentrantLock[TOOL_LOCK_STRIPE_COUNT];
+        for (int index = 0; index < locks.length; index++) {
+            locks[index] = new ReentrantLock();
+        }
+        return locks;
+    }
+
+    private static ReentrantLock toolLock(UUID tenantId, UUID toolId) {
+        int stripe = Math.floorMod(Objects.hash(tenantId, toolId), TOOL_LOCK_STRIPE_COUNT);
+        return TOOL_LOCKS[stripe];
+    }
+
+    private static <T> T withToolLock(UUID tenantId, UUID toolId, Supplier<T> action) {
+        ReentrantLock lock = toolLock(tenantId, toolId);
+        lock.lock();
+        try {
+            return action.get();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private static void withToolLock(UUID tenantId, UUID toolId, Runnable action) {
+        withToolLock(tenantId, toolId, () -> {
+            action.run();
+            return null;
+        });
+    }
+
     private void validateToolUpdateRequest(ToolDefinition existing, ToolUpdateSpec spec) {
         if (existing.type() != spec.type()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "工具类型不可修改");
@@ -656,10 +838,22 @@ public class ManagementCommandService {
     }
 
     private record PreparedToolUpdate(
+            ToolDefinition originalTool,
             ToolDefinition tool,
             @Nullable HttpToolConfig httpToolConfig,
             @Nullable McpToolPublication mcpToolPublication
     ) {
+    }
+
+    private record ToolStateSnapshot(
+            ToolDefinition tool,
+            Optional<HttpToolConfig> httpToolConfig,
+            Optional<McpToolPublication> mcpToolPublication,
+            List<ToolGrant> grants
+    ) {
+        private ToolStateSnapshot {
+            grants = List.copyOf(grants);
+        }
     }
 
     /**
