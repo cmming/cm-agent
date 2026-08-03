@@ -90,6 +90,7 @@ cm-agent:
 
 - [中文路线图](docs/roadmap.md)
 - [工具开发指南](docs/tool-development-guide.md)
+- [工具编辑、删除与 Agent 解除关联技术设计](docs/tool-management-edit-delete-design.md)
 - [配置说明](docs/configuration.md)
 - [部署指南](docs/deployment.md)
 - [运维说明](docs/operations.md)
