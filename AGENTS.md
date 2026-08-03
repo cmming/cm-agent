@@ -11,7 +11,7 @@
 
 ## 项目定位
 - CM Agent 是基于 AgentScope Java 的企业级智能体开源底座。
-- 当前阶段覆盖 Java SDK/Core、Spring Boot Starter、独立服务端、轻量控制台、工具治理、多租户、RBAC、JWT、安全审计和 JDBC 持久化基线。
+- 当前阶段覆盖 Java SDK/Core、Spring Boot Starter、独立服务端、轻量控制台、工具治理（含动态 HTTP 工具与 MCP 发布）、多租户、RBAC、JWT、安全审计和 JDBC 持久化基线。
 - 代码应优先服务后端长期演进：清晰分层、租户隔离、权限可审计、配置可生产化。
 
 ## 技术栈
@@ -21,6 +21,7 @@
 - API 文档: springdoc OpenAPI 2.8.9。
 - JWT: JJWT 0.13.0。
 - AgentScope: `agentscope-core` 2.0.0；Provider 扩展由 adapter 模块按需引入，并保持 optional 依赖。
+- MCP: `io.modelcontextprotocol.sdk:mcp-core`/`mcp-json-jackson2` 2.0.0；用于将已发布工具以 MCP Streamable HTTP 方式对外提供，Server 端实现见 `cm-agent-server` 的 `com.cmagent.server.mcp` 包。
 - 数据库: 默认 memory，可通过 `cm-agent.persistence.mode=jdbc` 使用 JDBC/Flyway；目标为 PostgreSQL/Supabase PostgreSQL 和 MySQL。
 - 本地数据库: `docker-compose.yml` 提供 PostgreSQL 16-alpine 和 MySQL 8.4。
 - 测试: Spring Boot Test、JUnit Jupiter 5.12.2、AssertJ 3.27.3、Mockito 5.17.0、MockMvc、Spring Security Test、Testcontainers。Testcontainers 通过父 `pom.xml` 的 `testcontainers-bom` 管理，当前为 2.0.5；升级前必须用 `mvn -pl <module> dependency:tree` 复核。
@@ -30,10 +31,10 @@
 - `cm-agent-core`: 领域模型、运行时接口、工具接口、安全策略和 Repository 接口。
 - `cm-agent-persistence`: JDBC Repository 实现、Flyway 迁移和数据库集成测试。
 - `cm-agent-spring-boot-starter`: Starter 自动配置、`cm-agent` 配置属性和默认 Bean。
-- `cm-agent-server`: Spring Boot 应用入口、Web Controller、安全配置、运行配置、审计、memory store。
+- `cm-agent-server`: Spring Boot 应用入口、Web Controller、安全配置、运行配置、审计、memory store、MCP Streamable HTTP 端点（`com.cmagent.server.mcp`）。
 - `cm-agent-console`: 轻量控制台模块，由 server 引入。
 - `cm-agent-agentscope-adapter`: AgentScope 运行时适配层。
-- `cm-agent-examples`: 示例工程，当前包含 `starter-local-tool`。
+- `cm-agent-examples`: 示例工程，当前包含 `starter-local-tool` 和 `http-tool-client`（动态 HTTP 工具创建与调用示例客户端）。
 - 包名保持在 `com.cmagent` 下；新增代码放入最贴近职责的现有包，不为少量代码新建宽泛包。
 
 ## Controller 规则
