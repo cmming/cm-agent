@@ -98,7 +98,7 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
         boolean exists = jdbcClient.sql("""
                         SELECT id
                         FROM tool_definitions
-                        WHERE tenant_id = :tenantId AND id = :toolId
+                        WHERE tenant_id = :tenantId AND id = :toolId AND deleted_at IS NULL
                         FOR UPDATE
                         """)
                 .param("tenantId", tenantId.toString())
@@ -114,10 +114,14 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
     @Override
     public Optional<HttpToolConfig> findByTenantAndToolId(UUID tenantId, UUID toolId) {
         return jdbcClient.sql("""
-                        SELECT tenant_id, tool_id, method, url_template, input_schema, parameter_mappings,
-                               secret_headers, timeout_ms
-                        FROM tool_http_configs
-                        WHERE tenant_id = :tenantId AND tool_id = :toolId
+                        SELECT config.tenant_id, config.tool_id, config.method, config.url_template,
+                               config.input_schema, config.parameter_mappings, config.secret_headers, config.timeout_ms
+                        FROM tool_http_configs config
+                        INNER JOIN tool_definitions tool
+                            ON tool.id = config.tool_id AND tool.tenant_id = config.tenant_id
+                        WHERE config.tenant_id = :tenantId
+                          AND config.tool_id = :toolId
+                          AND tool.deleted_at IS NULL
                         """)
                 .param("tenantId", tenantId.toString())
                 .param("toolId", toolId.toString())
@@ -131,10 +135,14 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
             return Map.of();
         }
         List<HttpToolConfig> configurations = jdbcClient.sql("""
-                        SELECT tenant_id, tool_id, method, url_template, input_schema, parameter_mappings,
-                               secret_headers, timeout_ms
-                        FROM tool_http_configs
-                        WHERE tenant_id = :tenantId AND tool_id IN (:toolIds)
+                        SELECT config.tenant_id, config.tool_id, config.method, config.url_template,
+                               config.input_schema, config.parameter_mappings, config.secret_headers, config.timeout_ms
+                        FROM tool_http_configs config
+                        INNER JOIN tool_definitions tool
+                            ON tool.id = config.tool_id AND tool.tenant_id = config.tenant_id
+                        WHERE config.tenant_id = :tenantId
+                          AND config.tool_id IN (:toolIds)
+                          AND tool.deleted_at IS NULL
                         """)
                 .param("tenantId", tenantId.toString())
                 .param("toolIds", toolIds.stream().map(UUID::toString).toList())

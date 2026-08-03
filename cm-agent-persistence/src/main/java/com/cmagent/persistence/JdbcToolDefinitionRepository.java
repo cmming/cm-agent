@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -73,6 +74,74 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
     }
 
     @Override
+    public boolean restoreManagedLocalTool(ToolDefinition tool) {
+        if (tool.type() != ToolType.LOCAL) {
+            throw new IllegalArgumentException("只能恢复受管 LOCAL 工具");
+        }
+        int restored = jdbcClient.sql("""
+                        UPDATE tool_definitions
+                        SET name = :name,
+                            description = :description,
+                            input_schema = :inputSchema,
+                            risk_level = :riskLevel,
+                            enabled = :enabled,
+                            endpoint = :endpoint,
+                            updated_by = :updatedBy,
+                            updated_at = :updatedAt,
+                            deleted_at = NULL,
+                            deleted_name = NULL
+                        WHERE tenant_id = :tenantId
+                          AND id = :id
+                          AND type = 'LOCAL'
+                          AND deleted_at IS NOT NULL
+                          AND deleted_name = :name
+                        """)
+                .param("name", tool.name())
+                .param("description", tool.description())
+                .param("inputSchema", tool.inputSchema())
+                .param("riskLevel", tool.riskLevel().name())
+                .param("enabled", tool.enabled())
+                .param("endpoint", tool.endpoint())
+                .param("updatedBy", tool.updatedBy())
+                .param("updatedAt", Timestamp.from(Instant.now()))
+                .param("tenantId", tool.tenantId().toString())
+                .param("id", tool.id().toString())
+                .update();
+        return restored == 1;
+    }
+
+    @Override
+    public ToolDefinition update(ToolDefinition tool) {
+        int updated = jdbcClient.sql("""
+                        UPDATE tool_definitions
+                        SET name = :name,
+                            description = :description,
+                            input_schema = :inputSchema,
+                            risk_level = :riskLevel,
+                            enabled = :enabled,
+                            endpoint = :endpoint,
+                            updated_by = :updatedBy,
+                            updated_at = :updatedAt
+                        WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL
+                        """)
+                .param("name", tool.name())
+                .param("description", tool.description())
+                .param("inputSchema", tool.inputSchema())
+                .param("riskLevel", tool.riskLevel().name())
+                .param("enabled", tool.enabled())
+                .param("endpoint", tool.endpoint())
+                .param("updatedBy", tool.updatedBy())
+                .param("updatedAt", Timestamp.from(Instant.now()))
+                .param("tenantId", tool.tenantId().toString())
+                .param("id", tool.id().toString())
+                .update();
+        if (updated == 0) {
+            throw new NoSuchElementException("工具不存在");
+        }
+        return tool;
+    }
+
+    @Override
     public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
         return jdbcClient.sql("""
                         SELECT
@@ -88,7 +157,32 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
                             created_by,
                             updated_by
                         FROM tool_definitions
-                        WHERE tenant_id = :tenantId AND id = :id
+                        WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL
+                        """)
+                .param("tenantId", tenantId.toString())
+                .param("id", toolId.toString())
+                .query(this::mapTool)
+                .optional();
+    }
+
+    @Override
+    public Optional<ToolDefinition> findByTenantAndIdForUpdate(UUID tenantId, UUID toolId) {
+        return jdbcClient.sql("""
+                        SELECT
+                            id,
+                            tenant_id,
+                            name,
+                            description,
+                            type,
+                            input_schema,
+                            risk_level,
+                            enabled,
+                            endpoint,
+                            created_by,
+                            updated_by
+                        FROM tool_definitions
+                        WHERE tenant_id = :tenantId AND id = :id AND deleted_at IS NULL
+                        FOR UPDATE
                         """)
                 .param("tenantId", tenantId.toString())
                 .param("id", toolId.toString())
@@ -112,7 +206,7 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
                             created_by,
                             updated_by
                         FROM tool_definitions
-                        WHERE tenant_id = :tenantId
+                        WHERE tenant_id = :tenantId AND deleted_at IS NULL
                         ORDER BY name ASC, id ASC
                         """)
                 .param("tenantId", tenantId.toString())
@@ -121,8 +215,34 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
     }
 
     @Override
+    public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
+        return jdbcClient.sql("""
+                        SELECT 1
+                        FROM tool_calls
+                        WHERE tenant_id = :tenantId AND tool_id = :toolId
+                        LIMIT 1
+                        """)
+                .param("tenantId", tenantId.toString())
+                .param("toolId", toolId.toString())
+                .query(Integer.class)
+                .optional()
+                .isPresent();
+    }
+
+    @Override
     public void delete(UUID tenantId, UUID toolId) {
-        jdbcClient.sql("DELETE FROM tool_definitions WHERE tenant_id = :tenantId AND id = :toolId")
+        Instant deletedAt = Instant.now();
+        jdbcClient.sql("""
+                        UPDATE tool_definitions
+                        SET deleted_name = name,
+                            name = :tombstoneName,
+                            enabled = false,
+                            deleted_at = :deletedAt,
+                            updated_at = :deletedAt
+                        WHERE tenant_id = :tenantId AND id = :toolId AND deleted_at IS NULL
+                        """)
+                .param("tombstoneName", "~deleted~" + toolId + "~" + UUID.randomUUID())
+                .param("deletedAt", Timestamp.from(deletedAt))
                 .param("tenantId", tenantId.toString())
                 .param("toolId", toolId.toString())
                 .update();

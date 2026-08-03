@@ -14,6 +14,7 @@ import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.McpToolPublication;
+import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.repository.RunRepository;
 import com.cmagent.core.repository.ToolCallRepository;
 import org.springframework.dao.DuplicateKeyException;
@@ -38,6 +39,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     private final ConcurrentHashMap<UUID, AgentDefinition> agents = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, ModelConfig> modelConfigs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, ToolDefinition> tools = new ConcurrentHashMap<>();
+    private final java.util.Set<UUID> deletedToolIds = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<TenantToolName, UUID> toolIdsByTenantAndName = new ConcurrentHashMap<>();
     private final Object toolLock = new Object();
     private final List<ToolGrant> grants = Collections.synchronizedList(new ArrayList<>());
@@ -229,6 +231,47 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         return result;
     }
     /**
+     * removeToolFromAgent：移除 Agent 与工具的关联。
+     *
+     * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+     * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
+     * @param toolId 目标工具标识，用于定位关联的工具定义。
+     */
+    public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
+        AtomicReference<AgentDefinition> updated = new AtomicReference<>();
+        agents.computeIfPresent(agentId, (id, agent) -> {
+            if (!agent.tenantId().equals(tenantId)) {
+                throw new NoSuchElementException("Agent 不存在");
+            }
+            if (!agent.toolIds().contains(toolId)) {
+                updated.set(agent);
+                return agent;
+            }
+            AgentDefinition reduced = new AgentDefinition(
+                    agent.id(),
+                    agent.tenantId(),
+                    agent.name(),
+                    agent.description(),
+                    agent.systemPrompt(),
+                    agent.modelProviderId(),
+                    agent.modelName(),
+                    agent.temperature(),
+                    agent.maxIterations(),
+                    agent.enabled(),
+                    agent.toolIds().stream().filter(idToKeep -> !idToKeep.equals(toolId)).toList(),
+                    agent.createdBy(),
+                    agent.updatedBy()
+            );
+            updated.set(reduced);
+            return reduced;
+        });
+        AgentDefinition result = updated.get();
+        if (result == null) {
+            throw new NoSuchElementException("Agent 不存在");
+        }
+        return result;
+    }
+    /**
      * saveTool：保存当前对象及其关联配置。
      *
      * @param tool 当前处理的工具定义。
@@ -237,6 +280,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         Objects.requireNonNull(tool, "tool 不能为空");
         TenantToolName name = new TenantToolName(tool.tenantId(), tool.name());
         synchronized (toolLock) {
+            if (deletedToolIds.contains(tool.id())) {
+                throw new DuplicateKeyException("duplicate key tool_definitions_pkey");
+            }
             UUID existingToolId = toolIdsByTenantAndName.putIfAbsent(name, tool.id());
             if (existingToolId != null && !existingToolId.equals(tool.id())) {
                 throw new DuplicateKeyException("duplicate key ux_tool_definitions_tenant_name");
@@ -252,6 +298,109 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
             return tool;
         }
     }
+
+    /**
+     * 原位恢复与墓碑身份完全匹配的受管 LOCAL 工具。
+     */
+    public boolean restoreManagedLocalTool(ToolDefinition tool) {
+        Objects.requireNonNull(tool, "tool 不能为空");
+        if (tool.type() != ToolType.LOCAL) {
+            throw new IllegalArgumentException("只能恢复受管 LOCAL 工具");
+        }
+        synchronized (toolLock) {
+            ToolDefinition deleted = tools.get(tool.id());
+            if (deleted == null || !deletedToolIds.contains(tool.id())
+                    || !deleted.tenantId().equals(tool.tenantId())
+                    || !deleted.name().equals(tool.name())
+                    || deleted.type() != ToolType.LOCAL) {
+                return false;
+            }
+            TenantToolName name = new TenantToolName(tool.tenantId(), tool.name());
+            UUID existingToolId = toolIdsByTenantAndName.putIfAbsent(name, tool.id());
+            if (existingToolId != null && !existingToolId.equals(tool.id())) {
+                throw new DuplicateKeyException("duplicate key ux_tool_definitions_tenant_name");
+            }
+            ToolDefinition restored = new ToolDefinition(
+                    deleted.id(),
+                    deleted.tenantId(),
+                    tool.name(),
+                    tool.description(),
+                    deleted.type(),
+                    tool.inputSchema(),
+                    tool.riskLevel(),
+                    tool.enabled(),
+                    tool.endpoint(),
+                    deleted.createdBy(),
+                    tool.updatedBy()
+            );
+            tools.put(tool.id(), restored);
+            deletedToolIds.remove(tool.id());
+            return true;
+        }
+    }
+
+    /**
+     * 恢复当前命令刚软删除的完整快照，仅供无事务命令失败补偿。
+     */
+    public boolean restoreDeletedToolForCompensation(ToolDefinition tool) {
+        Objects.requireNonNull(tool, "tool 不能为空");
+        synchronized (toolLock) {
+            ToolDefinition deleted = tools.get(tool.id());
+            if (deleted == null || !deletedToolIds.contains(tool.id())
+                    || !deleted.tenantId().equals(tool.tenantId())
+                    || !deleted.name().equals(tool.name())
+                    || deleted.type() != tool.type()) {
+                return false;
+            }
+            TenantToolName name = new TenantToolName(tool.tenantId(), tool.name());
+            UUID existingToolId = toolIdsByTenantAndName.putIfAbsent(name, tool.id());
+            if (existingToolId != null && !existingToolId.equals(tool.id())) {
+                throw new DuplicateKeyException("duplicate key ux_tool_definitions_tenant_name");
+            }
+            tools.put(tool.id(), tool);
+            deletedToolIds.remove(tool.id());
+            return true;
+        }
+    }
+    /**
+     * updateTool：更新已存在工具的可编辑字段。
+     *
+     * @param tool 当前处理的工具定义。
+     */
+    public ToolDefinition updateTool(ToolDefinition tool) {
+        Objects.requireNonNull(tool, "tool 不能为空");
+        synchronized (toolLock) {
+            ToolDefinition existing = tools.get(tool.id());
+            if (existing == null || deletedToolIds.contains(tool.id())
+                    || !existing.tenantId().equals(tool.tenantId())) {
+                throw new NoSuchElementException("工具不存在");
+            }
+            TenantToolName originalName = new TenantToolName(existing.tenantId(), existing.name());
+            TenantToolName updatedName = new TenantToolName(tool.tenantId(), tool.name());
+            if (!originalName.equals(updatedName)) {
+                UUID existingToolId = toolIdsByTenantAndName.putIfAbsent(updatedName, tool.id());
+                if (existingToolId != null && !existingToolId.equals(tool.id())) {
+                    throw new DuplicateKeyException("duplicate key ux_tool_definitions_tenant_name");
+                }
+                toolIdsByTenantAndName.remove(originalName, tool.id());
+            }
+            ToolDefinition merged = new ToolDefinition(
+                    existing.id(),
+                    existing.tenantId(),
+                    tool.name(),
+                    tool.description(),
+                    existing.type(),
+                    tool.inputSchema(),
+                    tool.riskLevel(),
+                    tool.enabled(),
+                    tool.endpoint(),
+                    existing.createdBy(),
+                    tool.updatedBy()
+            );
+            tools.put(tool.id(), merged);
+            return tool;
+        }
+    }
     /**
      * findTool：查询并返回当前上下文中的匹配结果。
      *
@@ -260,7 +409,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
      */
     public Optional<ToolDefinition> findTool(UUID tenantId, UUID toolId) {
         ToolDefinition tool = tools.get(toolId);
-        if (tool == null || !tool.tenantId().equals(tenantId)) {
+        if (tool == null || deletedToolIds.contains(toolId) || !tool.tenantId().equals(tenantId)) {
             return Optional.empty();
         }
         return Optional.of(tool);
@@ -277,7 +426,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
             if (tool == null || !tenantId.equals(tool.tenantId())) {
                 return;
             }
-            tools.remove(toolId, tool);
+            deletedToolIds.add(toolId);
             toolIdsByTenantAndName.remove(new TenantToolName(tenantId, tool.name()), toolId);
         }
     }
@@ -288,10 +437,21 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
      */
     public List<ToolDefinition> listTools(UUID tenantId) {
         return tools.values().stream()
-                .filter(tool -> tool.tenantId().equals(tenantId))
+                .filter(tool -> tool.tenantId().equals(tenantId) && !deletedToolIds.contains(tool.id()))
                 .sorted(Comparator.comparing(ToolDefinition::name, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(tool -> tool.id().toString()))
                 .toList();
+    }
+
+    /**
+     * 判断指定工具是否已经产生需要保留的调用历史。
+     */
+    public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
+        synchronized (toolCalls) {
+            return toolCalls.stream()
+                    .anyMatch(toolCall -> tenantId.equals(toolCall.tenantId())
+                            && toolId.equals(toolCall.toolId()));
+        }
     }
     /**
      * saveGrant：保存当前对象及其关联配置。
@@ -350,6 +510,33 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                             && grant.agentId().equals(agentId)
                             && grant.toolId().equals(toolId))
                     .toList();
+        }
+    }
+
+    /**
+     * deleteGrant：移除指定 Agent 与工具的授权关系。
+     *
+     * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+     * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
+     * @param toolId 目标工具标识，用于定位关联的工具定义。
+     */
+    public void deleteGrant(UUID tenantId, UUID agentId, UUID toolId) {
+        synchronized (grants) {
+            grants.removeIf(grant -> grant.tenantId().equals(tenantId)
+                    && grant.agentId().equals(agentId)
+                    && grant.toolId().equals(toolId));
+        }
+    }
+
+    /**
+     * deleteGrantsByTenantAndToolId：移除指定工具的全部授权关系。
+     *
+     * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
+     * @param toolId 目标工具标识，用于定位关联的工具定义。
+     */
+    public void deleteGrantsByTenantAndToolId(UUID tenantId, UUID toolId) {
+        synchronized (grants) {
+            grants.removeIf(grant -> grant.tenantId().equals(tenantId) && grant.toolId().equals(toolId));
         }
     }
 

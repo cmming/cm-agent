@@ -13,7 +13,9 @@
         tools: [],
         localExamples: [],
         selectedAgentId: "",
+        selectedAgent: null,
         selectedToolId: "",
+        editingToolId: "",
         runs: [],
         runCursor: "",
         selectedRunId: "",
@@ -22,10 +24,12 @@
     };
     const toolPublicationLock = core.createToolPublicationLock();
     const toolLoadRevision = core.createLoadRevisionGate();
+    const agentDetailRevision = core.createLoadRevisionGate();
     const localExampleInstallLock = core.createToolPublicationLock();
     const localExampleLoadRevision = core.createLoadRevisionGate();
     const localExampleInstallRevision = core.createKeyedLoadRevisionGate();
     const sessionEpoch = core.createSessionEpochGate();
+    const submitStateGuard = core.createSubmitStateGuard();
 
     const pageInfo = {
         overviewPage: ["能力总览", "查看当前租户已交付的 Agent 能力与最近活动。"],
@@ -61,13 +65,16 @@
 
     async function withSubmitState(button, action) {
         const originalText = button.textContent;
+        const pendingText = "处理中…";
+        const ticket = submitStateGuard.begin(button, sessionEpoch.capture());
         button.disabled = true;
-        button.textContent = "处理中…";
+        button.textContent = pendingText;
         try {
             return await action();
         } finally {
+            if (!submitStateGuard.finish(ticket, sessionEpoch.capture())) return;
             button.disabled = false;
-            button.textContent = originalText;
+            if (button.textContent === pendingText) button.textContent = originalText;
         }
     }
 
@@ -108,7 +115,9 @@
 
     function logout(message = "已安全退出。") {
         sessionEpoch.invalidate();
+        submitStateGuard.invalidateAll();
         toolLoadRevision.invalidate();
+        agentDetailRevision.invalidate();
         localExampleLoadRevision.invalidate();
         localExampleInstallRevision.invalidateAll();
         state.token = "";
@@ -117,7 +126,9 @@
         state.tools = [];
         state.localExamples = [];
         state.selectedAgentId = "";
+        state.selectedAgent = null;
         state.selectedToolId = "";
+        resetToolForm();
         state.runs = [];
         state.runCursor = "";
         state.selectedRunId = "";
@@ -140,6 +151,19 @@
     }
 
     function resetSessionViews() {
+        [
+            ["loginBtn", "登录控制台"],
+            ["createAgentBtn", "创建 Agent"],
+            ["createToolBtn", "注册 Tool"],
+            ["grantToolBtn", "确认授权"],
+            ["debugToolBtn", "执行调试"],
+            ["runBtn", "执行运行"]
+        ].forEach(([id, text]) => {
+            const button = $(id);
+            submitStateGuard.invalidate(button);
+            button.disabled = false;
+            button.textContent = text;
+        });
         $("runInput").value = "";
         $("debugInput").value = "{}";
         $("debugConfirmedToolName").value = "";
@@ -182,7 +206,7 @@
     async function loadInitialData(session = sessionEpoch.capture()) {
         setStatus($("globalStatus"), "正在加载当前租户资源…");
         try {
-            await Promise.all([loadAgents(), loadTools(undefined, session), loadLocalExamples(undefined, false, session)]);
+            await Promise.all([loadAgents(session), loadTools(undefined, session), loadLocalExamples(undefined, false, session)]);
             if (!sessionEpoch.isCurrent(session)) return;
             if (state.selectedAgentId) await loadRuns({append: false});
             if (!sessionEpoch.isCurrent(session)) return;
@@ -193,8 +217,9 @@
         }
     }
 
-    async function loadAgents() {
+    async function loadAgents(session = sessionEpoch.capture()) {
         const agents = await api.request("/api/agents");
+        if (!sessionEpoch.isCurrent(session)) return false;
         state.agents = Array.isArray(agents) ? agents : [];
         if (!state.agents.some((agent) => agent.id === state.selectedAgentId)) {
             state.selectedAgentId = state.agents[0]?.id || "";
@@ -202,17 +227,37 @@
         renderAgents();
         updateAgentOptions();
         updateOverview();
-        if (state.selectedAgentId) await selectAgent(state.selectedAgentId);
+        if (state.selectedAgentId) await selectAgent(state.selectedAgentId, undefined, session);
+        return true;
     }
 
-    async function selectAgent(agentId) {
+    async function selectAgent(
+        agentId,
+        revision = agentDetailRevision.issue(),
+        session = sessionEpoch.capture()
+    ) {
+        if (!sessionEpoch.isCurrent(session)) return false;
         state.selectedAgentId = agentId;
         renderAgents();
         try {
             const agent = await api.request(`/api/agents/${encodeURIComponent(agentId)}`);
+            if (!sessionEpoch.isCurrent(session)
+                    || !agentDetailRevision.isCurrent(revision)
+                    || state.selectedAgentId !== agentId) {
+                return false;
+            }
+            state.selectedAgent = agent;
             renderAgentDetail(agent);
+            return true;
         } catch (error) {
+            if (!sessionEpoch.isCurrent(session)
+                    || !agentDetailRevision.isCurrent(revision)
+                    || state.selectedAgentId !== agentId) {
+                return false;
+            }
+            state.selectedAgent = null;
             renderMessage($("agentDetail"), error.message, true);
+            return false;
         }
     }
 
@@ -250,7 +295,57 @@
             ["工具数量", Array.isArray(agent.toolIds) ? agent.toolIds.length : 0],
             ["System Prompt", agent.systemPrompt]
         ]);
-        container.replaceChildren(heading, dl);
+        const toolsSection = element("section", {className: "detail-section"});
+        toolsSection.append(element("h3", {text: "已关联工具"}));
+        const toolIds = Array.isArray(agent.toolIds) ? agent.toolIds : [];
+        if (!toolIds.length) {
+            toolsSection.append(emptyState("该 Agent 尚未关联工具。"));
+        } else {
+            toolIds.forEach((toolId) => {
+                const tool = state.tools.find((item) => item.id === toolId);
+                const row = element("article", {className: "tool-card"});
+                row.append(element("strong", {text: tool?.name || toolId}));
+                const actions = element("div", {className: "tool-actions"});
+                const revokeButton = element("button", {
+                    className: "button ghost",
+                    type: "button",
+                    text: "解除关联"
+                });
+                revokeButton.addEventListener("click", () => revokeToolGrant(agent, tool || {id: toolId}, revokeButton));
+                actions.append(revokeButton);
+                row.append(actions);
+                toolsSection.append(row);
+            });
+        }
+        container.replaceChildren(heading, dl, toolsSection);
+    }
+
+    async function revokeToolGrant(agent, tool, button) {
+        if (!window.confirm(`确认解除 Agent“${agent.name || agent.id}”与 Tool“${tool.name || tool.id}”的关联吗？`)) {
+            return;
+        }
+        const operationSession = sessionEpoch.capture();
+        agentDetailRevision.invalidate();
+        toolLoadRevision.invalidate();
+        try {
+            await withSubmitState(button, async () => {
+                await api.request(core.buildToolGrantDeletePath(tool.id, agent.id), {method: "DELETE"});
+                if (!sessionEpoch.isCurrent(operationSession)) return;
+                const toolRevision = toolLoadRevision.completeWrite();
+                const reloadRevokedAgent = core.shouldReloadRevokedAgent(state.selectedAgentId, agent.id);
+                const [agentReloaded, toolsReloaded] = await Promise.all([
+                    reloadRevokedAgent
+                        ? selectAgent(agent.id, agentDetailRevision.completeWrite(), operationSession)
+                        : Promise.resolve(true),
+                    loadTools(toolRevision, operationSession)
+                ]);
+                if (!agentReloaded || !toolsReloaded || !sessionEpoch.isCurrent(operationSession)) return;
+                setStatus($("globalStatus"), `已解除 Agent“${agent.name || agent.id}”与 Tool“${tool.name || tool.id}”的关联。`, "success");
+            });
+        } catch (error) {
+            if (!sessionEpoch.isCurrent(operationSession)) return;
+            setStatus($("globalStatus"), error.message, "error");
+        }
     }
 
     async function createAgent() {
@@ -284,7 +379,13 @@
         if (!state.tools.some((tool) => tool.id === state.selectedToolId)) {
             state.selectedToolId = state.tools[0]?.id || "";
         }
+        if (state.editingToolId && !state.tools.some((tool) => tool.id === state.editingToolId)) {
+            resetToolForm();
+        }
         renderTools();
+        if (state.selectedAgent?.id === state.selectedAgentId) {
+            renderAgentDetail(state.selectedAgent);
+        }
         updateToolOptions();
         updateDebugToolOptions();
         updateOverview();
@@ -416,8 +517,15 @@
                 $("debugToolSelect").value = tool.id;
             });
             card.append(item);
+            const actions = element("div", {className: "tool-actions"});
+            const editButton = element("button", {
+                className: "button ghost",
+                type: "button",
+                text: "编辑"
+            });
+            editButton.addEventListener("click", () => beginToolEdit(tool));
+            actions.append(editButton);
             if (tool.type === "HTTP" || tool.type === "LOCAL") {
-                const actions = element("div", {className: "tool-actions"});
                 const publicationButton = element("button", {
                     className: tool.mcpPublished ? "button ghost" : "button",
                     type: "button",
@@ -442,33 +550,101 @@
                     });
                     actions.append(debugButton);
                 }
-                card.append(actions);
             }
+            const deleteButton = element("button", {
+                className: "button ghost",
+                type: "button",
+                text: "删除"
+            });
+            deleteButton.addEventListener("click", () => deleteTool(tool, deleteButton));
+            actions.append(deleteButton);
+            card.append(actions);
             container.append(card);
         });
     }
 
-    async function createTool() {
-        const fields = {
+    function beginToolEdit(tool) {
+        state.editingToolId = tool.id;
+        state.selectedToolId = tool.id;
+        $("toolName").value = tool.name || "";
+        $("toolDescription").value = tool.description || "";
+        $("toolType").value = tool.type || "LOCAL";
+        $("toolRiskLevel").value = tool.riskLevel || "LOW";
+        $("toolEnabled").checked = tool.enabled !== false;
+        $("toolMcpPublished").checked = tool.mcpPublished === true;
+        $("toolType").disabled = true;
+        $("toolName").disabled = tool.type === "LOCAL";
+        if (tool.type === "HTTP") {
+            const config = tool.httpConfig || {};
+            $("httpMethod").value = config.method || "GET";
+            $("httpUrlTemplate").value = config.urlTemplate || "";
+            $("httpInputSchema").value = formatStoredJson(config.inputSchema, "{}");
+            $("httpParameterMappings").value = formatStoredMappings(config.parameterMappings);
+            $("httpSecretHeaders").value = formatStoredJson(config.secretHeaders, "{}");
+            $("httpTimeoutMillis").value = String(config.timeoutMillis || 1000);
+        }
+        $("toolFormEyebrow").textContent = "编辑";
+        $("toolFormTitle").textContent = `编辑 Tool“${tool.name || tool.id}”`;
+        $("createToolBtn").textContent = "保存修改";
+        $("cancelToolEditBtn").hidden = false;
+        toggleHttpConfigFields();
+        renderTools();
+        setStatus($("toolFormStatus"), "类型不可修改；LOCAL Tool 名称也保持锁定。");
+        $("toolForm").scrollIntoView({behavior: "smooth", block: "start"});
+        $("toolDescription").focus();
+    }
+
+    function resetToolForm(clearStatus = true) {
+        state.editingToolId = "";
+        $("toolForm").reset();
+        $("toolType").disabled = false;
+        $("toolName").disabled = false;
+        $("toolFormEyebrow").textContent = "新建";
+        $("toolFormTitle").textContent = "注册 Tool";
+        $("createToolBtn").textContent = "注册 Tool";
+        $("cancelToolEditBtn").hidden = true;
+        toggleHttpConfigFields();
+        if (clearStatus) setStatus($("toolFormStatus"));
+    }
+
+    function formatStoredJson(value, fallback) {
+        if (value === null || value === undefined || value === "") return fallback;
+        if (typeof value !== "string") return core.formatJsonInput(value);
+        try {
+            return core.formatJsonInput(JSON.parse(value));
+        } catch {
+            return value;
+        }
+    }
+
+    function formatStoredMappings(mappings) {
+        const editable = core.prepareHttpParameterMappingsForEdit(mappings);
+        return core.formatJsonInput(editable);
+    }
+
+    async function submitTool() {
+        const rawFormFields = {
             name: $("toolName").value.trim(),
             description: $("toolDescription").value.trim(),
             type: $("toolType").value,
-            riskLevel: $("toolRiskLevel").value
+            riskLevel: $("toolRiskLevel").value,
+            enabled: $("toolEnabled").checked,
+            mcpPublished: $("toolMcpPublished").checked,
+            method: $("httpMethod").value,
+            urlTemplate: $("httpUrlTemplate").value,
+            inputSchemaText: $("httpInputSchema").value,
+            parameterMappingsText: $("httpParameterMappings").value,
+            secretHeadersText: $("httpSecretHeaders").value,
+            timeoutMillis: $("httpTimeoutMillis").value
         };
+        const editingTool = state.tools.find((tool) => tool.id === state.editingToolId);
+        if (state.editingToolId && !editingTool) {
+            setStatus($("toolFormStatus"), "待编辑 Tool 已不可用，请刷新后重试。", "error");
+            return;
+        }
         let payload;
         try {
-            payload = fields.type === "HTTP"
-                ? core.buildHttpToolPayload({
-                    ...fields,
-                    mcpPublished: $("toolMcpPublished").checked,
-                    method: $("httpMethod").value,
-                    urlTemplate: $("httpUrlTemplate").value,
-                    inputSchemaText: $("httpInputSchema").value,
-                    parameterMappingsText: $("httpParameterMappings").value,
-                    secretHeadersText: $("httpSecretHeaders").value,
-                    timeoutMillis: $("httpTimeoutMillis").value
-                })
-                : fields;
+            payload = core.buildToolFormPayload(editingTool, rawFormFields);
         } catch (error) {
             setStatus($("toolFormStatus"), error.message, "error");
             return;
@@ -477,15 +653,57 @@
             setStatus($("toolFormStatus"), "请完整填写 Tool 信息。", "error");
             return;
         }
+        const operationSession = sessionEpoch.capture();
+        toolLoadRevision.invalidate();
         try {
             await withSubmitState($("createToolBtn"), async () => {
-                const created = await api.request("/api/tools", {method: "POST", body: JSON.stringify(payload)});
-                state.selectedToolId = created.id || "";
-                await loadTools();
-                setStatus($("toolFormStatus"), `Tool“${created.name || payload.name}”已注册。`, "success");
+                const saved = await api.request(
+                    editingTool ? core.buildToolUpdatePath(editingTool.id) : "/api/tools",
+                    {method: editingTool ? "PUT" : "POST", body: JSON.stringify(payload)}
+                );
+                if (!sessionEpoch.isCurrent(operationSession)) return;
+                const resetSavedEdit = !editingTool
+                    || core.shouldResetSavedToolForm(state.editingToolId, editingTool.id);
+                if (resetSavedEdit) {
+                    state.selectedToolId = saved.id || editingTool?.id || "";
+                }
+                const successText = editingTool
+                    ? `Tool“${saved.name || payload.name}”已更新。`
+                    : `Tool“${saved.name || payload.name}”已注册。`;
+                if (resetSavedEdit) resetToolForm(false);
+                const reloadRevision = toolLoadRevision.completeWrite();
+                const toolsReloaded = await loadTools(reloadRevision, operationSession);
+                if (!toolsReloaded || !sessionEpoch.isCurrent(operationSession)) return;
+                setStatus($("toolFormStatus"), successText, "success");
             });
         } catch (error) {
+            if (!sessionEpoch.isCurrent(operationSession)) return;
             setStatus($("toolFormStatus"), error.message, "error");
+        }
+    }
+
+    async function deleteTool(tool, button) {
+        if (!window.confirm(`确认删除 Tool“${tool.name || tool.id}”吗？此操作不可撤销。`)) {
+            return;
+        }
+        const operationSession = sessionEpoch.capture();
+        toolLoadRevision.invalidate();
+        try {
+            await withSubmitState(button, async () => {
+                await api.request(core.buildToolDeletePath(tool.id), {method: "DELETE"});
+                if (!sessionEpoch.isCurrent(operationSession)) return;
+                if (state.editingToolId === tool.id) resetToolForm();
+                const reloadRevision = toolLoadRevision.completeWrite();
+                const toolsReloaded = await loadTools(reloadRevision, operationSession);
+                if (!toolsReloaded || !sessionEpoch.isCurrent(operationSession)) return;
+                setStatus($("globalStatus"), `Tool“${tool.name || tool.id}”已删除。`, "success");
+            });
+        } catch (error) {
+            if (!sessionEpoch.isCurrent(operationSession)) return;
+            const message = core.isToolDeleteConflict(error)
+                ? `Tool“${tool.name || tool.id}”仍被 Agent 使用，请先到 Agent 详情解除关联。`
+                : error.message;
+            setStatus($("globalStatus"), message, "error");
         }
     }
 
@@ -496,16 +714,22 @@
             setStatus($("grantFormStatus"), "请选择 Tool 和 Agent。", "error");
             return;
         }
+        const operationSession = sessionEpoch.capture();
+        agentDetailRevision.invalidate();
         try {
             await withSubmitState($("grantToolBtn"), async () => {
                 await api.request(`/api/tools/${encodeURIComponent(toolId)}/grants`, {
                     method: "POST",
                     body: JSON.stringify({agentId})
                 });
+                if (!sessionEpoch.isCurrent(operationSession)) return;
                 setStatus($("grantFormStatus"), "授权已生效。", "success");
-                if (agentId === state.selectedAgentId) await selectAgent(agentId);
+                if (agentId === state.selectedAgentId) {
+                    await selectAgent(agentId, agentDetailRevision.completeWrite(), operationSession);
+                }
             });
         } catch (error) {
+            if (!sessionEpoch.isCurrent(operationSession)) return;
             setStatus($("grantFormStatus"), error.message, "error");
         }
     }
@@ -555,7 +779,12 @@
 
     function toggleHttpConfigFields() {
         const isHttp = $("toolType").value === "HTTP";
+        const supportsMcp = isHttp || (state.editingToolId && $("toolType").value === "LOCAL");
         $("httpConfigFields").hidden = !isHttp;
+        $("toolEnabledField").hidden = !state.editingToolId;
+        $("mcpPublicationField").hidden = !supportsMcp;
+        $("toolMcpPublished").disabled = !supportsMcp;
+        if (!supportsMcp) $("toolMcpPublished").checked = false;
         ["httpUrlTemplate", "httpInputSchema", "httpParameterMappings", "httpSecretHeaders", "httpTimeoutMillis"].forEach((id) => {
             $(id).required = isHttp;
         });
@@ -879,7 +1108,8 @@
     });
     $("logoutBtn").addEventListener("click", () => logout());
     $("agentForm").addEventListener("submit", (event) => { event.preventDefault(); createAgent(); });
-    $("toolForm").addEventListener("submit", (event) => { event.preventDefault(); createTool(); });
+    $("toolForm").addEventListener("submit", (event) => { event.preventDefault(); submitTool(); });
+    $("cancelToolEditBtn").addEventListener("click", () => resetToolForm());
     $("grantForm").addEventListener("submit", (event) => { event.preventDefault(); grantTool(); });
     $("debugToolForm").addEventListener("submit", (event) => { event.preventDefault(); debugTool(); });
     $("runForm").addEventListener("submit", (event) => { event.preventDefault(); runAgent(); });

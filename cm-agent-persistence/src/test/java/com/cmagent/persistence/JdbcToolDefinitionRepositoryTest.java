@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 class JdbcToolDefinitionRepositoryTest {
@@ -66,6 +67,43 @@ class JdbcToolDefinitionRepositoryTest {
         assertThat(repository.listByTenant(TENANT_A))
                 .extracting(ToolDefinition::id)
                 .containsExactly(toolA.id());
+    }
+
+    @Test
+    void updatePersistsOnlyEditableFields() {
+        UUID toolId = UUID.fromString("20000000-0000-0000-0000-000000000003");
+        ToolDefinition original = tool(toolId, TENANT_A, "echo");
+        ToolDefinition requested = new ToolDefinition(
+                toolId, TENANT_A, "echo-v2", "更新后的描述", ToolType.HTTP,
+                "{\"type\":\"object\",\"required\":[\"message\"]}", ToolRiskLevel.HIGH,
+                false, "https://api.invalid/echo", "replacement-creator", "editor"
+        );
+        ToolDefinition expected = new ToolDefinition(
+                toolId, TENANT_A, "echo-v2", "更新后的描述", ToolType.LOCAL,
+                "{\"type\":\"object\",\"required\":[\"message\"]}", ToolRiskLevel.HIGH,
+                false, "https://api.invalid/echo", "tester", "editor"
+        );
+        repository.save(original);
+
+        assertThat(repository.update(requested)).isEqualTo(requested);
+        assertThat(repository.findByTenantAndId(TENANT_A, toolId)).contains(expected);
+    }
+
+    @Test
+    void updateWithWrongTenantLeavesExistingToolUnchanged() {
+        UUID toolId = UUID.fromString("20000000-0000-0000-0000-000000000004");
+        ToolDefinition original = tool(toolId, TENANT_A, "echo");
+        ToolDefinition crossTenant = new ToolDefinition(
+                toolId, TENANT_B, "other-tenant", "不应写入", ToolType.HTTP,
+                "{}", ToolRiskLevel.HIGH, false, "https://api.invalid/other", "other", "editor"
+        );
+        repository.save(original);
+
+        assertThatThrownBy(() -> repository.update(crossTenant))
+                .isInstanceOf(java.util.NoSuchElementException.class)
+                .hasMessage("工具不存在");
+        assertThat(repository.findByTenantAndId(TENANT_A, toolId)).contains(original);
+        assertThat(repository.findByTenantAndId(TENANT_B, toolId)).isEmpty();
     }
 
     private static ToolDefinition tool(UUID id, UUID tenantId, String name) {

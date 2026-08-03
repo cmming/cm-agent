@@ -302,6 +302,11 @@ public class ServerRepositoryConfiguration {
             public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.addToolToAgent(tenantId, agentId, toolId);
             }
+
+            @Override
+            public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
+                return store.removeToolFromAgent(tenantId, agentId, toolId);
+            }
         };
     }
 
@@ -327,6 +332,21 @@ public class ServerRepositoryConfiguration {
             }
 
             @Override
+            public boolean restoreManagedLocalTool(ToolDefinition tool) {
+                return store.restoreManagedLocalTool(tool);
+            }
+
+            @Override
+            public boolean restoreDeletedToolForCompensation(ToolDefinition tool) {
+                return store.restoreDeletedToolForCompensation(tool);
+            }
+
+            @Override
+            public ToolDefinition update(ToolDefinition tool) {
+                return store.updateTool(tool);
+            }
+
+            @Override
             /**
              * findByTenantAndId：查询并返回当前上下文中的匹配结果。
              *
@@ -345,6 +365,11 @@ public class ServerRepositoryConfiguration {
              */
             public List<ToolDefinition> listByTenant(UUID tenantId) {
                 return store.listTools(tenantId);
+            }
+
+            @Override
+            public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
+                return store.hasToolCallHistory(tenantId, toolId);
             }
 
             @Override
@@ -412,6 +437,16 @@ public class ServerRepositoryConfiguration {
              */
             public List<ToolGrant> listByTenantAgentAndTool(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.listGrants(tenantId, agentId, toolId);
+            }
+
+            @Override
+            public void delete(UUID tenantId, UUID agentId, UUID toolId) {
+                store.deleteGrant(tenantId, agentId, toolId);
+            }
+
+            @Override
+            public void deleteByTenantAndToolId(UUID tenantId, UUID toolId) {
+                store.deleteGrantsByTenantAndToolId(tenantId, toolId);
             }
         };
     }

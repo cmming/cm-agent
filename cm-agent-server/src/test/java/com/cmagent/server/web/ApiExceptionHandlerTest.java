@@ -5,11 +5,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.UUID;
 
@@ -66,6 +68,14 @@ class ApiExceptionHandlerTest {
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("unit-test-api-key"))));
     }
 
+    @Test
+    void conflictUsesControlledBusinessReason() throws Exception {
+        mockMvc.perform(get("/test/conflict"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.message").value("工具已有调用历史，为保留运行记录不能删除"));
+    }
+
     @RestController
     static class FailingController {
         @GetMapping("/test/resources/{id}")
@@ -90,6 +100,14 @@ class ApiExceptionHandlerTest {
             throw new AuditPersistenceException(
                     "审计写入失败",
                     new IllegalStateException("database unavailable password=unit-test-password")
+            );
+        }
+
+        @GetMapping("/test/conflict")
+        void conflict() {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "工具已有调用历史，为保留运行记录不能删除"
             );
         }
     }

@@ -196,11 +196,269 @@ test("HTTP 工具请求拒绝 Secret 非引用和无效超时", () => {
     assert.throws(() => core.buildHttpToolPayload({...base, secretHeadersText: '{"Authorization":"secret/integration/api-key"}'}), /超时时间/);
 });
 
+test("构建 HTTP 工具更新载荷时保留 MCP 发布和 Secret 引用", () => {
+    const payload = core.buildToolUpdatePayload({id: "tool-1", type: "HTTP", name: "orders"}, {
+        name: "orders-v2",
+        description: "订单查询（新版）",
+        riskLevel: "HIGH",
+        enabled: false,
+        mcpPublished: true,
+        method: "PUT",
+        urlTemplate: "https://api.example.test/orders/{id}",
+        inputSchemaText: '{"type":"object"}',
+        parameterMappingsText: '[{"sourcePointer":"/id","location":"PATH","targetName":"id","required":true}]',
+        secretHeadersText: '{"Authorization":"secret/integration/token"}',
+        timeoutMillis: "2000"
+    });
+
+    assert.deepEqual(payload, {
+        name: "orders-v2",
+        description: "订单查询（新版）",
+        type: "HTTP",
+        riskLevel: "HIGH",
+        enabled: false,
+        mcpPublished: true,
+        httpConfig: {
+            method: "PUT",
+            urlTemplate: "https://api.example.test/orders/{id}",
+            inputSchema: {type: "object"},
+            parameterMappings: [{sourcePointer: "/id", location: "PATH", targetName: "id", required: true}],
+            secretHeaders: {Authorization: "secret/integration/token"},
+            timeoutMillis: 2000
+        }
+    });
+});
+
+test("HTTP 编辑表单原始字段只解析一次并直接生成更新请求", () => {
+    const rawFormFields = {
+        name: "orders-v3",
+        description: "订单查询（第三版）",
+        type: "HTTP",
+        riskLevel: "HIGH",
+        enabled: true,
+        mcpPublished: true,
+        method: "POST",
+        urlTemplate: "https://api.example.test/orders/{id}",
+        inputSchemaText: "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}}}",
+        parameterMappingsText: JSON.stringify(core.prepareHttpParameterMappingsForEdit([{
+            sourcePointer: "/id",
+            location: "PATH",
+            targetName: "id",
+            targetPointer: "",
+            required: false,
+            defaultValueJson: "\"fallback-id\""
+        }])),
+        secretHeadersText: "{\"Authorization\":\"secret/integration/orders-token\"}",
+        timeoutMillis: "2500"
+    };
+
+    const payload = core.buildToolFormPayload(
+        {id: "tool-http", type: "HTTP", name: "orders"},
+        rawFormFields
+    );
+
+    assert.deepEqual(payload, {
+        name: "orders-v3",
+        description: "订单查询（第三版）",
+        type: "HTTP",
+        riskLevel: "HIGH",
+        enabled: true,
+        mcpPublished: true,
+        httpConfig: {
+            method: "POST",
+            urlTemplate: "https://api.example.test/orders/{id}",
+            inputSchema: {type: "object", properties: {id: {type: "string"}}},
+            parameterMappings: [{
+                sourcePointer: "/id",
+                location: "PATH",
+                targetName: "id",
+                targetPointer: "",
+                required: false,
+                defaultValue: "fallback-id"
+            }],
+            secretHeaders: {Authorization: "secret/integration/orders-token"},
+            timeoutMillis: 2500
+        }
+    });
+
+    const script = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+    assert.match(script, /payload = core\.buildToolFormPayload\(editingTool, rawFormFields\)/);
+    assert.doesNotMatch(script, /core\.buildToolUpdatePayload\(editingTool,\s*\{\s*\.\.\.editableFields/);
+});
+
+test("构建 LOCAL 工具更新载荷时拒绝改名", () => {
+    const localTool = {id: "tool-2", type: "LOCAL", name: "echo"};
+    const fields = {name: "echo", description: "本地回显", riskLevel: "LOW", enabled: true, mcpPublished: true};
+
+    assert.throws(() => core.buildToolUpdatePayload(localTool, {...fields, name: "renamed"}), /LOCAL/);
+    assert.deepEqual(core.buildToolUpdatePayload(localTool, fields), {
+        name: "echo",
+        description: "本地回显",
+        type: "LOCAL",
+        riskLevel: "LOW",
+        enabled: true,
+        mcpPublished: true
+    });
+});
+
+test("HTTP 工具编辑会将摘要中的 defaultValueJson 还原为请求 defaultValue", () => {
+    const mappings = core.prepareHttpParameterMappingsForEdit([
+        {
+            sourcePointer: "/filter",
+            location: "QUERY",
+            targetName: "filter",
+            targetPointer: "",
+            required: false,
+            defaultValueJson: "{\"kind\":\"primary\"}"
+        },
+        {
+            sourcePointer: "/enabled",
+            location: "QUERY",
+            targetName: "enabled",
+            targetPointer: "",
+            required: false,
+            defaultValueJson: "false"
+        },
+        {
+            sourcePointer: "/limit",
+            location: "QUERY",
+            targetName: "limit",
+            targetPointer: "",
+            required: false,
+            defaultValueJson: "0"
+        },
+        {
+            sourcePointer: "/optional",
+            location: "BODY",
+            targetName: "",
+            targetPointer: "/optional",
+            required: false,
+            defaultValueJson: "null"
+        },
+        {
+            sourcePointer: "/without-default",
+            location: "QUERY",
+            targetName: "without-default",
+            targetPointer: "",
+            required: false,
+            defaultValueJson: ""
+        }
+    ]);
+
+    assert.deepEqual(mappings, [
+        {
+            sourcePointer: "/filter", location: "QUERY", targetName: "filter", targetPointer: "",
+            required: false, defaultValue: {kind: "primary"}
+        },
+        {
+            sourcePointer: "/enabled", location: "QUERY", targetName: "enabled", targetPointer: "",
+            required: false, defaultValue: false
+        },
+        {
+            sourcePointer: "/limit", location: "QUERY", targetName: "limit", targetPointer: "",
+            required: false, defaultValue: 0
+        },
+        {
+            sourcePointer: "/optional", location: "BODY", targetName: "", targetPointer: "/optional",
+            required: false, defaultValue: null
+        },
+        {
+            sourcePointer: "/without-default", location: "QUERY", targetName: "without-default",
+            targetPointer: "", required: false
+        }
+    ]);
+    const payload = core.buildHttpToolPayload({
+        name: "orders",
+        description: "订单查询",
+        riskLevel: "LOW",
+        mcpPublished: false,
+        method: "GET",
+        urlTemplate: "https://api.example.test/orders",
+        inputSchemaText: "{\"type\":\"object\"}",
+        parameterMappingsText: JSON.stringify(mappings),
+        secretHeadersText: "{}",
+        timeoutMillis: "1000"
+    });
+    assert.deepEqual(
+        payload.httpConfig.parameterMappings.map((mapping) => mapping.defaultValue),
+        [{kind: "primary"}, false, 0, null, undefined]
+    );
+
+    const script = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+    assert.match(script, /core\.prepareHttpParameterMappingsForEdit\(mappings\)/);
+});
+
+test("工具更新、删除和解除关联路径会编码资源标识", () => {
+    assert.equal(core.buildToolUpdatePath("tool/id"), "/api/tools/tool%2Fid");
+    assert.equal(core.buildToolDeletePath("tool/id"), "/api/tools/tool%2Fid");
+    assert.equal(core.buildToolGrantDeletePath("tool", "agent/id"), "/api/tools/tool/grants/agent%2Fid");
+});
+
+test("解除关联完成后只刷新仍被选中的原 Agent", () => {
+    assert.equal(core.shouldReloadRevokedAgent("agent-a", "agent-a"), true);
+    assert.equal(core.shouldReloadRevokedAgent("agent-b", "agent-a"), false);
+
+    const app = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+    assert.match(app, /core\.shouldReloadRevokedAgent\(state\.selectedAgentId, agent\.id\)/);
+});
+
+test("工具保存完成后只重置仍在编辑同一工具的表单", () => {
+    assert.equal(core.shouldResetSavedToolForm("tool-a", "tool-a"), true);
+    assert.equal(core.shouldResetSavedToolForm("tool-b", "tool-a"), false);
+
+    const app = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+    assert.match(app, /core\.shouldResetSavedToolForm\(state\.editingToolId, editingTool\.id\)/);
+});
+
+test("仅将明确的 409 工具删除响应识别为关联冲突", () => {
+    assert.equal(core.isToolDeleteConflict({
+        status: 409,
+        message: "请求失败(409)：工具仍被 Agent 关联，请先解除关联后再删除"
+    }), true);
+    assert.equal(core.isToolDeleteConflict({
+        status: 409,
+        message: "请求失败(409)：工具已有调用历史，为保留运行记录不能删除"
+    }), false);
+    assert.equal(core.isToolDeleteConflict({status: 409}), false);
+    assert.equal(core.isToolDeleteConflict({status: 400}), false);
+    assert.equal(core.isToolDeleteConflict(new Error("请求失败(409)：工具仍被 Agent 关联")), false);
+});
+
 test("HTTP 地址模板使用文本输入以支持路径参数占位符", () => {
     const html = fs.readFileSync(path.join(__dirname, "../../main/resources/META-INF/resources/index.html"), "utf8");
 
     assert.match(html, /id="httpUrlTemplate" type="text"/);
     assert.doesNotMatch(html, /id="httpUrlTemplate" type="url"/);
+});
+
+test("控制台和中文文档提供工具编辑、删除与 Agent 解除关联入口", () => {
+    const resources = path.join(__dirname, "../../main/resources/META-INF/resources");
+    const html = fs.readFileSync(path.join(resources, "index.html"), "utf8");
+    const app = fs.readFileSync(path.join(resources, "assets/app.js"), "utf8");
+    const readme = fs.readFileSync(path.join(__dirname, "../../../../README.md"), "utf8");
+    const releaseNotes = fs.readFileSync(path.join(__dirname, "../../../../docs/release-notes.md"), "utf8");
+
+    assert.match(html, /id="cancelToolEditBtn"/);
+    assert.match(app, /state\.editingToolId/);
+    assert.match(app, /core\.buildToolUpdatePath/);
+    assert.match(app, /core\.buildToolDeletePath/);
+    assert.match(app, /core\.buildToolGrantDeletePath/);
+    assert.match(app, /window\.confirm/);
+    assert.match(app, /请先到 Agent 详情解除关联/);
+    assert.doesNotMatch(readme, /不提供编辑、删除/);
+    assert.match(releaseNotes, /工具编辑、删除与 Agent 解除关联/);
 });
 
 test("工具发布锁拒绝同一工具的重复操作并在释放后允许重试", () => {
@@ -230,6 +488,62 @@ test("不同工具写入按完成顺序协调最终刷新", () => {
 
     assert.equal(revisions.isCurrent(bReload), false);
     assert.equal(revisions.isCurrent(aReload), true);
+});
+
+test("旧会话提交结束不得取得当前会话共享按钮的收尾权", () => {
+    const guard = core.createSubmitStateGuard();
+    const button = {};
+    const oldTicket = guard.begin(button, 1);
+
+    guard.invalidate(button);
+    const currentTicket = guard.begin(button, 2);
+
+    assert.equal(guard.finish(oldTicket, 2), false);
+    assert.equal(guard.finish(currentTicket, 2), true);
+
+    const script = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+    assert.match(script, /const submitStateGuard = core\.createSubmitStateGuard\(\)/);
+    assert.match(script, /if \(!submitStateGuard\.finish\(ticket, sessionEpoch\.capture\(\)\)\) return;/);
+    assert.match(script, /submitStateGuard\.invalidateAll\(\)/);
+});
+
+test("交错工具刷新只允许已应用的最新操作写成功提示", async () => {
+    const revisions = core.createLoadRevisionGate();
+    const successMessages = [];
+    let finishOld;
+    let finishLatest;
+    const oldResponse = new Promise((resolve) => { finishOld = resolve; });
+    const latestResponse = new Promise((resolve) => { finishLatest = resolve; });
+
+    const oldRevision = revisions.completeWrite();
+    const oldOperation = oldResponse.then(() => {
+        const toolsReloaded = revisions.isCurrent(oldRevision);
+        if (toolsReloaded) successMessages.push("旧操作成功");
+    });
+    const latestRevision = revisions.completeWrite();
+    const latestOperation = latestResponse.then(() => {
+        const toolsReloaded = revisions.isCurrent(latestRevision);
+        if (toolsReloaded) successMessages.push("最新操作成功");
+    });
+
+    finishLatest();
+    await latestOperation;
+    finishOld();
+    await oldOperation;
+
+    assert.deepEqual(successMessages, ["最新操作成功"]);
+
+    const script = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+    assert.equal((script.match(/const toolsReloaded = await loadTools/g) || []).length, 2);
+    assert.match(script, /if \(!toolsReloaded \|\| !sessionEpoch\.isCurrent\(operationSession\)\) return;/);
+    assert.match(script, /const \[agentReloaded, toolsReloaded\] = await Promise\.all/);
+    assert.match(script, /if \(!agentReloaded \|\| !toolsReloaded \|\| !sessionEpoch\.isCurrent\(operationSession\)\) return;/);
 });
 
 test("不同内置示例交错完成时各自目录刷新仍然有效", () => {

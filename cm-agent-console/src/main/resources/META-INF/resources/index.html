@@ -115,7 +115,7 @@
                     <div id="toolList" class="resource-list"><p class="empty-state">暂无 Tool。</p></div>
                 </article>
                 <article class="panel form-panel">
-                    <div class="panel-heading"><div><p class="eyebrow">新建</p><h2>注册 Tool</h2></div></div>
+                    <div class="panel-heading"><div><p id="toolFormEyebrow" class="eyebrow">新建</p><h2 id="toolFormTitle">注册 Tool</h2></div></div>
                     <form id="toolForm">
                         <label for="toolName">Tool 名称</label><input id="toolName" name="name" required>
                         <label for="toolDescription">描述</label><textarea id="toolDescription" name="description" rows="3" required></textarea>
@@ -131,9 +131,13 @@
                             <label for="httpSecretHeaders">Secret 引用（JSON 对象）</label><textarea id="httpSecretHeaders" rows="3">{}</textarea>
                             <p class="field-help">仅填写 Secret 引用 JSON，例如引用路径；请勿填写、粘贴或展示真实 Secret 值。</p>
                             <label for="httpTimeoutMillis">超时时间（毫秒）</label><input id="httpTimeoutMillis" type="number" min="100" max="30000" value="1000">
-                            <label class="checkbox-label" for="toolMcpPublished"><input id="toolMcpPublished" type="checkbox"> 创建后发布为 MCP Tool</label>
                         </div>
-                        <button id="createToolBtn" class="button primary" type="submit">注册 Tool</button>
+                        <label id="toolEnabledField" class="checkbox-label" for="toolEnabled" hidden><input id="toolEnabled" type="checkbox" checked> 启用 Tool</label>
+                        <label id="mcpPublicationField" class="checkbox-label" for="toolMcpPublished" hidden><input id="toolMcpPublished" type="checkbox"> 发布为 MCP Tool</label>
+                        <div class="tool-actions">
+                            <button id="createToolBtn" class="button primary" type="submit">注册 Tool</button>
+                            <button id="cancelToolEditBtn" class="button ghost" type="button" hidden>取消编辑</button>
+                        </div>
                         <p id="toolFormStatus" class="form-status" aria-live="polite"></p>
                     </form>
                 </article>

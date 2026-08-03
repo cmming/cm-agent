@@ -100,6 +100,80 @@
         };
     }
 
+    function buildToolUpdatePayload(tool, fields) {
+        if (tool?.type === "LOCAL" && String(fields.name || "").trim() !== tool.name) {
+            throw new Error("LOCAL 工具不支持改名。");
+        }
+        const payload = tool?.type === "HTTP"
+            ? buildHttpToolPayload(fields)
+            : {
+                name: String(fields.name || "").trim(),
+                description: String(fields.description || "").trim(),
+                type: tool?.type,
+                riskLevel: fields.riskLevel,
+                mcpPublished: Boolean(fields.mcpPublished)
+            };
+        return {...payload, type: tool?.type, enabled: Boolean(fields.enabled)};
+    }
+
+    function buildToolFormPayload(tool, fields) {
+        if (tool) {
+            return buildToolUpdatePayload(tool, fields);
+        }
+        if (fields?.type === "HTTP") {
+            return buildHttpToolPayload(fields);
+        }
+        return {
+            name: String(fields?.name || "").trim(),
+            description: String(fields?.description || "").trim(),
+            type: fields?.type,
+            riskLevel: fields?.riskLevel
+        };
+    }
+
+    function prepareHttpParameterMappingsForEdit(mappings) {
+        return (Array.isArray(mappings) ? mappings : []).map((mapping) => {
+            const editable = {...mapping};
+            const defaultValueJson = editable.defaultValueJson;
+            delete editable.defaultValueJson;
+            if (typeof defaultValueJson !== "string" || !defaultValueJson.trim()) {
+                return editable;
+            }
+            try {
+                editable.defaultValue = JSON.parse(defaultValueJson);
+                return editable;
+            } catch {
+                throw new Error("参数映射默认值必须是有效 JSON。");
+            }
+        });
+    }
+
+    function buildToolUpdatePath(toolId) {
+        return `/api/tools/${encodeURIComponent(String(toolId || ""))}`;
+    }
+
+    function buildToolDeletePath(toolId) {
+        return `/api/tools/${encodeURIComponent(String(toolId || ""))}`;
+    }
+
+    function buildToolGrantDeletePath(toolId, agentId) {
+        return `${buildToolDeletePath(toolId)}/grants/${encodeURIComponent(String(agentId || ""))}`;
+    }
+
+    function shouldReloadRevokedAgent(selectedAgentId, revokedAgentId) {
+        return Boolean(selectedAgentId) && selectedAgentId === revokedAgentId;
+    }
+
+    function shouldResetSavedToolForm(currentEditingToolId, savedEditingToolId) {
+        return Boolean(currentEditingToolId) && currentEditingToolId === savedEditingToolId;
+    }
+
+    function isToolDeleteConflict(error) {
+        return error?.status === 409
+            && typeof error?.message === "string"
+            && error.message.includes("工具仍被 Agent 关联");
+    }
+
     function createToolPublicationLock() {
         const activeToolIds = new Set();
         return {
@@ -181,6 +255,31 @@
         };
     }
 
+    function createSubmitStateGuard() {
+        const activeTickets = new Map();
+        let sequence = 0;
+        return {
+            begin(key, session) {
+                const ticket = Object.freeze({key, session, sequence: ++sequence});
+                activeTickets.set(key, ticket);
+                return ticket;
+            },
+            invalidate(key) {
+                activeTickets.delete(key);
+            },
+            invalidateAll() {
+                activeTickets.clear();
+            },
+            finish(ticket, currentSession) {
+                if (!ticket || activeTickets.get(ticket.key) !== ticket) {
+                    return false;
+                }
+                activeTickets.delete(ticket.key);
+                return ticket.session === currentSession;
+            }
+        };
+    }
+
     function createApiClient({fetchImpl, getToken, getSessionEpoch = () => undefined, onUnauthorized}) {
         if (typeof fetchImpl !== "function" || typeof getToken !== "function"
                 || typeof getSessionEpoch !== "function" || typeof onUnauthorized !== "function") {
@@ -216,7 +315,9 @@
                     }
                     throw new Error("未登录或令牌已失效，请重新登录。");
                 }
-                throw new Error(formatError(response.status, body, rawBody));
+                const error = new Error(formatError(response.status, body, rawBody));
+                error.status = response.status;
+                throw error;
             }
             return body;
         }
@@ -260,10 +361,20 @@
         buildLocalExampleInstallPath,
         formatJsonInput,
         buildHttpToolPayload,
+        buildToolUpdatePayload,
+        buildToolFormPayload,
+        prepareHttpParameterMappingsForEdit,
+        buildToolUpdatePath,
+        buildToolDeletePath,
+        buildToolGrantDeletePath,
+        shouldReloadRevokedAgent,
+        shouldResetSavedToolForm,
+        isToolDeleteConflict,
         createToolPublicationLock,
         createLoadRevisionGate,
         createKeyedLoadRevisionGate,
         createSessionEpochGate,
+        createSubmitStateGuard,
         formatDateTime,
         statusMeta
     };

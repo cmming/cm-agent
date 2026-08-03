@@ -11,6 +11,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -26,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 class JdbcToolGrantRepositoryTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    private static final UUID OTHER_TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
     private static final UUID MODEL_PROVIDER_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
     private static final UUID AGENT_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
     private static final UUID TOOL_ID = UUID.fromString("20000000-0000-0000-0000-000000000001");
@@ -60,6 +63,58 @@ class JdbcToolGrantRepositoryTest {
         assertThat(repository.listByTenantAgentAndTool(TENANT_ID, AGENT_ID, TOOL_ID)).containsExactly(grant);
     }
 
+    @Test
+    void deleteRemovesOnlyMatchingAgentToolGrant() {
+        UUID otherAgentId = UUID.fromString("10000000-0000-0000-0000-000000000002");
+        ToolGrant selected = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true);
+        ToolGrant otherAgent = new ToolGrant(TENANT_ID, TOOL_ID, otherAgentId, null, true);
+        repository.save(selected);
+        repository.save(otherAgent);
+
+        repository.delete(TENANT_ID, AGENT_ID, TOOL_ID);
+
+        assertThat(repository.listByTenantAgentAndTool(TENANT_ID, AGENT_ID, TOOL_ID)).isEmpty();
+        assertThat(repository.listByTenantAgentAndTool(TENANT_ID, otherAgentId, TOOL_ID)).containsExactly(otherAgent);
+    }
+
+    @Test
+    void deleteByTenantAndToolIdRemovesAllGrantsForTool() {
+        UUID otherAgentId = UUID.fromString("10000000-0000-0000-0000-000000000003");
+        UUID otherToolId = UUID.fromString("20000000-0000-0000-0000-000000000002");
+        ToolGrant first = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true);
+        ToolGrant second = new ToolGrant(TENANT_ID, TOOL_ID, otherAgentId, null, true);
+        ToolGrant retained = new ToolGrant(TENANT_ID, otherToolId, AGENT_ID, null, true);
+        repository.save(first);
+        repository.save(second);
+        repository.save(retained);
+
+        repository.deleteByTenantAndToolId(TENANT_ID, TOOL_ID);
+
+        assertThat(repository.listByTenantAgentAndTool(TENANT_ID, AGENT_ID, TOOL_ID)).isEmpty();
+        assertThat(repository.listByTenantAgentAndTool(TENANT_ID, otherAgentId, TOOL_ID)).isEmpty();
+        assertThat(repository.listByTenantAgentAndTool(TENANT_ID, AGENT_ID, otherToolId)).containsExactly(retained);
+    }
+
+    @Test
+    void deleteWithWrongTenantLeavesGrantUnchanged() {
+        ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true);
+        repository.save(grant);
+
+        repository.delete(OTHER_TENANT_ID, AGENT_ID, TOOL_ID);
+
+        assertThat(repository.listByTenantAgentAndTool(TENANT_ID, AGENT_ID, TOOL_ID)).containsExactly(grant);
+    }
+
+    @Test
+    void deleteByTenantAndToolIdWithWrongTenantLeavesGrantsUnchanged() {
+        ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true);
+        repository.save(grant);
+
+        repository.deleteByTenantAndToolId(OTHER_TENANT_ID, TOOL_ID);
+
+        assertThat(repository.listByTenantAgentAndTool(TENANT_ID, AGENT_ID, TOOL_ID)).containsExactly(grant);
+    }
+
     private static void seedData(DataSource dataSource) {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
         Timestamp now = Timestamp.from(Instant.parse("2026-06-26T00:00:00Z"));
@@ -80,10 +135,40 @@ class JdbcToolGrantRepositoryTest {
                 .param("tenantId", TENANT_ID.toString())
                 .param("createdAt", now)
                 .update();
-        new JdbcAgentDefinitionRepository(JdbcClient.create(dataSource), new ObjectMapper()).save(new AgentDefinition(
+        newAgentRepository(dataSource).save(new AgentDefinition(
                 AGENT_ID,
                 TENANT_ID,
                 "企业助手",
+                "",
+                "你是企业助手",
+                MODEL_PROVIDER_ID,
+                "qwen-max",
+                0.2d,
+                6,
+                true,
+                List.of(),
+                "tester",
+                "tester"
+        ));
+        newAgentRepository(dataSource).save(new AgentDefinition(
+                UUID.fromString("10000000-0000-0000-0000-000000000002"),
+                TENANT_ID,
+                "其他助手",
+                "",
+                "你是企业助手",
+                MODEL_PROVIDER_ID,
+                "qwen-max",
+                0.2d,
+                6,
+                true,
+                List.of(),
+                "tester",
+                "tester"
+        ));
+        newAgentRepository(dataSource).save(new AgentDefinition(
+                UUID.fromString("10000000-0000-0000-0000-000000000003"),
+                TENANT_ID,
+                "第三助手",
                 "",
                 "你是企业助手",
                 MODEL_PROVIDER_ID,
@@ -108,5 +193,26 @@ class JdbcToolGrantRepositoryTest {
                 "tester",
                 "tester"
         ));
+        new JdbcToolDefinitionRepository(JdbcClient.create(dataSource)).save(new ToolDefinition(
+                UUID.fromString("20000000-0000-0000-0000-000000000002"),
+                TENANT_ID,
+                "calc",
+                "计算输入",
+                ToolType.LOCAL,
+                "{\"type\":\"object\"}",
+                ToolRiskLevel.LOW,
+                true,
+                "",
+                "tester",
+                "tester"
+        ));
+    }
+
+    private static JdbcAgentDefinitionRepository newAgentRepository(DataSource dataSource) {
+        return new JdbcAgentDefinitionRepository(
+                JdbcClient.create(dataSource),
+                new ObjectMapper(),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+        );
     }
 }

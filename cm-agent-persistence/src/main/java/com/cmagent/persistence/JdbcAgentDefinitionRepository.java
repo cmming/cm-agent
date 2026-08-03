@@ -5,6 +5,7 @@ import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -14,16 +15,23 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
 public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository {
     private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
 
-    public JdbcAgentDefinitionRepository(JdbcClient jdbcClient, ObjectMapper objectMapper) {
-        this.jdbcClient = jdbcClient;
-        this.objectMapper = objectMapper;
+    public JdbcAgentDefinitionRepository(
+            JdbcClient jdbcClient,
+            ObjectMapper objectMapper,
+            TransactionTemplate transactionTemplate
+    ) {
+        this.jdbcClient = Objects.requireNonNull(jdbcClient, "jdbcClient 不能为空");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
+        this.transactionTemplate = Objects.requireNonNull(transactionTemplate, "transactionTemplate 不能为空");
     }
 
     @Override
@@ -137,14 +145,34 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
 
     @Override
     public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
-        AgentDefinition agent = findByTenantAndId(tenantId, agentId)
+        return Objects.requireNonNull(transactionTemplate.execute(
+                status -> mutateToolIds(tenantId, agentId, toolId, true)
+        ), "事务未返回 Agent");
+    }
+
+    @Override
+    public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
+        return Objects.requireNonNull(transactionTemplate.execute(
+                status -> mutateToolIds(tenantId, agentId, toolId, false)
+        ), "事务未返回 Agent");
+    }
+
+    private AgentDefinition mutateToolIds(UUID tenantId, UUID agentId, UUID toolId, boolean add) {
+        AgentDefinition agent = findByTenantAndIdForUpdate(tenantId, agentId)
                 .orElseThrow(() -> new NoSuchElementException("Agent 不存在"));
-        if (agent.toolIds().contains(toolId)) {
+        if (add == agent.toolIds().contains(toolId)) {
             return agent;
         }
 
-        List<UUID> toolIds = new ArrayList<>(agent.toolIds());
-        toolIds.add(toolId);
+        List<UUID> toolIds;
+        if (add) {
+            toolIds = new ArrayList<>(agent.toolIds());
+            toolIds.add(toolId);
+        } else {
+            toolIds = agent.toolIds().stream()
+                    .filter(id -> !id.equals(toolId))
+                    .toList();
+        }
         AgentDefinition updated = new AgentDefinition(
                 agent.id(),
                 agent.tenantId(),
@@ -173,6 +201,32 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
                 .param("id", agentId.toString())
                 .update();
         return updated;
+    }
+
+    private Optional<AgentDefinition> findByTenantAndIdForUpdate(UUID tenantId, UUID agentId) {
+        return jdbcClient.sql("""
+                        SELECT
+                            id,
+                            tenant_id,
+                            name,
+                            description,
+                            system_prompt,
+                            model_provider_id,
+                            model_name,
+                            temperature,
+                            max_iterations,
+                            enabled,
+                            tool_ids_json,
+                            created_by,
+                            updated_by
+                        FROM agent_definitions
+                        WHERE tenant_id = :tenantId AND id = :id
+                        FOR UPDATE
+                        """)
+                .param("tenantId", tenantId.toString())
+                .param("id", agentId.toString())
+                .query(this::mapAgent)
+                .optional();
     }
 
     private AgentDefinition mapAgent(ResultSet rs, int rowNum) throws SQLException {

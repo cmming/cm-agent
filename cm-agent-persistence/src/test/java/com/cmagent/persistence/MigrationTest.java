@@ -74,13 +74,14 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(4);
+        assertThat(migrationsExecuted).isEqualTo(5);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
             assertThat(indexNames(connection, "agent_definitions")).contains("idx_agent_definitions_tenant");
             assertThat(indexNames(connection, "tool_definitions")).contains("idx_tool_definitions_tenant");
             assertThat(indexNames(connection, "tool_definitions")).contains("ux_tool_definitions_tenant_name");
+            assertThat(indexNames(connection, "tool_definitions")).contains("idx_tool_definitions_tenant_deleted");
             assertThat(indexNames(connection, "tool_grants")).contains("idx_tool_grants_tenant_agent");
             assertThat(indexNames(connection, "runs")).contains("idx_runs_tenant_agent");
             assertThat(indexNames(connection, "runs")).contains("idx_runs_tenant_agent_started");
@@ -96,6 +97,10 @@ class MigrationTest {
                     .containsExactly("tenant_id", "run_id", "created_at", "id");
             assertThat(indexColumns(connection, "audit_events", "idx_audit_events_tenant_time_id"))
                     .containsExactly("tenant_id", "created_at", "id");
+            assertThat(indexColumns(connection, "tool_definitions", "idx_tool_definitions_tenant_deleted"))
+                    .containsExactly("tenant_id", "deleted_at");
+            assertThat(isNullable(connection, "tool_definitions", "deleted_at")).isTrue();
+            assertThat(isNullable(connection, "tool_definitions", "deleted_name")).isTrue();
             assertThat(isNullable(connection, "tool_grants", "role_code")).isTrue();
             assertThat(importedKeyTargets(connection, "tool_grants")).doesNotContain("roles");
             assertThat(uniqueIndexColumns(connection, "tool_grants")).contains(Set.of("tenant_id", "tool_id", "agent_id"));

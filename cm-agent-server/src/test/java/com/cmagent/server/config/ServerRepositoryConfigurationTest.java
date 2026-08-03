@@ -7,6 +7,7 @@ import com.cmagent.core.domain.RunToolCall;
 import com.cmagent.core.domain.RunToolCallBatch;
 import com.cmagent.core.domain.ModelConfig;
 import com.cmagent.core.domain.ToolDefinition;
+import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
 import com.cmagent.core.repository.RunRepository;
@@ -15,6 +16,8 @@ import com.cmagent.core.repository.ToolCallRepository;
 import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
+import com.cmagent.core.repository.ToolGrantRepository;
+import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
@@ -176,6 +179,120 @@ class ServerRepositoryConfigurationTest {
 
                     assertThat(repository.listByTenant(TENANT_A)).containsExactly(duplicate);
                     assertThat(repository.listByTenant(TENANT_B)).containsExactly(otherTenant);
+                });
+    }
+
+    @Test
+    void memoryToolRepositoryGenericSaveCannotRestoreDeletedTool() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ServerRepositoryConfiguration.class)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    ToolDefinitionRepository repository = context.getBean(ToolDefinitionRepository.class);
+                    ToolDefinition original = toolDefinition(TOOL_A, TENANT_A);
+                    repository.save(original);
+                    repository.delete(TENANT_A, original.id());
+
+                    assertThatThrownBy(() -> repository.save(original))
+                            .isInstanceOf(DuplicateKeyException.class);
+                    assertThat(repository.findByTenantAndId(TENANT_A, original.id())).isEmpty();
+                    assertThat(repository.listByTenant(TENANT_A)).isEmpty();
+                });
+    }
+
+    @Test
+    void memoryToolRepositoryOnlyRestoresMatchingManagedLocalTombstone() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ServerRepositoryConfiguration.class)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    ToolDefinitionRepository repository = context.getBean(ToolDefinitionRepository.class);
+                    ToolDefinition original = toolDefinition(TOOL_A, TENANT_A);
+                    ToolDefinition wrongName = new ToolDefinition(
+                            TOOL_A, TENANT_A, "other", "不应恢复", ToolType.LOCAL, "{}", ToolRiskLevel.LOW,
+                            true, "", "restorer", "restorer"
+                    );
+                    ToolDefinition restored = new ToolDefinition(
+                            TOOL_A, TENANT_A, original.name(), "受管定义", ToolType.LOCAL,
+                            "{\"type\":\"object\"}", ToolRiskLevel.HIGH,
+                            true, "", "restorer", "restorer"
+                    );
+                    ToolDefinition expected = new ToolDefinition(
+                            TOOL_A, TENANT_A, original.name(), "受管定义", ToolType.LOCAL,
+                            "{\"type\":\"object\"}", ToolRiskLevel.HIGH,
+                            true, "", original.createdBy(), "restorer"
+                    );
+                    repository.save(original);
+                    repository.delete(TENANT_A, original.id());
+
+                    assertThat(repository.restoreManagedLocalTool(wrongName)).isFalse();
+                    assertThat(repository.findByTenantAndId(TENANT_A, original.id())).isEmpty();
+                    assertThat(repository.restoreManagedLocalTool(restored)).isTrue();
+                    assertThat(repository.findByTenantAndId(TENANT_A, original.id())).contains(expected);
+                });
+    }
+
+    @Test
+    void memoryRepositoriesSupportToolUpdateGrantCleanupAndAgentToolRemoval() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ServerRepositoryConfiguration.class)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    ToolDefinitionRepository tools = context.getBean(ToolDefinitionRepository.class);
+                    ToolGrantRepository grants = context.getBean(ToolGrantRepository.class);
+                    AgentDefinitionRepository agents = context.getBean(AgentDefinitionRepository.class);
+                    ToolDefinition original = toolDefinition(TOOL_A, TENANT_A);
+                    ToolDefinition updated = new ToolDefinition(
+                            TOOL_A, TENANT_A, "echo-v2", "已更新", ToolType.HTTP, "{\"type\":\"object\"}",
+                            ToolRiskLevel.HIGH, false, "https://api.invalid/echo", "replacement-creator", "editor"
+                    );
+                    ToolDefinition expectedUpdated = new ToolDefinition(
+                            TOOL_A, TENANT_A, "echo-v2", "已更新", ToolType.LOCAL, "{\"type\":\"object\"}",
+                            ToolRiskLevel.HIGH, false, "https://api.invalid/echo", "tester", "editor"
+                    );
+                    UUID otherToolId = UUID.fromString("20000000-0000-0000-0000-000000000004");
+                    com.cmagent.core.domain.AgentDefinition agent = new com.cmagent.core.domain.AgentDefinition(
+                            AGENT_A, TENANT_A, "助手", "", "提示词", DEFAULT_MODEL_ID, "model", 0.2d, 6,
+                            true, List.of(TOOL_A, otherToolId), "tester", "tester"
+                    );
+                    tools.save(original);
+                    agents.save(agent);
+                    grants.save(new ToolGrant(TENANT_A, TOOL_A, AGENT_A, null, true));
+                    grants.save(new ToolGrant(TENANT_A, TOOL_A, AGENT_B, null, true));
+
+                    assertThat(tools.update(updated)).isEqualTo(updated);
+                    assertThat(tools.findByTenantAndId(TENANT_A, TOOL_A)).contains(expectedUpdated);
+                    assertThatThrownBy(() -> tools.update(new ToolDefinition(
+                                    TOOL_A, TENANT_B, "other-tenant", "不应写入", ToolType.HTTP, "{}",
+                                    ToolRiskLevel.LOW, true, "", "other", "other"
+                            )))
+                            .isInstanceOf(java.util.NoSuchElementException.class)
+                            .hasMessage("工具不存在");
+                    assertThat(tools.findByTenantAndId(TENANT_A, TOOL_A)).contains(expectedUpdated);
+                    grants.delete(TENANT_B, AGENT_A, TOOL_A);
+                    grants.deleteByTenantAndToolId(TENANT_B, TOOL_A);
+                    assertThat(grants.listByTenantAgentAndTool(TENANT_A, AGENT_A, TOOL_A))
+                            .containsExactly(new ToolGrant(TENANT_A, TOOL_A, AGENT_A, null, true));
+                    assertThat(grants.listByTenantAgentAndTool(TENANT_A, AGENT_B, TOOL_A))
+                            .containsExactly(new ToolGrant(TENANT_A, TOOL_A, AGENT_B, null, true));
+                    assertThatThrownBy(() -> agents.removeToolFromAgent(TENANT_B, AGENT_A, TOOL_A))
+                            .isInstanceOf(java.util.NoSuchElementException.class)
+                            .hasMessage("Agent 不存在");
+                    assertThat(agents.findByTenantAndId(TENANT_A, AGENT_A).orElseThrow().toolIds())
+                            .containsExactly(TOOL_A, otherToolId);
+                    grants.delete(TENANT_A, AGENT_B, TOOL_A);
+                    assertThat(grants.listByTenantAgentAndTool(TENANT_A, AGENT_A, TOOL_A))
+                            .containsExactly(new ToolGrant(TENANT_A, TOOL_A, AGENT_A, null, true));
+                    assertThat(grants.listByTenantAgentAndTool(TENANT_A, AGENT_B, TOOL_A)).isEmpty();
+                    grants.deleteByTenantAndToolId(TENANT_A, TOOL_A);
+                    assertThat(agents.removeToolFromAgent(TENANT_A, AGENT_A, TOOL_A).toolIds())
+                            .containsExactly(otherToolId);
+
+                    assertThat(tools.findByTenantAndId(TENANT_A, TOOL_A)).contains(expectedUpdated);
+                    assertThat(grants.listByTenantAgentAndTool(TENANT_A, AGENT_A, TOOL_A)).isEmpty();
+                    assertThat(grants.listByTenantAgentAndTool(TENANT_A, AGENT_B, TOOL_A)).isEmpty();
+                    assertThat(agents.findByTenantAndId(TENANT_A, AGENT_A).orElseThrow().toolIds())
+                            .containsExactly(otherToolId);
                 });
     }
 

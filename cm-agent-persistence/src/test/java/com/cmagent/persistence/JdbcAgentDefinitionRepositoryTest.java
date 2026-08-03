@@ -7,6 +7,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -18,6 +20,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 class JdbcAgentDefinitionRepositoryTest {
@@ -54,7 +57,11 @@ class JdbcAgentDefinitionRepositoryTest {
                 .migrate();
 
         seedTenantAndModelConfigs(dataSource);
-        repository = new JdbcAgentDefinitionRepository(JdbcClient.create(dataSource), new ObjectMapper());
+        repository = new JdbcAgentDefinitionRepository(
+                JdbcClient.create(dataSource),
+                new ObjectMapper(),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+        );
     }
 
     @Test
@@ -95,6 +102,34 @@ class JdbcAgentDefinitionRepositoryTest {
 
         AgentDefinition saved = repository.findByTenantAndId(TENANT_A, agentId).orElseThrow();
         assertThat(saved.toolIds()).containsExactly(TOOL_ID, newToolId);
+    }
+
+    @Test
+    void removeToolFromAgentPersistsRemainingToolIds() {
+        UUID agentId = UUID.fromString("10000000-0000-0000-0000-000000000004");
+        UUID otherToolId = UUID.fromString("00000000-0000-0000-0000-000000000402");
+        repository.save(agent(agentId, TENANT_A, MODEL_PROVIDER_A, "工具助手", List.of(TOOL_ID, otherToolId)));
+
+        AgentDefinition updated = repository.removeToolFromAgent(TENANT_A, agentId, TOOL_ID);
+
+        assertThat(updated.toolIds()).containsExactly(otherToolId);
+        assertThat(repository.findByTenantAndId(TENANT_A, agentId).orElseThrow().toolIds())
+                .containsExactly(otherToolId);
+        assertThat(repository.findByTenantAndId(TENANT_B, agentId)).isEmpty();
+    }
+
+    @Test
+    void removeToolFromAgentWithWrongTenantLeavesToolIdsUnchanged() {
+        UUID agentId = UUID.fromString("10000000-0000-0000-0000-000000000005");
+        UUID otherToolId = UUID.fromString("00000000-0000-0000-0000-000000000403");
+        AgentDefinition original = agent(agentId, TENANT_A, MODEL_PROVIDER_A, "工具助手", List.of(TOOL_ID, otherToolId));
+        repository.save(original);
+
+        assertThatThrownBy(() -> repository.removeToolFromAgent(TENANT_B, agentId, TOOL_ID))
+                .isInstanceOf(java.util.NoSuchElementException.class)
+                .hasMessage("Agent 不存在");
+
+        assertThat(repository.findByTenantAndId(TENANT_A, agentId)).contains(original);
     }
 
     private static AgentDefinition agent(UUID id, UUID tenantId, UUID modelProviderId, String name, List<UUID> toolIds) {

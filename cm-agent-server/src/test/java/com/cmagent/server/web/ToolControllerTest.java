@@ -1,5 +1,6 @@
 package com.cmagent.server.web;
 
+import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolRiskLevel;
@@ -28,15 +29,22 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import jakarta.validation.Validator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -66,8 +74,14 @@ class ToolControllerTest {
     @Autowired
     private InMemoryPlatformStore store;
 
+    @Autowired
+    private Validator validator;
+
     @SpyBean
     private AuditAppender auditAppender;
+
+    @SpyBean
+    private ManagementCommandService managementCommandService;
 
     @Test
     void localCreateKeepsExistingFieldsAndHasNoHttpConfiguration() throws Exception {
@@ -162,6 +176,43 @@ class ToolControllerTest {
     }
 
     @Test
+    void httpCreateRejectsNullSecretHeaderValueAndBlankKeyAsBadRequest() throws Exception {
+        String token = token(TENANT_A, "admin");
+
+        mockMvc.perform(post("/api/tools")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"null-secret-value","description":"空值","type":"HTTP","riskLevel":"LOW",
+                                 "httpConfig":{"method":"POST","urlTemplate":"https://api.example.test","inputSchema":{},
+                                 "secretHeaders":{"Authorization":null},"timeoutMillis":1000}}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/tools")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"blank-secret-key","description":"空键","type":"HTTP","riskLevel":"LOW",
+                                 "httpConfig":{"method":"POST","urlTemplate":"https://api.example.test","inputSchema":{},
+                                 "secretHeaders":{"":"secret/integration/token"},"timeoutMillis":1000}}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        HashMap<String, String> secretHeadersWithNullKey = new HashMap<>();
+        secretHeadersWithNullKey.put(null, "secret/integration/token");
+        ToolController.HttpConfigRequest request = new ToolController.HttpConfigRequest(
+                com.cmagent.core.domain.HttpToolMethod.POST,
+                "https://api.example.test",
+                new ObjectMapper().createObjectNode(),
+                List.of(),
+                secretHeadersWithNullKey,
+                1000L
+        );
+        assertThat(validator.validate(request)).isNotEmpty();
+    }
+
+    @Test
     void duplicateNameIsRejectedWithinTenantButAllowedAcrossTenants() throws Exception {
         String tenantAToken = token(TENANT_A, "admin-a");
         String tenantBToken = token(TENANT_B, "admin-b");
@@ -183,13 +234,8 @@ class ToolControllerTest {
     @Test
     void auditFailureLeavesNoHttpToolConfigurationOrPublication() throws Exception {
         String token = token(TENANT_A, "admin");
-        doAnswer(invocation -> {
-            if ("TOOL_CREATE".equals(invocation.getArgument(2, String.class))) {
-                throw new AuditPersistenceException("审计写入失败", new IllegalStateException("audit unavailable"));
-            }
-            return invocation.callRealMethod();
-        }).when(auditAppender).append(
-                any(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        doThrow(new AuditPersistenceException("审计写入失败", new IllegalStateException("audit unavailable")))
+                .when(auditAppender).appendAll(any());
 
         mockMvc.perform(post("/api/tools")
                         .header("Authorization", bearer(token))
@@ -232,6 +278,243 @@ class ToolControllerTest {
         mockMvc.perform(delete("/api/tools/{id}/mcp-publication", toolId)
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void httpUpdateUsesGrantPermissionAndReturnsUpdatedSummary() throws Exception {
+        String managerToken = token(TENANT_A, "manager");
+        String toolId = createHttp(managerToken, "orders-before-update");
+
+        mockMvc.perform(put("/api/tools/{id}", toolId)
+                        .header("Authorization", bearer(managerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(httpUpdateRequest("orders-after-update")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(toolId))
+                .andExpect(jsonPath("$.name").value("orders-after-update"))
+                .andExpect(jsonPath("$.description").value("更新后的订单查询"))
+                .andExpect(jsonPath("$.type").value("HTTP"))
+                .andExpect(jsonPath("$.riskLevel").value("HIGH"))
+                .andExpect(jsonPath("$.enabled").value(false))
+                .andExpect(jsonPath("$.endpoint").value("https://api.example.test/updated/{id}"))
+                .andExpect(jsonPath("$.inputSchema").value(
+                        "{\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"))
+                .andExpect(jsonPath("$.httpConfig.method").value("GET"))
+                .andExpect(jsonPath("$.httpConfig.urlTemplate").value("https://api.example.test/updated/{id}"))
+                .andExpect(jsonPath("$.httpConfig.secretHeaders.Authorization").value("secret/integration/updated-token"))
+                .andExpect(jsonPath("$.httpConfig.timeoutMillis").value(2000))
+                .andExpect(jsonPath("$.mcpPublished").value(true));
+    }
+
+    @Test
+    void concurrentHttpUpdatesEachReturnTheirOwnCommittedSnapshot() throws Exception {
+        String managerToken = token(TENANT_A, "manager");
+        String toolId = createHttp(managerToken, "orders-before-concurrent-update");
+        UUID id = UUID.fromString(toolId);
+        CountDownLatch firstCommandCompleted = new CountDownLatch(1);
+        CountDownLatch releaseFirstResponse = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            Object result = invocation.callRealMethod();
+            ManagementCommandService.ToolUpdateSpec spec = invocation.getArgument(2);
+            if ("orders-first-update".equals(spec.name())) {
+                firstCommandCompleted.countDown();
+                if (!releaseFirstResponse.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("并发测试未释放第一个更新响应");
+                }
+            }
+            return result;
+        }).when(managementCommandService).updateTool(any(), org.mockito.ArgumentMatchers.eq(id), any());
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> mockMvc.perform(put("/api/tools/{id}", toolId)
+                            .header("Authorization", bearer(managerToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(httpUpdateRequest("orders-first-update")))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString());
+            assertThat(firstCommandCompleted.await(5, TimeUnit.SECONDS)).isTrue();
+
+            String second = mockMvc.perform(put("/api/tools/{id}", toolId)
+                            .header("Authorization", bearer(managerToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(httpUpdateRequest("orders-second-update")))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString();
+            releaseFirstResponse.countDown();
+            String firstResponse = first.get(5, TimeUnit.SECONDS);
+
+            assertThat(JsonPath.<String>read(firstResponse, "$.name")).isEqualTo("orders-first-update");
+            assertThat(JsonPath.<String>read(second, "$.name")).isEqualTo("orders-second-update");
+        } finally {
+            releaseFirstResponse.countDown();
+        }
+        assertThat(store.findTool(TENANT_A, id)).get()
+                .extracting(ToolDefinition::name)
+                .isEqualTo("orders-second-update");
+        assertThat(store.listAuditEvents(TENANT_A).stream()
+                .filter(event -> "TOOL_UPDATE".equals(event.eventType()))
+                .filter(event -> toolId.equals(event.resourceId())))
+                .hasSize(2);
+    }
+
+    @Test
+    void updateDeniedWithoutGrantPermissionWritesAccessDeniedAudit() throws Exception {
+        String managerToken = token(TENANT_A, "manager");
+        String toolId = createHttp(managerToken, "update-denied");
+        String readerToken = token(TENANT_A, "reader", List.of("tool:read"));
+
+        mockMvc.perform(put("/api/tools/{id}", toolId)
+                        .header("Authorization", bearer(readerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(httpUpdateRequest("update-denied-after")))
+                .andExpect(status().isForbidden());
+
+        assertThat(store.listAuditEvents(TENANT_A)).anySatisfy(event -> {
+            assertThat(event.eventType()).isEqualTo("ACCESS_DENIED");
+            assertThat(event.resourceId()).isEqualTo(toolId);
+            assertThat(event.message()).contains("tool:grant");
+        });
+    }
+
+    @Test
+    void updateReturnsNotFoundForToolOutsideCurrentTenant() throws Exception {
+        String tenantAToken = token(TENANT_A, "manager-a");
+        String tenantBToken = token(TENANT_B, "manager-b");
+        String toolId = createHttp(tenantAToken, "tenant-a-update-target");
+
+        mockMvc.perform(put("/api/tools/{id}", toolId)
+                        .header("Authorization", bearer(tenantBToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(httpUpdateRequest("tenant-b-update")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RUNTIME_ERROR"));
+    }
+
+    @Test
+    void updateRejectsDuplicateNameWithinTenant() throws Exception {
+        String managerToken = token(TENANT_A, "manager");
+        String firstToolId = createHttp(managerToken, "update-first");
+        createHttp(managerToken, "update-second");
+
+        mockMvc.perform(put("/api/tools/{id}", firstToolId)
+                        .header("Authorization", bearer(managerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(httpUpdateRequest("update-second")))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void deleteUsesDeletePermissionAndReturnsNoContent() throws Exception {
+        String managerToken = token(TENANT_A, "manager");
+        String toolId = createLocal(managerToken, "delete-success");
+        String deleteToken = token(TENANT_A, "deleter", List.of("tool:delete"));
+
+        mockMvc.perform(delete("/api/tools/{id}", toolId)
+                        .header("Authorization", bearer(deleteToken)))
+                .andExpect(status().isNoContent());
+
+        assertThat(store.findTool(TENANT_A, UUID.fromString(toolId))).isEmpty();
+    }
+
+    @Test
+    void deleteDeniedWithoutDeletePermissionWritesAccessDeniedAudit() throws Exception {
+        String managerToken = token(TENANT_A, "manager");
+        String toolId = createLocal(managerToken, "delete-denied");
+        String readerToken = token(TENANT_A, "reader", List.of("tool:read"));
+
+        mockMvc.perform(delete("/api/tools/{id}", toolId)
+                        .header("Authorization", bearer(readerToken)))
+                .andExpect(status().isForbidden());
+
+        assertThat(store.findTool(TENANT_A, UUID.fromString(toolId))).isPresent();
+        assertThat(store.listAuditEvents(TENANT_A)).anySatisfy(event -> {
+            assertThat(event.eventType()).isEqualTo("ACCESS_DENIED");
+            assertThat(event.resourceId()).isEqualTo(toolId);
+            assertThat(event.message()).contains("tool:delete");
+        });
+    }
+
+    @Test
+    void deleteRejectsToolStillReferencedByAgent() throws Exception {
+        String managerToken = token(TENANT_A, "manager");
+        String toolId = createLocal(managerToken, "delete-referenced");
+        UUID agentId = UUID.fromString("30000000-0000-0000-0000-000000000001");
+        saveAgent(TENANT_A, agentId);
+        grantTool(managerToken, toolId, agentId);
+        String deleteToken = token(TENANT_A, "deleter", List.of("tool:delete"));
+
+        mockMvc.perform(delete("/api/tools/{id}", toolId)
+                        .header("Authorization", bearer(deleteToken)))
+                .andExpect(status().isConflict());
+
+        assertThat(store.findTool(TENANT_A, UUID.fromString(toolId))).isPresent();
+    }
+
+    @Test
+    void deleteCannotReachToolFromAnotherTenant() throws Exception {
+        String tenantAManagerToken = token(TENANT_A, "manager-a");
+        String toolId = createLocal(tenantAManagerToken, "cross-tenant-delete");
+        String tenantBDeleteToken = token(TENANT_B, "deleter-b", List.of("tool:delete"));
+
+        mockMvc.perform(delete("/api/tools/{id}", toolId)
+                        .header("Authorization", bearer(tenantBDeleteToken)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RUNTIME_ERROR"));
+
+        assertThat(store.findTool(TENANT_A, UUID.fromString(toolId))).isPresent();
+    }
+
+    @Test
+    void revokeUsesGrantPermissionAndReturnsUpdatedAgent() throws Exception {
+        String managerToken = token(TENANT_A, "manager");
+        String toolId = createLocal(managerToken, "revoke-success");
+        UUID agentId = UUID.fromString("30000000-0000-0000-0000-000000000002");
+        saveAgent(TENANT_A, agentId);
+        grantTool(managerToken, toolId, agentId);
+
+        mockMvc.perform(delete("/api/tools/{toolId}/grants/{agentId}", toolId, agentId)
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(agentId.toString()))
+                .andExpect(jsonPath("$.toolIds").isEmpty());
+
+        assertThat(store.listGrants(TENANT_A, agentId, UUID.fromString(toolId))).isEmpty();
+    }
+
+    @Test
+    void revokeDeniedWithoutGrantPermissionWritesAccessDeniedAudit() throws Exception {
+        String managerToken = token(TENANT_A, "manager");
+        String toolId = createLocal(managerToken, "revoke-denied");
+        UUID agentId = UUID.fromString("30000000-0000-0000-0000-000000000003");
+        saveAgent(TENANT_A, agentId);
+        grantTool(managerToken, toolId, agentId);
+        String readerToken = token(TENANT_A, "reader", List.of("tool:read"));
+
+        mockMvc.perform(delete("/api/tools/{toolId}/grants/{agentId}", toolId, agentId)
+                        .header("Authorization", bearer(readerToken)))
+                .andExpect(status().isForbidden());
+
+        assertThat(store.listAuditEvents(TENANT_A)).anySatisfy(event -> {
+            assertThat(event.eventType()).isEqualTo("ACCESS_DENIED");
+            assertThat(event.resourceId()).isEqualTo(toolId);
+            assertThat(event.message()).contains("tool:grant");
+        });
+    }
+
+    @Test
+    void revokeReturnsNotFoundWhenAgentDoesNotExist() throws Exception {
+        String managerToken = token(TENANT_A, "manager");
+        String toolId = createLocal(managerToken, "revoke-missing-agent");
+        UUID missingAgentId = UUID.fromString("30000000-0000-0000-0000-000000000004");
+
+        mockMvc.perform(delete("/api/tools/{toolId}/grants/{agentId}", toolId, missingAgentId)
+                        .header("Authorization", bearer(managerToken)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RUNTIME_ERROR"));
     }
 
     @Test
@@ -287,6 +570,44 @@ class ToolControllerTest {
         return JsonPath.read(response, "$.id");
     }
 
+    private String createHttp(String token, String name) throws Exception {
+        String response = mockMvc.perform(post("/api/tools")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(httpRequest(name, false)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return JsonPath.read(response, "$.id");
+    }
+
+    private void saveAgent(UUID tenantId, UUID agentId) {
+        store.saveAgent(new AgentDefinition(
+                agentId,
+                tenantId,
+                "测试 Agent",
+                "用于工具管理接口测试",
+                "你是测试 Agent",
+                null,
+                "test-model",
+                0.2,
+                8,
+                true,
+                List.of(),
+                "admin",
+                "admin"
+        ));
+    }
+
+    private void grantTool(String token, String toolId, UUID agentId) throws Exception {
+        mockMvc.perform(post("/api/tools/{id}/grants", toolId)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"agentId\":\"%s\"}".formatted(agentId)))
+                .andExpect(status().isOk());
+    }
+
     private String httpRequest(String name, boolean mcpPublished) {
         return """
                 {
@@ -319,8 +640,38 @@ class ToolControllerTest {
                 """.formatted(name, mcpPublished);
     }
 
+    private String httpUpdateRequest(String name) {
+        return """
+                {
+                  "name":"%s",
+                  "description":"更新后的订单查询",
+                  "type":"HTTP",
+                  "riskLevel":"HIGH",
+                  "enabled":false,
+                  "mcpPublished":true,
+                  "httpConfig":{
+                    "method":"GET",
+                    "urlTemplate":"https://api.example.test/updated/{id}",
+                    "inputSchema":{"required":["id"],"type":"object","properties":{"id":{"type":"string"}}},
+                    "parameterMappings":[{
+                      "sourcePointer":"/id",
+                      "location":"PATH",
+                      "targetName":"id",
+                      "required":true
+                    }],
+                    "secretHeaders":{"Authorization":"secret/integration/updated-token"},
+                    "timeoutMillis":2000
+                  }
+                }
+                """.formatted(name);
+    }
+
     private String token(UUID tenantId, String principalId) {
         return jwtService.createToken(tenantId, principalId, "测试管理员", List.of("tool:read", "tool:grant"));
+    }
+
+    private String token(UUID tenantId, String principalId, List<String> permissions) {
+        return jwtService.createToken(tenantId, principalId, "测试主体", permissions);
     }
 
     private static String bearer(String token) {
