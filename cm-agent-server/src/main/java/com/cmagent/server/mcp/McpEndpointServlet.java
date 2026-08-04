@@ -202,10 +202,11 @@ public class McpEndpointServlet extends HttpServlet {
                     properties.getEndpoint(), principal.tenantId(), specifications.size());
             server = McpServer.sync(transport)
                     .serverInfo("cm-agent", "0.1.0")
-                    // Cherry Studio 会探测 Resources；声明空资源能力，使 SDK 返回空列表而不是缺少处理器。
+                    // Cherry Studio 会探测 Resources 和 Prompts；声明空能力，使 SDK 返回空列表而不是缺少处理器。
                     .capabilities(McpSchema.ServerCapabilities.builder()
                             .tools(true)
                             .resources(false, false)
+                            .prompts(false)
                             .build())
                     .validateToolInputs(true)
                     .tools(specifications)
