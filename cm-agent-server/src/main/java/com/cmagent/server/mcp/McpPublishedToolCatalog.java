@@ -276,7 +276,11 @@ public class McpPublishedToolCatalog {
         if (tool.type() == ToolType.LOCAL) {
             return registry.snapshot(tool.id())
                     .map(ToolRegistry.ToolRegistrationSnapshot::definition)
-                    .filter(tool::equals)
+                    // 运行时注册定义不包含持久化安装产生的审计主体，不能使用完整领域对象比较。
+                    // 与发布校验、控制台运行就绪判断保持一致，只校验执行器身份所需的稳定字段。
+                    .filter(registered -> tool.tenantId().equals(registered.tenantId()))
+                    .filter(registered -> tool.id().equals(registered.id()))
+                    .filter(registered -> tool.name().equals(registered.name()))
                     .isPresent();
         }
         return false;

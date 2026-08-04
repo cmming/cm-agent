@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpStatelessSyncServer;
+import io.modelcontextprotocol.server.McpStatelessServerFeatures;
 import io.modelcontextprotocol.server.transport.DefaultServerTransportSecurityValidator;
 import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
 import io.modelcontextprotocol.server.transport.ServerTransportSecurityException;
@@ -19,6 +20,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -33,6 +36,7 @@ import java.util.Set;
  * MCP Streamable HTTP 入口，将 MCP 会话请求转交给已发布工具目录。
  */
 public class McpEndpointServlet extends HttpServlet {
+    private static final Logger log = LoggerFactory.getLogger(McpEndpointServlet.class);
     private static final String RESOURCE_ID = "/mcp";
 
     private final McpServerProperties properties;
@@ -96,15 +100,30 @@ public class McpEndpointServlet extends HttpServlet {
             throws ServletException, IOException {
         PrincipalRef principal = currentPrincipal();
         if (principal == null) {
+            log.warn("MCP 请求认证失败。method={}, endpoint={}, status={}",
+                    request.getMethod(), properties.getEndpoint(), HttpServletResponse.SC_UNAUTHORIZED);
             writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "未登录或令牌无效");
             return;
         }
-        AuthorizationDecision decision = permissions.check(principal, McpPublishedToolCatalog.INVOKE_PERMISSION);
+        AuthorizationDecision decision;
+        try {
+            decision = permissions.check(principal, McpPublishedToolCatalog.INVOKE_PERMISSION);
+        } catch (RuntimeException exception) {
+            log.error("MCP 请求权限检查异常。method={}, endpoint={}, tenantId={}, failureType={}",
+                    request.getMethod(), properties.getEndpoint(), principal.tenantId(), failureType(exception));
+            throw exception;
+        }
         if (!decision.allowed()) {
+            log.warn("MCP 请求权限拒绝。method={}, endpoint={}, tenantId={}, status={}",
+                    request.getMethod(), properties.getEndpoint(), principal.tenantId(),
+                    HttpServletResponse.SC_FORBIDDEN);
             try {
                 audits.accessDenied(principal, "MCP", RESOURCE_ID,
                         McpPublishedToolCatalog.INVOKE_PERMISSION, decision.reason());
             } catch (AuditPersistenceException exception) {
+                log.error("MCP 权限拒绝审计写入失败。endpoint={}, tenantId={}, status={}, failureType={}",
+                        properties.getEndpoint(), principal.tenantId(),
+                        HttpServletResponse.SC_SERVICE_UNAVAILABLE, failureType(exception));
                 writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "MCP 服务暂不可用");
                 return;
             }
@@ -116,13 +135,35 @@ public class McpEndpointServlet extends HttpServlet {
         try {
             server = serverFactory.create(principal);
         } catch (RuntimeException exception) {
+            log.error("MCP 请求级服务创建失败。method={}, endpoint={}, tenantId={}, status={}, failureType={}",
+                    request.getMethod(), properties.getEndpoint(), principal.tenantId(),
+                    HttpServletResponse.SC_SERVICE_UNAVAILABLE, failureType(exception));
             writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "MCP 服务暂不可用");
             return;
         }
         try {
             server.service(request, response);
+            boolean expectedStatelessGet = "GET".equalsIgnoreCase(request.getMethod())
+                    && response.getStatus() == HttpServletResponse.SC_METHOD_NOT_ALLOWED;
+            if (response.getStatus() >= HttpServletResponse.SC_BAD_REQUEST && !expectedStatelessGet) {
+                log.warn("MCP 请求处理返回失败状态。method={}, endpoint={}, tenantId={}, status={}",
+                        request.getMethod(), properties.getEndpoint(), principal.tenantId(), response.getStatus());
+            } else {
+                log.debug("MCP 请求处理完成。method={}, endpoint={}, tenantId={}, status={}",
+                        request.getMethod(), properties.getEndpoint(), principal.tenantId(), response.getStatus());
+            }
+        } catch (ServletException | IOException | RuntimeException exception) {
+            log.error("MCP 请求处理异常。method={}, endpoint={}, tenantId={}, failureType={}",
+                    request.getMethod(), properties.getEndpoint(), principal.tenantId(), failureType(exception));
+            throw exception;
         } finally {
-            server.close();
+            try {
+                server.close();
+            } catch (RuntimeException exception) {
+                log.error("MCP 请求级服务关闭异常。endpoint={}, tenantId={}, failureType={}",
+                        properties.getEndpoint(), principal.tenantId(), failureType(exception));
+                throw exception;
+            }
         }
     }
 
@@ -140,7 +181,13 @@ public class McpEndpointServlet extends HttpServlet {
         ServerTransportSecurityValidator strictValidator = headers -> {
             rejectAmbiguousHeader(headers, "Origin", HttpServletResponse.SC_FORBIDDEN);
             rejectAmbiguousHeader(headers, "Host", 421);
-            officialValidator.validateHeaders(headers);
+            try {
+                officialValidator.validateHeaders(headers);
+            } catch (ServerTransportSecurityException exception) {
+                log.warn("MCP 请求头未通过 Origin/Host 白名单校验。endpoint={}, tenantId={}, failureType={}",
+                        properties.getEndpoint(), principal.tenantId(), failureType(exception));
+                throw exception;
+            }
         };
         HttpServletStatelessServerTransport transport = HttpServletStatelessServerTransport.builder()
                 .messageEndpoint(properties.getEndpoint())
@@ -149,11 +196,15 @@ public class McpEndpointServlet extends HttpServlet {
                 .build();
         McpStatelessSyncServer server;
         try {
+            List<McpStatelessServerFeatures.SyncToolSpecification> specifications =
+                    catalog.specifications(principal);
+            log.debug("MCP 请求级工具目录构建完成。endpoint={}, tenantId={}, toolCount={}",
+                    properties.getEndpoint(), principal.tenantId(), specifications.size());
             server = McpServer.sync(transport)
                     .serverInfo("cm-agent", "0.1.0")
                     .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
                     .validateToolInputs(true)
-                    .tools(catalog.specifications(principal))
+                    .tools(specifications)
                     .build();
         } catch (RuntimeException exception) {
             transport.destroy();
@@ -197,6 +248,8 @@ public class McpEndpointServlet extends HttpServlet {
             }
             List<String> values = entry.getValue();
             if (values == null || values.size() != 1 || isAmbiguous(values.getFirst())) {
+                log.warn("MCP 请求头格式不明确。endpoint={}, headerName={}, status={}",
+                        properties.getEndpoint(), headerName, status);
                 throw new ServerTransportSecurityException(status, "Invalid " + headerName + " header");
             }
         }
@@ -209,6 +262,22 @@ public class McpEndpointServlet extends HttpServlet {
      */
     private boolean isAmbiguous(String value) {
         return value == null || value.isBlank() || value.contains(",") || value.contains("\r") || value.contains("\n");
+    }
+
+    /**
+     * 生成不包含异常消息、请求数据或凭据的失败类型摘要。
+     *
+     * @param exception 待归类的异常
+     * @return 外层异常与根因异常的简单类型名
+     */
+    private String failureType(Throwable exception) {
+        Throwable root = exception;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        String outerType = exception.getClass().getSimpleName();
+        String rootType = root.getClass().getSimpleName();
+        return outerType.equals(rootType) ? outerType : outerType + "->" + rootType;
     }
 
     /**
