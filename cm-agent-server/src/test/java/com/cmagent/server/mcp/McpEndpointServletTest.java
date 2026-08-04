@@ -9,6 +9,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.ServletException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -26,8 +29,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(OutputCaptureExtension.class)
 class McpEndpointServletTest {
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000811");
 
@@ -64,7 +69,7 @@ class McpEndpointServletTest {
     /**
      * 验证方法名称所描述的业务行为。
      */
-    void 每次请求创建独立Server并在异常时关闭() throws Exception {
+    void 每次请求创建独立Server并在异常时关闭(CapturedOutput output) throws Exception {
         PermissionEvaluator permissions = mock(PermissionEvaluator.class);
         AuditAppender audits = mock(AuditAppender.class);
         AtomicInteger creates = new AtomicInteger();
@@ -110,13 +115,64 @@ class McpEndpointServletTest {
         assertThat(creates).hasValue(2);
         assertThat(closes).hasValue(2);
         assertThat(captured.get()).isEqualTo(principal);
+        assertThat(output).contains("MCP 请求处理异常")
+                .contains("failureType=ServletException")
+                .doesNotContain("token");
+    }
+
+    @Test
+    /**
+     * 验证未认证请求会留下不包含凭据的诊断日志。
+     */
+    void 未认证请求记录401且不创建Server(CapturedOutput output) throws Exception {
+        McpEndpointServlet.RequestServerFactory factory = mock(McpEndpointServlet.RequestServerFactory.class);
+        McpEndpointServlet servlet = new McpEndpointServlet(
+                properties(), mock(McpPublishedToolCatalog.class), mock(PermissionEvaluator.class),
+                mock(AuditAppender.class), new ObjectMapper(), factory
+        );
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        servlet.service(post(), response);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(output).contains("MCP 请求认证失败")
+                .contains("method=POST")
+                .contains("endpoint=/mcp")
+                .contains("status=401")
+                .doesNotContain("Authorization");
+        verifyNoInteractions(factory);
+    }
+
+    @Test
+    /**
+     * 验证请求级服务创建失败会记录异常类型，但不会记录异常消息中的敏感内容。
+     */
+    void Server创建失败记录脱敏诊断日志(CapturedOutput output) throws Exception {
+        PermissionEvaluator permissions = mock(PermissionEvaluator.class);
+        McpEndpointServlet.RequestServerFactory factory = mock(McpEndpointServlet.RequestServerFactory.class);
+        McpEndpointServlet servlet = new McpEndpointServlet(
+                properties(), mock(McpPublishedToolCatalog.class), permissions,
+                mock(AuditAppender.class), new ObjectMapper(), factory
+        );
+        PrincipalRef principal = authenticate(Set.of(McpPublishedToolCatalog.INVOKE_PERMISSION));
+        when(permissions.check(principal, McpPublishedToolCatalog.INVOKE_PERMISSION))
+                .thenReturn(AuthorizationDecision.allow());
+        when(factory.create(principal)).thenThrow(new IllegalStateException("Bearer server-secret"));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        servlet.service(post(), response);
+
+        assertThat(response.getStatus()).isEqualTo(503);
+        assertThat(output).contains("MCP 请求级服务创建失败")
+                .contains("failureType=IllegalStateException")
+                .doesNotContain("server-secret");
     }
 
     @Test
     /**
      * 验证方法名称所描述的业务行为。
      */
-    void 缺少权限返回403写拒绝审计且不创建Server() throws Exception {
+    void 缺少权限返回403写拒绝审计且不创建Server(CapturedOutput output) throws Exception {
         PermissionEvaluator permissions = mock(PermissionEvaluator.class);
         AuditAppender audits = mock(AuditAppender.class);
         McpEndpointServlet.RequestServerFactory factory = mock(McpEndpointServlet.RequestServerFactory.class);
@@ -125,7 +181,7 @@ class McpEndpointServletTest {
         );
         PrincipalRef principal = authenticate(Set.of());
         when(permissions.check(principal, McpPublishedToolCatalog.INVOKE_PERMISSION))
-                .thenReturn(AuthorizationDecision.deny("缺少权限"));
+                .thenReturn(AuthorizationDecision.deny("Bearer denied-secret"));
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         servlet.service(post(), response);
@@ -133,15 +189,18 @@ class McpEndpointServletTest {
         assertThat(response.getStatus()).isEqualTo(403);
         assertThat(response.getContentAsString()).contains("没有权限").doesNotContain("缺少权限 tool:mcp:invoke");
         verify(audits).accessDenied(principal, "MCP", "/mcp",
-                McpPublishedToolCatalog.INVOKE_PERMISSION, "缺少权限");
+                McpPublishedToolCatalog.INVOKE_PERMISSION, "Bearer denied-secret");
         verify(factory, never()).create(principal);
+        assertThat(output).contains("MCP 请求权限拒绝")
+                .contains("status=403")
+                .doesNotContain("denied-secret");
     }
 
     @Test
     /**
      * 验证方法名称所描述的业务行为。
      */
-    void 官方Transport处理Get405并拒绝多值Origin和Host() throws Exception {
+    void 官方Transport处理Get405并拒绝多值Origin和Host(CapturedOutput output) throws Exception {
         PermissionEvaluator permissions = mock(PermissionEvaluator.class);
         PrincipalRef principal = authenticate(Set.of(McpPublishedToolCatalog.INVOKE_PERMISSION));
         when(permissions.check(principal, McpPublishedToolCatalog.INVOKE_PERMISSION)).thenReturn(AuthorizationDecision.allow());
@@ -165,11 +224,24 @@ class McpEndpointServletTest {
         assertThat(originResponse.getStatus()).isEqualTo(403);
 
         MockHttpServletRequest commaHost = post();
-        commaHost.addHeader("Origin", "https://client.example.test");
         commaHost.addHeader("Host", "localhost:8080,evil.example.test");
         MockHttpServletResponse hostResponse = new MockHttpServletResponse();
         servlet.service(commaHost, hostResponse);
         assertThat(hostResponse.getStatus()).isIn(403, 421);
+
+        MockHttpServletRequest disallowedOrigin = post();
+        disallowedOrigin.removeHeader("Origin");
+        disallowedOrigin.addHeader("Origin", "https://evil.example.test");
+        MockHttpServletResponse disallowedOriginResponse = new MockHttpServletResponse();
+        servlet.service(disallowedOrigin, disallowedOriginResponse);
+        assertThat(disallowedOriginResponse.getStatus()).isEqualTo(403);
+
+        assertThat(output).contains("MCP 请求处理返回失败状态")
+                .contains("MCP 请求头格式不明确")
+                .contains("headerName=Origin")
+                .contains("headerName=Host")
+                .contains("MCP 请求头未通过 Origin/Host 白名单校验")
+                .doesNotContain("evil.example.test");
     }
 
     /**

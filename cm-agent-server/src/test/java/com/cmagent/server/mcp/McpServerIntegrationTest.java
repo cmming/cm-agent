@@ -255,7 +255,12 @@ class McpServerIntegrationTest {
                 ToolRiskLevel.LOW, true, "", "admin", "admin"
         );
         store.saveTool(tool);
-        registry.register(tool, request -> {
+        // 模拟固定 LOCAL 模板与安装记录使用不同审计主体，验证 MCP 只按稳定身份字段匹配执行器。
+        ToolDefinition registered = new ToolDefinition(
+                tool.id(), tool.tenantId(), tool.name(), tool.description(), tool.type(), tool.inputSchema(),
+                tool.riskLevel(), tool.enabled(), tool.endpoint(), "runtime", "runtime"
+        );
+        registry.register(registered, request -> {
             executions.incrementAndGet();
             return ToolExecutionResult.succeeded(request.inputJson(), null);
         });

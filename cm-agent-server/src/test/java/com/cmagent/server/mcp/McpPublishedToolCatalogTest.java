@@ -122,6 +122,30 @@ class McpPublishedToolCatalogTest {
 
     @Test
     /**
+     * 验证 LOCAL 工具的持久化审计主体与运行时模板不同时，仍可通过稳定身份字段发布到 MCP。
+     */
+    void listLocal持久化审计主体与运行时模板不同时仍然可见() {
+        ToolDefinition persisted = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
+        ToolDefinition registered = new ToolDefinition(
+                persisted.id(), persisted.tenantId(), persisted.name(), persisted.description(), persisted.type(),
+                persisted.inputSchema(), persisted.riskLevel(), persisted.enabled(), persisted.endpoint(),
+                "example", "example"
+        );
+        when(publications.listEnabledByTenant(TENANT)).thenReturn(List.of(publication(LOCAL_ID, TENANT)));
+        when(tools.findByTenantAndId(TENANT, LOCAL_ID)).thenReturn(Optional.of(persisted));
+        when(registry.snapshot(LOCAL_ID)).thenReturn(Optional.of(
+                new ToolRegistry.ToolRegistrationSnapshot(
+                        registered, request -> ToolExecutionResult.succeeded("ok", null)
+                )
+        ));
+
+        assertThat(catalog.specifications(principal))
+                .extracting(specification -> specification.tool().name())
+                .containsExactly("echo");
+    }
+
+    @Test
+    /**
      * 验证方法名称所描述的业务行为。
      */
     void list拒绝同一租户重复发布名称而不是静默覆盖() {
