@@ -78,6 +78,9 @@ class McpServerIntegrationTest {
             McpSchema.InitializeResult initialized = client.initialize();
             assertThat(initialized.serverInfo().name()).isEqualTo("cm-agent");
             assertThat(initialized.serverInfo().version()).isEqualTo("0.1.0");
+            assertThat(initialized.capabilities().resources()).isNotNull();
+            assertThat(client.listResources().resources()).isEmpty();
+            assertThat(client.listResourceTemplates().resourceTemplates()).isEmpty();
             assertThat(client.listTools().tools())
                     .extracting(McpSchema.Tool::name)
                     .containsExactly("tenant_a_echo");
