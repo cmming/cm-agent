@@ -16,6 +16,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AuditAppenderTest {
 
     @Test
+    /**
+     * 验证或支持 {@code appendRedactsSensitiveCredentialsBeforePersistingAuditMessage} 所描述的测试场景。
+     */
     void appendRedactsSensitiveCredentialsBeforePersistingAuditMessage() {
         CapturingAuditEventRepository repository = new CapturingAuditEventRepository();
         AuditAppender appender = new AuditAppender(repository, new SensitiveDataRedactor());
@@ -38,15 +41,29 @@ class AuditAppenderTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code appendRethrowsRepositoryFailure} 所描述的测试场景。
+     */
     void appendRethrowsRepositoryFailure() {
         IllegalStateException cause = new IllegalStateException("database unavailable password=audit-test-password");
         AuditEventRepository repository = new AuditEventRepository() {
             @Override
+            /**
+             * 验证或支持 {@code append} 所描述的测试场景。
+             *
+             * @param event 测试审计事件
+             */
             public void append(AuditEvent event) {
                 throw cause;
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param limit 测试辅助方法使用的 limit 参数
+             */
             public List<AuditEvent> listByTenant(UUID tenantId, int limit) {
                 return List.of();
             }
@@ -64,15 +81,29 @@ class AuditAppenderTest {
         private final List<AuditEvent> events = new ArrayList<>();
 
         @Override
+        /**
+         * 验证或支持 {@code append} 所描述的测试场景。
+         *
+         * @param event 测试审计事件
+         */
         public void append(AuditEvent event) {
             events.add(event);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code listByTenant} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         * @param limit 测试辅助方法使用的 limit 参数
+         */
         public List<AuditEvent> listByTenant(UUID tenantId, int limit) {
             return events.stream().filter(event -> event.tenantId().equals(tenantId)).limit(limit).toList();
         }
 
+        /**
+         * 验证或支持 {@code onlyEvent} 所描述的测试场景。
+         */
         private AuditEvent onlyEvent() {
             assertThat(events).hasSize(1);
             return events.getFirst();

@@ -37,6 +37,9 @@ class LocalToolExampleControllerTest {
     private MockMvc mvc;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         permissions = mock(PermissionEvaluator.class);
         auditAppender = mock(AuditAppender.class);
@@ -45,6 +48,9 @@ class LocalToolExampleControllerTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 查询和安装分别要求读取与授权权限并记录拒绝审计() throws Exception {
         when(permissions.check(any(PrincipalRef.class), eq("tool:read"))).thenReturn(AuthorizationDecision.deny("缺少读取权限"));
 
@@ -61,6 +67,9 @@ class LocalToolExampleControllerTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 具备权限时返回目录并安装固定工具() throws Exception {
         allow();
         when(service.list(any())).thenReturn(List.of(summary(false)));
@@ -76,16 +85,29 @@ class LocalToolExampleControllerTest {
                 .andExpect(jsonPath("$.installed").value(true));
     }
 
+    /**
+     * 验证或支持 {@code allow} 所描述的测试场景。
+     */
     private void allow() {
         when(permissions.check(any(PrincipalRef.class), anyString())).thenReturn(AuthorizationDecision.allow());
     }
 
+    /**
+     * 验证或支持 {@code authentication} 所描述的测试场景。
+     *
+     * @param permissions 测试辅助方法使用的 permissions 参数
+     */
     private static UsernamePasswordAuthenticationToken authentication(String... permissions) {
         JwtService.JwtSession session = new JwtService.JwtSession(MysqlLocalExampleCatalog.EXAMPLE_TENANT_ID,
                 "admin", "管理员", List.of(permissions));
         return new UsernamePasswordAuthenticationToken(session, "", List.of(() -> "ROLE_USER"));
     }
 
+    /**
+     * 验证或支持 {@code summary} 所描述的测试场景。
+     *
+     * @param installed 测试辅助方法使用的 installed 参数
+     */
     private static LocalToolExampleSummary summary(boolean installed) {
         MysqlLocalExampleCatalog.LocalExample example = new MysqlLocalExampleCatalog(new ObjectMapper()).find("echo").orElseThrow();
         return new LocalToolExampleSummary(example.key(), example.definition().id(), example.definition().name(),

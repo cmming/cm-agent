@@ -19,9 +19,9 @@ import java.io.IOException;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     /**
-     * JwtAuthenticationFilter：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code JwtAuthenticationFilter} 实例并保存其运行所需依赖。
      *
-     * @param jwtService 参与 JwtAuthenticationFilter 处理的 jwtService 输入值。
+     * @param jwtService 负责当前业务流程的服务。
      */
     public JwtAuthenticationFilter(JwtService jwtService) {
         this.jwtService = jwtService;
@@ -29,11 +29,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     /**
-     * doFilterInternal：处理该类内部的业务逻辑或辅助计算。
+     * 解析 Bearer JWT，并把可信会话主体写入安全上下文。
      *
-     * @param request 当前业务请求参数，承载调用方提交的数据。
-     * @param response 参与 doFilterInternal 处理的 response 输入值。
-     * @param filterChain 参与 doFilterInternal 处理的 filterChain 输入值。
+     * @param request 当前 HTTP 请求，用于读取 Bearer 令牌
+     * @param response 当前 HTTP 响应。
+     * @param filterChain 继续执行后续安全过滤器的调用链
      */
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {

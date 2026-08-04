@@ -60,18 +60,18 @@ public class McpPublishedToolCatalog {
     private final ToolOutputSanitizer sanitizer;
     private final HttpToolProperties httpToolProperties;
     /**
-     * McpPublishedToolCatalog：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code McpPublishedToolCatalog} 实例并保存其运行所需依赖。
      *
-     * @param tools 参与 McpPublishedToolCatalog 处理的 tools 集合。
-     * @param httpConfigs 参与 McpPublishedToolCatalog 处理的 httpConfigs 集合。
-     * @param publications 参与 McpPublishedToolCatalog 处理的 publications 集合。
-     * @param registry 参与 McpPublishedToolCatalog 处理的 registry 输入值。
-     * @param executions 参与 McpPublishedToolCatalog 处理的 executions 集合。
-     * @param permissions 参与 McpPublishedToolCatalog 处理的 permissions 集合。
-     * @param audits 参与 McpPublishedToolCatalog 处理的 audits 集合。
+     * @param tools 当前租户可见或已发布的工具集合。
+     * @param httpConfigs 工具 ID 到 HTTP 配置的映射。
+     * @param publications 工具 ID 到 MCP 发布记录的映射。
+     * @param registry 本地工具执行器注册表。
+     * @param executions 工具 ID 到准备执行结果的映射。
+     * @param permissions 主体拥有的权限集合。
+     * @param audits 本次操作产生的审计记录集合。
      * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
-     * @param sanitizer 参与 McpPublishedToolCatalog 处理的 sanitizer 输入值。
-     * @param httpToolProperties httpToolProperties 对应的配置数据，用于驱动本次处理。
+     * @param sanitizer 负责清理工具输出的安全组件。
+     * @param httpToolProperties HTTP 工具响应大小和安全限制配置
      */
     public McpPublishedToolCatalog(
             ToolDefinitionRepository tools,
@@ -116,7 +116,7 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * specification：处理该类内部的业务逻辑或辅助计算。
+     * 生成当前已发布工具的 MCP 工具规格。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param tool 当前处理的工具定义。
@@ -134,11 +134,11 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * call：执行当前流程并返回处理结果。
+     * 执行当前调用并返回结果。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
-     * @param listedTool 参与 call 处理的 listedTool 输入值。
-     * @param call 参与 call 处理的 call 输入值。
+     * @param listedTool 列表查询返回的工具快照。
+     * @param call 当前 MCP 工具调用请求。
      */
     private McpSchema.CallToolResult call(
             PrincipalRef principal,
@@ -197,7 +197,7 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * unavailable：处理该类内部的业务逻辑或辅助计算。
+     * 记录工具不可用审计并构造 MCP 失败结果。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -207,7 +207,7 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * executionFailed：处理该类内部的业务逻辑或辅助计算。
+     * 记录工具执行失败审计并构造 MCP 失败结果。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -217,7 +217,7 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * failedWithAudit：处理该类内部的业务逻辑或辅助计算。
+     * 先持久化 MCP 调用失败审计，再返回协议层失败内容。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -234,10 +234,10 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * currentPublishedTool：查询并返回当前上下文中的匹配结果。
+     * 查询当前租户内仍处于发布状态的工具。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
-     * @param listedTool 参与 currentPublishedTool 处理的 listedTool 输入值。
+     * @param listedTool 列表查询返回的工具快照。
      */
     private Optional<ToolDefinition> currentPublishedTool(PrincipalRef principal, ToolDefinition listedTool) {
         McpToolPublication publication = publications
@@ -252,7 +252,7 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * currentPublishableTool：查询并返回当前上下文中的匹配结果。
+     * 查询当前租户内仍满足发布规则的工具及运行配置。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -264,7 +264,7 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * hasMatchingRuntime：判断当前条件是否成立。
+     * 判断是否存在方法名所描述的目标。
      *
      * @param tool 当前处理的工具定义。
      */
@@ -283,9 +283,9 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * readSchema：读取并解析输入内容。
+     * 将工具输入 Schema 解析为 MCP SDK 使用的对象映射。
      *
-     * @param schema 参与 readSchema 处理的 schema 输入值。
+     * @param schema 工具定义中保存的输入 JSON Schema
      */
     private Map<String, Object> readSchema(String schema) {
         try {
@@ -297,18 +297,18 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * canonicalJson：转换并生成规范化输出。
+     * 将 JSON 节点转换为字段顺序稳定的规范文本。
      *
-     * @param value 参与 canonicalJson 处理的 value 输入值。
+     * @param value 待检查、转换或规范化的值。
      */
     private String canonicalJson(Object value) throws JsonProcessingException {
         return objectMapper.writeValueAsString(canonicalize(objectMapper.valueToTree(value)));
     }
 
     /**
-     * canonicalize：转换并生成规范化输出。
+     * 递归规范化 JSON 对象的字段顺序。
      *
-     * @param value 参与 canonicalize 处理的 value 输入值。
+     * @param value 待检查、转换或规范化的值。
      */
     private JsonNode canonicalize(JsonNode value) {
         if (value.isObject()) {
@@ -328,9 +328,9 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * rejectDuplicateNames：处理该类内部的业务逻辑或辅助计算。
+     * 拒绝不满足安全或一致性要求的输入。
      *
-     * @param publishedTools 参与 rejectDuplicateNames 处理的 publishedTools 集合。
+     * @param publishedTools 已经通过发布规则校验的工具集合。
      */
     private void rejectDuplicateNames(List<ToolDefinition> publishedTools) {
         Set<String> names = new HashSet<>();
@@ -340,7 +340,7 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * succeeded：处理该类内部的业务逻辑或辅助计算。
+     * 将文本输出封装为 MCP 成功响应。
      *
      * @param output 本次处理产生或待处理的输出内容。
      */
@@ -352,7 +352,7 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * failed：处理该类内部的业务逻辑或辅助计算。
+     * 将错误消息封装为 MCP 失败响应。
      *
      * @param message 处理结果或审计消息。
      */
@@ -364,7 +364,7 @@ public class McpPublishedToolCatalog {
     }
 
     /**
-     * protocolPersistenceError：处理该类内部的业务逻辑或辅助计算。
+     * 将持久化异常转换为不泄露内部细节的 MCP 协议错误。
      */
     private McpError protocolPersistenceError() {
         return McpError.builder(McpSchema.ErrorCodes.INTERNAL_ERROR)

@@ -23,17 +23,17 @@ public class AuditAppender {
 
     @Autowired
     /**
-     * AuditAppender：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code AuditAppender} 实例并保存其运行所需依赖。
      *
      * @param repository 数据访问仓储，用于读写持久化数据。
-     * @param redactor 参与 AuditAppender 处理的 redactor 输入值。
+     * @param redactor 负责清理敏感文本的脱敏器。
      */
     public AuditAppender(AuditEventRepository repository, SensitiveDataRedactor redactor) {
         this.repository = repository;
         this.redactor = redactor;
     }
     /**
-     * AuditAppender：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code AuditAppender} 实例并保存其运行所需依赖。
      *
      * @param repository 数据访问仓储，用于读写持久化数据。
      */
@@ -121,9 +121,9 @@ public class AuditAppender {
     }
 
     /**
-     * toAuditEvent：转换内部数据为目标表示。
+     * 将待写入信息转换为带时间戳的审计事件。
      *
-     * @param write 参与 toAuditEvent 处理的 write 输入值。
+     * @param write 待转换为审计事件的写入参数。
      */
     private AuditEvent toAuditEvent(AuditWrite write) {
         return new AuditEvent(
@@ -140,7 +140,7 @@ public class AuditAppender {
     }
 
     /**
-     * AuditWrite：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code AuditWrite} 在当前流程中使用的不可变数据。
      */
     public record AuditWrite(
             UUID tenantId,

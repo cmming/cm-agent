@@ -6,12 +6,15 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * ModelConfigRepository 的核心领域类型。
+ * 定义模型配置按租户保存、查询和删除的持久化契约。
  */
 public interface ModelConfigRepository {
 
     /**
-     * 定义 findByTenantAndId 操作。
+     * 按租户和资源标识查询唯一记录。
+      *
+      * @param tenantId 当前租户标识
+      * @param modelConfigId 模型配置标识
      */
     Optional<ModelConfig> findByTenantAndId(UUID tenantId, UUID modelConfigId);
 }

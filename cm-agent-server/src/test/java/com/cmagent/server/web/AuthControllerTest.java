@@ -59,6 +59,9 @@ class AuthControllerTest {
     private InMemoryPlatformStore store;
 
     @Test
+    /**
+     * 验证或支持 {@code loginAndReadCurrentUser} 所描述的测试场景。
+     */
     void loginAndReadCurrentUser() throws Exception {
         String loginResponse = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -102,6 +105,9 @@ class AuthControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code loginRejectsInvalidCredentials} 所描述的测试场景。
+     */
     void loginRejectsInvalidCredentials() throws Exception {
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -112,6 +118,9 @@ class AuthControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code loginRejectsBootstrapAdminWhenDisabledByDefault} 所描述的测试场景。
+     */
     void loginRejectsBootstrapAdminWhenDisabledByDefault() throws Exception {
         BootstrapAdminProperties properties = new BootstrapAdminProperties(new MockEnvironment());
         MockMvc disabledBootstrapMockMvc = MockMvcBuilders.standaloneSetup(new AuthController(
@@ -129,6 +138,9 @@ class AuthControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code loginRejectsFormerHardcodedPasswordWhenConfiguredPasswordDiffers} 所描述的测试场景。
+     */
     void loginRejectsFormerHardcodedPasswordWhenConfiguredPasswordDiffers() throws Exception {
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -139,6 +151,9 @@ class AuthControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code loginWritesAuditEventsForSuccessAndFailure} 所描述的测试场景。
+     */
     void loginWritesAuditEventsForSuccessAndFailure() throws Exception {
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -166,6 +181,9 @@ class AuthControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code meRejectsInvalidToken} 所描述的测试场景。
+     */
     void meRejectsInvalidToken() throws Exception {
         mockMvc.perform(get("/api/auth/me")
                         .header("Authorization", "Bearer not-a-token"))
@@ -173,6 +191,9 @@ class AuthControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code meRejectsTamperedToken} 所描述的测试场景。
+     */
     void meRejectsTamperedToken() throws Exception {
         String loginResponse = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -194,6 +215,9 @@ class AuthControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code loginIgnoresMalformedAuthorizationHeader} 所描述的测试场景。
+     */
     void loginIgnoresMalformedAuthorizationHeader() throws Exception {
         mockMvc.perform(post("/api/auth/login")
                         .header("Authorization", "Bearer bad-token")
@@ -203,6 +227,11 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.displayName").value("系统管理员"));
     }
 
+    /**
+     * 验证或支持 {@code loginBody} 所描述的测试场景。
+     *
+     * @param password 测试辅助方法使用的 password 参数
+     */
     private String loginBody(String password) {
         return """
                 {"username":"admin","password":"%s"}

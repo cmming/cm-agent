@@ -32,6 +32,13 @@ public class LocalToolExampleController {
     private final AuditAppender auditAppender;
     private final MysqlLocalExampleService service;
 
+    /**
+     * 校验并构造 {@code LocalToolExampleController} 实例。
+     *
+     * @param permissionEvaluator 执行主体权限判断的组件。
+     * @param auditAppender 负责追加安全审计事件的组件。
+     * @param service 本地工具示例的查询和执行服务
+     */
     public LocalToolExampleController(
             PermissionEvaluator permissionEvaluator,
             AuditAppender auditAppender,
@@ -43,6 +50,11 @@ public class LocalToolExampleController {
     }
 
     @GetMapping
+    /**
+     * 列出当前范围内可见的本地示例工具。
+     *
+     * @param authentication Spring Security 认证信息
+     */
     public List<LocalToolExampleSummary> list(Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:read", "local-examples");
@@ -50,12 +62,23 @@ public class LocalToolExampleController {
     }
 
     @PostMapping("/{key}")
+    /**
+     * 安装指定本地示例工具并返回摘要。
+     *
+     * @param key 本地示例工具键
+     * @param authentication Spring Security 认证信息
+     */
     public LocalToolExampleSummary install(@PathVariable("key") String key, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", key);
         return service.install(principal, key);
     }
 
+    /**
+     * 从 Spring Security 认证对象提取可信主体上下文。
+     *
+     * @param authentication Spring Security 认证信息
+     */
     private PrincipalRef principal(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()
                 || !(authentication.getPrincipal() instanceof JwtService.JwtSession session)) {
@@ -64,6 +87,13 @@ public class LocalToolExampleController {
         return new PrincipalRef(session.tenantId(), session.principalId(), session.displayName(), Set.copyOf(session.permissions()));
     }
 
+    /**
+     * 校验主体权限，并在拒绝时记录审计事件。
+     *
+     * @param principal 当前认证主体
+     * @param permission 待校验的权限编码。
+     * @param resourceId 审计资源标识。
+     */
     private void authorize(PrincipalRef principal, String permission, String resourceId) {
         AuthorizationDecision decision = permissionEvaluator.check(principal, permission);
         if (!decision.allowed()) {

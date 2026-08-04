@@ -44,6 +44,9 @@ class ToolQueryServiceTest {
     private ToolRuntimeReadiness toolRuntimeReadiness;
 
     @Test
+    /**
+     * 验证列表查询能够返回 {@code ToolSummariesWithTenantScopedBulkConfigurationQueries}。
+     */
     void listsToolSummariesWithTenantScopedBulkConfigurationQueries() {
         ToolDefinition httpTool = tool(HTTP_TOOL_ID, "orders", ToolType.HTTP);
         ToolDefinition localTool = tool(LOCAL_TOOL_ID, "echo", ToolType.LOCAL);
@@ -81,6 +84,13 @@ class ToolQueryServiceTest {
         verify(mcpToolPublicationRepository, never()).findByTenantAndToolId(TENANT_ID, HTTP_TOOL_ID);
     }
 
+    /**
+     * 构造测试工具定义。
+     *
+     * @param id 测试辅助方法使用的 id 参数
+     * @param name 测试对象名称
+     * @param type 测试辅助方法使用的 type 参数
+     */
     private static ToolDefinition tool(UUID id, String name, ToolType type) {
         return new ToolDefinition(
                 id, TENANT_ID, name, "描述", type, "{}", ToolRiskLevel.LOW, true,

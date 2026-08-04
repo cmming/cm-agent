@@ -31,6 +31,9 @@ class SecurityErrorResponseTest {
     private JwtService jwtService;
 
     @Test
+    /**
+     * 验证或支持 {@code unauthenticatedRequestReturnsControlledChineseJson} 所描述的测试场景。
+     */
     void unauthenticatedRequestReturnsControlledChineseJson() throws Exception {
         mockMvc.perform(get("/api/auth/me"))
                 .andExpect(status().isUnauthorized())
@@ -41,6 +44,9 @@ class SecurityErrorResponseTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code requestWithoutPermissionReturnsControlledChineseJson} 所描述的测试场景。
+     */
     void requestWithoutPermissionReturnsControlledChineseJson() throws Exception {
         String token = jwtService.createToken(TENANT_ID, "audit-reader", "审计只读用户", List.of("agent:read"));
 

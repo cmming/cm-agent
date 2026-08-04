@@ -5,7 +5,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * RunToolCall 的核心领域类型。
+ * 记录一次运行内工具调用的授权、状态、摘要、耗时和错误信息。
  */
 public record RunToolCall(
         UUID id,
@@ -22,7 +22,20 @@ public record RunToolCall(
         Instant createdAt
 ) {
     /**
-     * 构造 RunToolCall 实例并校验输入参数。
+     * 校验并规范化运行内工具调用的状态、摘要和耗时。
+      *
+      * @param id 目标资源标识
+      * @param tenantId 当前租户标识
+      * @param runId 目标运行标识
+      * @param toolId 目标工具标识
+      * @param toolName 模型请求调用的工具名称
+      * @param inputSummary 已脱敏的工具输入摘要
+      * @param outputSummary 已脱敏的工具输出摘要
+      * @param status 目标运行状态
+      * @param authorized 本次工具调用是否通过授权
+      * @param durationMillis 工具调用耗时毫秒数
+      * @param errorMessage 已控制敏感信息的错误说明
+      * @param createdAt 记录创建时间
      */
     public RunToolCall {
         Objects.requireNonNull(id, "id 不能为空");
@@ -43,7 +56,10 @@ public record RunToolCall(
     }
 
     /**
-     * 执行 normalizeText 操作。
+     * 将可选文本统一规范为空字符串或原值，避免领域对象保存 {@code null}。
+      *
+     * @param value 待规范化的文本
+     * @return 空白输入对应空字符串，否则返回原值
      */
     private static String normalizeText(String value) {
         return value == null || value.isBlank() ? "" : value;

@@ -66,6 +66,9 @@ class McpServerIntegrationTest {
     private ToolRegistry registry;
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 官方客户端完成InitializeListCall且取消发布和Schema校验即时生效() {
         AtomicInteger executions = new AtomicInteger();
         publishLocal(TOOL_A, TENANT_A, "tenant_a_echo", executions);
@@ -101,6 +104,9 @@ class McpServerIntegrationTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void Jwt权限Get以及OriginHost边界返回受控Http状态并记录拒绝审计() throws Exception {
         publishLocal(TOOL_A, TENANT_A, "tenant_a_echo", new AtomicInteger());
         String allowed = token(TENANT_A, "allowed", List.of("tool:mcp:invoke"));
@@ -122,6 +128,9 @@ class McpServerIntegrationTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 并发官方客户端请求严格隔离各自租户() throws Exception {
         publishLocal(TOOL_A, TENANT_A, "tenant_a_echo", new AtomicInteger());
         publishLocal(TOOL_B, TENANT_B, "tenant_b_echo", new AtomicInteger());
@@ -154,6 +163,11 @@ class McpServerIntegrationTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code client} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     */
     private McpSyncClient client(String token) {
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport.builder(baseUrl("localhost"))
                 .endpoint("/mcp")
@@ -169,6 +183,13 @@ class McpServerIntegrationTest {
                 .build();
     }
 
+    /**
+     * 验证或支持 {@code post} 所描述的测试场景。
+     *
+     * @param host 测试辅助方法使用的 host 参数
+     * @param token 测试辅助方法使用的 token 参数
+     * @param origin 测试辅助方法使用的 origin 参数
+     */
     private HttpResponse<String> post(String host, String token, String origin) throws Exception {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(baseUrl(host) + "/mcp"))
                 .timeout(Duration.ofSeconds(5))
@@ -184,6 +205,11 @@ class McpServerIntegrationTest {
         return HttpClient.newHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    /**
+     * 验证或支持 {@code get} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     */
     private HttpResponse<String> get(String token) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl("localhost") + "/mcp"))
                 .timeout(Duration.ofSeconds(5))
@@ -194,14 +220,34 @@ class McpServerIntegrationTest {
         return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
     }
 
+    /**
+     * 验证或支持 {@code baseUrl} 所描述的测试场景。
+     *
+     * @param host 测试辅助方法使用的 host 参数
+     */
     private String baseUrl(String host) {
         return "http://" + host + ":" + port;
     }
 
+    /**
+     * 验证或支持 {@code token} 所描述的测试场景。
+     *
+     * @param tenantId 测试租户标识
+     * @param principalId 测试辅助方法使用的 principalId 参数
+     * @param permissions 测试辅助方法使用的 permissions 参数
+     */
     private String token(UUID tenantId, String principalId, List<String> permissions) {
         return jwtService.createToken(tenantId, principalId, "MCP 测试用户", permissions);
     }
 
+    /**
+     * 验证或支持 {@code publishLocal} 所描述的测试场景。
+     *
+     * @param toolId 测试工具标识
+     * @param tenantId 测试租户标识
+     * @param name 测试对象名称
+     * @param executions 测试辅助方法使用的 executions 参数
+     */
     private void publishLocal(UUID toolId, UUID tenantId, String name, AtomicInteger executions) {
         ToolDefinition tool = new ToolDefinition(
                 toolId, tenantId, name, "租户回显工具", ToolType.LOCAL,

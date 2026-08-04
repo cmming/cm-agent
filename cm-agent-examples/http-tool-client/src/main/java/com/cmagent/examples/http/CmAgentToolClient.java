@@ -24,6 +24,13 @@ public class CmAgentToolClient {
     private final ObjectMapper objectMapper;
     private final HttpToolExampleProperties properties;
 
+    /**
+     * 校验并构造 {@code CmAgentToolClient} 实例。
+     *
+     * @param restClientBuilder 用于创建 CM Agent REST 客户端的构建器。
+     * @param objectMapper JSON 映射器
+     * @param properties 示例客户端配置
+     */
     public CmAgentToolClient(
             RestClient.Builder restClientBuilder,
             ObjectMapper objectMapper,
@@ -68,6 +75,9 @@ public class CmAgentToolClient {
         }
     }
 
+    /**
+     * 构造动态 HTTP 工具创建请求。
+     */
     private ObjectNode createToolRequest() {
         ObjectNode request = objectMapper.createObjectNode();
         request.put("name", properties.getToolName());
@@ -86,6 +96,9 @@ public class CmAgentToolClient {
         return request;
     }
 
+    /**
+     * 构造示例工具的输入 JSON Schema。
+     */
     private ObjectNode inputSchema() {
         ObjectNode schema = objectMapper.createObjectNode();
         schema.put("$schema", "https://json-schema.org/draft/2020-12/schema");
@@ -99,6 +112,9 @@ public class CmAgentToolClient {
         return schema;
     }
 
+    /**
+     * 构造示例工具的 PATH、QUERY 和 HEADER 参数映射。
+     */
     private ArrayNode parameterMappings() {
         ObjectNode mapping = objectMapper.createObjectNode();
         mapping.put("sourcePointer", "/message");
@@ -109,6 +125,9 @@ public class CmAgentToolClient {
         return objectMapper.createArrayNode().add(mapping);
     }
 
+    /**
+     * 构造请求头名称到 Secret 引用的映射。
+     */
     private ObjectNode secretHeaders() {
         ObjectNode secretHeaders = objectMapper.createObjectNode();
         if (!properties.getSecretHeaderName().isBlank() && !properties.getSecretRef().isBlank()) {
@@ -117,12 +136,20 @@ public class CmAgentToolClient {
         return secretHeaders;
     }
 
+    /**
+     * 构造创建完成后的工具调试请求。
+     */
     private ObjectNode debugRequest() {
         ObjectNode request = objectMapper.createObjectNode();
         request.putObject("input").put("message", properties.getMessage());
         return request;
     }
 
+    /**
+     * 从工具创建响应中读取工具标识。
+     *
+     * @param created 工具创建响应。
+     */
     private UUID readToolId(JsonNode created) {
         if (created == null || !created.isObject() || !created.path("id").isTextual()) {
             throw new IllegalStateException("CM Agent 创建工具响应缺少 id");
@@ -134,10 +161,18 @@ public class CmAgentToolClient {
         }
     }
 
+    /**
+     * 为 JWT 增加 Bearer 认证前缀。
+     */
     private String bearerToken() {
         return "Bearer " + properties.getJwt();
     }
 
+    /**
+     * 从 HTTP 异常中提取不泄露响应正文的安全摘要。
+     *
+     * @param responseBody 外部请求返回的响应正文。
+     */
     private String safeErrorSummary(String responseBody) {
         String summary = responseBody == null || responseBody.isBlank() ? "无响应内容" : responseBody;
         if (!properties.getJwt().isBlank()) {
@@ -153,6 +188,12 @@ public class CmAgentToolClient {
      * HTTP 示例创建与调试的受控结果。
      */
     public record ExampleResult(UUID toolId, JsonNode debugResponse) {
+        /**
+         * 校验并构造 {@code ExampleResult} 实例。
+         *
+         * @param toolId 目标工具标识。
+         * @param debugResponse 工具调试响应。
+         */
         public ExampleResult {
             Objects.requireNonNull(toolId, "toolId 不能为空");
             Objects.requireNonNull(debugResponse, "debugResponse 不能为空");

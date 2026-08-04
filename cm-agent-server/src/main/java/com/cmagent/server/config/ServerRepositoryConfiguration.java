@@ -109,9 +109,9 @@ public class ServerRepositoryConfiguration {
         return new HttpToolConfigRepository() {
             @Override
             /**
-             * save：保存当前对象及其关联配置。
+             * 保存传入的领域对象或配置，并返回当前存储快照。
              *
-             * @param config 待处理的工具或运行时配置。
+             * @param config 待写入内存仓储的动态 HTTP 工具配置
              */
             public com.cmagent.core.domain.HttpToolConfig save(com.cmagent.core.domain.HttpToolConfig config) {
                 return store.saveHttpToolConfig(config);
@@ -119,7 +119,7 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * findByTenantAndToolId：查询并返回当前上下文中的匹配结果。
+             * 按租户及方法声明的标识查询匹配记录。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -130,10 +130,10 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * findByTenantAndToolIds：查询并返回当前上下文中的匹配结果。
+             * 按租户及方法声明的标识查询匹配记录。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
-             * @param toolIds 参与 findByTenantAndToolIds 处理的 toolIds 集合。
+             * @param toolIds 待批量查询或关联的工具标识集合。
              */
             public Map<UUID, com.cmagent.core.domain.HttpToolConfig> findByTenantAndToolIds(
                     UUID tenantId, List<UUID> toolIds
@@ -149,7 +149,7 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * delete：删除或撤销当前目标的关联状态。
+             * 删除当前租户边界内的目标记录或关联。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -173,7 +173,7 @@ public class ServerRepositoryConfiguration {
         return new McpToolPublicationRepository() {
             @Override
             /**
-             * save：保存当前对象及其关联配置。
+             * 保存传入的领域对象或配置，并返回当前存储快照。
              *
              * @param publication 待保存或校验的 MCP 发布记录。
              */
@@ -183,7 +183,7 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * findByTenantAndToolId：查询并返回当前上下文中的匹配结果。
+             * 按租户及方法声明的标识查询匹配记录。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -194,10 +194,10 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * findByTenantAndToolIds：查询并返回当前上下文中的匹配结果。
+             * 按租户及方法声明的标识查询匹配记录。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
-             * @param toolIds 参与 findByTenantAndToolIds 处理的 toolIds 集合。
+             * @param toolIds 待批量查询或关联的工具标识集合。
              */
             public Map<UUID, com.cmagent.core.domain.McpToolPublication> findByTenantAndToolIds(
                     UUID tenantId, List<UUID> toolIds
@@ -213,7 +213,7 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * listEnabledByTenant：查询并返回符合条件的集合。
+             * 列出当前范围内符合条件的记录。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              */
@@ -223,7 +223,7 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * delete：删除或撤销当前目标的关联状态。
+             * 删除当前租户边界内的目标记录或关联。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -262,7 +262,7 @@ public class ServerRepositoryConfiguration {
         return new AgentDefinitionRepository() {
             @Override
             /**
-             * save：保存当前对象及其关联配置。
+             * 保存传入的领域对象或配置，并返回当前存储快照。
              *
              * @param agent 当前处理的 Agent 定义。
              */
@@ -272,7 +272,7 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * findByTenantAndId：查询并返回当前上下文中的匹配结果。
+             * 按租户及方法声明的标识查询匹配记录。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
@@ -283,7 +283,7 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * listByTenant：查询并返回符合条件的集合。
+             * 按租户及方法声明的条件列出匹配记录。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              */
@@ -293,7 +293,7 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * addToolToAgent：处理该类内部的业务逻辑或辅助计算。
+             * 增加指定目标或关联。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
@@ -304,6 +304,13 @@ public class ServerRepositoryConfiguration {
             }
 
             @Override
+            /**
+             * 从 Agent 的关联集合移除指定工具。
+             *
+             * @param tenantId 当前租户标识
+             * @param agentId 目标 Agent 标识
+             * @param toolId 目标工具标识
+             */
             public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.removeToolFromAgent(tenantId, agentId, toolId);
             }
@@ -323,7 +330,7 @@ public class ServerRepositoryConfiguration {
         return new ToolDefinitionRepository() {
             @Override
             /**
-             * save：保存当前对象及其关联配置。
+             * 保存传入的领域对象或配置，并返回当前存储快照。
              *
              * @param tool 当前处理的工具定义。
              */
@@ -332,23 +339,38 @@ public class ServerRepositoryConfiguration {
             }
 
             @Override
+            /**
+             * 恢复由平台管理且定义一致的本地工具。
+             *
+             * @param tool 当前处理的工具定义
+             */
             public boolean restoreManagedLocalTool(ToolDefinition tool) {
                 return store.restoreManagedLocalTool(tool);
             }
 
             @Override
+            /**
+             * 恢复删除流程中已被标记删除的工具，用于失败补偿。
+             *
+             * @param tool 当前处理的工具定义
+             */
             public boolean restoreDeletedToolForCompensation(ToolDefinition tool) {
                 return store.restoreDeletedToolForCompensation(tool);
             }
 
             @Override
+            /**
+             * 更新现有工具定义并返回最新快照。
+             *
+             * @param tool 当前处理的工具定义
+             */
             public ToolDefinition update(ToolDefinition tool) {
                 return store.updateTool(tool);
             }
 
             @Override
             /**
-             * findByTenantAndId：查询并返回当前上下文中的匹配结果。
+             * 按租户及方法声明的标识查询匹配记录。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -359,7 +381,7 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * listByTenant：查询并返回符合条件的集合。
+             * 按租户及方法声明的条件列出匹配记录。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              */
@@ -368,13 +390,19 @@ public class ServerRepositoryConfiguration {
             }
 
             @Override
+            /**
+             * 判断指定工具是否已经产生调用历史。
+             *
+             * @param tenantId 当前租户标识
+             * @param toolId 目标工具标识
+             */
             public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
                 return store.hasToolCallHistory(tenantId, toolId);
             }
 
             @Override
             /**
-             * delete：删除或撤销当前目标的关联状态。
+             * 删除当前租户边界内的目标记录或关联。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -398,9 +426,9 @@ public class ServerRepositoryConfiguration {
         return new ToolGrantRepository() {
             @Override
             /**
-             * save：保存当前对象及其关联配置。
+             * 保存传入的领域对象或配置，并返回当前存储快照。
              *
-             * @param grant 参与 save 处理的 grant 输入值。
+             * @param grant 待保存或校验的工具授权。
              */
             public ToolGrant save(ToolGrant grant) {
                 return store.saveGrant(grant);
@@ -408,7 +436,7 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * listByTenant：查询并返回符合条件的集合。
+             * 按租户及方法声明的条件列出匹配记录。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              */
@@ -418,7 +446,7 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * listByTenantAndAgent：查询并返回符合条件的集合。
+             * 按租户及方法声明的条件列出匹配记录。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
@@ -429,7 +457,7 @@ public class ServerRepositoryConfiguration {
 
             @Override
             /**
-             * listByTenantAgentAndTool：查询并返回符合条件的集合。
+             * 按租户及方法声明的条件列出匹配记录。
              *
              * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
              * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
@@ -440,11 +468,24 @@ public class ServerRepositoryConfiguration {
             }
 
             @Override
+            /**
+             * 删除指定租户边界内的目标记录。
+             *
+             * @param tenantId 当前租户标识
+             * @param agentId 目标 Agent 标识
+             * @param toolId 目标工具标识
+             */
             public void delete(UUID tenantId, UUID agentId, UUID toolId) {
                 store.deleteGrant(tenantId, agentId, toolId);
             }
 
             @Override
+            /**
+             * 删除租户内指定工具的全部授权。
+             *
+             * @param tenantId 当前租户标识
+             * @param toolId 目标工具标识
+             */
             public void deleteByTenantAndToolId(UUID tenantId, UUID toolId) {
                 store.deleteGrantsByTenantAndToolId(tenantId, toolId);
             }

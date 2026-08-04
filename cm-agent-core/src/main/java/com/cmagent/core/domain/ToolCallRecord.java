@@ -4,7 +4,7 @@ import java.time.Duration;
 import java.util.UUID;
 
 /**
- * ToolCallRecord 的核心领域类型。
+ * 描述运行时返回的单次工具调用名称、输入、输出、状态和耗时。
  */
 public record ToolCallRecord(
         UUID toolId,

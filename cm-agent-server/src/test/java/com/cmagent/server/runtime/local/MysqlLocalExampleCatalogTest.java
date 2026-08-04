@@ -13,6 +13,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MysqlLocalExampleCatalogTest {
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 目录只暴露固定echo和add且执行结果受控() {
         MysqlLocalExampleCatalog catalog = new MysqlLocalExampleCatalog(new ObjectMapper());
 
@@ -39,6 +42,11 @@ class MysqlLocalExampleCatalogTest {
     @ValueSource(strings = {
             "{}", "null", "[]", "{\"message\":\"\"}", "{\"message\":1}", "not-json"
     })
+    /**
+     * 验证方法名称所描述的业务行为。
+     *
+     * @param input 测试输入
+     */
     void echo拒绝无效输入(String input) {
         var example = new MysqlLocalExampleCatalog(new ObjectMapper()).find("echo").orElseThrow();
 
@@ -50,6 +58,11 @@ class MysqlLocalExampleCatalogTest {
     @ValueSource(strings = {
             "{}", "null", "[]", "{\"left\":1}", "{\"left\":\"1\",\"right\":2}", "not-json"
     })
+    /**
+     * 验证方法名称所描述的业务行为。
+     *
+     * @param input 测试输入
+     */
     void add拒绝无效输入(String input) {
         var example = new MysqlLocalExampleCatalog(new ObjectMapper()).find("add").orElseThrow();
 
@@ -64,6 +77,11 @@ class MysqlLocalExampleCatalogTest {
             "{\"left\":1,\"right\":1e999}",
             "{\"left\":1,\"right\":-1e999}"
     })
+    /**
+     * 验证方法名称所描述的业务行为。
+     *
+     * @param input 测试输入
+     */
     void add将左右非有限数字转换为受控失败(String input) {
         var example = new MysqlLocalExampleCatalog(new ObjectMapper()).find("add").orElseThrow();
 
@@ -74,6 +92,9 @@ class MysqlLocalExampleCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 目录锁定固定租户和工具标识() {
         MysqlLocalExampleCatalog catalog = new MysqlLocalExampleCatalog(new ObjectMapper());
 
@@ -91,6 +112,9 @@ class MysqlLocalExampleCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 持久化定义仅替换审计主体() {
         MysqlLocalExampleCatalog catalog = new MysqlLocalExampleCatalog(new ObjectMapper());
 
@@ -113,6 +137,9 @@ class MysqlLocalExampleCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 示例输入返回防御性深拷贝() {
         MysqlLocalExampleCatalog.LocalExample echo = new MysqlLocalExampleCatalog(new ObjectMapper())
                 .find("echo")

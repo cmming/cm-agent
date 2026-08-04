@@ -27,6 +27,9 @@ class AgentScopeModelFactoryTest {
     private final AgentScopeModelFactory factory = new AgentScopeModelFactory();
 
     @Test
+    /**
+     * 验证系统能够创建 {@code OpenAiCompatibleModel}。
+     */
     void createsOpenAiCompatibleModel() {
         Model model = factory.create(openAiConfig(), agent(), new ModelCredential("test-key"));
 
@@ -36,6 +39,9 @@ class AgentScopeModelFactoryTest {
     }
 
     @Test
+    /**
+     * 验证系统能够创建 {@code DashScopeNativeModel}。
+     */
     void createsDashScopeNativeModel() {
         Model model = factory.create(dashScopeConfig(), agent(), new ModelCredential("test-key"));
 
@@ -45,6 +51,9 @@ class AgentScopeModelFactoryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code fallsBackToConfiguredModelNameWhenAgentModelNameIsBlank} 所描述的业务行为。
+     */
     void fallsBackToConfiguredModelNameWhenAgentModelNameIsBlank() {
         AgentDefinition agent = new AgentDefinition(
                 AGENT_ID, TENANT_ID, "企业助手", "", "你是企业助手", MODEL_ID,
@@ -56,6 +65,9 @@ class AgentScopeModelFactoryTest {
     }
 
     @Test
+    /**
+     * 验证系统会校验 {@code RuntimeOptions}。
+     */
     void validatesRuntimeOptions() {
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> new AgentScopeRuntimeOptions(Duration.ZERO, Duration.ofSeconds(1), 1))
@@ -68,20 +80,35 @@ class AgentScopeModelFactoryTest {
                 .withMessage("模型最大尝试次数必须在 1 到 5 之间");
     }
 
+    /**
+     * 验证 {@code generateOptions} 所描述的业务行为。
+     *
+     * @param model 测试模型
+     * @param fieldName 通过反射读取的字段名
+     */
     private static GenerateOptions generateOptions(Model model, String fieldName) {
         return (GenerateOptions) ReflectionTestUtils.getField(model, fieldName);
     }
 
+    /**
+     * 验证 {@code openAiConfig} 所描述的业务行为。
+     */
     private static ModelConfig openAiConfig() {
         return new ModelConfig(MODEL_ID, TENANT_ID, ModelProviderType.OPENAI_COMPATIBLE,
                 "OpenAI兼容", "https://example.invalid/v1", "default-model", true);
     }
 
+    /**
+     * 验证 {@code dashScopeConfig} 所描述的业务行为。
+     */
     private static ModelConfig dashScopeConfig() {
         return new ModelConfig(MODEL_ID, TENANT_ID, ModelProviderType.DASHSCOPE_NATIVE,
                 "DashScope", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus", true);
     }
 
+    /**
+     * 构造测试 Agent 定义。
+     */
     private static AgentDefinition agent() {
         return new AgentDefinition(AGENT_ID, TENANT_ID, "企业助手", "", "你是企业助手",
                 MODEL_ID, "agent-model", 0.2, 5, true, List.of(), "tester", "tester");

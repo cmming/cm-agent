@@ -35,6 +35,8 @@ final class AgentScopeRunGate {
 
     /**
      * 创建带工具超时错误文本的运行门控。
+      *
+      * @param toolTimeout 单次工具调用超时
      */
     AgentScopeRunGate(Duration toolTimeout) {
         this.toolTimeoutResult = "Error: Tool execution failed: Tool execution timeout after " + toolTimeout;
@@ -42,6 +44,9 @@ final class AgentScopeRunGate {
 
     /**
      * 串行执行一次工具调用，并在调用前后检查运行中止状态。
+      *
+      * @param gateway 受治理的工具调用网关
+      * @param request 当前运行或工具调用请求
      */
     ToolInvocationResult invoke(ToolInvocationGateway gateway, ToolInvocationRequest request) {
         try {
@@ -88,6 +93,9 @@ final class AgentScopeRunGate {
 
     /**
      * 累积 AgentScope 工具结果文本片段，用于识别超时结果。
+      *
+      * @param toolCallId 工具调用标识
+      * @param text 模型或工具返回的文本
      */
     void observeToolResultText(String toolCallId, String text) {
         if (toolCallId != null && text != null) {
@@ -97,6 +105,9 @@ final class AgentScopeRunGate {
 
     /**
      * 处理工具结果终态事件，并识别未被桥接器完成的超时结果。
+      *
+      * @param toolCallId 工具调用标识
+      * @param bridgeCompleted 桥接器是否已完成该工具调用
      */
     void observeToolResultEnd(String toolCallId, boolean bridgeCompleted) {
         StringBuffer text = toolCallId == null ? null : toolResultTexts.remove(toolCallId);
@@ -147,6 +158,8 @@ final class AgentScopeRunGate {
 
     /**
      * 保证中断动作最多执行一次，并记录首次中断失败。
+      *
+      * @param interruptAction 只允许执行一次的中断动作
      */
     void interruptOnce(Runnable interruptAction) {
         if (interrupted.compareAndSet(false, true)) {
@@ -179,6 +192,8 @@ final class AgentScopeRunGate {
 
         /**
          * 创建带线程中断原因的中止异常。
+          *
+          * @param cause 触发当前异常的原始原因
          */
         RunAbortedException(InterruptedException cause) {
             super(cause);

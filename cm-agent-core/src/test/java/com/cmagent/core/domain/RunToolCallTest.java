@@ -16,6 +16,9 @@ class RunToolCallTest {
     private static final UUID TENANT_B = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
     @Test
+    /**
+     * 验证或支持 {@code toolCallRejectsNegativeDuration} 所描述的测试场景。
+     */
     void toolCallRejectsNegativeDuration() {
         assertThatThrownBy(() -> new RunToolCall(
                 UUID.randomUUID(),
@@ -35,16 +38,31 @@ class RunToolCallTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code mixedTenantBatchIsRejectedBeforeRepositoryCanWriteAnyCall} 所描述的测试场景。
+     */
     void mixedTenantBatchIsRejectedBeforeRepositoryCanWriteAnyCall() {
         List<RunToolCall> persisted = new ArrayList<>();
         ToolCallRepository repository = new ToolCallRepository() {
             @Override
+            /**
+             * 验证或支持 {@code saveAll} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolCalls 测试辅助方法使用的 toolCalls 参数
+             */
             public void saveAll(UUID tenantId, RunToolCallBatch toolCalls) {
                 toolCalls.requireTenant(tenantId);
                 persisted.addAll(toolCalls.toolCalls());
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenantAndRun} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param runId 测试运行标识
+             */
             public List<RunToolCall> listByTenantAndRun(UUID tenantId, UUID runId) {
                 return List.of();
             }
@@ -60,6 +78,9 @@ class RunToolCallTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code toolCallRejectsMissingRequiredFields} 所描述的测试场景。
+     */
     void toolCallRejectsMissingRequiredFields() {
         assertThatThrownBy(() -> new RunToolCall(
                 null, TENANT_A, UUID.randomUUID(), UUID.randomUUID(), "echo", "", "", RunStatus.SUCCEEDED,
@@ -94,6 +115,9 @@ class RunToolCallTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code toolCallRejectsBlankNameAndNormalizesBlankText} 所描述的测试场景。
+     */
     void toolCallRejectsBlankNameAndNormalizesBlankText() {
         assertThatThrownBy(() -> new RunToolCall(
                 UUID.randomUUID(), TENANT_A, UUID.randomUUID(), UUID.randomUUID(), " ", "", "", RunStatus.SUCCEEDED,
@@ -120,6 +144,11 @@ class RunToolCallTest {
         assertThat(toolCall.errorMessage()).isEmpty();
     }
 
+    /**
+     * 验证或支持 {@code toolCall} 所描述的测试场景。
+     *
+     * @param tenantId 测试租户标识
+     */
     private static RunToolCall toolCall(UUID tenantId) {
         return new RunToolCall(
                 UUID.randomUUID(),

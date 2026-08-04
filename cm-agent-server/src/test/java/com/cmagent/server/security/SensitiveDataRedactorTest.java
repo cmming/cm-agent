@@ -7,6 +7,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SensitiveDataRedactorTest {
 
     @Test
+    /**
+     * 验证系统会脱敏 {@code TokensCredentialsAndConnectionStrings}。
+     */
     void redactsTokensCredentialsAndConnectionStrings() {
         String source = "Bearer eyJhbGciOiJIUzI1NiJ9.demo password=unit-test-password "
                 + "apiKey=unit-test-api-key jdbc:postgresql://unit-user:unit-password@db.example/cm_agent";

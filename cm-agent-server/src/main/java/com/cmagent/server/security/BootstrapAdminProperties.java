@@ -19,9 +19,9 @@ public class BootstrapAdminProperties {
     private String bootstrapAdminPassword = "";
     private String bootstrapAdminDisplayName = DEFAULT_DISPLAY_NAME;
     /**
-     * BootstrapAdminProperties：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code BootstrapAdminProperties} 实例并保存其运行所需依赖。
      *
-     * @param environment 参与 BootstrapAdminProperties 处理的 environment 输入值。
+     * @param environment Spring 环境及当前激活 profile。
      */
     public BootstrapAdminProperties(Environment environment) {
         this.environment = environment;
@@ -104,7 +104,7 @@ public class BootstrapAdminProperties {
     }
 
     /**
-     * hasProductionProfile：判断当前条件是否成立。
+     * 判断是否存在方法名所描述的目标。
      */
     private boolean hasProductionProfile() {
         return Arrays.stream(environment.getActiveProfiles())
@@ -114,7 +114,7 @@ public class BootstrapAdminProperties {
     }
 
     /**
-     * hasSupabaseProfile：判断当前条件是否成立。
+     * 判断是否存在方法名所描述的目标。
      */
     private boolean hasSupabaseProfile() {
         return Arrays.stream(environment.getActiveProfiles())
@@ -122,10 +122,10 @@ public class BootstrapAdminProperties {
     }
 
     /**
-     * blankToDefault：处理该类内部的业务逻辑或辅助计算。
+     * 将空白配置回退为安全默认值，并裁剪非空文本两侧空格。
      *
-     * @param value 参与 blankToDefault 处理的 value 输入值。
-     * @param defaultValue 参与 blankToDefault 处理的 defaultValue 输入值。
+     * @param value 待检查、转换或规范化的值。
+     * @param defaultValue 配置缺失或空白时采用的默认值
      */
     private String blankToDefault(String value, String defaultValue) {
         return value == null || value.isBlank() ? defaultValue : value;

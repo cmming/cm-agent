@@ -36,6 +36,9 @@ class JdbcAgentDefinitionRepositoryTest {
     private JdbcAgentDefinitionRepository repository;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         DataSource dataSource = new DriverManagerDataSource(
                 postgres.getJdbcUrl(),
@@ -65,6 +68,9 @@ class JdbcAgentDefinitionRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code saveFindAndListByTenant} 所描述的测试场景。
+     */
     void saveFindAndListByTenant() {
         AgentDefinition agentA = agent(
                 UUID.fromString("10000000-0000-0000-0000-000000000001"),
@@ -92,6 +98,9 @@ class JdbcAgentDefinitionRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code addToolToAgentPersistsUniqueToolId} 所描述的测试场景。
+     */
     void addToolToAgentPersistsUniqueToolId() {
         UUID agentId = UUID.fromString("10000000-0000-0000-0000-000000000003");
         UUID newToolId = UUID.fromString("00000000-0000-0000-0000-000000000402");
@@ -105,6 +114,9 @@ class JdbcAgentDefinitionRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code removeToolFromAgentPersistsRemainingToolIds} 所描述的测试场景。
+     */
     void removeToolFromAgentPersistsRemainingToolIds() {
         UUID agentId = UUID.fromString("10000000-0000-0000-0000-000000000004");
         UUID otherToolId = UUID.fromString("00000000-0000-0000-0000-000000000402");
@@ -119,6 +131,9 @@ class JdbcAgentDefinitionRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code removeToolFromAgentWithWrongTenantLeavesToolIdsUnchanged} 所描述的测试场景。
+     */
     void removeToolFromAgentWithWrongTenantLeavesToolIdsUnchanged() {
         UUID agentId = UUID.fromString("10000000-0000-0000-0000-000000000005");
         UUID otherToolId = UUID.fromString("00000000-0000-0000-0000-000000000403");
@@ -132,6 +147,15 @@ class JdbcAgentDefinitionRepositoryTest {
         assertThat(repository.findByTenantAndId(TENANT_A, agentId)).contains(original);
     }
 
+    /**
+     * 构造测试 Agent 定义。
+     *
+     * @param id 测试辅助方法使用的 id 参数
+     * @param tenantId 测试租户标识
+     * @param modelProviderId 测试辅助方法使用的 modelProviderId 参数
+     * @param name 测试对象名称
+     * @param toolIds 测试辅助方法使用的 toolIds 参数
+     */
     private static AgentDefinition agent(UUID id, UUID tenantId, UUID modelProviderId, String name, List<UUID> toolIds) {
         return new AgentDefinition(
                 id,
@@ -150,6 +174,11 @@ class JdbcAgentDefinitionRepositoryTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code seedTenantAndModelConfigs} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private static void seedTenantAndModelConfigs(DataSource dataSource) {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
         Timestamp now = Timestamp.from(Instant.parse("2026-06-26T00:00:00Z"));
@@ -159,6 +188,15 @@ class JdbcAgentDefinitionRepositoryTest {
         insertModelConfig(jdbcClient, MODEL_PROVIDER_B, TENANT_B, now);
     }
 
+    /**
+     * 验证或支持 {@code insertTenant} 所描述的测试场景。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     * @param tenantId 测试租户标识
+     * @param code 测试辅助方法使用的 code 参数
+     * @param name 测试对象名称
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertTenant(JdbcClient jdbcClient, UUID tenantId, String code, String name, Timestamp now) {
         jdbcClient.sql("""
                         INSERT INTO tenants (id, code, name, enabled, created_at)
@@ -171,6 +209,14 @@ class JdbcAgentDefinitionRepositoryTest {
                 .update();
     }
 
+    /**
+     * 验证或支持 {@code insertModelConfig} 所描述的测试场景。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     * @param modelProviderId 测试辅助方法使用的 modelProviderId 参数
+     * @param tenantId 测试租户标识
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertModelConfig(JdbcClient jdbcClient, UUID modelProviderId, UUID tenantId, Timestamp now) {
         jdbcClient.sql("""
                         INSERT INTO model_configs (

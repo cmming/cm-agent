@@ -21,6 +21,9 @@ class ExternalModelCredentialProviderTest {
     private static final String TENANT_B_KEY = "invalid-test-key-tenant-b";
 
     @Test
+    /**
+     * 验证对外暴露的 {@code SafeDefaults}。
+     */
     void exposesSafeDefaults() {
         AgentScopeRuntimeProperties properties = new AgentScopeRuntimeProperties();
 
@@ -32,6 +35,9 @@ class ExternalModelCredentialProviderTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code resolvesCredentialByTenantAndModelConfig} 所描述的测试场景。
+     */
     void resolvesCredentialByTenantAndModelConfig() {
         AgentScopeRuntimeProperties properties = properties(
                 credential(TENANT_A, MODEL_ID, TENANT_A_KEY),
@@ -43,6 +49,9 @@ class ExternalModelCredentialProviderTest {
     }
 
     @Test
+    /**
+     * 验证 {@code CredentialLookupAcrossTenants} 异常场景会被正确拒绝。
+     */
     void rejectsCredentialLookupAcrossTenants() {
         ExternalModelCredentialProvider provider = new ExternalModelCredentialProvider(
                 properties(credential(TENANT_A, MODEL_ID, TENANT_A_KEY)));
@@ -54,6 +63,9 @@ class ExternalModelCredentialProviderTest {
     }
 
     @Test
+    /**
+     * 验证 {@code DuplicateTenantAndModelConfigKeyWithoutLeakingSecret} 异常场景会被正确拒绝。
+     */
     void rejectsDuplicateTenantAndModelConfigKeyWithoutLeakingSecret() {
         AgentScopeRuntimeProperties properties = properties(
                 credential(TENANT_A, MODEL_ID, TENANT_A_KEY),
@@ -67,6 +79,9 @@ class ExternalModelCredentialProviderTest {
     }
 
     @Test
+    /**
+     * 验证 {@code BlankApiKey} 异常场景会被正确拒绝。
+     */
     void rejectsBlankApiKey() {
         AgentScopeRuntimeProperties properties = properties(credential(TENANT_A, MODEL_ID, "  "));
 
@@ -76,6 +91,9 @@ class ExternalModelCredentialProviderTest {
     }
 
     @Test
+    /**
+     * 验证 {@code MissingCredentialIdentifiers} 异常场景会被正确拒绝。
+     */
     void rejectsMissingCredentialIdentifiers() {
         AgentScopeRuntimeProperties missingTenant = properties(credential(null, MODEL_ID, TENANT_A_KEY));
         AgentScopeRuntimeProperties missingModel = properties(credential(TENANT_A, null, TENANT_A_KEY));
@@ -91,6 +109,9 @@ class ExternalModelCredentialProviderTest {
     }
 
     @Test
+    /**
+     * 验证 {@code NullCredentialEntry} 异常场景会被正确拒绝。
+     */
     void rejectsNullCredentialEntry() {
         AgentScopeRuntimeProperties properties = new AgentScopeRuntimeProperties();
         List<AgentScopeRuntimeProperties.CredentialProperties> source = new ArrayList<>();
@@ -101,6 +122,9 @@ class ExternalModelCredentialProviderTest {
     }
 
     @Test
+    /**
+     * 验证 {@code NonPositiveOrMissingTimeouts} 异常场景会被正确拒绝。
+     */
     void rejectsNonPositiveOrMissingTimeouts() {
         AgentScopeRuntimeProperties missingModelTimeout = properties();
         missingModelTimeout.setModelTimeout(null);
@@ -121,6 +145,9 @@ class ExternalModelCredentialProviderTest {
     }
 
     @Test
+    /**
+     * 验证 {@code ModelMaxAttemptsOutsideSupportedRange} 异常场景会被正确拒绝。
+     */
     void rejectsModelMaxAttemptsOutsideSupportedRange() {
         AgentScopeRuntimeProperties tooFewAttempts = properties();
         tooFewAttempts.setModelMaxAttempts(0);
@@ -136,6 +163,9 @@ class ExternalModelCredentialProviderTest {
     }
 
     @Test
+    /**
+     * 验证 {@code EnablingRealAndFakeRuntimeTogether} 异常场景会被正确拒绝。
+     */
     void rejectsEnablingRealAndFakeRuntimeTogether() {
         AgentScopeRuntimeProperties properties = properties();
 
@@ -145,6 +175,9 @@ class ExternalModelCredentialProviderTest {
     }
 
     @Test
+    /**
+     * 验证系统允许 {@code FakeRuntimeWhenAgentScopeIsDisabled} 场景。
+     */
     void allowsFakeRuntimeWhenAgentScopeIsDisabled() {
         AgentScopeRuntimeProperties properties = new AgentScopeRuntimeProperties();
 
@@ -152,6 +185,9 @@ class ExternalModelCredentialProviderTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code copiesCredentialListDefensively} 所描述的测试场景。
+     */
     void copiesCredentialListDefensively() {
         AgentScopeRuntimeProperties.CredentialProperties configuredCredential =
                 credential(TENANT_A, MODEL_ID, TENANT_A_KEY);
@@ -168,6 +204,9 @@ class ExternalModelCredentialProviderTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code doesNotExposeApiKeyThroughToString} 所描述的测试场景。
+     */
     void doesNotExposeApiKeyThroughToString() {
         AgentScopeRuntimeProperties properties = properties(credential(TENANT_A, MODEL_ID, TENANT_A_KEY));
         ExternalModelCredentialProvider provider = new ExternalModelCredentialProvider(properties);
@@ -178,6 +217,11 @@ class ExternalModelCredentialProviderTest {
         assertThat(provider.resolve(TENANT_A, MODEL_ID).toString()).doesNotContain(TENANT_A_KEY);
     }
 
+    /**
+     * 验证或支持 {@code properties} 所描述的测试场景。
+     *
+     * @param credentials 测试辅助方法使用的 credentials 参数
+     */
     private static AgentScopeRuntimeProperties properties(
             AgentScopeRuntimeProperties.CredentialProperties... credentials) {
         AgentScopeRuntimeProperties properties = new AgentScopeRuntimeProperties();
@@ -186,6 +230,13 @@ class ExternalModelCredentialProviderTest {
         return properties;
     }
 
+    /**
+     * 验证或支持 {@code credential} 所描述的测试场景。
+     *
+     * @param tenantId 测试租户标识
+     * @param modelConfigId 测试辅助方法使用的 modelConfigId 参数
+     * @param apiKey 测试辅助方法使用的 apiKey 参数
+     */
     private static AgentScopeRuntimeProperties.CredentialProperties credential(
             UUID tenantId, UUID modelConfigId, String apiKey) {
         AgentScopeRuntimeProperties.CredentialProperties credential =

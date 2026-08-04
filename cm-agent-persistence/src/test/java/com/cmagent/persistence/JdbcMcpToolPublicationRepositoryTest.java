@@ -38,6 +38,9 @@ class JdbcMcpToolPublicationRepositoryTest {
     private DataSource dataSource;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         dataSource = new DriverManagerDataSource(
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
@@ -52,6 +55,9 @@ class JdbcMcpToolPublicationRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证列表查询能够返回 {@code OnlyEnabledPublicationsForTheCurrentTenant}。
+     */
     void listsOnlyEnabledPublicationsForTheCurrentTenant() {
         McpToolPublication enabledA = new McpToolPublication(TENANT_A, TOOL_A, true, "admin-a");
         McpToolPublication disabledA = new McpToolPublication(TENANT_A, TOOL_A_DISABLED, false, "admin-a");
@@ -67,6 +73,9 @@ class JdbcMcpToolPublicationRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证更新流程能够处理 {@code AndDeletesOnlyTheTargetTenantPublication}。
+     */
     void updatesAndDeletesOnlyTheTargetTenantPublication() {
         McpToolPublication enabled = new McpToolPublication(TENANT_A, TOOL_A, true, "admin-a");
         McpToolPublication disabled = new McpToolPublication(TENANT_A, TOOL_A, false, "admin-a");
@@ -87,6 +96,9 @@ class JdbcMcpToolPublicationRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code bulkFindUsesTenantScope} 所描述的测试场景。
+     */
     void bulkFindUsesTenantScope() {
         McpToolPublication publicationA = new McpToolPublication(TENANT_A, TOOL_A, true, "admin-a");
         McpToolPublication publicationB = new McpToolPublication(TENANT_B, TOOL_B, true, "admin-b");
@@ -98,6 +110,9 @@ class JdbcMcpToolPublicationRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code concurrentFirstSavesAreIdempotent} 所描述的测试场景。
+     */
     void concurrentFirstSavesAreIdempotent() throws Exception {
         McpToolPublication enabled = new McpToolPublication(TENANT_A, TOOL_A, true, "admin-a");
         McpToolPublication disabled = new McpToolPublication(TENANT_A, TOOL_A, false, "admin-b");
@@ -121,6 +136,14 @@ class JdbcMcpToolPublicationRepositoryTest {
         assertThat(repository.findByTenantAndToolId(TENANT_A, TOOL_A)).get().isIn(enabled, disabled);
     }
 
+    /**
+     * 验证或支持 {@code saveAfterStart} 所描述的测试场景。
+     *
+     * @param repository 测试仓储
+     * @param publication 测试辅助方法使用的 publication 参数
+     * @param ready 测试辅助方法使用的 ready 参数
+     * @param start 测试辅助方法使用的 start 参数
+     */
     private static void saveAfterStart(
             JdbcMcpToolPublicationRepository repository,
             McpToolPublication publication,
@@ -132,6 +155,11 @@ class JdbcMcpToolPublicationRepositoryTest {
         repository.save(publication);
     }
 
+    /**
+     * 验证或支持 {@code awaitStart} 所描述的测试场景。
+     *
+     * @param start 测试辅助方法使用的 start 参数
+     */
     private static void awaitStart(CountDownLatch start) {
         try {
             start.await();
@@ -141,6 +169,11 @@ class JdbcMcpToolPublicationRepositoryTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code repository} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private static JdbcMcpToolPublicationRepository repository(DataSource dataSource) {
         return new JdbcMcpToolPublicationRepository(
                 JdbcClient.create(dataSource), new TransactionTemplate(new DataSourceTransactionManager(dataSource))

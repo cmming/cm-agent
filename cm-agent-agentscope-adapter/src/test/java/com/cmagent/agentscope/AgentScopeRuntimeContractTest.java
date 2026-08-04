@@ -86,6 +86,9 @@ class AgentScopeRuntimeContractTest {
     private ExecutorService serverExecutor;
 
     @BeforeEach
+    /**
+     * 启动本地测试 HTTP 服务。
+     */
     void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         serverExecutor = Executors.newFixedThreadPool(4);
@@ -95,6 +98,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @AfterEach
+    /**
+     * 停止本地测试 HTTP 服务并释放端口。
+     */
     void stopServer() {
         if (server != null) {
             server.stop(0);
@@ -105,6 +111,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证系统能够执行 {@code RealReActAgentAgainstLocalOpenAiCompatibleServer}。
+     */
     void executesRealReActAgentAgainstLocalOpenAiCompatibleServer() {
         AgentRunResult result = runtime(ignored -> ToolInvocationResult.succeeded("ok"), defaultOptions())
                 .run(request(List.of()));
@@ -124,6 +133,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证 {@code localServerRejectsUnexpectedMethodAndSubpath} 所描述的业务行为。
+     */
     void localServerRejectsUnexpectedMethodAndSubpath() throws Exception {
         HttpClient client = HttpClient.newHttpClient();
         String endpoint = "http://127.0.0.1:" + server.getAddress().getPort()
@@ -143,6 +155,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证 {@code closesRealAgentAfterSuccessfulRun} 所描述的业务行为。
+     */
     void closesRealAgentAfterSuccessfulRun() {
         AtomicInteger closeCount = new AtomicInteger();
         AgentScopeReActExecutor.AgentLifecycle lifecycle = trackingLifecycle(
@@ -157,22 +172,42 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证系统能够创建 {@code FreshAgentModelToolkitAndContextForEveryRun}。
+     */
     void createsFreshAgentModelToolkitAndContextForEveryRun() {
         List<ReActAgent> agents = new CopyOnWriteArrayList<>();
         List<RuntimeContext> contexts = new CopyOnWriteArrayList<>();
         AgentScopeReActExecutor.AgentLifecycle lifecycle = new AgentScopeReActExecutor.AgentLifecycle() {
             @Override
+            /**
+             * 记录测试 Agent 已创建并保存运行上下文。
+             *
+             * @param agent 测试 Agent 定义
+             * @param context 测试运行上下文
+             */
             public void onCreated(ReActAgent agent, RuntimeContext context) {
                 agents.add(agent);
                 contexts.add(context);
             }
 
             @Override
+            /**
+             * 模拟或记录 Agent 中断动作。
+             *
+             * @param agent 测试 Agent 定义
+             * @param context 测试运行上下文
+             */
             public void interrupt(ReActAgent agent, RuntimeContext context) {
                 agent.interrupt(context);
             }
 
             @Override
+            /**
+             * 模拟或记录 Agent 资源关闭动作。
+             *
+             * @param agent 测试 Agent 定义
+             */
             public void close(ReActAgent agent) {
                 agent.close();
             }
@@ -201,22 +236,42 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证 {@code isolatesConcurrentRunsOnTheSameRuntime} 所描述的业务行为。
+     */
     void isolatesConcurrentRunsOnTheSameRuntime() {
         List<ToolInvocationRequest> invocations = new CopyOnWriteArrayList<>();
         List<RuntimeContext> contexts = new CopyOnWriteArrayList<>();
         CountDownLatch bothGatewaysEntered = new CountDownLatch(2);
         AgentScopeReActExecutor.AgentLifecycle lifecycle = new AgentScopeReActExecutor.AgentLifecycle() {
             @Override
+            /**
+             * 记录测试 Agent 已创建并保存运行上下文。
+             *
+             * @param agent 测试 Agent 定义
+             * @param context 测试运行上下文
+             */
             public void onCreated(ReActAgent agent, RuntimeContext context) {
                 contexts.add(context);
             }
 
             @Override
+            /**
+             * 模拟或记录 Agent 中断动作。
+             *
+             * @param agent 测试 Agent 定义
+             * @param context 测试运行上下文
+             */
             public void interrupt(ReActAgent agent, RuntimeContext context) {
                 agent.interrupt(context);
             }
 
             @Override
+            /**
+             * 模拟或记录 Agent 资源关闭动作。
+             *
+             * @param agent 测试 Agent 定义
+             */
             public void close(ReActAgent agent) {
                 agent.close();
             }
@@ -289,6 +344,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证系统能够执行 {@code RealToolkitAndForwardsCompleteInvocationContext}。
+     */
     void executesRealToolkitAndForwardsCompleteInvocationContext() {
         List<ToolInvocationRequest> invocations = new CopyOnWriteArrayList<>();
         AgentRuntime runtime = runtime(invocation -> {
@@ -318,6 +376,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证 {@code forcesRunToDeniedWhenAnyRealToolkitRecordIsDenied} 所描述的业务行为。
+     */
     void forcesRunToDeniedWhenAnyRealToolkitRecordIsDenied() {
         AgentRuntime runtime = runtime(
                 ignored -> ToolInvocationResult.denied("没有工具权限"), defaultOptions());
@@ -333,6 +394,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证异常传播会保留 {@code FatalInfrastructureFailureEvenWhenAgentScopeConsumesToolError}。
+     */
     void propagatesFatalInfrastructureFailureEvenWhenAgentScopeConsumesToolError() {
         ToolInvocationInfrastructureException failure = new ToolInvocationInfrastructureException(
                 "审计写入失败", new IllegalStateException("本地测试审计存储不可用"));
@@ -348,6 +412,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证 {@code abortsParallelAndLaterToolCallsImmediatelyAfterFirstFatalFailure} 所描述的业务行为。
+     */
     void abortsParallelAndLaterToolCallsImmediatelyAfterFirstFatalFailure() {
         ToolInvocationInfrastructureException failure = new ToolInvocationInfrastructureException(
                 "审计写入失败", new IllegalStateException("本地测试审计存储不可用"));
@@ -364,6 +431,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证处理过程会保留 {@code FatalFailureWhenClosingAgentAlsoFails}。
+     */
     void preservesFatalFailureWhenClosingAgentAlsoFails() {
         ToolInvocationInfrastructureException failure = new ToolInvocationInfrastructureException(
                 "审计写入失败", new IllegalStateException("本地测试审计存储不可用"));
@@ -371,11 +441,22 @@ class AgentScopeRuntimeContractTest {
         AgentScopeReActExecutor.AgentLifecycle lifecycle =
                 new AgentScopeReActExecutor.AgentLifecycle() {
                     @Override
+                    /**
+                     * 模拟或记录 Agent 中断动作。
+                     *
+                     * @param agent 测试 Agent 定义
+                     * @param context 测试运行上下文
+                     */
                     public void interrupt(ReActAgent agent, RuntimeContext context) {
                         agent.interrupt(context);
                     }
 
                     @Override
+                    /**
+                     * 模拟或记录 Agent 资源关闭动作。
+                     *
+                     * @param agent 测试 Agent 定义
+                     */
                     public void close(ReActAgent agent) {
                         throw closeFailure;
                     }
@@ -391,6 +472,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证处理过程会保留 {@code FatalFailureWhenInterruptingAndClosingAgentBothFail}。
+     */
     void preservesFatalFailureWhenInterruptingAndClosingAgentBothFail() {
         ToolInvocationInfrastructureException failure = new ToolInvocationInfrastructureException(
                 "审计写入失败", new IllegalStateException("本地测试审计存储不可用"));
@@ -399,11 +483,22 @@ class AgentScopeRuntimeContractTest {
         AgentScopeReActExecutor.AgentLifecycle lifecycle =
                 new AgentScopeReActExecutor.AgentLifecycle() {
                     @Override
+                    /**
+                     * 模拟或记录 Agent 中断动作。
+                     *
+                     * @param agent 测试 Agent 定义
+                     * @param context 测试运行上下文
+                     */
                     public void interrupt(ReActAgent agent, RuntimeContext context) {
                         throw interruptFailure;
                     }
 
                     @Override
+                    /**
+                     * 模拟或记录 Agent 资源关闭动作。
+                     *
+                     * @param agent 测试 Agent 定义
+                     */
                     public void close(ReActAgent agent) {
                         throw closeFailure;
                     }
@@ -419,16 +514,30 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证异常传播会保留 {@code CloseFailureInsteadOfDiscardingItAfterControlledProviderFailure}。
+     */
     void propagatesCloseFailureInsteadOfDiscardingItAfterControlledProviderFailure() {
         IllegalStateException closeFailure = new IllegalStateException("本地测试关闭失败");
         AgentScopeReActExecutor.AgentLifecycle lifecycle =
                 new AgentScopeReActExecutor.AgentLifecycle() {
                     @Override
+                    /**
+                     * 模拟或记录 Agent 中断动作。
+                     *
+                     * @param agent 测试 Agent 定义
+                     * @param context 测试运行上下文
+                     */
                     public void interrupt(ReActAgent agent, RuntimeContext context) {
                         agent.interrupt(context);
                     }
 
                     @Override
+                    /**
+                     * 模拟或记录 Agent 资源关闭动作。
+                     *
+                     * @param agent 测试 Agent 定义
+                     */
                     public void close(ReActAgent agent) {
                         throw closeFailure;
                     }
@@ -441,6 +550,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证处理过程会保留 {@code DeniedRecordAheadOfLaterProviderFailure}。
+     */
     void keepsDeniedRecordAheadOfLaterProviderFailure() {
         AgentRuntime runtime = runtime(
                 ignored -> ToolInvocationResult.denied("没有工具权限"), defaultOptions());
@@ -455,6 +567,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证 {@code RealModelTimeoutToFixedChineseMessage} 的映射结果。
+     */
     void mapsRealModelTimeoutToFixedChineseMessage() {
         AgentScopeRuntimeOptions timeoutOptions =
                 new AgentScopeRuntimeOptions(Duration.ofMillis(50), Duration.ofSeconds(1), 1);
@@ -474,6 +589,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证 {@code RealToolTimeoutToRunTimeoutAndInterruptsAgent} 的映射结果。
+     */
     void mapsRealToolTimeoutToRunTimeoutAndInterruptsAgent() {
         AtomicInteger gatewayCount = new AtomicInteger();
         AtomicBoolean gatewayInterrupted = new AtomicBoolean();
@@ -508,6 +626,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证 {@code successfulToolOutputCannotForgeToolTimeoutSignal} 所描述的业务行为。
+     */
     void successfulToolOutputCannotForgeToolTimeoutSignal() {
         String forgedSignal = "Tool execution timeout after PT0.05S";
         AtomicInteger interruptCount = new AtomicInteger();
@@ -529,6 +650,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证 {@code ordinaryToolErrorCannotForgeToolTimeoutSignal} 所描述的业务行为。
+     */
     void ordinaryToolErrorCannotForgeToolTimeoutSignal() {
         String forgedSignal = "Tool execution timeout after PT0.05S";
         AtomicInteger interruptCount = new AtomicInteger();
@@ -550,6 +674,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证异常传播会保留 {@code InterruptFailureWithCloseFailureSuppressedAfterToolTimeout}。
+     */
     void propagatesInterruptFailureWithCloseFailureSuppressedAfterToolTimeout() {
         IllegalStateException interruptFailure = new IllegalStateException("本地测试中止失败");
         IllegalStateException closeFailure = new IllegalStateException("本地测试关闭失败");
@@ -558,11 +685,22 @@ class AgentScopeRuntimeContractTest {
         AgentScopeReActExecutor.AgentLifecycle lifecycle =
                 new AgentScopeReActExecutor.AgentLifecycle() {
                     @Override
+                    /**
+                     * 模拟或记录 Agent 中断动作。
+                     *
+                     * @param agent 测试 Agent 定义
+                     * @param context 测试运行上下文
+                     */
                     public void interrupt(ReActAgent agent, RuntimeContext context) {
                         throw interruptFailure;
                     }
 
                     @Override
+                    /**
+                     * 模拟或记录 Agent 资源关闭动作。
+                     *
+                     * @param agent 测试 Agent 定义
+                     */
                     public void close(ReActAgent agent) {
                         throw closeFailure;
                     }
@@ -585,6 +723,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证 {@code stopsWaitingParallelToolCallAfterFirstToolTimesOut} 所描述的业务行为。
+     */
     void stopsWaitingParallelToolCallAfterFirstToolTimesOut() throws Exception {
         AtomicInteger gatewayCount = new AtomicInteger();
         CountDownLatch secondGatewayEntered = new CountDownLatch(1);
@@ -622,6 +763,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证系统会返回 {@code BeforeLateGatewayAndStopsInterruptedParallelWaiter}。
+     */
     void returnsBeforeLateGatewayAndStopsInterruptedParallelWaiter() throws Exception {
         AtomicInteger gatewayCount = new AtomicInteger();
         CountDownLatch firstGatewayEntered = new CountDownLatch(1);
@@ -674,6 +818,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证 {@code interruptsAndClosesWhenTimeoutFollowsDeniedRecord} 所描述的业务行为。
+     */
     void interruptsAndClosesWhenTimeoutFollowsDeniedRecord() {
         AtomicInteger interruptCount = new AtomicInteger();
         AtomicInteger closeCount = new AtomicInteger();
@@ -701,6 +848,9 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
+    /**
+     * 验证 {@code RealProviderHttpFailureToFixedChineseMessage} 的映射结果。
+     */
     void mapsRealProviderHttpFailureToFixedChineseMessage() {
         AgentRunResult result = runtime(ignored -> ToolInvocationResult.succeeded("ok"), defaultOptions())
                 .run(request(List.of(), "触发模型失败"));
@@ -713,6 +863,12 @@ class AgentScopeRuntimeContractTest {
         assertThat(requestCount).hasValue(1);
     }
 
+    /**
+     * 验证 {@code runtime} 所描述的业务行为。
+     *
+     * @param gateway 测试工具调用网关
+     * @param options 测试辅助方法使用的 options 参数
+     */
     private AgentRuntime runtime(
             ToolInvocationGateway gateway,
             AgentScopeRuntimeOptions options
@@ -724,6 +880,13 @@ class AgentScopeRuntimeContractTest {
                 Clock.fixed(Instant.parse("2026-07-16T00:00:00Z"), ZoneOffset.UTC));
     }
 
+    /**
+     * 验证 {@code runtime} 所描述的业务行为。
+     *
+     * @param gateway 测试工具调用网关
+     * @param options 测试辅助方法使用的 options 参数
+     * @param lifecycle 测试辅助方法使用的 lifecycle 参数
+     */
     private AgentRuntime runtime(
             ToolInvocationGateway gateway,
             AgentScopeRuntimeOptions options,
@@ -736,18 +899,35 @@ class AgentScopeRuntimeContractTest {
                 Clock.fixed(Instant.parse("2026-07-16T00:00:00Z"), ZoneOffset.UTC));
     }
 
+    /**
+     * 验证 {@code trackingLifecycle} 所描述的业务行为。
+     *
+     * @param interruptCount 测试辅助方法使用的 interruptCount 参数
+     * @param closeCount 测试辅助方法使用的 closeCount 参数
+     */
     private static AgentScopeReActExecutor.AgentLifecycle trackingLifecycle(
             AtomicInteger interruptCount,
             AtomicInteger closeCount
     ) {
         return new AgentScopeReActExecutor.AgentLifecycle() {
             @Override
+            /**
+             * 模拟或记录 Agent 中断动作。
+             *
+             * @param agent 测试 Agent 定义
+             * @param context 测试运行上下文
+             */
             public void interrupt(ReActAgent agent, RuntimeContext context) {
                 interruptCount.incrementAndGet();
                 agent.interrupt(context);
             }
 
             @Override
+            /**
+             * 模拟或记录 Agent 资源关闭动作。
+             *
+             * @param agent 测试 Agent 定义
+             */
             public void close(ReActAgent agent) {
                 closeCount.incrementAndGet();
                 agent.close();
@@ -755,6 +935,11 @@ class AgentScopeRuntimeContractTest {
         };
     }
 
+    /**
+     * 处理本地测试服务器收到的请求。
+     *
+     * @param exchange 本地 HTTP 请求交换对象
+     */
     private void respond(HttpExchange exchange) throws IOException {
         if (!"POST".equals(exchange.getRequestMethod())) {
             respondWithoutBody(exchange, 405);
@@ -799,6 +984,12 @@ class AgentScopeRuntimeContractTest {
         exchange.close();
     }
 
+    /**
+     * 根据请求序号和内容构造本地服务器响应。
+     *
+     * @param current 当前调用序号
+     * @param requestBody 本地服务器收到的请求体
+     */
     private String responseFor(int current, String requestBody) {
         if (requestBody.contains("并行工具超时")) {
             return requestBody.contains("\"role\":\"tool\"")
@@ -827,17 +1018,31 @@ class AgentScopeRuntimeContractTest {
                 : SIMPLE_RESPONSE;
     }
 
+    /**
+     * 返回不包含响应体的 HTTP 状态。
+     *
+     * @param exchange 本地 HTTP 请求交换对象
+     * @param status 测试 HTTP 或运行状态
+     */
     private static void respondWithoutBody(HttpExchange exchange, int status) throws IOException {
         exchange.sendResponseHeaders(status, -1);
         exchange.close();
     }
 
+    /**
+     * 验证 {@code isTimeoutTestRequest} 所描述的业务行为。
+     */
     private boolean isTimeoutTestRequest() {
         String firstRequest = requestBodies.getFirst();
         return firstRequest.contains("触发超时")
                 || requestCount.get() > 1 && firstRequest.contains("拒绝后超时");
     }
 
+    /**
+     * 验证 {@code shouldFailModelRequest} 所描述的业务行为。
+     *
+     * @param currentRequest 测试辅助方法使用的 currentRequest 参数
+     */
     private boolean shouldFailModelRequest(int currentRequest) {
         String firstRequest = requestBodies.getFirst();
         return firstRequest.contains("触发模型失败")
@@ -845,6 +1050,11 @@ class AgentScopeRuntimeContractTest {
                 && firstRequest.contains("拒绝后模型失败"));
     }
 
+    /**
+     * 验证 {@code respondWithProviderFailure} 所描述的业务行为。
+     *
+     * @param exchange 本地 HTTP 请求交换对象
+     */
     private static void respondWithProviderFailure(HttpExchange exchange) throws IOException {
         byte[] body = "{\"error\":{\"message\":\"本地模型服务失败\"}}"
                 .getBytes(StandardCharsets.UTF_8);
@@ -854,15 +1064,37 @@ class AgentScopeRuntimeContractTest {
         exchange.close();
     }
 
+    /**
+     * 构造测试使用的运行或 HTTP 请求。
+     *
+     * @param tools 测试工具集合
+     */
     private AgentRunRequest request(List<ToolDefinition> tools) {
         return request(tools, "你好");
     }
 
+    /**
+     * 构造测试使用的运行或 HTTP 请求。
+     *
+     * @param tools 测试工具集合
+     * @param input 测试输入
+     */
     private AgentRunRequest request(List<ToolDefinition> tools, String input) {
         return request(
                 TENANT_ID, AGENT_ID, MODEL_ID, RUN_ID, "principal", tools, input);
     }
 
+    /**
+     * 构造测试使用的运行或 HTTP 请求。
+     *
+     * @param tenantId 测试租户标识
+     * @param agentId 测试 Agent 标识
+     * @param modelId 测试辅助方法使用的 modelId 参数
+     * @param runId 测试运行标识
+     * @param principalId 测试辅助方法使用的 principalId 参数
+     * @param tools 测试工具集合
+     * @param input 测试输入
+     */
     private AgentRunRequest request(
             UUID tenantId,
             UUID agentId,
@@ -885,10 +1117,19 @@ class AgentScopeRuntimeContractTest {
         return new AgentRunRequest(runId, tenantId, agent, model, principal, input, tools);
     }
 
+    /**
+     * 构造测试工具定义。
+     */
     private static ToolDefinition tool() {
         return tool(TOOL_ID, TENANT_ID);
     }
 
+    /**
+     * 构造测试工具定义。
+     *
+     * @param toolId 测试工具标识
+     * @param tenantId 测试租户标识
+     */
     private static ToolDefinition tool(UUID toolId, UUID tenantId) {
         return new ToolDefinition(
                 toolId, tenantId, "echo", "回显输入", ToolType.LOCAL,
@@ -896,6 +1137,9 @@ class AgentScopeRuntimeContractTest {
                 ToolRiskLevel.LOW, true, "", "tester", "tester");
     }
 
+    /**
+     * 验证 {@code defaultOptions} 所描述的业务行为。
+     */
     private static AgentScopeRuntimeOptions defaultOptions() {
         return new AgentScopeRuntimeOptions(Duration.ofSeconds(2), Duration.ofSeconds(1), 1);
     }

@@ -47,6 +47,11 @@ public class AgentScopeToolBridge implements AgentTool {
 
     /**
      * 使用独立运行门控创建工具桥接器。
+      *
+      * @param request 当前运行或工具调用请求
+      * @param tool 当前工具定义
+      * @param gateway 受治理的工具调用网关
+      * @param objectMapper 用于 JSON 解析和序列化的组件
      */
     public AgentScopeToolBridge(
             AgentRunRequest request,
@@ -59,6 +64,12 @@ public class AgentScopeToolBridge implements AgentTool {
 
     /**
      * 使用指定运行门控创建工具桥接器。
+      *
+      * @param request 当前运行或工具调用请求
+      * @param tool 当前工具定义
+      * @param gateway 受治理的工具调用网关
+      * @param objectMapper 用于 JSON 解析和序列化的组件
+      * @param runGate 协调运行中断与工具失败的门控对象
      */
     AgentScopeToolBridge(
             AgentRunRequest request,
@@ -101,6 +112,8 @@ public class AgentScopeToolBridge implements AgentTool {
 
     /**
      * 异步执行工具调用，并把取消信号传递给运行门控。
+      *
+      * @param param AgentScope 工具调用参数
      */
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
@@ -109,6 +122,8 @@ public class AgentScopeToolBridge implements AgentTool {
 
     /**
      * 为指定异步结果附加工具调用取消处理。
+      *
+      * @param source 待转换的源对象
      */
     Mono<ToolResultBlock> withCancellationGate(Mono<ToolResultBlock> source) {
         return source.doOnCancel(runGate::markInvocationInterrupted);
@@ -130,6 +145,8 @@ public class AgentScopeToolBridge implements AgentTool {
 
     /**
      * 判断指定工具调用是否已由桥接器完成。
+      *
+      * @param toolCallId 工具调用标识
      */
     boolean hasCompletedToolCall(String toolCallId) {
         return toolCallId != null && completedToolCallIds.contains(toolCallId);
@@ -137,6 +154,8 @@ public class AgentScopeToolBridge implements AgentTool {
 
     /**
      * 执行工具调用、记录结果，并转换为 AgentScope 工具结果块。
+      *
+      * @param param AgentScope 工具调用参数
      */
     private ToolResultBlock invoke(ToolCallParam param) {
         long startedAt = System.nanoTime();
@@ -193,6 +212,8 @@ public class AgentScopeToolBridge implements AgentTool {
 
     /**
      * 解析并校验工具输入 Schema，生成不可变参数定义。
+      *
+      * @param inputSchema 工具输入 JSON Schema
      */
     private Map<String, Object> parseParameters(String inputSchema) {
         try {
@@ -214,6 +235,8 @@ public class AgentScopeToolBridge implements AgentTool {
 
     /**
      * 仅保留输入字段名，生成不暴露参数值的摘要。
+      *
+      * @param input 调用方输入
      */
     private static String summarizeInput(Map<String, Object> input) {
         return "输入字段: " + input.keySet().stream().sorted().toList();
@@ -221,6 +244,8 @@ public class AgentScopeToolBridge implements AgentTool {
 
     /**
      * 计算从指定纳秒时间点开始经过的时长。
+      *
+      * @param startedAt 流程开始时间
      */
     private static Duration elapsedSince(long startedAt) {
         return Duration.ofNanos(Math.max(0, System.nanoTime() - startedAt));
@@ -228,6 +253,8 @@ public class AgentScopeToolBridge implements AgentTool {
 
     /**
      * 判断异常链或当前线程状态是否表示中断。
+      *
+      * @param failure 当前捕获的失败
      */
     private static boolean isInterruption(Throwable failure) {
         Throwable current = failure;

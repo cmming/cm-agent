@@ -23,6 +23,9 @@ class HttpToolConfigValidatorTest {
     private final HttpToolConfigValidator validator = new HttpToolConfigValidator(new ObjectMapper());
 
     @Test
+    /**
+     * 验证 {@code InvalidJsonAndSchemaWhoseInputRootIsNotObject} 异常场景会被正确拒绝。
+     */
     void rejectsInvalidJsonAndSchemaWhoseInputRootIsNotObject() {
         assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST, "https://api.example.test/items",
                 "{", List.of())))
@@ -41,6 +44,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code InvalidSchemaKeywordShape} 异常场景会被正确拒绝。
+     */
     void rejectsInvalidSchemaKeywordShape() {
         assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST, "https://api.example.test/items",
                 "{\"type\":\"object\",\"properties\":[]}", List.of())))
@@ -49,6 +55,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code SchemaThatDeclaresAnOlderDraft} 异常场景会被正确拒绝。
+     */
     void rejectsSchemaThatDeclaresAnOlderDraft() {
         String draftSeven = """
                 {"$schema":"http://json-schema.org/draft-07/schema#","type":"object"}
@@ -61,6 +70,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code resolvesEscapedJsonPointerAndRejectsMissingInputNode} 所描述的测试场景。
+     */
     void resolvesEscapedJsonPointerAndRejectsMissingInputNode() {
         String schema = """
                 {"type":"object","properties":{"order/id":{"type":"object","properties":{"~code":{"type":"string"}}}}}
@@ -80,6 +92,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code MalformedJsonPointerEscape} 异常场景会被正确拒绝。
+     */
     void rejectsMalformedJsonPointerEscape() {
         HttpParameterMapping mapping = mapping("/bad~2pointer", HttpParameterLocation.QUERY,
                 "value", "", false, "");
@@ -91,6 +106,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证系统会校验 {@code DefaultJsonWithCorrespondingSubSchema}。
+     */
     void validatesDefaultJsonWithCorrespondingSubSchema() {
         HttpParameterMapping invalidJson = mapping("/limit", HttpParameterLocation.QUERY,
                 "limit", "", false, "not-json");
@@ -108,6 +126,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证系统会校验 {@code DefaultWithRefSiblingAndRootDefinitionsContext}。
+     */
     void validatesDefaultWithRefSiblingAndRootDefinitionsContext() {
         String refSiblingSchema = """
                 {"type":"object","$defs":{"text":{"type":"string"}},"properties":{
@@ -134,6 +155,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code resolvesPropertiesInAllOfAndInfersConservativeCompositionTypes} 所描述的测试场景。
+     */
     void resolvesPropertiesInAllOfAndInfersConservativeCompositionTypes() {
         String allOfProperties = """
                 {"type":"object","allOf":[
@@ -179,6 +203,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code BodyIntermediateContainerShapeConflictsInEitherOrder} 异常场景会被正确拒绝。
+     */
     void rejectsBodyIntermediateContainerShapeConflictsInEitherOrder() {
         HttpParameterMapping array = mapping("/first", HttpParameterLocation.BODY,
                 "", "/payload/0", false, "");
@@ -208,6 +235,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code TrailingJsonTokensWithoutEchoingValues} 异常场景会被正确拒绝。
+     */
     void rejectsTrailingJsonTokensWithoutEchoingValues() {
         assertThatThrownBy(() -> validator.validate(config(HttpToolMethod.POST,
                 "https://api.example.test/items", "{\"type\":\"object\"} {}", List.of())))
@@ -225,6 +255,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code NullDefaultEvenWhenSchemaIsNullable} 异常场景会被正确拒绝。
+     */
     void rejectsNullDefaultEvenWhenSchemaIsNullable() {
         String schema = """
                 {"type":"object","properties":{"value":{"type":["string","null"]}}}
@@ -239,6 +272,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证系统会校验 {@code DefaultsAgainstAnyProjectedCombinationBranch}。
+     */
     void validatesDefaultsAgainstAnyProjectedCombinationBranch() {
         String oneOf = """
                 {"type":"object","oneOf":[
@@ -309,6 +345,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code derivesQueryArrayItemsFromPrefixItemsConstAndEnum} 所描述的测试场景。
+     */
     void derivesQueryArrayItemsFromPrefixItemsConstAndEnum() {
         String schema = """
                 {"type":"object","properties":{
@@ -334,6 +373,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code interpretsNumericSourceTokenUsingPossibleParentContainerTypes} 所描述的测试场景。
+     */
     void interpretsNumericSourceTokenUsingPossibleParentContainerTypes() {
         String objectParent = """
                 {"type":"object","properties":{"container":{
@@ -369,6 +411,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证系统会校验 {@code TerminalLocalReferenceWithoutDefault}。
+     */
     void validatesTerminalLocalReferenceWithoutDefault() {
         String existing = """
                 {"type":"object","$defs":{"payload":{"type":"object"}},"properties":{
@@ -402,6 +447,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code eagerlyValidatesLocalReferencesInsideTerminalSchemaSubtree} 所描述的测试场景。
+     */
     void eagerlyValidatesLocalReferencesInsideTerminalSchemaSubtree() {
         HttpParameterMapping body = mapping("/items", HttpParameterLocation.BODY,
                 "", "/items", false, "");
@@ -448,6 +496,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code PureReferenceCyclesWrappedBySameInstanceApplicators} 异常场景会被正确拒绝。
+     */
     void rejectsPureReferenceCyclesWrappedBySameInstanceApplicators() {
         HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
                 "", "/payload", false, "");
@@ -476,6 +527,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code treatsDependentSchemasAsSameInstanceApplicator} 所描述的测试场景。
+     */
     void treatsDependentSchemasAsSameInstanceApplicator() {
         HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
                 "", "/payload", false, "");
@@ -500,6 +554,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code doesNotReuseValidatedReferencePathAcrossDifferentChainContexts} 所描述的测试场景。
+     */
     void doesNotReuseValidatedReferencePathAcrossDifferentChainContexts() {
         HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
                 "", "/payload", false, "");
@@ -517,6 +574,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code reusesCompletedReferenceTraversalForRepeatedDag} 所描述的测试场景。
+     */
     void reusesCompletedReferenceTraversalForRepeatedDag() {
         HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
                 "", "/payload", false, "");
@@ -528,6 +588,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code SchemaTraversalThatExceedsComplexityBudget} 异常场景会被正确拒绝。
+     */
     void rejectsSchemaTraversalThatExceedsComplexityBudget() {
         HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
                 "", "/payload", false, "");
@@ -540,6 +603,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code ReferenceTraversalBeyondDepthLimit} 异常场景会被正确拒绝。
+     */
     void rejectsReferenceTraversalBeyondDepthLimit() {
         HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
                 "", "/payload", false, "");
@@ -552,6 +618,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code StructuralTraversalBeyondDepthLimit} 异常场景会被正确拒绝。
+     */
     void rejectsStructuralTraversalBeyondDepthLimit() {
         HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
                 "", "/payload", false, "");
@@ -564,6 +633,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code ReferenceTraversalAtDepthLimit} 合法场景会被接受。
+     */
     void acceptsReferenceTraversalAtDepthLimit() {
         HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
                 "", "/payload", false, "");
@@ -575,6 +647,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code StructuralTraversalAtDepthLimit} 合法场景会被接受。
+     */
     void acceptsStructuralTraversalAtDepthLimit() {
         HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
                 "", "/payload", false, "");
@@ -586,6 +661,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code enforcesArrayIndexSafetyLimitWithoutRejectingNumericObjectProperties} 所描述的测试场景。
+     */
     void enforcesArrayIndexSafetyLimitWithoutRejectingNumericObjectProperties() {
         String arraySchema = """
                 {"type":"object","properties":{"items":{"type":"array","items":{"type":"string"}}}}
@@ -643,6 +721,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code requiresPathMappingsToExactlyMatchRequiredUrlPlaceholders} 所描述的测试场景。
+     */
     void requiresPathMappingsToExactlyMatchRequiredUrlPlaceholders() {
         HttpParameterMapping path = mapping("/id", HttpParameterLocation.PATH,
                 "id", "", true, "");
@@ -665,6 +746,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code GetBodyDuplicateTargetsAndBodyParentChildConflicts} 异常场景会被正确拒绝。
+     */
     void rejectsGetBodyDuplicateTargetsAndBodyParentChildConflicts() {
         HttpParameterMapping body = mapping("/payload", HttpParameterLocation.BODY,
                 "", "/payload", true, "");
@@ -693,6 +777,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code SensitiveDynamicHeadersCaseInsensitively} 异常场景会被正确拒绝。
+     */
     void rejectsSensitiveDynamicHeadersCaseInsensitively() {
         List<String> forbidden = List.of("Host", "content-length", "Connection", "Transfer-Encoding",
                 "AUTHORIZATION", "Cookie", "Proxy-Authorization", "Upgrade");
@@ -709,6 +796,9 @@ class HttpToolConfigValidatorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code permitsScalarArrayQueryButRestrictsComplexValuesToBody} 所描述的测试场景。
+     */
     void permitsScalarArrayQueryButRestrictsComplexValuesToBody() {
         String schema = """
                 {"type":"object","properties":{
@@ -742,6 +832,14 @@ class HttpToolConfigValidatorTest {
                 .hasMessageContaining("标量数组");
     }
 
+    /**
+     * 构造测试配置。
+     *
+     * @param method 测试辅助方法使用的 method 参数
+     * @param urlTemplate 测试辅助方法使用的 urlTemplate 参数
+     * @param schema 测试辅助方法使用的 schema 参数
+     * @param mappings 测试辅助方法使用的 mappings 参数
+     */
     private static HttpToolConfig config(
             HttpToolMethod method,
             String urlTemplate,
@@ -752,6 +850,11 @@ class HttpToolConfigValidatorTest {
                 Duration.ofSeconds(5));
     }
 
+    /**
+     * 验证或支持 {@code repeatedReferenceDag} 所描述的测试场景。
+     *
+     * @param depth 测试辅助方法使用的 depth 参数
+     */
     private static String repeatedReferenceDag(int depth) {
         StringBuilder definitions = new StringBuilder("\"n0\":{\"type\":\"string\"}");
         for (int index = 1; index <= depth; index++) {
@@ -763,6 +866,11 @@ class HttpToolConfigValidatorTest {
                 + "},\"properties\":{\"payload\":{\"$ref\":\"#/$defs/n" + depth + "\"}}}";
     }
 
+    /**
+     * 验证或支持 {@code wideSchema} 所描述的测试场景。
+     *
+     * @param width 测试辅助方法使用的 width 参数
+     */
     private static String wideSchema(int width) {
         StringBuilder branches = new StringBuilder();
         for (int index = 0; index < width; index++) {
@@ -775,6 +883,11 @@ class HttpToolConfigValidatorTest {
                 + branches + "]}}}";
     }
 
+    /**
+     * 验证或支持 {@code linearReferenceSchema} 所描述的测试场景。
+     *
+     * @param traversalDepth 测试辅助方法使用的 traversalDepth 参数
+     */
     private static String linearReferenceSchema(int traversalDepth) {
         StringBuilder definitions = new StringBuilder("\"n0\":{\"type\":\"string\"}");
         for (int index = 1; index < traversalDepth - 1; index++) {
@@ -786,6 +899,11 @@ class HttpToolConfigValidatorTest {
                 + (traversalDepth - 2) + "\"}}}";
     }
 
+    /**
+     * 验证或支持 {@code deepStructuralSchema} 所描述的测试场景。
+     *
+     * @param traversalDepth 测试辅助方法使用的 traversalDepth 参数
+     */
     private static String deepStructuralSchema(int traversalDepth) {
         String nested = "{\"type\":\"string\"}";
         for (int depth = 1; depth < traversalDepth; depth++) {
@@ -798,6 +916,16 @@ class HttpToolConfigValidatorTest {
         return "{\"type\":\"object\",\"properties\":{\"payload\":" + nested + "}}";
     }
 
+    /**
+     * 验证或支持 {@code mapping} 所描述的测试场景。
+     *
+     * @param sourcePointer 测试辅助方法使用的 sourcePointer 参数
+     * @param location 测试辅助方法使用的 location 参数
+     * @param targetName 测试辅助方法使用的 targetName 参数
+     * @param targetPointer 测试辅助方法使用的 targetPointer 参数
+     * @param required 测试辅助方法使用的 required 参数
+     * @param defaultValueJson 测试辅助方法使用的 defaultValueJson 参数
+     */
     private static HttpParameterMapping mapping(
             String sourcePointer,
             HttpParameterLocation location,
@@ -809,10 +937,19 @@ class HttpToolConfigValidatorTest {
         return new HttpParameterMapping(sourcePointer, location, targetName, targetPointer, required, defaultValueJson);
     }
 
+    /**
+     * 验证或支持 {@code objectSchema} 所描述的测试场景。
+     *
+     * @param property 测试辅助方法使用的 property 参数
+     * @param type 测试辅助方法使用的 type 参数
+     */
     private static String objectSchema(String property, String type) {
         return "{\"type\":\"object\",\"properties\":{\"" + property + "\":{\"type\":\"" + type + "\"}}}";
     }
 
+    /**
+     * 验证或支持 {@code twoPropertySchema} 所描述的测试场景。
+     */
     private static String twoPropertySchema() {
         return """
                 {"type":"object","properties":{"first":{"type":"string"},"second":{"type":"string"}}}

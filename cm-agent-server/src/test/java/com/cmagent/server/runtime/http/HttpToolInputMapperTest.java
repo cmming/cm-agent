@@ -25,6 +25,9 @@ class HttpToolInputMapperTest {
     private final HttpToolInputMapper mapper = new HttpToolInputMapper(objectMapper, validator);
 
     @Test
+    /**
+     * 验证或支持 {@code appliesDefaultToMissingAndExplicitNullValues} 所描述的测试场景。
+     */
     void appliesDefaultToMissingAndExplicitNullValues() throws Exception {
         HttpToolConfig config = config("""
                 {"type":"object","properties":{"page":{"type":"integer"},"lang":{"type":"string"}}}
@@ -44,6 +47,9 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    /**
+     * 验证 {@code RequiredValueWithoutDefaultUsingFixedChineseMessage} 异常场景会被正确拒绝。
+     */
     void rejectsRequiredValueWithoutDefaultUsingFixedChineseMessage() throws Exception {
         HttpToolConfig config = config(objectSchema("id", "string"), List.of(
                 mapping("/id", HttpParameterLocation.QUERY, "id", "", true, "")
@@ -55,6 +61,9 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    /**
+     * 验证系统会校验 {@code EffectiveInputAgainstFullSchemaAfterApplyingDefaults}。
+     */
     void validatesEffectiveInputAgainstFullSchemaAfterApplyingDefaults() throws Exception {
         HttpToolConfig config = config("""
                 {"type":"object","required":["count"],"properties":{"count":{"type":"integer","minimum":1}}}
@@ -68,6 +77,9 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    /**
+     * 验证 {@code EscapedPointersScalarsAndScalarArray} 的映射结果。
+     */
     void mapsEscapedPointersScalarsAndScalarArray() throws Exception {
         String schema = """
                 {"type":"object","properties":{
@@ -92,6 +104,9 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code buildsNestedBodyAndDoesNotShareMutableJsonNodes} 所描述的测试场景。
+     */
     void buildsNestedBodyAndDoesNotShareMutableJsonNodes() throws Exception {
         String schema = """
                 {"type":"object","properties":{
@@ -118,6 +133,9 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code buildsArrayContainersForNumericBodyPointerTokens} 所描述的测试场景。
+     */
     void buildsArrayContainersForNumericBodyPointerTokens() throws Exception {
         HttpToolConfig config = config(objectSchema("name", "string"), List.of(
                 mapping("/name", HttpParameterLocation.BODY, "", "/payload/items/0/name", true, "")
@@ -130,6 +148,9 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code omitsOptionalValuesWithoutDefaults} 所描述的测试场景。
+     */
     void omitsOptionalValuesWithoutDefaults() throws Exception {
         HttpToolConfig config = config(objectSchema("optional", "string"), List.of(
                 mapping("/optional", HttpParameterLocation.QUERY, "optional", "", false, "")
@@ -144,6 +165,9 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code appliesDefaultThroughArrayIndexPointer} 所描述的测试场景。
+     */
     void appliesDefaultThroughArrayIndexPointer() throws Exception {
         String schema = """
                 {"type":"object","properties":{"items":{"type":"array","items":{
@@ -160,6 +184,9 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code appliesDefaultValidatedThroughAllOfRootDefinition} 所描述的测试场景。
+     */
     void appliesDefaultValidatedThroughAllOfRootDefinition() throws Exception {
         String schema = """
                 {"type":"object","$defs":{"positive":{"type":"integer","minimum":1}},"properties":{
@@ -176,6 +203,9 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    /**
+     * 验证 {@code ConstScalarArrayWithoutStringifyingObjects} 的映射结果。
+     */
     void mapsConstScalarArrayWithoutStringifyingObjects() throws Exception {
         String schema = """
                 {"type":"object","properties":{"tags":{"const":["a","b"]}}}
@@ -191,6 +221,9 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    /**
+     * 验证 {@code OversizedBodyArrayIndexBeforePadding} 异常场景会被正确拒绝。
+     */
     void rejectsOversizedBodyArrayIndexBeforePadding() throws Exception {
         String schema = """
                 {"type":"object","properties":{"value":{"type":"string"}}}
@@ -205,6 +238,9 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    /**
+     * 验证处理过程会保留 {@code RootOneOfValidationAfterApplyingProjectedDefault}。
+     */
     void keepsRootOneOfValidationAfterApplyingProjectedDefault() throws Exception {
         String schema = """
                 {"type":"object","oneOf":[
@@ -225,6 +261,9 @@ class HttpToolInputMapperTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code treatsNumericPointerTokenAsPropertyWhenSchemaNodeIsObject} 所描述的测试场景。
+     */
     void treatsNumericPointerTokenAsPropertyWhenSchemaNodeIsObject() throws Exception {
         String schema = """
                 {"type":"object","properties":{"container":{"type":"object","properties":{
@@ -240,11 +279,27 @@ class HttpToolInputMapperTest {
         assertThat(request.queryValues()).containsEntry("value", List.of("fallback"));
     }
 
+    /**
+     * 构造测试配置。
+     *
+     * @param schema 测试辅助方法使用的 schema 参数
+     * @param mappings 测试辅助方法使用的 mappings 参数
+     */
     private static HttpToolConfig config(String schema, List<HttpParameterMapping> mappings) {
         return new HttpToolConfig(TENANT_ID, TOOL_ID, HttpToolMethod.POST,
                 "https://api.example.test/items", schema, mappings, Map.of(), Duration.ofSeconds(5));
     }
 
+    /**
+     * 验证或支持 {@code mapping} 所描述的测试场景。
+     *
+     * @param sourcePointer 测试辅助方法使用的 sourcePointer 参数
+     * @param location 测试辅助方法使用的 location 参数
+     * @param targetName 测试辅助方法使用的 targetName 参数
+     * @param targetPointer 测试辅助方法使用的 targetPointer 参数
+     * @param required 测试辅助方法使用的 required 参数
+     * @param defaultValueJson 测试辅助方法使用的 defaultValueJson 参数
+     */
     private static HttpParameterMapping mapping(
             String sourcePointer,
             HttpParameterLocation location,
@@ -256,6 +311,12 @@ class HttpToolInputMapperTest {
         return new HttpParameterMapping(sourcePointer, location, targetName, targetPointer, required, defaultValueJson);
     }
 
+    /**
+     * 验证或支持 {@code objectSchema} 所描述的测试场景。
+     *
+     * @param property 测试辅助方法使用的 property 参数
+     * @param type 测试辅助方法使用的 type 参数
+     */
     private static String objectSchema(String property, String type) {
         return "{\"type\":\"object\",\"properties\":{\"" + property + "\":{\"type\":\"" + type + "\"}}}";
     }

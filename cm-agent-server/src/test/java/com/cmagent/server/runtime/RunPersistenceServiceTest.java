@@ -54,6 +54,9 @@ class RunPersistenceServiceTest {
     private ToolDefinition tool;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         service = new RunPersistenceService(
                 runRepository, toolCallRepository, auditAppender, new SensitiveDataRedactor(), null
@@ -67,6 +70,9 @@ class RunPersistenceServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code completionPreparationFailureClosesRunningRun} 所描述的测试场景。
+     */
     void completionPreparationFailureClosesRunningRun() {
         ToolCallRecord overflowingToolCall = new ToolCallRecord(
                 TOOL_ID, "echo", "password=secret", "", RunStatus.SUCCEEDED,
@@ -92,6 +98,9 @@ class RunPersistenceServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code readApisRedactPersistedRuntimeData} 所描述的测试场景。
+     */
     void readApisRedactPersistedRuntimeData() {
         RunRecord storedRun = new RunRecord(
                 RUN_ID, TENANT_ID, AGENT_ID, "principal", RunStatus.SUCCEEDED,

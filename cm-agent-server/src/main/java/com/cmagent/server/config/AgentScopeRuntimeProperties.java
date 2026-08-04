@@ -111,9 +111,9 @@ public class AgentScopeRuntimeProperties {
     }
 
     /**
-     * isPositive：判断当前条件是否成立。
+     * 判断方法名所描述的业务条件是否成立。
      *
-     * @param duration 参与 isPositive 处理的 duration 输入值。
+     * @param duration 待校验并换算的超时时长
      */
     private static boolean isPositive(Duration duration) {
         return duration != null && !duration.isZero() && !duration.isNegative();
@@ -121,7 +121,7 @@ public class AgentScopeRuntimeProperties {
 
     @Override
     /**
-     * toString：转换内部数据为目标表示。
+     * 返回不暴露凭据等敏感字段的安全文本摘要。
      */
     public String toString() {
         return "AgentScopeRuntimeProperties[enabled=" + enabled
@@ -183,7 +183,7 @@ public class AgentScopeRuntimeProperties {
         }
 
         /**
-         * validate：校验输入、状态或前置条件。
+         * 校验输入数据及相关业务约束。
          */
         private void validate() {
             if (tenantId == null) {
@@ -199,7 +199,7 @@ public class AgentScopeRuntimeProperties {
 
         @Override
         /**
-         * toString：转换内部数据为目标表示。
+         * 返回不暴露凭据等敏感字段的安全文本摘要。
          */
         public String toString() {
             return "CredentialProperties[tenantId=" + tenantId

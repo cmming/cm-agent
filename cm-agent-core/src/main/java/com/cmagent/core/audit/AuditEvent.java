@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * AuditEvent 的核心领域类型。
+ * 记录租户内安全或业务操作的主体、动作、资源、结果和发生时间。
  */
 public record AuditEvent(
         UUID id,

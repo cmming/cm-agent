@@ -61,15 +61,15 @@ public class ToolController {
     private final ToolDebugService toolDebugService;
     private final McpPublicationService mcpPublicationService;
     /**
-     * ToolController：转换内部数据为目标表示。
+     * 创建 {@code ToolController} 实例并保存其运行所需依赖。
      *
-     * @param permissionEvaluator 参与 ToolController 处理的 permissionEvaluator 输入值。
-     * @param auditAppender 参与 ToolController 处理的 auditAppender 输入值。
-     * @param managementCommandService 参与 ToolController 处理的 managementCommandService 输入值。
+     * @param permissionEvaluator 执行主体权限判断的组件。
+     * @param auditAppender 负责追加安全审计事件的组件。
+     * @param managementCommandService 负责当前业务流程的服务。
      * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
-     * @param toolQueryService 参与 ToolController 处理的 toolQueryService 输入值。
-     * @param toolDebugService 参与 ToolController 处理的 toolDebugService 输入值。
-     * @param mcpPublicationService 参与 ToolController 处理的 mcpPublicationService 输入值。
+     * @param toolQueryService 负责当前业务流程的服务。
+     * @param toolDebugService 负责当前业务流程的服务。
+     * @param mcpPublicationService 负责当前业务流程的服务。
      */
     public ToolController(
             PermissionEvaluator permissionEvaluator,
@@ -279,7 +279,7 @@ public class ToolController {
     }
 
     /**
-     * principal：处理该类内部的业务逻辑或辅助计算。
+     * 从 Spring Security 认证对象提取可信主体上下文。
      *
      * @param authentication Spring Security 认证信息，用于解析当前登录主体。
      */
@@ -292,11 +292,11 @@ public class ToolController {
     }
 
     /**
-     * authorize：处理该类内部的业务逻辑或辅助计算。
+     * 校验主体是否拥有目标权限，并在拒绝时记录审计事件。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
-     * @param permission 参与 authorize 处理的 permission 输入值。
-     * @param resourceType 参与 authorize 处理的 resourceType 输入值。
+     * @param permission 待校验的权限编码。
+     * @param resourceType 审计资源类型。
      * @param resourceId 目标 resource 标识，用于定位本次处理对象。
      */
     private void authorize(PrincipalRef principal, String permission, String resourceType, String resourceId) {
@@ -308,9 +308,9 @@ public class ToolController {
     }
 
     /**
-     * toSummary：转换内部数据为目标表示。
+     * 将工具查询模型转换为不含 Secret 原文的响应摘要。
      *
-     * @param summary 参与 toSummary 处理的 summary 输入值。
+     * @param summary 内部工具查询摘要。
      */
     private ToolSummaryResponse toSummary(ToolSummary summary) {
         var tool = summary.tool();
@@ -323,9 +323,9 @@ public class ToolController {
     }
 
     /**
-     * toHttpToolCreateSpec：转换内部数据为目标表示。
+     * 将 HTTP 请求 DTO 转换为服务层创建规格。
      *
-     * @param request 当前业务请求参数，承载调用方提交的数据。
+     * @param request 客户端提交的动态 HTTP 工具配置 DTO
      */
     private HttpToolCreateSpec toHttpToolCreateSpec(HttpConfigRequest request) {
         if (request == null) {
@@ -352,9 +352,9 @@ public class ToolController {
     }
 
     /**
-     * toHttpConfigResponse：转换内部数据为目标表示。
+     * 将 HTTP 配置领域对象转换为响应 DTO。
      *
-     * @param config 待处理的工具或运行时配置。
+     * @param config 待转换为响应 DTO 的动态 HTTP 工具配置
      */
     private HttpToolConfigResponse toHttpConfigResponse(com.cmagent.core.domain.HttpToolConfig config) {
         return new HttpToolConfigResponse(
@@ -364,9 +364,9 @@ public class ToolController {
     }
 
     /**
-     * canonicalJson：转换并生成规范化输出。
+     * 将 JSON 节点转换为字段顺序稳定的规范文本。
      *
-     * @param value 参与 canonicalJson 处理的 value 输入值。
+     * @param value 待检查、转换或规范化的值。
      */
     private String canonicalJson(JsonNode value) {
         try {
@@ -377,9 +377,9 @@ public class ToolController {
     }
 
     /**
-     * canonicalize：转换并生成规范化输出。
+     * 递归规范化 JSON 对象的字段顺序。
      *
-     * @param value 参与 canonicalize 处理的 value 输入值。
+     * @param value 待检查、转换或规范化的值。
      */
     private JsonNode canonicalize(JsonNode value) {
         if (value.isObject()) {
@@ -398,7 +398,7 @@ public class ToolController {
     }
 
     /**
-     * ToolCreateRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code ToolCreateRequest} 在当前流程中使用的不可变数据。
      */
     public record ToolCreateRequest(
             @NotBlank String name,
@@ -425,7 +425,7 @@ public class ToolController {
     }
 
     /**
-     * HttpConfigRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code HttpConfigRequest} 在当前流程中使用的不可变数据。
      */
     public record HttpConfigRequest(
             @NotNull HttpToolMethod method,
@@ -438,7 +438,7 @@ public class ToolController {
     }
 
     /**
-     * HttpParameterMappingRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code HttpParameterMappingRequest} 在当前流程中使用的不可变数据。
      */
     public record HttpParameterMappingRequest(
             String sourcePointer,
@@ -451,7 +451,7 @@ public class ToolController {
     }
 
     /**
-     * HttpToolConfigResponse：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code HttpToolConfigResponse} 在当前流程中使用的不可变数据。
      */
     public record HttpToolConfigResponse(
             HttpToolMethod method,
@@ -464,7 +464,7 @@ public class ToolController {
     }
 
     /**
-     * ToolSummaryResponse：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code ToolSummaryResponse} 在当前流程中使用的不可变数据。
      */
     public record ToolSummaryResponse(
             UUID id,
@@ -485,13 +485,13 @@ public class ToolController {
     }
 
     /**
-     * ToolGrantRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code ToolGrantRequest} 在当前流程中使用的不可变数据。
      */
     public record ToolGrantRequest(@NotNull UUID agentId) {
     }
 
     /**
-     * ToolDebugRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code ToolDebugRequest} 在当前流程中使用的不可变数据。
      */
     public record ToolDebugRequest(@NotNull JsonNode input, String confirmedToolName) {
     }

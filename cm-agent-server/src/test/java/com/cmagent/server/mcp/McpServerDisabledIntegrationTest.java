@@ -32,6 +32,9 @@ class McpServerDisabledIntegrationTest {
     private JwtService jwtService;
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 关闭时端点不存在并返回404() throws Exception {
         String token = jwtService.createToken(
                 UUID.fromString("00000000-0000-0000-0000-000000000829"),

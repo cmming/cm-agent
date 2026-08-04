@@ -24,11 +24,11 @@ public class GovernedToolExecutionService {
     private final DynamicHttpToolExecutor http;
     private final ToolRegistry registry;
     /**
-     * GovernedToolExecutionService：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code GovernedToolExecutionService} 实例并保存其运行所需依赖。
      *
-     * @param configs 参与 GovernedToolExecutionService 处理的 configs 集合。
-     * @param http 参与 GovernedToolExecutionService 处理的 http 输入值。
-     * @param registry 参与 GovernedToolExecutionService 处理的 registry 输入值。
+     * @param configs 动态 HTTP 工具配置仓储
+     * @param http 动态 HTTP 工具执行器
+     * @param registry 本地工具执行器注册表。
      */
     public GovernedToolExecutionService(
             HttpToolConfigRepository configs,
@@ -81,10 +81,10 @@ public class GovernedToolExecutionService {
         return prepared.execute();
     }
     /**
-     * prepare：处理该类内部的业务逻辑或辅助计算。
+     * 执行授权、可见性和运行时一致性检查，生成可执行工具上下文。
      *
      * @param tool 当前处理的工具定义。
-     * @param request 当前业务请求参数，承载调用方提交的数据。
+     * @param request 包含调用来源、租户上下文和输入 JSON 的工具执行请求
      */
     PreparedToolExecution prepare(ToolDefinition tool, ToolExecutionRequest request) {
         Objects.requireNonNull(tool, "tool 不能为空");
@@ -112,20 +112,20 @@ public class GovernedToolExecutionService {
     }
 
     /**
-     * isMatchingHttpConfiguration：判断当前条件是否成立。
+     * 判断当前 HTTP 配置是否与准备阶段快照一致。
      *
      * @param tool 当前处理的工具定义。
-     * @param config 待处理的工具或运行时配置。
+     * @param config 待核对端点一致性的动态 HTTP 工具配置
      */
     private boolean isMatchingHttpConfiguration(ToolDefinition tool, HttpToolConfig config) {
         return tool.endpoint() != null && tool.endpoint().equals(config.urlTemplate());
     }
 
     /**
-     * isSameRegistration：判断当前条件是否成立。
+     * 判断两个本地工具注册是否指向同一执行器。
      *
      * @param tool 当前处理的工具定义。
-     * @param registered 参与 isSameRegistration 处理的 registered 输入值。
+     * @param registered 注册表中与目标标识对应的工具定义
      */
     private boolean isSameRegistration(ToolDefinition tool, ToolDefinition registered) {
         return registered != null
@@ -135,7 +135,7 @@ public class GovernedToolExecutionService {
     }
 
     /**
-     * PreparedToolExecution：封装本模块的相关实现逻辑。
+     * 创建 {@code PreparedToolExecution} 实例并保存其运行所需依赖。
      */
     static final class PreparedToolExecution {
         private final Supplier<ToolExecutionResult> execution;
@@ -143,10 +143,10 @@ public class GovernedToolExecutionService {
         private final AtomicBoolean consumed;
 
         /**
-         * PreparedToolExecution：处理该类内部的业务逻辑或辅助计算。
+         * 创建 {@code PreparedToolExecution} 实例并保存其运行所需依赖。
          *
-         * @param execution 参与 PreparedToolExecution 处理的 execution 输入值。
-         * @param unavailableResult 参与 PreparedToolExecution 处理的 unavailableResult 输入值。
+     * @param execution 延迟执行已通过治理校验的工具操作
+     * @param unavailableResult 治理校验未通过时返回的安全失败结果
          */
         private PreparedToolExecution(Supplier<ToolExecutionResult> execution, ToolExecutionResult unavailableResult) {
             this.execution = execution;
@@ -154,27 +154,27 @@ public class GovernedToolExecutionService {
             this.consumed = execution == null ? null : new AtomicBoolean();
         }
         /**
-         * ready：读取并解析输入内容。
+         * 创建准备完成且可以执行的工具上下文。
          *
-         * @param execution 参与 ready 处理的 execution 输入值。
+     * @param execution 延迟执行已通过治理校验的工具操作
          */
         static PreparedToolExecution ready(Supplier<ToolExecutionResult> execution) {
             return new PreparedToolExecution(Objects.requireNonNull(execution, "execution 不能为空"), null);
         }
         /**
-         * unavailable：处理该类内部的业务逻辑或辅助计算。
+         * 创建不可执行的准备结果，供治理校验失败时安全返回。
          */
         static PreparedToolExecution unavailable() {
             return new PreparedToolExecution(null, ToolExecutionResult.failed(TOOL_UNAVAILABLE, null));
         }
         /**
-         * ready：读取并解析输入内容。
+         * 创建准备完成且可以执行的工具上下文。
          */
         boolean ready() {
             return execution != null;
         }
         /**
-         * execute：执行当前流程并返回处理结果。
+         * 执行已经完成治理校验的工具，并统一处理输出和失败。
          */
         ToolExecutionResult execute() {
             if (!ready()) {

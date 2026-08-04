@@ -56,6 +56,9 @@ class MysqlLocalExampleServiceTest {
     private MysqlLocalExampleService service;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         MysqlLocalExampleCatalog catalog = new MysqlLocalExampleCatalog(new ObjectMapper());
         InMemoryToolRegistry registry = new InMemoryToolRegistry();
@@ -78,6 +81,9 @@ class MysqlLocalExampleServiceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 首次安装写入固定定义并审计且重复安装幂等() {
         LocalToolExampleSummary installed = service.install(PRINCIPAL, "echo");
 
@@ -94,6 +100,9 @@ class MysqlLocalExampleServiceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 已删除固定示例通过受控能力原位恢复() {
         when(repository.restoreManagedLocalTool(any())).thenAnswer(invocation -> {
             saved.add(invocation.getArgument(0));
@@ -110,6 +119,9 @@ class MysqlLocalExampleServiceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 固定Id同名或定义漂移返回冲突且不覆盖() {
         ToolDefinition expected = new MysqlLocalExampleCatalog(new ObjectMapper()).find("echo").orElseThrow()
                 .persistentDefinition("admin");
@@ -124,6 +136,9 @@ class MysqlLocalExampleServiceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 非示例租户未知Key和非允许状态返回空目录或未找到() {
         assertThat(service.list(OTHER_TENANT_PRINCIPAL)).isEmpty();
         assertThatThrownBy(() -> service.install(OTHER_TENANT_PRINCIPAL, "echo"))
@@ -135,6 +150,9 @@ class MysqlLocalExampleServiceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 同名不同Id返回冲突且不覆盖用户定义() {
         saved.add(new ToolDefinition(UUID.randomUUID(), TENANT_ID, "echo", "用户工具", ToolType.LOCAL, "{}",
                 ToolRiskLevel.LOW, true, "", "admin", "admin"));

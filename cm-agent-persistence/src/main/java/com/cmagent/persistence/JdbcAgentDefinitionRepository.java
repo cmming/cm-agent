@@ -19,11 +19,19 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
+/** 使用 JDBC 持久化 Agent 定义及其关联工具 ID 集合。 */
 public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository {
     private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
+    /**
+     * 创建 Agent 定义仓储。
+     *
+     * @param jdbcClient 执行参数化 SQL 的 JDBC 客户端
+     * @param objectMapper 序列化和反序列化工具 ID 集合的 JSON 组件
+     * @param transactionTemplate 保证关联工具读改写原子性的事务模板
+     */
     public JdbcAgentDefinitionRepository(
             JdbcClient jdbcClient,
             ObjectMapper objectMapper,
@@ -35,6 +43,12 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
     }
 
     @Override
+    /**
+     * 新增或更新 Agent 定义，并将工具 ID 集合持久化为 JSON。
+     *
+     * @param agent 待保存的 Agent 定义
+     * @return 已保存的 Agent 定义
+     */
     public AgentDefinition save(AgentDefinition agent) {
         Instant now = Instant.now();
         jdbcClient.sql("""
@@ -92,6 +106,13 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
     }
 
     @Override
+    /**
+     * 在租户边界内查询指定 Agent。
+     *
+     * @param tenantId 租户标识
+     * @param agentId Agent 标识
+     * @return 匹配的 Agent 定义
+     */
     public Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId) {
         return jdbcClient.sql("""
                         SELECT
@@ -118,6 +139,12 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
     }
 
     @Override
+    /**
+     * 查询指定租户的全部 Agent 定义。
+     *
+     * @param tenantId 租户标识
+     * @return Agent 定义列表
+     */
     public List<AgentDefinition> listByTenant(UUID tenantId) {
         return jdbcClient.sql("""
                         SELECT
@@ -144,6 +171,14 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
     }
 
     @Override
+    /**
+     * 在事务中将工具 ID 加入 Agent 的关联集合。
+     *
+     * @param tenantId 租户标识
+     * @param agentId Agent 标识
+     * @param toolId 待关联的工具标识
+     * @return 更新后的 Agent 定义
+     */
     public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
         return Objects.requireNonNull(transactionTemplate.execute(
                 status -> mutateToolIds(tenantId, agentId, toolId, true)
@@ -151,12 +186,29 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
     }
 
     @Override
+    /**
+     * 在事务中从 Agent 的关联集合移除工具 ID。
+     *
+     * @param tenantId 租户标识
+     * @param agentId Agent 标识
+     * @param toolId 待解除关联的工具标识
+     * @return 更新后的 Agent 定义
+     */
     public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
         return Objects.requireNonNull(transactionTemplate.execute(
                 status -> mutateToolIds(tenantId, agentId, toolId, false)
         ), "事务未返回 Agent");
     }
 
+    /**
+     * 加锁读取 Agent 后修改工具 ID 集合，并在同一事务中写回。
+     *
+     * @param tenantId 租户标识
+     * @param agentId Agent 标识
+     * @param toolId 待增加或移除的工具标识
+     * @param add {@code true} 表示增加，{@code false} 表示移除
+     * @return 更新后的 Agent 定义
+     */
     private AgentDefinition mutateToolIds(UUID tenantId, UUID agentId, UUID toolId, boolean add) {
         AgentDefinition agent = findByTenantAndIdForUpdate(tenantId, agentId)
                 .orElseThrow(() -> new NoSuchElementException("Agent 不存在"));
@@ -203,6 +255,13 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
         return updated;
     }
 
+    /**
+     * 使用行锁读取租户内 Agent，避免并发关联操作丢失更新。
+     *
+     * @param tenantId 租户标识
+     * @param agentId Agent 标识
+     * @return 匹配并已锁定的 Agent 定义
+     */
     private Optional<AgentDefinition> findByTenantAndIdForUpdate(UUID tenantId, UUID agentId) {
         return jdbcClient.sql("""
                         SELECT
@@ -229,6 +288,14 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
                 .optional();
     }
 
+    /**
+     * 将当前结果集行及工具 ID JSON 转换为 Agent 领域对象。
+     *
+     * @param rs 已定位到当前行的查询结果
+     * @param rowNum 当前行序号，仅满足 JDBC 行映射器签名
+     * @return Agent 定义
+     * @throws SQLException 读取列值失败时抛出
+     */
     private AgentDefinition mapAgent(ResultSet rs, int rowNum) throws SQLException {
         return new AgentDefinition(
                 UUID.fromString(rs.getString("id")),
@@ -247,6 +314,12 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
         );
     }
 
+    /**
+     * 将工具 ID 列表序列化为数据库 JSON 文本。
+     *
+     * @param toolIds 工具标识列表
+     * @return JSON 文本
+     */
     private String writeToolIds(List<UUID> toolIds) {
         try {
             List<String> values = toolIds.stream().map(UUID::toString).toList();
@@ -256,6 +329,12 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
         }
     }
 
+    /**
+     * 将数据库 JSON 文本还原为工具 ID 列表。
+     *
+     * @param json 工具 ID 数组的 JSON 文本
+     * @return 工具标识列表
+     */
     private List<UUID> readToolIds(String json) {
         try {
             String[] values = objectMapper.readValue(json, String[].class);

@@ -43,6 +43,9 @@ class ServerRepositoryConfigurationTest {
     private static final UUID DEFAULT_MODEL_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
 
     @Test
+    /**
+     * 验证或支持 {@code memoryModeProvidesTenantScopedDefaultModelConfig} 所描述的测试场景。
+     */
     void memoryModeProvidesTenantScopedDefaultModelConfig() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ServerRepositoryConfiguration.class)
@@ -60,6 +63,9 @@ class ServerRepositoryConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryModeProvidesTenantScopedRuntimeRepositories} 所描述的测试场景。
+     */
     void memoryModeProvidesTenantScopedRuntimeRepositories() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ServerRepositoryConfiguration.class)
@@ -111,6 +117,9 @@ class ServerRepositoryConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryModeProvidesTenantScopedHttpToolConfigurationRepositories} 所描述的测试场景。
+     */
     void memoryModeProvidesTenantScopedHttpToolConfigurationRepositories() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ServerRepositoryConfiguration.class)
@@ -149,6 +158,9 @@ class ServerRepositoryConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryToolRepositoryKeepsTenantNameIndexConsistentAfterDelete} 所描述的测试场景。
+     */
     void memoryToolRepositoryKeepsTenantNameIndexConsistentAfterDelete() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ServerRepositoryConfiguration.class)
@@ -183,6 +195,9 @@ class ServerRepositoryConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryToolRepositoryGenericSaveCannotRestoreDeletedTool} 所描述的测试场景。
+     */
     void memoryToolRepositoryGenericSaveCannotRestoreDeletedTool() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ServerRepositoryConfiguration.class)
@@ -201,6 +216,9 @@ class ServerRepositoryConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryToolRepositoryOnlyRestoresMatchingManagedLocalTombstone} 所描述的测试场景。
+     */
     void memoryToolRepositoryOnlyRestoresMatchingManagedLocalTombstone() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ServerRepositoryConfiguration.class)
@@ -233,6 +251,9 @@ class ServerRepositoryConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryRepositoriesSupportToolUpdateGrantCleanupAndAgentToolRemoval} 所描述的测试场景。
+     */
     void memoryRepositoriesSupportToolUpdateGrantCleanupAndAgentToolRemoval() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ServerRepositoryConfiguration.class)
@@ -297,6 +318,9 @@ class ServerRepositoryConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryRunRepositoryRejectsDuplicateIdWithoutReplacingOriginal} 所描述的测试场景。
+     */
     void memoryRunRepositoryRejectsDuplicateIdWithoutReplacingOriginal() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ServerRepositoryConfiguration.class)
@@ -321,6 +345,9 @@ class ServerRepositoryConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryToolCallRepositoryValidatesRunScopeBeforeWritingBatch} 所描述的测试场景。
+     */
     void memoryToolCallRepositoryValidatesRunScopeBeforeWritingBatch() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ServerRepositoryConfiguration.class)
@@ -363,6 +390,9 @@ class ServerRepositoryConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryToolCallRepositoryValidatesToolScopeBeforeWritingBatch} 所描述的测试场景。
+     */
     void memoryToolCallRepositoryValidatesToolScopeBeforeWritingBatch() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ServerRepositoryConfiguration.class)
@@ -392,6 +422,9 @@ class ServerRepositoryConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryToolCallRepositoryRejectsDuplicateIdWithoutReplacingOriginal} 所描述的测试场景。
+     */
     void memoryToolCallRepositoryRejectsDuplicateIdWithoutReplacingOriginal() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ServerRepositoryConfiguration.class)
@@ -419,6 +452,14 @@ class ServerRepositoryConfigurationTest {
                 });
     }
 
+    /**
+     * 验证或支持 {@code toolCall} 所描述的测试场景。
+     *
+     * @param id 测试辅助方法使用的 id 参数
+     * @param tenantId 测试租户标识
+     * @param runId 测试运行标识
+     * @param createdAt 测试辅助方法使用的 createdAt 参数
+     */
     private static RunToolCall toolCall(UUID id, UUID tenantId, UUID runId, Instant createdAt) {
         return new RunToolCall(
                 id, tenantId, runId, TOOL_A, "echo", "input", "output", RunStatus.SUCCEEDED,
@@ -426,6 +467,12 @@ class ServerRepositoryConfigurationTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code toolDefinition} 所描述的测试场景。
+     *
+     * @param toolId 测试工具标识
+     * @param tenantId 测试租户标识
+     */
     private static ToolDefinition toolDefinition(UUID toolId, UUID tenantId) {
         return new ToolDefinition(
                 toolId, tenantId, "echo", "", ToolType.LOCAL, "{}", ToolRiskLevel.LOW,

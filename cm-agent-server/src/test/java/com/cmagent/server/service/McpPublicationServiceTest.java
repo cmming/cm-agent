@@ -58,12 +58,18 @@ class McpPublicationServiceTest {
     private PrincipalRef principal;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         service = new McpPublicationService(toolRepository, httpToolConfigRepository, publicationRepository, registry, auditAppender, null);
         principal = new PrincipalRef(TENANT_ID, "admin", "管理员", Set.of("tool:grant"));
     }
 
     @Test
+    /**
+     * 验证或支持 {@code publishHttpToolWithMatchingEndpointAndAudit} 所描述的测试场景。
+     */
     void publishHttpToolWithMatchingEndpointAndAudit() {
         ToolDefinition tool = httpTool(TOOL_ID, "orders_v1", "https://api.example.test/orders");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
@@ -78,6 +84,9 @@ class McpPublicationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code publishRejectsInvalidMcpNameAndDuplicateEnabledName} 所描述的测试场景。
+     */
     void publishRejectsInvalidMcpNameAndDuplicateEnabledName() {
         ToolDefinition invalid = httpTool(TOOL_ID, "invalid name", "https://api.example.test/orders");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(invalid));
@@ -100,6 +109,9 @@ class McpPublicationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code publishRejectsLocalToolWhenRegistryDefinitionDoesNotExactlyMatch} 所描述的测试场景。
+     */
     void publishRejectsLocalToolWhenRegistryDefinitionDoesNotExactlyMatch() {
         ToolDefinition stored = localTool(TOOL_ID, "local_tool");
         ToolDefinition registered = localTool(TOOL_ID, "other_name");
@@ -114,6 +126,9 @@ class McpPublicationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code auditFailureCompensatesMemoryPublicationAndUnpublicationState} 所描述的测试场景。
+     */
     void auditFailureCompensatesMemoryPublicationAndUnpublicationState() {
         ToolDefinition tool = httpTool(TOOL_ID, "orders_v1", "https://api.example.test/orders");
         McpToolPublication old = new McpToolPublication(TENANT_ID, TOOL_ID, false, "old-admin");
@@ -135,6 +150,9 @@ class McpPublicationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code unpublishIsIdempotentAndAudited} 所描述的测试场景。
+     */
     void unpublishIsIdempotentAndAudited() {
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(httpTool(TOOL_ID, "orders_v1", "https://api.example.test/orders")));
         when(publicationRepository.findByTenantAndToolId(TENANT_ID, TOOL_ID)).thenReturn(Optional.empty());
@@ -145,16 +163,34 @@ class McpPublicationServiceTest {
         verify(auditAppender).append(TENANT_ID, "admin", "MCP_TOOL_UNPUBLISHED", "TOOL", TOOL_ID.toString(), "SUCCEEDED", "MCP 工具已取消发布");
     }
 
+    /**
+     * 验证或支持 {@code httpTool} 所描述的测试场景。
+     *
+     * @param id 测试辅助方法使用的 id 参数
+     * @param name 测试对象名称
+     * @param endpoint 测试辅助方法使用的 endpoint 参数
+     */
     private static ToolDefinition httpTool(UUID id, String name, String endpoint) {
         return new ToolDefinition(id, TENANT_ID, name, "HTTP 工具", ToolType.HTTP, "{}", ToolRiskLevel.LOW,
                 true, endpoint, "admin", "admin");
     }
 
+    /**
+     * 验证或支持 {@code localTool} 所描述的测试场景。
+     *
+     * @param id 测试辅助方法使用的 id 参数
+     * @param name 测试对象名称
+     */
     private static ToolDefinition localTool(UUID id, String name) {
         return new ToolDefinition(id, TENANT_ID, name, "本地工具", ToolType.LOCAL, "{}", ToolRiskLevel.LOW,
                 true, "", "admin", "admin");
     }
 
+    /**
+     * 构造测试配置。
+     *
+     * @param tool 测试工具定义
+     */
     private static HttpToolConfig config(ToolDefinition tool) {
         return new HttpToolConfig(TENANT_ID, tool.id(), HttpToolMethod.POST, tool.endpoint(), "{}", List.of(), java.util.Map.of(), Duration.ofSeconds(1));
     }

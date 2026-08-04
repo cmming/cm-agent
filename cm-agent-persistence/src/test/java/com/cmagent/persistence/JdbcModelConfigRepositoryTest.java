@@ -30,6 +30,9 @@ class JdbcModelConfigRepositoryTest {
     private JdbcModelConfigRepository repository;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         DataSource dataSource = new DriverManagerDataSource(
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
@@ -41,6 +44,9 @@ class JdbcModelConfigRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证查询能够找到 {@code OnlyModelConfigOwnedByTenant}。
+     */
     void findsOnlyModelConfigOwnedByTenant() {
         ModelConfig own = repository.findByTenantAndId(TENANT_A, MODEL_A).orElseThrow();
 
@@ -49,6 +55,11 @@ class JdbcModelConfigRepositoryTest {
         assertThat(repository.findByTenantAndId(TENANT_B, MODEL_A)).isEmpty();
     }
 
+    /**
+     * 验证或支持 {@code seedData} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private static void seedData(DataSource dataSource) {
         JdbcClient jdbc = JdbcClient.create(dataSource);
         Timestamp now = Timestamp.from(Instant.parse("2026-07-16T00:00:00Z"));
@@ -69,6 +80,14 @@ class JdbcModelConfigRepositoryTest {
                 .update();
     }
 
+    /**
+     * 验证或支持 {@code insertTenant} 所描述的测试场景。
+     *
+     * @param jdbc 测试辅助方法使用的 jdbc 参数
+     * @param id 测试辅助方法使用的 id 参数
+     * @param code 测试辅助方法使用的 code 参数
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertTenant(JdbcClient jdbc, UUID id, String code, Timestamp now) {
         jdbc.sql("""
                         INSERT INTO tenants (id, code, name, enabled, created_at)

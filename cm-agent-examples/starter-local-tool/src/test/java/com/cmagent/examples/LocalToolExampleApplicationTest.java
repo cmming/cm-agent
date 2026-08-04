@@ -24,6 +24,9 @@ class LocalToolExampleApplicationTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
+    /**
+     * 验证或支持 {@code shouldRegisterEchoAndAddTools} 所描述的测试场景。
+     */
     void shouldRegisterEchoAndAddTools() throws Exception {
         ToolDefinition echo = registry.find(ECHO_TOOL_ID).orElseThrow();
         ToolDefinition add = registry.find(ADD_TOOL_ID).orElseThrow();

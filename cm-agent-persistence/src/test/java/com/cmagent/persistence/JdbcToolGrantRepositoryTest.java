@@ -39,6 +39,9 @@ class JdbcToolGrantRepositoryTest {
     private JdbcToolGrantRepository repository;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         DataSource dataSource = new DriverManagerDataSource(
                 postgres.getJdbcUrl(),
@@ -52,6 +55,9 @@ class JdbcToolGrantRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code saveIsIdempotentAndListsByTenantAndAgent} 所描述的业务行为。
+     */
     void saveIsIdempotentAndListsByTenantAndAgent() {
         ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true);
 
@@ -64,6 +70,9 @@ class JdbcToolGrantRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code deleteRemovesOnlyMatchingAgentToolGrant} 所描述的业务行为。
+     */
     void deleteRemovesOnlyMatchingAgentToolGrant() {
         UUID otherAgentId = UUID.fromString("10000000-0000-0000-0000-000000000002");
         ToolGrant selected = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true);
@@ -78,6 +87,9 @@ class JdbcToolGrantRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code deleteByTenantAndToolIdRemovesAllGrantsForTool} 所描述的业务行为。
+     */
     void deleteByTenantAndToolIdRemovesAllGrantsForTool() {
         UUID otherAgentId = UUID.fromString("10000000-0000-0000-0000-000000000003");
         UUID otherToolId = UUID.fromString("20000000-0000-0000-0000-000000000002");
@@ -96,6 +108,9 @@ class JdbcToolGrantRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code deleteWithWrongTenantLeavesGrantUnchanged} 所描述的业务行为。
+     */
     void deleteWithWrongTenantLeavesGrantUnchanged() {
         ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true);
         repository.save(grant);
@@ -106,6 +121,9 @@ class JdbcToolGrantRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code deleteByTenantAndToolIdWithWrongTenantLeavesGrantsUnchanged} 所描述的业务行为。
+     */
     void deleteByTenantAndToolIdWithWrongTenantLeavesGrantsUnchanged() {
         ToolGrant grant = new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, true);
         repository.save(grant);
@@ -115,6 +133,11 @@ class JdbcToolGrantRepositoryTest {
         assertThat(repository.listByTenantAgentAndTool(TENANT_ID, AGENT_ID, TOOL_ID)).containsExactly(grant);
     }
 
+    /**
+     * 验证 {@code seedData} 所描述的业务行为。
+     *
+     * @param dataSource 测试数据源
+     */
     private static void seedData(DataSource dataSource) {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
         Timestamp now = Timestamp.from(Instant.parse("2026-06-26T00:00:00Z"));
@@ -208,6 +231,11 @@ class JdbcToolGrantRepositoryTest {
         ));
     }
 
+    /**
+     * 验证 {@code newAgentRepository} 所描述的业务行为。
+     *
+     * @param dataSource 测试数据源
+     */
     private static JdbcAgentDefinitionRepository newAgentRepository(DataSource dataSource) {
         return new JdbcAgentDefinitionRepository(
                 JdbcClient.create(dataSource),

@@ -112,7 +112,12 @@ public class JdbcPersistenceConfiguration {
     }
 
     /**
-     * @param cmAgentJdbcClient JDBC 客户端 @return Agent 定义 Repository
+     * 创建带 JSON 工具关联映射和事务支持的 Agent 定义 Repository。
+     *
+     * @param cmAgentJdbcClient JDBC 客户端
+     * @param objectMapper JSON 映射器
+     * @param cmAgentTransactionTemplate 事务模板
+     * @return Agent 定义 Repository
      */
     @Bean
     AgentDefinitionRepository jdbcAgentDefinitionRepository(
@@ -228,16 +233,8 @@ public class JdbcPersistenceConfiguration {
     ApplicationRunner defaultTenantDataInitializer(JdbcClient cmAgentJdbcClient, Flyway cmAgentFlyway) {
         return args -> {
             Timestamp now = Timestamp.from(Instant.now());
+            // 初始化固定示例租户；NOT EXISTS 使重复启动保持幂等。
             cmAgentJdbcClient.sql("""
-                            /**
-                             * tenants：处理该类内部的业务逻辑或辅助计算。
-                             *
-                             * @param id 目标资源标识。
-                             * @param code 参与 tenants 处理的 code 输入值。
-                             * @param name 目标对象的名称。
-                             * @param enabled 是否启用目标能力的开关值。
-                             * @param created_at 参与 tenants 处理的 created_at 输入值。
-                             */
                             INSERT INTO tenants (id, code, name, enabled, created_at)
                             SELECT :id, :code, :name, true, :createdAt
                             WHERE NOT EXISTS (SELECT 1 FROM tenants WHERE id = :id)
@@ -247,20 +244,8 @@ public class JdbcPersistenceConfiguration {
                     .param("name", "默认租户")
                     .param("createdAt", now)
                     .update();
+            // 模型元数据不包含真实凭据，仅为本地 fake runtime 提供可引用的默认配置。
             cmAgentJdbcClient.sql("""
-                            /**
-                             * model_configs：处理该类内部的业务逻辑或辅助计算。
-                             *
-                             * @param id 目标资源标识。
-                             * @param tenant_id 参与 model_configs 处理的 tenant_id 输入值。
-                             * @param provider_type 参与 model_configs 处理的 provider_type 输入值。
-                             * @param display_name 参与 model_configs 处理的 display_name 输入值。
-                             * @param base_url 参与 model_configs 处理的 base_url 输入值。
-                             * @param model_name 参与 model_configs 处理的 model_name 输入值。
-                             * @param encrypted_api_key 参与 model_configs 处理的 encrypted_api_key 输入值。
-                             * @param enabled 是否启用目标能力的开关值。
-                             * @param created_at 参与 model_configs 处理的 created_at 输入值。
-                             */
                             INSERT INTO model_configs (
                                 id,
                                 tenant_id,

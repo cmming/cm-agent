@@ -18,6 +18,11 @@ record AgentScopeExecutionResult(
 
     /**
      * 校验执行结果并复制工具调用记录，确保结果不可变。
+      *
+      * @param status 目标运行状态
+      * @param output 模型或工具输出
+      * @param toolCalls 本次运行产生的工具调用记录
+      * @param errorMessage 已控制敏感信息的错误说明
      */
     AgentScopeExecutionResult {
         Objects.requireNonNull(status, "status 不能为空");
@@ -32,6 +37,9 @@ record AgentScopeExecutionResult(
 
     /**
      * 创建成功结果。
+      *
+      * @param output 模型或工具输出
+      * @param toolCalls 本次运行产生的工具调用记录
      */
     static AgentScopeExecutionResult succeeded(String output, List<ToolCallRecord> toolCalls) {
         return new AgentScopeExecutionResult(RunStatus.SUCCEEDED, output, toolCalls, "");
@@ -39,6 +47,9 @@ record AgentScopeExecutionResult(
 
     /**
      * 创建失败结果。
+      *
+      * @param errorMessage 已控制敏感信息的错误说明
+      * @param toolCalls 本次运行产生的工具调用记录
      */
     static AgentScopeExecutionResult failed(String errorMessage, List<ToolCallRecord> toolCalls) {
         return new AgentScopeExecutionResult(RunStatus.FAILED, "", toolCalls, errorMessage);
@@ -46,6 +57,9 @@ record AgentScopeExecutionResult(
 
     /**
      * 创建无输出的拒绝结果。
+      *
+      * @param errorMessage 已控制敏感信息的错误说明
+      * @param toolCalls 本次运行产生的工具调用记录
      */
     static AgentScopeExecutionResult denied(String errorMessage, List<ToolCallRecord> toolCalls) {
         return denied("", errorMessage, toolCalls);
@@ -53,6 +67,10 @@ record AgentScopeExecutionResult(
 
     /**
      * 创建可携带部分输出的拒绝结果。
+      *
+      * @param output 模型或工具输出
+      * @param errorMessage 已控制敏感信息的错误说明
+      * @param toolCalls 本次运行产生的工具调用记录
      */
     static AgentScopeExecutionResult denied(
             String output,

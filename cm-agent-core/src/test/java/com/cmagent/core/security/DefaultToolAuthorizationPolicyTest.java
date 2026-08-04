@@ -20,6 +20,9 @@ class DefaultToolAuthorizationPolicyTest {
     private static final UUID TOOL_ID = UUID.fromString("00000000-0000-0000-0000-000000000101");
 
     @Test
+    /**
+     * 验证或支持 {@code allowEnabledGrantedToolInSameTenant} 所描述的测试场景。
+     */
     void allowEnabledGrantedToolInSameTenant() {
         ToolDefinition tool = new ToolDefinition(
                 TOOL_ID,
@@ -49,6 +52,9 @@ class DefaultToolAuthorizationPolicyTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code denyWhenToolGrantIsMissing} 所描述的测试场景。
+     */
     void denyWhenToolGrantIsMissing() {
         ToolDefinition tool = new ToolDefinition(
                 TOOL_ID,
@@ -77,6 +83,9 @@ class DefaultToolAuthorizationPolicyTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code denyWhenToolBelongsToAnotherTenant} 所描述的测试场景。
+     */
     void denyWhenToolBelongsToAnotherTenant() {
         ToolDefinition tool = new ToolDefinition(
                 TOOL_ID,
@@ -106,6 +115,9 @@ class DefaultToolAuthorizationPolicyTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code denyWhenToolIsDisabled} 所描述的测试场景。
+     */
     void denyWhenToolIsDisabled() {
         ToolDefinition tool = new ToolDefinition(
                 TOOL_ID,
@@ -135,6 +147,9 @@ class DefaultToolAuthorizationPolicyTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code denyWhenMatchingGrantIsNotGranted} 所描述的测试场景。
+     */
     void denyWhenMatchingGrantIsNotGranted() {
         ToolDefinition tool = new ToolDefinition(
                 TOOL_ID,
@@ -164,6 +179,9 @@ class DefaultToolAuthorizationPolicyTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code allowGrantWithRoleCodeMetadataForCurrentAgent} 所描述的测试场景。
+     */
     void allowGrantWithRoleCodeMetadataForCurrentAgent() {
         ToolDefinition tool = new ToolDefinition(
                 TOOL_ID,

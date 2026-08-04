@@ -17,11 +17,23 @@ public class ToolRuntimeReadiness {
     private final ToolRegistry toolRegistry;
     private final HttpToolProperties httpToolProperties;
 
+    /**
+     * 校验并构造 {@code ToolRuntimeReadiness} 实例。
+     *
+     * @param toolRegistry 本地工具定义与执行器注册表
+     * @param httpToolProperties HTTP 工具的超时、响应限制和网络安全配置
+     */
     public ToolRuntimeReadiness(ToolRegistry toolRegistry, HttpToolProperties httpToolProperties) {
         this.toolRegistry = Objects.requireNonNull(toolRegistry, "toolRegistry 不能为空");
         this.httpToolProperties = Objects.requireNonNull(httpToolProperties, "httpToolProperties 不能为空");
     }
 
+    /**
+     * 判断工具运行时当前是否已准备就绪。
+     *
+     * @param tool 当前处理的工具定义
+     * @param httpConfig 可选的 HTTP 工具配置。
+     */
     public boolean isReady(ToolDefinition tool, @Nullable HttpToolConfig httpConfig) {
         if (tool == null || !tool.enabled()) {
             return false;

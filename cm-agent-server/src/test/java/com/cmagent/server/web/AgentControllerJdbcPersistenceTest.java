@@ -42,6 +42,11 @@ class AgentControllerJdbcPersistenceTest {
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @DynamicPropertySource
+    /**
+     * 验证或支持 {@code jdbcProperties} 所描述的测试场景。
+     *
+     * @param registry 本地工具执行器注册表
+     */
     static void jdbcProperties(DynamicPropertyRegistry registry) {
         registry.add("cm-agent.persistence.mode", () -> "jdbc");
         registry.add("cm-agent.persistence.jdbc.url", postgres::getJdbcUrl);
@@ -60,6 +65,9 @@ class AgentControllerJdbcPersistenceTest {
     private AgentDefinitionRepository agentRepository;
 
     @Test
+    /**
+     * 验证或支持 {@code createAgentPersistsToJdbcAndCanBeListed} 所描述的测试场景。
+     */
     void createAgentPersistsToJdbcAndCanBeListed() throws Exception {
         String token = token(TENANT_ID, "admin");
 
@@ -85,6 +93,9 @@ class AgentControllerJdbcPersistenceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code getAgentRejectsCrossTenantRead} 所描述的测试场景。
+     */
     void getAgentRejectsCrossTenantRead() throws Exception {
         String token = token(TENANT_ID, "admin");
         String otherTenantToken = token(OTHER_TENANT_ID, "other-admin");
@@ -107,6 +118,12 @@ class AgentControllerJdbcPersistenceTest {
                 .andExpect(status().isNotFound());
     }
 
+    /**
+     * 验证或支持 {@code token} 所描述的测试场景。
+     *
+     * @param tenantId 测试租户标识
+     * @param principalId 测试辅助方法使用的 principalId 参数
+     */
     private String token(UUID tenantId, String principalId) {
         return jwtService.createToken(tenantId, principalId, "系统管理员", List.of(
                 "agent:run",
@@ -119,6 +136,11 @@ class AgentControllerJdbcPersistenceTest {
         ));
     }
 
+    /**
+     * 验证或支持 {@code bearer} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     */
     private static String bearer(String token) {
         return "Bearer " + token;
     }

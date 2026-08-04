@@ -14,12 +14,12 @@ final class McpToolPublicationRules {
     private static final Pattern MCP_TOOL_NAME = Pattern.compile("^[A-Za-z0-9_-]{1,128}$");
 
     /**
-     * McpToolPublicationRules：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code McpToolPublicationRules} 实例并保存其运行所需依赖。
      */
     private McpToolPublicationRules() {
     }
     /**
-     * validateName：校验输入、状态或前置条件。
+     * 校验输入数据及相关业务约束。
      *
      * @param name 目标对象的名称。
      */
@@ -29,10 +29,10 @@ final class McpToolPublicationRules {
         }
     }
     /**
-     * validateHttp：校验输入、状态或前置条件。
+     * 校验输入数据及相关业务约束。
      *
      * @param tool 当前处理的工具定义。
-     * @param config 待处理的工具或运行时配置。
+     * @param config 待检查发布兼容性的动态 HTTP 工具配置
      */
     static void validateHttp(ToolDefinition tool, HttpToolConfig config) {
         validateName(tool.name());

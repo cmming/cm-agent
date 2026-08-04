@@ -46,6 +46,9 @@ class JdbcToolCallRepositoryTest {
     private JdbcToolCallRepository repository;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         DataSource dataSource = new DriverManagerDataSource(
                 postgres.getJdbcUrl(),
@@ -62,6 +65,9 @@ class JdbcToolCallRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code toolCallReadRequiresSameTenantAndRun} 所描述的业务行为。
+     */
     void toolCallReadRequiresSameTenantAndRun() {
         RunToolCall first = toolCall(UUID.fromString("50000000-0000-0000-0000-000000000010"), TENANT_A, RUN_A, TOOL_A,
                 Instant.parse("2026-07-14T01:00:00Z"));
@@ -76,6 +82,9 @@ class JdbcToolCallRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code mixedTenantToolCallBatchIsRejectedBeforeJdbcWrite} 所描述的业务行为。
+     */
     void mixedTenantToolCallBatchIsRejectedBeforeJdbcWrite() {
         RunToolCall callA = toolCall(UUID.fromString("50000000-0000-0000-0000-000000000030"), TENANT_A, RUN_A, TOOL_A,
                 Instant.parse("2026-07-14T02:00:00Z"));
@@ -89,6 +98,9 @@ class JdbcToolCallRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code repositoryTenantMismatchIsRejectedBeforeAnyJdbcWrite} 所描述的业务行为。
+     */
     void repositoryTenantMismatchIsRejectedBeforeAnyJdbcWrite() {
         RunToolCall call = toolCall(UUID.fromString("50000000-0000-0000-0000-000000000050"), TENANT_A, RUN_A, TOOL_A,
                 Instant.parse("2026-07-14T03:00:00Z"));
@@ -100,6 +112,9 @@ class JdbcToolCallRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code saveAllRollsBackEarlierToolCallsWhenLaterToolCallViolatesForeignKey} 所描述的业务行为。
+     */
     void saveAllRollsBackEarlierToolCallsWhenLaterToolCallViolatesForeignKey() {
         RunToolCall control = toolCall(UUID.fromString("50000000-0000-0000-0000-000000000055"), TENANT_A, CONTROL_RUN, TOOL_A,
                 Instant.parse("2026-07-14T03:30:00Z"));
@@ -124,6 +139,11 @@ class JdbcToolCallRepositoryTest {
         assertThat(repository.listByTenantAndRun(TENANT_A, RUN_A)).isEmpty();
     }
 
+    /**
+     * 验证 {@code findPostgresqlException} 所描述的业务行为。
+     *
+     * @param throwable 测试辅助方法使用的 throwable 参数
+     */
     private static PSQLException findPostgresqlException(Throwable throwable) {
         Throwable current = throwable;
         while (current != null) {
@@ -135,11 +155,25 @@ class JdbcToolCallRepositoryTest {
         throw new AssertionError("缺少 PostgreSQL 外键异常", throwable);
     }
 
+    /**
+     * 验证 {@code toolCall} 所描述的业务行为。
+     *
+     * @param id 测试辅助方法使用的 id 参数
+     * @param tenantId 测试租户标识
+     * @param runId 测试运行标识
+     * @param toolId 测试工具标识
+     * @param createdAt 测试辅助方法使用的 createdAt 参数
+     */
     private static RunToolCall toolCall(UUID id, UUID tenantId, UUID runId, UUID toolId, Instant createdAt) {
         return new RunToolCall(id, tenantId, runId, toolId, "echo", "input", "output", RunStatus.SUCCEEDED,
                 true, 12L, "", createdAt);
     }
 
+    /**
+     * 验证 {@code seedData} 所描述的业务行为。
+     *
+     * @param dataSource 测试数据源
+     */
     private static void seedData(DataSource dataSource) {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
         Timestamp now = Timestamp.from(Instant.parse("2026-07-14T00:00:00Z"));
@@ -156,6 +190,14 @@ class JdbcToolCallRepositoryTest {
         insertTool(jdbcClient, TOOL_B, TENANT_B, now);
     }
 
+    /**
+     * 验证 {@code insertTenant} 所描述的业务行为。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     * @param tenantId 测试租户标识
+     * @param code 测试辅助方法使用的 code 参数
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertTenant(JdbcClient jdbcClient, UUID tenantId, String code, Timestamp now) {
         jdbcClient.sql("INSERT INTO tenants (id, code, name, enabled, created_at) VALUES (:id, :code, :name, true, :createdAt)")
                 .param("id", tenantId.toString())
@@ -165,6 +207,14 @@ class JdbcToolCallRepositoryTest {
                 .update();
     }
 
+    /**
+     * 验证 {@code insertRun} 所描述的业务行为。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     * @param runId 测试运行标识
+     * @param tenantId 测试租户标识
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertRun(JdbcClient jdbcClient, UUID runId, UUID tenantId, Timestamp now) {
         jdbcClient.sql("""
                         INSERT INTO runs (
@@ -182,6 +232,14 @@ class JdbcToolCallRepositoryTest {
                 .update();
     }
 
+    /**
+     * 验证 {@code insertModelConfig} 所描述的业务行为。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     * @param modelId 测试辅助方法使用的 modelId 参数
+     * @param tenantId 测试租户标识
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertModelConfig(JdbcClient jdbcClient, UUID modelId, UUID tenantId, Timestamp now) {
         jdbcClient.sql("""
                         INSERT INTO model_configs (
@@ -198,6 +256,15 @@ class JdbcToolCallRepositoryTest {
                 .update();
     }
 
+    /**
+     * 验证 {@code insertAgent} 所描述的业务行为。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     * @param agentId 测试 Agent 标识
+     * @param tenantId 测试租户标识
+     * @param modelId 测试辅助方法使用的 modelId 参数
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertAgent(JdbcClient jdbcClient, UUID agentId, UUID tenantId, UUID modelId, Timestamp now) {
         jdbcClient.sql("""
                         INSERT INTO agent_definitions (
@@ -216,6 +283,14 @@ class JdbcToolCallRepositoryTest {
                 .update();
     }
 
+    /**
+     * 验证 {@code insertTool} 所描述的业务行为。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     * @param toolId 测试工具标识
+     * @param tenantId 测试租户标识
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertTool(JdbcClient jdbcClient, UUID toolId, UUID tenantId, Timestamp now) {
         jdbcClient.sql("""
                         INSERT INTO tool_definitions (

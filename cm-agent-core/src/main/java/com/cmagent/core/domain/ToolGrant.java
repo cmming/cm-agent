@@ -3,7 +3,7 @@ package com.cmagent.core.domain;
 import java.util.UUID;
 
 /**
- * ToolGrant 的核心领域类型。
+ * 描述某个 Agent 对工具的租户内授权关系。
  */
 public record ToolGrant(
         UUID tenantId,

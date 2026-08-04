@@ -15,7 +15,7 @@ class ConsoleController {
 
     @GetMapping(value = "/", produces = MediaType.TEXT_HTML_VALUE)
     /**
-     * index：处理该类内部的业务逻辑或辅助计算。
+     * 返回控制台入口 HTML 资源。
      */
     ResponseEntity<Resource> index() {
         return ResponseEntity.ok()

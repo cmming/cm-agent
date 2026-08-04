@@ -15,14 +15,26 @@ import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
 
+/** 使用 JDBC 持久化工具定义，并维护删除墓碑和调用历史约束。 */
 public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
     private final JdbcClient jdbcClient;
 
+    /**
+     * 创建工具定义仓储。
+     *
+     * @param jdbcClient 执行参数化 SQL 的 JDBC 客户端
+     */
     public JdbcToolDefinitionRepository(JdbcClient jdbcClient) {
         this.jdbcClient = jdbcClient;
     }
 
     @Override
+    /**
+     * 新增工具定义；名称唯一性由租户级数据库约束保证。
+     *
+     * @param tool 待保存的工具定义
+     * @return 已保存的工具定义
+     */
     public ToolDefinition save(ToolDefinition tool) {
         Instant now = Instant.now();
         jdbcClient.sql("""
@@ -74,6 +86,12 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
     }
 
     @Override
+    /**
+     * 恢复由平台管理的 LOCAL 工具定义，仅在目标墓碑可安全复用时更新。
+     *
+     * @param tool 待恢复的 LOCAL 工具定义
+     * @return 是否成功恢复一条记录
+     */
     public boolean restoreManagedLocalTool(ToolDefinition tool) {
         if (tool.type() != ToolType.LOCAL) {
             throw new IllegalArgumentException("只能恢复受管 LOCAL 工具");
@@ -111,6 +129,12 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
     }
 
     @Override
+    /**
+     * 更新租户内仍可见的工具定义，不允许借更新复活已删除工具。
+     *
+     * @param tool 包含最新字段的工具定义
+     * @return 已更新的工具定义
+     */
     public ToolDefinition update(ToolDefinition tool) {
         int updated = jdbcClient.sql("""
                         UPDATE tool_definitions
@@ -142,6 +166,13 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
     }
 
     @Override
+    /**
+     * 查询租户内仍可见的指定工具。
+     *
+     * @param tenantId 租户标识
+     * @param toolId 工具标识
+     * @return 匹配的工具定义
+     */
     public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
         return jdbcClient.sql("""
                         SELECT
@@ -166,6 +197,13 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
     }
 
     @Override
+    /**
+     * 加行锁读取租户内工具，供需要串行化的更新或删除事务使用。
+     *
+     * @param tenantId 租户标识
+     * @param toolId 工具标识
+     * @return 匹配并已锁定的工具定义
+     */
     public Optional<ToolDefinition> findByTenantAndIdForUpdate(UUID tenantId, UUID toolId) {
         return jdbcClient.sql("""
                         SELECT
@@ -191,6 +229,12 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
     }
 
     @Override
+    /**
+     * 查询租户内全部未删除工具。
+     *
+     * @param tenantId 租户标识
+     * @return 可见工具列表
+     */
     public List<ToolDefinition> listByTenant(UUID tenantId) {
         return jdbcClient.sql("""
                         SELECT
@@ -215,6 +259,13 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
     }
 
     @Override
+    /**
+     * 判断租户内指定工具是否已经产生调用历史。
+     *
+     * @param tenantId 租户标识
+     * @param toolId 工具标识
+     * @return 存在调用记录时返回 {@code true}
+     */
     public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
         return jdbcClient.sql("""
                         SELECT 1
@@ -230,6 +281,12 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
     }
 
     @Override
+    /**
+     * 将工具标记为不可见，并保留数据库记录以承接并发落库的调用历史。
+     *
+     * @param tenantId 租户标识
+     * @param toolId 工具标识
+     */
     public void delete(UUID tenantId, UUID toolId) {
         Instant deletedAt = Instant.now();
         jdbcClient.sql("""
@@ -248,6 +305,14 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
                 .update();
     }
 
+    /**
+     * 将当前结果集行转换为工具定义领域对象。
+     *
+     * @param rs 已定位到当前行的查询结果
+     * @param rowNum 当前行序号，仅满足 JDBC 行映射器签名
+     * @return 工具定义领域对象
+     * @throws SQLException 读取列值失败时抛出
+     */
     private ToolDefinition mapTool(ResultSet rs, int rowNum) throws SQLException {
         return new ToolDefinition(
                 UUID.fromString(rs.getString("id")),

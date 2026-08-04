@@ -74,6 +74,9 @@ class GovernedToolInvocationServiceTest {
     private ToolGrant grant;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         service = new GovernedToolInvocationService(
                 toolRepository, grantRepository, policy, executionService, auditAppender, redactor
@@ -84,6 +87,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code deniedInvocationNeverExecutesToolAndWritesAudit} 所描述的测试场景。
+     */
     void deniedInvocationNeverExecutesToolAndWritesAudit() {
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
         when(grantRepository.listByTenantAndAgent(TENANT_ID, AGENT_ID)).thenReturn(List.of());
@@ -100,6 +106,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code missingDatabaseToolNeverContinuesAuthorizationOrExecution} 所描述的测试场景。
+     */
     void missingDatabaseToolNeverContinuesAuthorizationOrExecution() {
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.empty());
 
@@ -110,6 +119,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code crossTenantDatabaseToolNeverContinuesAuthorizationOrExecution} 所描述的测试场景。
+     */
     void crossTenantDatabaseToolNeverContinuesAuthorizationOrExecution() {
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID))
                 .thenReturn(Optional.of(tool(OTHER_TENANT_ID, "echo")));
@@ -121,6 +133,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code disabledDatabaseToolNeverContinuesAuthorizationOrExecution} 所描述的测试场景。
+     */
     void disabledDatabaseToolNeverContinuesAuthorizationOrExecution() {
         ToolDefinition disabledTool = new ToolDefinition(
                 TOOL_ID, TENANT_ID, "echo", "回显工具", ToolType.LOCAL, "{}", ToolRiskLevel.LOW,
@@ -135,6 +150,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code requestedNameMismatchNeverContinuesAuthorizationOrExecution} 所描述的测试场景。
+     */
     void requestedNameMismatchNeverContinuesAuthorizationOrExecution() {
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
 
@@ -145,6 +163,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code databaseDefinitionFailureAuditExceptionIsRethrownUnchangedWithoutAuthorizationOrExecution} 所描述的测试场景。
+     */
     void databaseDefinitionFailureAuditExceptionIsRethrownUnchangedWithoutAuthorizationOrExecution() {
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.empty());
         AuditPersistenceException failure = new AuditPersistenceException(
@@ -160,6 +181,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code unavailablePreparationWritesFailureAuditWithoutStartedOrExecution} 所描述的测试场景。
+     */
     void unavailablePreparationWritesFailureAuditWithoutStartedOrExecution() {
         arrangeAuthorizedTool();
         when(executionService.prepare(eq(tool), any())).thenReturn(unavailablePreparation());
@@ -177,6 +201,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code preparationRepositoryFailurePropagatesWithoutStartingOrConvertingToToolFailure} 所描述的测试场景。
+     */
     void preparationRepositoryFailurePropagatesWithoutStartingOrConvertingToToolFailure() {
         arrangeAuthorizedTool();
         DataAccessResourceFailureException failure = new DataAccessResourceFailureException("数据库连接失败");
@@ -190,6 +217,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code eachInvocationReloadsAuthorizationAndRevocationPreventsSecondExecution} 所描述的测试场景。
+     */
     void eachInvocationReloadsAuthorizationAndRevocationPreventsSecondExecution() {
         List<ToolGrant> granted = List.of(grant);
         List<ToolGrant> revoked = List.of(new ToolGrant(TENANT_ID, TOOL_ID, AGENT_ID, null, false));
@@ -216,6 +246,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code successfulInvocationUsesCompleteContextAndWritesAuditsInGovernedOrder} 所描述的测试场景。
+     */
     void successfulInvocationUsesCompleteContextAndWritesAuditsInGovernedOrder() {
         arrangeAllowedTool();
         AtomicInteger executions = new AtomicInteger();
@@ -245,6 +278,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code executorReturnedFailureWritesFixedFailureAuditAndReturnsControlledError} 所描述的测试场景。
+     */
     void executorReturnedFailureWritesFixedFailureAuditAndReturnsControlledError() {
         arrangeAllowedTool();
         when(executionService.prepare(eq(tool), any())).thenReturn(
@@ -259,6 +295,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code executorExceptionIsRedactedBeforeLoggingAndWritesFixedFailureAudit} 所描述的测试场景。
+     */
     void executorExceptionIsRedactedBeforeLoggingAndWritesFixedFailureAudit() {
         arrangeAllowedTool();
         IllegalStateException failure = new IllegalStateException("password=tool-secret");
@@ -276,6 +315,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code auditFailureBeforeInvocationPreventsSideEffect} 所描述的测试场景。
+     */
     void auditFailureBeforeInvocationPreventsSideEffect() {
         arrangeAllowedTool();
         AtomicBoolean executed = new AtomicBoolean();
@@ -295,6 +337,9 @@ class GovernedToolInvocationServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code completionAuditFailureIsRethrownUnchanged} 所描述的测试场景。
+     */
     void completionAuditFailureIsRethrownUnchanged() {
         arrangeAllowedTool();
         when(executionService.prepare(eq(tool), any())).thenReturn(prepared(new ToolExecutionResult("工具输出", true)));
@@ -308,50 +353,95 @@ class GovernedToolInvocationServiceTest {
         assertThatThrownBy(() -> service.invoke(request())).isSameAs(failure);
     }
 
+    /**
+     * 验证或支持 {@code arrangeAuthorizedTool} 所描述的测试场景。
+     */
     private void arrangeAuthorizedTool() {
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
         when(grantRepository.listByTenantAndAgent(TENANT_ID, AGENT_ID)).thenReturn(List.of(grant));
         when(policy.check(principal, AGENT_ID, tool, List.of(grant))).thenReturn(AuthorizationDecision.allow());
     }
 
+    /**
+     * 验证或支持 {@code arrangeAllowedTool} 所描述的测试场景。
+     */
     private void arrangeAllowedTool() {
         arrangeAuthorizedTool();
     }
 
+    /**
+     * 验证或支持 {@code prepared} 所描述的测试场景。
+     *
+     * @param result 待断言的处理结果
+     */
     private static GovernedToolExecutionService.PreparedToolExecution prepared(ToolExecutionResult result) {
         return prepared(() -> result);
     }
 
+    /**
+     * 验证或支持 {@code prepared} 所描述的测试场景。
+     *
+     * @param execution 测试辅助方法使用的 execution 参数
+     */
     private static GovernedToolExecutionService.PreparedToolExecution prepared(
             java.util.function.Supplier<ToolExecutionResult> execution
     ) {
         return GovernedToolExecutionService.PreparedToolExecution.ready(execution);
     }
 
+    /**
+     * 验证或支持 {@code preparedFailure} 所描述的测试场景。
+     *
+     * @param failure 测试构造的失败
+     */
     private static GovernedToolExecutionService.PreparedToolExecution preparedFailure(RuntimeException failure) {
         return prepared(() -> {
             throw failure;
         });
     }
 
+    /**
+     * 验证或支持 {@code unavailablePreparation} 所描述的测试场景。
+     */
     private static GovernedToolExecutionService.PreparedToolExecution unavailablePreparation() {
         return GovernedToolExecutionService.PreparedToolExecution.unavailable();
     }
 
+    /**
+     * 构造测试使用的运行或 HTTP 请求。
+     */
     private ToolInvocationRequest request() {
         return request("echo");
     }
 
+    /**
+     * 构造测试使用的运行或 HTTP 请求。
+     *
+     * @param toolName 测试辅助方法使用的 toolName 参数
+     */
     private ToolInvocationRequest request(String toolName) {
         return new ToolInvocationRequest(
                 TENANT_ID, AGENT_ID, principal, RUN_ID, TOOL_CALL_ID, TOOL_ID, toolName, "{\"text\":\"hello\"}"
         );
     }
 
+    /**
+     * 构造测试工具定义。
+     *
+     * @param tenantId 测试租户标识
+     * @param name 测试对象名称
+     */
     private static ToolDefinition tool(UUID tenantId, String name) {
         return tool(TOOL_ID, tenantId, name);
     }
 
+    /**
+     * 构造测试工具定义。
+     *
+     * @param toolId 测试工具标识
+     * @param tenantId 测试租户标识
+     * @param name 测试对象名称
+     */
     private static ToolDefinition tool(UUID toolId, UUID tenantId, String name) {
         return new ToolDefinition(
                 toolId, tenantId, name, "回显工具", ToolType.LOCAL, "{}", ToolRiskLevel.LOW,
@@ -359,10 +449,18 @@ class GovernedToolInvocationServiceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code assertUnavailable} 所描述的测试场景。
+     *
+     * @param result 待断言的处理结果
+     */
     private void assertUnavailable(ToolInvocationResult result) {
         assertThat(result).isEqualTo(ToolInvocationResult.failed("工具不可用"));
     }
 
+    /**
+     * 验证或支持 {@code verifyDefinitionFailureAuditWithoutAuthorizationOrExecution} 所描述的测试场景。
+     */
     private void verifyDefinitionFailureAuditWithoutAuthorizationOrExecution() {
         verify(auditAppender).append(TENANT_ID, "principal", "TOOL_CALL_FAILED",
                 "TOOL", TOOL_ID.toString(), "FAILED", "工具调用失败");

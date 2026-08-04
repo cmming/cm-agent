@@ -29,9 +29,9 @@ public class JwtSecurityConfiguration {
     }
 
     /**
-     * createKey：创建并返回新的领域对象或配置。
+     * 创建并返回流程所需对象。
      *
-     * @param secret 参与 createKey 处理的 secret 输入值。
+     * @param secret 用于构造 JWT 签名密钥的配置文本
      */
     private SecretKey createKey(String secret) {
         byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);

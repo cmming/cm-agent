@@ -35,6 +35,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JdbcPersistenceConfigurationTest {
 
     @Test
+    /**
+     * 验证或支持 {@code jdbcModeDoesNotRegisterMemoryStore} 所描述的测试场景。
+     */
     void jdbcModeDoesNotRegisterMemoryStore() {
         new ApplicationContextRunner()
                 .withUserConfiguration(ServerRepositoryConfiguration.class)
@@ -46,6 +49,9 @@ class JdbcPersistenceConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code jdbcConfigurationProvidesRuntimeRepositories} 所描述的测试场景。
+     */
     void jdbcConfigurationProvidesRuntimeRepositories() {
         JdbcClient jdbcClient = mock(JdbcClient.class);
         TransactionTemplate transactionTemplate = mock(TransactionTemplate.class);
@@ -72,6 +78,9 @@ class JdbcPersistenceConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code defaultTenantDataInitializerBindsCreatedAtAsSqlTimestamp} 所描述的测试场景。
+     */
     void defaultTenantDataInitializerBindsCreatedAtAsSqlTimestamp() throws Exception {
         JdbcClient jdbcClient = mock(JdbcClient.class);
         JdbcClient.StatementSpec tenantInsert = statementSpec();
@@ -88,6 +97,9 @@ class JdbcPersistenceConfigurationTest {
         verify(modelConfigInsert).param(eq("createdAt"), any(Timestamp.class));
     }
 
+    /**
+     * 验证或支持 {@code statementSpec} 所描述的测试场景。
+     */
     private static JdbcClient.StatementSpec statementSpec() {
         JdbcClient.StatementSpec statementSpec = mock(JdbcClient.StatementSpec.class);
         when(statementSpec.param(anyString(), any())).thenReturn(statementSpec);

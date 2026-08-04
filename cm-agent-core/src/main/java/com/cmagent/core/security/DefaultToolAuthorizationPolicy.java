@@ -8,15 +8,18 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * DefaultToolAuthorizationPolicy 的核心领域类型。
+ * 按租户归属、启用状态和 Agent 授权记录执行默认工具授权校验。
  */
 public class DefaultToolAuthorizationPolicy implements ToolAuthorizationPolicy {
 
     /**
-     * 执行 check 操作。
-     */
-    /**
-     * 定义 check 操作。
+     * 校验工具的租户归属、启用状态以及 Agent 级授权记录。
+     *
+     * @param principal 当前认证主体
+     * @param agentId 目标 Agent 标识
+     * @param tool 当前工具定义
+     * @param grants 工具授权集合
+     * @return 允许或拒绝的授权决定
      */
     @Override
     public AuthorizationDecision check(PrincipalRef principal, UUID agentId, ToolDefinition tool, List<ToolGrant> grants) {
@@ -32,7 +35,7 @@ public class DefaultToolAuthorizationPolicy implements ToolAuthorizationPolicy {
                 grant.granted()
                         && grant.tenantId().equals(principal.tenantId())
                         && grant.toolId().equals(tool.id())
-                        // The first slice authorizes tools at agent scope; roleCode is optional metadata.
+                        // 当前授权粒度为 Agent；roleCode 仅作为可选元数据，不参与本次匹配。
                         && grant.agentId().equals(agentId)
         );
 

@@ -50,16 +50,16 @@ public class ManagementCommandService {
 
     @Autowired
     /**
-     * ManagementCommandService：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code ManagementCommandService} 实例并保存其运行所需依赖。
      *
-     * @param agentRepository 参与 ManagementCommandService 处理的 agentRepository 输入值。
-     * @param toolRepository 参与 ManagementCommandService 处理的 toolRepository 输入值。
-     * @param httpToolConfigRepository 参与 ManagementCommandService 处理的 httpToolConfigRepository 输入值。
-     * @param mcpToolPublicationRepository 参与 ManagementCommandService 处理的 mcpToolPublicationRepository 输入值。
-     * @param grantRepository 参与 ManagementCommandService 处理的 grantRepository 输入值。
-     * @param auditAppender 参与 ManagementCommandService 处理的 auditAppender 输入值。
-     * @param httpToolConfigValidator 参与 ManagementCommandService 处理的 httpToolConfigValidator 输入值。
-     * @param transactionTemplate 参与 ManagementCommandService 处理的 transactionTemplate 输入值。
+     * @param agentRepository 负责访问相关领域数据的仓储。
+     * @param toolRepository 工具定义仓储。
+     * @param httpToolConfigRepository 负责访问相关领域数据的仓储。
+     * @param mcpToolPublicationRepository 负责访问相关领域数据的仓储。
+     * @param grantRepository 负责访问相关领域数据的仓储。
+     * @param auditAppender 负责追加安全审计事件的组件。
+     * @param httpToolConfigValidator 动态 HTTP 工具配置校验器
+     * @param transactionTemplate 保证多步写入原子性的事务模板。
      */
     public ManagementCommandService(
             AgentDefinitionRepository agentRepository,
@@ -169,15 +169,15 @@ public class ManagementCommandService {
     }
 
     /**
-     * prepareToolCreate：处理该类内部的业务逻辑或辅助计算。
+     * 校验创建请求并构造工具及其附属配置。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param name 目标对象的名称。
-     * @param description 参与 prepareToolCreate 处理的 description 输入值。
-     * @param type 参与 prepareToolCreate 处理的 type 输入值。
-     * @param riskLevel 参与 prepareToolCreate 处理的 riskLevel 输入值。
-     * @param httpToolCreateSpec 参与 prepareToolCreate 处理的 httpToolCreateSpec 输入值。
-     * @param mcpPublished 参与 prepareToolCreate 处理的 mcpPublished 输入值。
+     * @param description 目标对象说明。
+     * @param type 待加入或校验的 Schema 值类型。
+     * @param riskLevel 目标工具风险等级。
+     * @param httpToolCreateSpec 可选的 HTTP 工具创建规格。
+     * @param mcpPublished 是否同时发布为 MCP 工具。
      */
     private PreparedToolCreate prepareToolCreate(
             PrincipalRef principal,
@@ -234,6 +234,13 @@ public class ManagementCommandService {
         );
     }
 
+    /**
+     * 在 Agent 级锁内完成工具授权，防止并发覆盖。
+     *
+     * @param principal 当前认证主体
+     * @param toolId 目标工具标识
+     * @param agentId 目标 Agent 标识
+     */
     private ToolGrant grantToolWithLock(PrincipalRef principal, UUID toolId, UUID agentId) {
         if (transactionTemplate == null) {
             ToolDefinition tool = findTool(principal.tenantId(), toolId);
@@ -331,11 +338,25 @@ public class ManagementCommandService {
         );
     }
 
+    /**
+     * 在工具级锁内更新工具并记录审计。
+     *
+     * @param principal 当前认证主体
+     * @param toolId 目标工具标识
+     * @param spec 已校验的工具创建或更新规格。
+     */
     private ToolUpdateResult updateToolAndAudit(PrincipalRef principal, UUID toolId, ToolUpdateSpec spec) {
         PreparedToolUpdate prepared = prepareToolUpdateCommand(principal, toolId, spec, true);
         return applyToolUpdateAndAudit(principal, prepared);
     }
 
+    /**
+     * 更新工具及附属状态，并在失败时恢复原快照。
+     *
+     * @param principal 当前认证主体
+     * @param toolId 目标工具标识
+     * @param spec 已校验的工具创建或更新规格。
+     */
     private ToolUpdateResult updateToolWithCompensation(PrincipalRef principal, UUID toolId, ToolUpdateSpec spec) {
         PreparedToolUpdate prepared = prepareToolUpdateCommand(principal, toolId, spec, false);
         UUID tenantId = principal.tenantId();
@@ -353,6 +374,14 @@ public class ManagementCommandService {
         }
     }
 
+    /**
+     * 读取并校验工具更新所需的当前状态。
+     *
+     * @param principal 当前认证主体
+     * @param toolId 目标工具标识
+     * @param spec 已校验的工具创建或更新规格。
+     * @param lockForUpdate 是否使用数据库行锁读取工具。
+     */
     private PreparedToolUpdate prepareToolUpdateCommand(
             PrincipalRef principal,
             UUID toolId,
@@ -374,6 +403,12 @@ public class ManagementCommandService {
         return prepareToolUpdate(principal, existing, spec);
     }
 
+    /**
+     * 应用已准备的工具更新并追加审计。
+     *
+     * @param principal 当前认证主体
+     * @param prepared 已完成前置校验的命令上下文。
+     */
     private ToolUpdateResult applyToolUpdateAndAudit(PrincipalRef principal, PreparedToolUpdate prepared) {
         UUID tenantId = principal.tenantId();
         ToolDefinition updated;
@@ -394,6 +429,13 @@ public class ManagementCommandService {
         return new ToolUpdateResult(updated, prepared.httpToolConfig(), prepared.mcpPublished());
     }
 
+    /**
+     * 校验更新字段并构造新的工具定义及 HTTP 配置。
+     *
+     * @param principal 当前认证主体
+     * @param existing 变更前的现有领域对象。
+     * @param spec 已校验的工具创建或更新规格。
+     */
     private PreparedToolUpdate prepareToolUpdate(
             PrincipalRef principal,
             ToolDefinition existing,
@@ -449,6 +491,12 @@ public class ManagementCommandService {
         );
     }
 
+    /**
+     * 在工具级锁内删除工具并记录审计。
+     *
+     * @param principal 当前认证主体
+     * @param toolId 目标工具标识
+     */
     private void deleteToolAndAudit(PrincipalRef principal, UUID toolId) {
         UUID tenantId = principal.tenantId();
         ToolDefinition tool = lockTool(tenantId, toolId);
@@ -456,11 +504,18 @@ public class ManagementCommandService {
         deleteToolStateAndAudit(principal, tool);
     }
 
+    /**
+     * 删除工具及附属状态，并在失败时恢复原快照。
+     *
+     * @param principal 当前认证主体
+     * @param toolId 目标工具标识
+     */
     private void deleteToolWithCompensation(PrincipalRef principal, UUID toolId) {
         UUID tenantId = principal.tenantId();
         ToolDefinition tool = toolRepository.findByTenantAndId(tenantId, toolId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
         validateToolNotReferenced(tenantId, toolId);
+        // 无事务仓储先保存工具及其附属数据快照，后续任一步失败时据此恢复可见状态。
         ToolStateSnapshot snapshot = new ToolStateSnapshot(
                 tool,
                 httpToolConfigRepository.findByTenantAndToolId(tenantId, toolId),
@@ -472,12 +527,19 @@ public class ManagementCommandService {
         try {
             deleteToolStateAndAudit(principal, tool);
         } catch (RuntimeException exception) {
+            // 先恢复工具主体与附属配置，再恢复授权关系；恢复异常作为 suppressed 保留原始失败。
             restoreToolState(snapshot, exception);
             restoreToolGrants(snapshot.tool(), snapshot.grants(), exception);
             throw exception;
         }
     }
 
+    /**
+     * 确认工具未被任何 Agent 引用且没有调用历史。
+     *
+     * @param tenantId 当前租户标识
+     * @param toolId 目标工具标识
+     */
     private void validateToolNotReferenced(UUID tenantId, UUID toolId) {
         boolean referenced = agentRepository.listByTenant(tenantId).stream()
                 .anyMatch(agent -> agent.toolIds().contains(toolId));
@@ -495,6 +557,12 @@ public class ManagementCommandService {
         }
     }
 
+    /**
+     * 删除工具的授权、配置、发布状态和可见定义并追加审计。
+     *
+     * @param principal 当前认证主体
+     * @param tool 当前处理的工具定义
+     */
     private void deleteToolStateAndAudit(PrincipalRef principal, ToolDefinition tool) {
         UUID tenantId = principal.tenantId();
         httpToolConfigRepository.delete(tenantId, tool.id());
@@ -512,6 +580,13 @@ public class ManagementCommandService {
         );
     }
 
+    /**
+     * 在 Agent 级锁内撤销工具关联和授权并记录审计。
+     *
+     * @param principal 当前认证主体
+     * @param toolId 目标工具标识
+     * @param agentId 目标 Agent 标识
+     */
     private AgentDefinition revokeToolAndAudit(PrincipalRef principal, UUID toolId, UUID agentId) {
         UUID tenantId = principal.tenantId();
         ToolDefinition tool = toolRepository.findByTenantAndId(tenantId, toolId)
@@ -521,21 +596,37 @@ public class ManagementCommandService {
         return revokeToolStateAndAudit(principal, tool, agent);
     }
 
+    /**
+     * 撤销工具关联和授权，并在失败时恢复原状态。
+     *
+     * @param principal 当前认证主体
+     * @param toolId 目标工具标识
+     * @param agentId 目标 Agent 标识
+     */
     private AgentDefinition revokeToolWithCompensation(PrincipalRef principal, UUID toolId, UUID agentId) {
         UUID tenantId = principal.tenantId();
         ToolDefinition tool = toolRepository.findByTenantAndId(tenantId, toolId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
         AgentDefinition agent = agentRepository.findByTenantAndId(tenantId, agentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
+        // 撤销会同时修改 Agent 关联和授权表，因此在无事务模式下提前保存授权快照。
         List<ToolGrant> grants = grantRepository.listByTenantAgentAndTool(tenantId, agentId, toolId);
         try {
             return revokeToolStateAndAudit(principal, tool, agent);
         } catch (RuntimeException exception) {
+            // 关联或审计失败时恢复 Agent 工具列表及原授权，保持命令对调用方呈现原子语义。
             restoreAgentToolState(agent, tool.id(), grants, exception);
             throw exception;
         }
     }
 
+    /**
+     * 删除 Agent 关联与授权并追加撤销审计。
+     *
+     * @param principal 当前认证主体
+     * @param tool 当前处理的工具定义
+     * @param agent 当前处理的 Agent 定义
+     */
     private AgentDefinition revokeToolStateAndAudit(
             PrincipalRef principal,
             ToolDefinition tool,
@@ -557,7 +648,7 @@ public class ManagementCommandService {
     }
 
     /**
-     * appendAgentAudit：追加处理结果或审计记录。
+     * 追加 Agent 创建成功审计事件。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param agent 当前处理的 Agent 定义。
@@ -568,9 +659,9 @@ public class ManagementCommandService {
     }
 
     /**
-     * saveToolWithHttpConfiguration：保存当前对象及其关联配置。
+     * 在事务中保存工具、HTTP 配置和可选 MCP 发布状态。
      *
-     * @param prepared 参与 saveToolWithHttpConfiguration 处理的 prepared 输入值。
+     * @param prepared 已完成治理校验的工具执行上下文。
      */
     private ToolDefinition saveToolWithHttpConfiguration(PreparedToolCreate prepared) {
         ToolDefinition saved = toolRepository.save(prepared.tool());
@@ -585,10 +676,10 @@ public class ManagementCommandService {
     }
 
     /**
-     * saveToolWithCompensation：保存当前对象及其关联配置。
+     * 保存工具及附属配置，并在后续失败时执行补偿。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
-     * @param prepared 参与 saveToolWithCompensation 处理的 prepared 输入值。
+     * @param prepared 已完成治理校验的工具执行上下文。
      */
     private ToolDefinition saveToolWithCompensation(PrincipalRef principal, PreparedToolCreate prepared) {
         boolean toolWriteAttempted = false;
@@ -614,13 +705,13 @@ public class ManagementCommandService {
     }
 
     /**
-     * compensateMemoryWrite：处理该类内部的业务逻辑或辅助计算。
+     * 补偿内存模式下已经完成的部分写入。
      *
-     * @param prepared 参与 compensateMemoryWrite 处理的 prepared 输入值。
-     * @param toolWriteAttempted 参与 compensateMemoryWrite 处理的 toolWriteAttempted 输入值。
-     * @param configurationWriteAttempted 参与 compensateMemoryWrite 处理的 configurationWriteAttempted 输入值。
-     * @param publicationWriteAttempted 参与 compensateMemoryWrite 处理的 publicationWriteAttempted 输入值。
-     * @param original 参与 compensateMemoryWrite 处理的 original 输入值。
+     * @param prepared 已完成治理校验的工具执行上下文。
+     * @param toolWriteAttempted 是否已经尝试写入工具定义。
+     * @param configurationWriteAttempted 是否已经尝试写入 HTTP 配置。
+     * @param publicationWriteAttempted 是否已经尝试写入 MCP 发布状态。
+     * @param original 执行变更前的原始状态，用于失败补偿。
      */
     private void compensateMemoryWrite(
             PreparedToolCreate prepared,
@@ -641,10 +732,10 @@ public class ManagementCommandService {
     }
 
     /**
-     * compensate：处理该类内部的业务逻辑或辅助计算。
+     * 执行补偿动作，并把补偿失败附加到原异常。
      *
-     * @param action 参与 compensate 处理的 action 输入值。
-     * @param original 参与 compensate 处理的 original 输入值。
+     * @param action 持有锁或执行补偿时调用的业务动作。
+     * @param original 执行变更前的原始状态，用于失败补偿。
      */
     private void compensate(Runnable action, RuntimeException original) {
         try {
@@ -655,11 +746,11 @@ public class ManagementCommandService {
     }
 
     /**
-     * validateToolCreateRequest：校验输入、状态或前置条件。
+     * 校验输入数据及相关业务约束。
      *
-     * @param type 参与 validateToolCreateRequest 处理的 type 输入值。
-     * @param httpToolCreateSpec 参与 validateToolCreateRequest 处理的 httpToolCreateSpec 输入值。
-     * @param mcpPublished 参与 validateToolCreateRequest 处理的 mcpPublished 输入值。
+     * @param type 待加入或校验的 Schema 值类型。
+     * @param httpToolCreateSpec 可选的 HTTP 工具创建规格。
+     * @param mcpPublished 是否同时发布为 MCP 工具。
      */
     private void validateToolCreateRequest(
             ToolType type,
@@ -677,6 +768,12 @@ public class ManagementCommandService {
         }
     }
 
+    /**
+     * 按删除前快照恢复工具及全部附属状态。
+     *
+     * @param snapshot 变更前的完整状态快照。
+     * @param original 变更前的原始状态，用于失败补偿。
+     */
     private void restoreToolState(ToolStateSnapshot snapshot, RuntimeException original) {
         compensate(() -> {
             if (toolRepository.findByTenantAndId(snapshot.tool().tenantId(), snapshot.tool().id()).isEmpty()) {
@@ -691,6 +788,11 @@ public class ManagementCommandService {
         compensate(() -> restoreMcpToolPublication(snapshot), original);
     }
 
+    /**
+     * 恢复工具原有的 HTTP 配置。
+     *
+     * @param snapshot 变更前的完整状态快照。
+     */
     private void restoreHttpToolConfig(ToolStateSnapshot snapshot) {
         if (snapshot.httpToolConfig().isPresent()) {
             httpToolConfigRepository.save(snapshot.httpToolConfig().orElseThrow());
@@ -699,6 +801,11 @@ public class ManagementCommandService {
         httpToolConfigRepository.delete(snapshot.tool().tenantId(), snapshot.tool().id());
     }
 
+    /**
+     * 恢复工具原有的 MCP 发布状态。
+     *
+     * @param snapshot 变更前的完整状态快照。
+     */
     private void restoreMcpToolPublication(ToolStateSnapshot snapshot) {
         if (snapshot.mcpToolPublication().isPresent()) {
             mcpToolPublicationRepository.save(snapshot.mcpToolPublication().orElseThrow());
@@ -707,6 +814,13 @@ public class ManagementCommandService {
         mcpToolPublicationRepository.delete(snapshot.tool().tenantId(), snapshot.tool().id());
     }
 
+    /**
+     * 恢复工具原有的授权集合。
+     *
+     * @param tool 当前处理的工具定义
+     * @param grants 工具授权集合。
+     * @param original 变更前的原始状态，用于失败补偿。
+     */
     private void restoreToolGrants(
             ToolDefinition tool,
             List<ToolGrant> grants,
@@ -716,6 +830,14 @@ public class ManagementCommandService {
         grants.forEach(grant -> compensate(() -> grantRepository.save(grant), original));
     }
 
+    /**
+     * 恢复 Agent 与工具的关联状态。
+     *
+     * @param agent 当前处理的 Agent 定义
+     * @param toolId 目标工具标识
+     * @param grants 工具授权集合。
+     * @param original 变更前的原始状态，用于失败补偿。
+     */
     private void restoreAgentToolState(
             AgentDefinition agent,
             UUID toolId,
@@ -731,21 +853,42 @@ public class ManagementCommandService {
         grants.forEach(grant -> compensate(() -> grantRepository.save(grant), original));
     }
 
+    /**
+     * 在当前租户中查询可见工具，不存在时抛出受控异常。
+     *
+     * @param tenantId 当前租户标识
+     * @param toolId 目标工具标识
+     */
     private ToolDefinition findTool(UUID tenantId, UUID toolId) {
         return toolRepository.findByTenantAndId(tenantId, toolId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
     }
 
+    /**
+     * 加行锁查询当前租户的工具。
+     *
+     * @param tenantId 当前租户标识
+     * @param toolId 目标工具标识
+     */
     private ToolDefinition lockTool(UUID tenantId, UUID toolId) {
         return toolRepository.findByTenantAndIdForUpdate(tenantId, toolId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "工具不存在"));
     }
 
+    /**
+     * 在当前租户中查询 Agent，不存在时抛出受控异常。
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     */
     private AgentDefinition findAgent(UUID tenantId, UUID agentId) {
         return agentRepository.findByTenantAndId(tenantId, agentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
     }
 
+    /**
+     * 为工具更新流程创建稳定顺序的本地锁集合。
+     */
     private static ReentrantLock[] createToolLocks() {
         ReentrantLock[] locks = new ReentrantLock[TOOL_LOCK_STRIPE_COUNT];
         for (int index = 0; index < locks.length; index++) {
@@ -754,16 +897,35 @@ public class ManagementCommandService {
         return locks;
     }
 
+    /**
+     * 获取指定租户和工具对应的进程内锁。
+     *
+     * @param tenantId 当前租户标识
+     * @param toolId 目标工具标识
+     */
     private static ReentrantLock toolLock(UUID tenantId, UUID toolId) {
         int stripe = Math.floorMod(Objects.hash(tenantId, toolId), TOOL_LOCK_STRIPE_COUNT);
         return TOOL_LOCKS[stripe];
     }
 
+    /**
+     * 获取指定租户和 Agent 对应的进程内锁。
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     */
     private static ReentrantLock agentLock(UUID tenantId, UUID agentId) {
         int stripe = Math.floorMod(Objects.hash(tenantId, agentId), TOOL_LOCK_STRIPE_COUNT);
         return AGENT_LOCKS[stripe];
     }
 
+    /**
+     * 持有工具锁执行回调，并保证退出时释放。
+     *
+     * @param tenantId 当前租户标识
+     * @param toolId 目标工具标识
+     * @param action 持有锁或执行补偿时调用的业务动作。
+     */
     private static <T> T withToolLock(UUID tenantId, UUID toolId, Supplier<T> action) {
         ReentrantLock lock = toolLock(tenantId, toolId);
         lock.lock();
@@ -774,6 +936,13 @@ public class ManagementCommandService {
         }
     }
 
+    /**
+     * 持有工具锁执行回调，并保证退出时释放。
+     *
+     * @param tenantId 当前租户标识
+     * @param toolId 目标工具标识
+     * @param action 持有锁或执行补偿时调用的业务动作。
+     */
     private static void withToolLock(UUID tenantId, UUID toolId, Runnable action) {
         withToolLock(tenantId, toolId, () -> {
             action.run();
@@ -781,6 +950,13 @@ public class ManagementCommandService {
         });
     }
 
+    /**
+     * 持有 Agent 锁执行回调，并保证退出时释放。
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     * @param action 持有锁或执行补偿时调用的业务动作。
+     */
     private static <T> T withAgentLock(UUID tenantId, UUID agentId, Supplier<T> action) {
         ReentrantLock lock = agentLock(tenantId, agentId);
         lock.lock();
@@ -791,6 +967,13 @@ public class ManagementCommandService {
         }
     }
 
+    /**
+     * 校验工具更新字段和类型相关约束。
+     *
+     * @param existing 变更前的现有领域对象。
+     * @param spec 已校验的工具创建或更新规格。
+     * @param currentlyPublished 工具在更新前是否处于 MCP 发布状态。
+     */
     private void validateToolUpdateRequest(
             ToolDefinition existing,
             ToolUpdateSpec spec,
@@ -822,7 +1005,7 @@ public class ManagementCommandService {
     }
 
     /**
-     * ensureToolNameAvailable：校验输入、状态或前置条件。
+     * 确保租户内没有占用同名工具的可见定义。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param name 目标对象的名称。
@@ -835,6 +1018,13 @@ public class ManagementCommandService {
         }
     }
 
+    /**
+     * 确保租户内没有其他可见工具占用目标名称。
+     *
+     * @param tenantId 当前租户标识
+     * @param toolId 目标工具标识
+     * @param name 目标对象名称。
+     */
     private void ensureToolNameAvailable(UUID tenantId, UUID toolId, String name) {
         boolean nameExists = toolRepository.listByTenant(tenantId).stream()
                 .anyMatch(existing -> !existing.id().equals(toolId) && existing.name().equals(name));
@@ -844,7 +1034,7 @@ public class ManagementCommandService {
     }
 
     /**
-     * isToolNameConflict：判断当前条件是否成立。
+     * 判断异常是否由工具名称唯一约束冲突引起。
      *
      * @param exception 当前捕获的异常，用于转换或记录失败信息。
      */
@@ -862,11 +1052,11 @@ public class ManagementCommandService {
     }
 
     /**
-     * appendToolAudit：追加处理结果或审计记录。
+     * 追加工具创建审计；同时发布 MCP 时原子追加两条事件。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param tool 当前处理的工具定义。
-     * @param mcpPublished 参与 appendToolAudit 处理的 mcpPublished 输入值。
+     * @param mcpPublished 是否同时发布为 MCP 工具。
      */
     private void appendToolAudit(PrincipalRef principal, ToolDefinition tool, boolean mcpPublished) {
         if (mcpPublished) {
@@ -887,7 +1077,7 @@ public class ManagementCommandService {
     }
 
     /**
-     * appendGrantAudit：追加处理结果或审计记录。
+     * 追加工具授权给 Agent 的成功审计事件。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param tool 当前处理的工具定义。
@@ -898,6 +1088,12 @@ public class ManagementCommandService {
                 tool.id().toString(), "SUCCEEDED", "Tool 已授权给 Agent " + agent.id());
     }
 
+    /**
+     * 追加工具更新及可选取消发布的审计事件。
+     *
+     * @param principal 当前认证主体
+     * @param tool 当前处理的工具定义
+     */
     private void appendToolUpdateAudit(PrincipalRef principal, ToolDefinition tool) {
         auditAppender.append(
                 principal.tenantId(),
@@ -911,16 +1107,16 @@ public class ManagementCommandService {
     }
 
     /**
-     * requireResult：校验输入、状态或前置条件。
+     * 校验事务回调必须返回非空结果。
      *
-     * @param result 参与 requireResult 处理的 result 输入值。
+     * @param result 上一步得到的处理结果。
      */
     private static <T> T requireResult(T result) {
         return Objects.requireNonNull(result, "事务未返回结果");
     }
 
     /**
-     * PreparedToolCreate：不可变数据载体，用于在本模块内传递结构化信息。
+     * 创建 {@code PreparedToolCreate} 实例并保存其运行所需依赖。
      */
     private record PreparedToolCreate(
             ToolDefinition tool,
@@ -951,6 +1147,14 @@ public class ManagementCommandService {
             Optional<McpToolPublication> mcpToolPublication,
             List<ToolGrant> grants
     ) {
+        /**
+         * 校验并构造 {@code ToolStateSnapshot} 实例。
+         *
+         * @param tool 当前处理的工具定义
+         * @param httpToolConfig 工具当前或目标 HTTP 配置。
+         * @param mcpToolPublication 工具当前 MCP 发布记录。
+         * @param grants 工具授权集合。
+         */
         private ToolStateSnapshot {
             grants = List.copyOf(grants);
         }
@@ -968,6 +1172,17 @@ public class ManagementCommandService {
             @Nullable HttpToolCreateSpec httpToolCreateSpec,
             boolean mcpPublished
     ) {
+        /**
+         * 校验并构造 {@code ToolUpdateSpec} 实例。
+         *
+         * @param name 目标对象名称。
+         * @param description 目标对象说明。
+         * @param type 目标工具类型。
+         * @param riskLevel 目标工具风险等级。
+         * @param enabled 是否启用目标能力。
+         * @param httpToolCreateSpec 可选的 HTTP 工具创建规格。
+         * @param mcpPublished 是否同时发布为 MCP 工具。
+         */
         public ToolUpdateSpec {
             Objects.requireNonNull(name, "name 不能为空");
             Objects.requireNonNull(description, "description 不能为空");
@@ -984,6 +1199,13 @@ public class ManagementCommandService {
             @Nullable HttpToolConfig httpToolConfig,
             boolean mcpPublished
     ) {
+        /**
+         * 校验并构造 {@code ToolUpdateResult} 实例。
+         *
+         * @param tool 当前处理的工具定义
+         * @param httpToolConfig 工具当前或目标 HTTP 配置。
+         * @param mcpPublished 是否同时发布为 MCP 工具。
+         */
         public ToolUpdateResult {
             Objects.requireNonNull(tool, "tool 不能为空");
         }

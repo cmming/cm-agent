@@ -42,12 +42,12 @@ public class McpEndpointServlet extends HttpServlet {
     private final ObjectMapper objectMapper;
     private final RequestServerFactory serverFactory;
     /**
-     * McpEndpointServlet：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code McpEndpointServlet} 实例并保存其运行所需依赖。
      *
      * @param properties 模块配置属性，用于读取运行参数。
-     * @param catalog 参与 McpEndpointServlet 处理的 catalog 输入值。
-     * @param permissions 参与 McpEndpointServlet 处理的 permissions 集合。
-     * @param audits 参与 McpEndpointServlet 处理的 audits 集合。
+     * @param catalog 当前租户可用的 MCP 工具目录。
+     * @param permissions 主体拥有的权限集合。
+     * @param audits 本次操作产生的审计记录集合。
      * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
      */
     public McpEndpointServlet(
@@ -60,14 +60,14 @@ public class McpEndpointServlet extends HttpServlet {
         this(properties, catalog, permissions, audits, objectMapper, null);
     }
     /**
-     * McpEndpointServlet：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code McpEndpointServlet} 实例并保存其运行所需依赖。
      *
      * @param properties 模块配置属性，用于读取运行参数。
-     * @param catalog 参与 McpEndpointServlet 处理的 catalog 输入值。
-     * @param permissions 参与 McpEndpointServlet 处理的 permissions 集合。
-     * @param audits 参与 McpEndpointServlet 处理的 audits 集合。
+     * @param catalog 当前租户可用的 MCP 工具目录。
+     * @param permissions 主体拥有的权限集合。
+     * @param audits 本次操作产生的审计记录集合。
      * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
-     * @param serverFactory 参与 McpEndpointServlet 处理的 serverFactory 输入值。
+     * @param serverFactory 按租户和认证主体创建 MCP 服务实例的工厂
      */
     McpEndpointServlet(
             McpServerProperties properties,
@@ -87,10 +87,10 @@ public class McpEndpointServlet extends HttpServlet {
 
     @Override
     /**
-     * service：处理该类内部的业务逻辑或辅助计算。
+     * 处理当前 MCP HTTP 请求，并将响应委托给请求级协议服务。
      *
-     * @param request 当前业务请求参数，承载调用方提交的数据。
-     * @param response 参与 service 处理的 response 输入值。
+     * @param request 当前 MCP HTTP 请求，提供认证头、会话信息和请求体
+     * @param response 当前 HTTP 响应。
      */
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
@@ -127,7 +127,7 @@ public class McpEndpointServlet extends HttpServlet {
     }
 
     /**
-     * createOfficialServer：创建并返回新的领域对象或配置。
+     * 创建并返回流程所需对象。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      */
@@ -162,10 +162,10 @@ public class McpEndpointServlet extends HttpServlet {
         return new RequestServer() {
             @Override
             /**
-             * service：处理该类内部的业务逻辑或辅助计算。
+             * 处理当前 MCP HTTP 请求，并将响应委托给请求级协议服务。
              *
-             * @param request 当前业务请求参数，承载调用方提交的数据。
-             * @param response 参与 service 处理的 response 输入值。
+             * @param request 当前 MCP HTTP 请求，提供认证头和会话信息
+             * @param response 当前 HTTP 响应。
              */
             public void service(HttpServletRequest request, HttpServletResponse response)
                     throws ServletException, IOException {
@@ -174,7 +174,7 @@ public class McpEndpointServlet extends HttpServlet {
 
             @Override
             /**
-             * close：处理该类内部的业务逻辑或辅助计算。
+             * 关闭并释放当前对象占用的资源。
              */
             public void close() {
                 server.close();
@@ -183,10 +183,10 @@ public class McpEndpointServlet extends HttpServlet {
     }
 
     /**
-     * rejectAmbiguousHeader：处理该类内部的业务逻辑或辅助计算。
+     * 拒绝不满足安全或一致性要求的输入。
      *
-     * @param headers 参与 rejectAmbiguousHeader 处理的 headers 集合。
-     * @param headerName 参与 rejectAmbiguousHeader 处理的 headerName 输入值。
+     * @param headers 待发送或合并的 HTTP 请求头。
+     * @param headerName 待读取的 HTTP 请求头名称
      * @param status 当前处理状态，用于驱动状态分支或记录结果。
      */
     private void rejectAmbiguousHeader(Map<String, List<String>> headers, String headerName, int status)
@@ -203,16 +203,16 @@ public class McpEndpointServlet extends HttpServlet {
     }
 
     /**
-     * isAmbiguous：判断当前条件是否成立。
+     * 判断方法名所描述的业务条件是否成立。
      *
-     * @param value 参与 isAmbiguous 处理的 value 输入值。
+     * @param value 待检查、转换或规范化的值。
      */
     private boolean isAmbiguous(String value) {
         return value == null || value.isBlank() || value.contains(",") || value.contains("\r") || value.contains("\n");
     }
 
     /**
-     * currentPrincipal：查询并返回当前上下文中的匹配结果。
+     * 从当前请求线程读取已认证主体。
      */
     private PrincipalRef currentPrincipal() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -226,9 +226,9 @@ public class McpEndpointServlet extends HttpServlet {
     }
 
     /**
-     * writeError：转换并生成规范化输出。
+     * 写出规范化结果。
      *
-     * @param response 参与 writeError 处理的 response 输入值。
+     * @param response 当前 HTTP 响应。
      * @param status 当前处理状态，用于驱动状态分支或记录结果。
      * @param message 处理结果或审计消息。
      */
@@ -240,11 +240,11 @@ public class McpEndpointServlet extends HttpServlet {
     }
 
     /**
-     * RequestServerFactory：定义本模块使用的协作契约。
+     * 定义 {@code RequestServerFactory} 的内部协作契约。
      */
     interface RequestServerFactory {
         /**
-         * create：创建并返回新的领域对象或配置。
+         * 创建基于认证主体的请求级 MCP 服务。
          *
          * @param principal 当前认证主体，提供租户、身份和权限上下文。
          */
@@ -252,20 +252,20 @@ public class McpEndpointServlet extends HttpServlet {
     }
 
     /**
-     * RequestServer：定义本模块使用的协作契约。
+     * 定义 {@code RequestServer} 的内部协作契约。
      */
     interface RequestServer extends AutoCloseable {
         /**
-         * service：处理该类内部的业务逻辑或辅助计算。
+         * 处理当前 MCP HTTP 请求，并将响应委托给请求级协议服务。
          *
-         * @param request 当前业务请求参数，承载调用方提交的数据。
-         * @param response 参与 service 处理的 response 输入值。
+         * @param request 当前 MCP HTTP 请求，提供认证头和会话信息
+         * @param response 当前 HTTP 响应。
          */
         void service(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException;
 
         @Override
         /**
-         * close：处理该类内部的业务逻辑或辅助计算。
+         * 关闭并释放当前对象占用的资源。
          */
         void close();
     }

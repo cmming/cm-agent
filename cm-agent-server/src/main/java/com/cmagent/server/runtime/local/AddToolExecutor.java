@@ -17,11 +17,21 @@ import java.util.Objects;
 public final class AddToolExecutor implements ToolExecutor {
     private final ObjectMapper objectMapper;
 
+    /**
+     * 校验并构造 {@code AddToolExecutor} 实例。
+     *
+     * @param objectMapper 用于 JSON 解析和序列化的组件
+     */
     public AddToolExecutor(ObjectMapper objectMapper) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
     }
 
     @Override
+    /**
+     * 执行本地示例工具并返回 JSON 结果。
+     *
+     * @param request 当前业务请求
+     */
     public ToolExecutionResult execute(ToolExecutionRequest request) {
         try {
             JsonNode input = objectMapper.readTree(request.inputJson());
@@ -40,6 +50,11 @@ public final class AddToolExecutor implements ToolExecutor {
         }
     }
 
+    /**
+     * 判断 JSON 数字节点是否为有限数值。
+     *
+     * @param value 待判断的 JSON 数字节点
+     */
     private boolean isFiniteNumber(JsonNode value) {
         return value != null
                 && value.isNumber()

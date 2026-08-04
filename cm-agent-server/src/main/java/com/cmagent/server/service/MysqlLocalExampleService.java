@@ -32,6 +32,16 @@ public class MysqlLocalExampleService {
     private final ToolRuntimeReadiness runtimeReadiness;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 校验并构造 {@code MysqlLocalExampleService} 实例。
+     *
+     * @param toolRepository 工具定义仓储。
+     * @param transactionOperations 封装当前持久化模式事务操作的组件。
+     * @param auditAppender 负责追加安全审计事件的组件。
+     * @param catalog 本地示例工具目录
+     * @param runtimeReadiness 查询本地工具执行器就绪状态的组件。
+     * @param objectMapper 用于 JSON 解析和序列化的组件
+     */
     public MysqlLocalExampleService(
             ToolDefinitionRepository toolRepository,
             TransactionOperations transactionOperations,
@@ -48,7 +58,12 @@ public class MysqlLocalExampleService {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
     }
 
-    /** 仅示例租户可以查看固定目录。 */
+    /**
+     * 仅向固定示例租户返回可安装的本地工具目录。
+     *
+     * @param principal 当前认证主体
+     * @return 可见示例工具摘要；其他租户返回空列表
+     */
     public List<LocalToolExampleSummary> list(PrincipalRef principal) {
         Objects.requireNonNull(principal, "principal 不能为空");
         if (!MysqlLocalExampleCatalog.EXAMPLE_TENANT_ID.equals(principal.tenantId())) {
@@ -57,7 +72,13 @@ public class MysqlLocalExampleService {
         return catalog.list().stream().map(example -> summary(principal, example)).toList();
     }
 
-    /** 在一个事务内安装或原位恢复固定定义，并写入严格审计。 */
+    /**
+     * 在一个事务内安装或原位恢复固定定义，并写入严格审计。
+     *
+     * @param principal 当前认证主体
+     * @param key 待安装的示例工具键
+     * @return 安装后的示例工具摘要
+     */
     public LocalToolExampleSummary install(PrincipalRef principal, String key) {
         Objects.requireNonNull(principal, "principal 不能为空");
         requireExampleTenant(principal);
@@ -89,6 +110,12 @@ public class MysqlLocalExampleService {
         return summary(principal, example);
     }
 
+    /**
+     * 将本地示例模板转换为控制台摘要。
+     *
+     * @param principal 当前认证主体
+     * @param example 当前本地示例工具模板。
+     */
     private LocalToolExampleSummary summary(PrincipalRef principal, MysqlLocalExampleCatalog.LocalExample example) {
         ToolDefinition target = example.persistentDefinition(principal.principalId());
         ToolDefinition existing = toolRepository.findByTenantAndId(principal.tenantId(), target.id()).orElse(null);
@@ -98,6 +125,11 @@ public class MysqlLocalExampleService {
                 installed && runtimeReadiness.isReady(existing, null));
     }
 
+    /**
+     * 解析示例工具的输入 JSON Schema。
+     *
+     * @param schema 待解析的 JSON Schema 文本。
+     */
     private JsonNode readSchema(String schema) {
         try {
             return objectMapper.readTree(schema);
@@ -106,20 +138,39 @@ public class MysqlLocalExampleService {
         }
     }
 
+    /**
+     * 确认当前主体属于允许安装示例的固定租户。
+     *
+     * @param principal 当前认证主体
+     */
     private void requireExampleTenant(PrincipalRef principal) {
         if (!MysqlLocalExampleCatalog.EXAMPLE_TENANT_ID.equals(principal.tenantId())) {
             throw notFound("内置 LOCAL 示例不存在");
         }
     }
 
+    /**
+     * 创建本地示例不存在的受控 HTTP 异常。
+     *
+     * @param message 待记录或返回的安全消息。
+     */
     private ResponseStatusException notFound(String message) {
         return new ResponseStatusException(HttpStatus.NOT_FOUND, message);
     }
 
+    /**
+     * 创建示例工具定义冲突的受控 HTTP 异常。
+     */
     private ResponseStatusException conflict() {
         return new ResponseStatusException(HttpStatus.CONFLICT, "内置 LOCAL 示例与现有工具冲突");
     }
 
+    /**
+     * 判断现有工具是否与平台托管示例定义一致。
+     *
+     * @param existing 变更前的现有领域对象。
+     * @param target 待比较或安装的目标定义。
+     */
     private boolean sameManagedDefinition(ToolDefinition existing, ToolDefinition target) {
         return existing.id().equals(target.id())
                 && existing.tenantId().equals(target.tenantId())

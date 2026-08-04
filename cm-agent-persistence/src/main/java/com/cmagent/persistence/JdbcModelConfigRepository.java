@@ -8,14 +8,27 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import java.util.Optional;
 import java.util.UUID;
 
+/** 使用 JDBC 在租户边界内读取模型供应商配置。 */
 public class JdbcModelConfigRepository implements ModelConfigRepository {
     private final JdbcClient jdbcClient;
 
+    /**
+     * 创建模型配置仓储。
+     *
+     * @param jdbcClient 执行参数化 SQL 的 JDBC 客户端
+     */
     public JdbcModelConfigRepository(JdbcClient jdbcClient) {
         this.jdbcClient = jdbcClient;
     }
 
     @Override
+    /**
+     * 查询租户内指定模型配置，不读取或返回模型密钥。
+     *
+     * @param tenantId 租户标识
+     * @param modelConfigId 模型配置标识
+     * @return 匹配的模型配置
+     */
     public Optional<ModelConfig> findByTenantAndId(UUID tenantId, UUID modelConfigId) {
         return jdbcClient.sql("""
                         SELECT id, tenant_id, provider_type, display_name, base_url, model_name, enabled

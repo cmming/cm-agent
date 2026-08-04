@@ -17,7 +17,7 @@ public final class ExternalModelCredentialProvider implements ModelCredentialPro
 
     private final Map<CredentialKey, ModelCredential> credentials;
     /**
-     * ExternalModelCredentialProvider：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code ExternalModelCredentialProvider} 实例并保存其运行所需依赖。
      *
      * @param properties 模块配置属性，用于读取运行参数。
      */
@@ -54,14 +54,14 @@ public final class ExternalModelCredentialProvider implements ModelCredentialPro
 
     @Override
     /**
-     * toString：转换内部数据为目标表示。
+     * 返回不暴露凭据等敏感字段的安全文本摘要。
      */
     public String toString() {
         return "ExternalModelCredentialProvider[credentialCount=" + credentials.size() + "]";
     }
 
     /**
-     * CredentialKey：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code CredentialKey} 在当前流程中使用的不可变数据。
      */
     private record CredentialKey(UUID tenantId, UUID modelConfigId) {
     }

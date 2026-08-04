@@ -8,7 +8,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
- * HttpToolConfig 的核心领域类型。
+ * 描述动态 HTTP 工具的地址、方法、参数映射、认证和响应限制。
  */
 public record HttpToolConfig(
         UUID tenantId,
@@ -25,7 +25,16 @@ public record HttpToolConfig(
     );
 
     /**
-     * 构造 HttpToolConfig 实例并校验输入参数。
+     * 校验并规范化动态 HTTP 工具的地址、映射、认证与响应限制。
+      *
+      * @param tenantId 当前租户标识
+      * @param toolId 目标工具标识
+      * @param method HTTP 请求方法
+      * @param urlTemplate HTTP 工具 URL 模板
+      * @param inputSchema 工具输入 JSON Schema
+      * @param parameterMappings HTTP 参数映射集合
+      * @param secretHeaders 请求头名称到 Secret 引用的映射
+      * @param timeout HTTP 调用超时
      */
     public HttpToolConfig {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");

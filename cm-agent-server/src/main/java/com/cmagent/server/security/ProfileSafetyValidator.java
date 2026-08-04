@@ -27,16 +27,16 @@ public class ProfileSafetyValidator implements InitializingBean {
     private final boolean httpAllowed;
     private final ObjectProvider<AgentRuntime> agentRuntimeProvider;
     /**
-     * ProfileSafetyValidator：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code ProfileSafetyValidator} 实例并保存其运行所需依赖。
      *
-     * @param environment 参与 ProfileSafetyValidator 处理的 environment 输入值。
-     * @param persistenceMode 参与 ProfileSafetyValidator 处理的 persistenceMode 输入值。
-     * @param bootstrapAdminEnabled 参与 ProfileSafetyValidator 处理的 bootstrapAdminEnabled 输入值。
-     * @param devJwtFallbackEnabled 参与 ProfileSafetyValidator 处理的 devJwtFallbackEnabled 输入值。
-     * @param fakeRuntimeEnabled 参与 ProfileSafetyValidator 处理的 fakeRuntimeEnabled 输入值。
-     * @param agentScopeRuntimeEnabled 参与 ProfileSafetyValidator 处理的 agentScopeRuntimeEnabled 输入值。
-     * @param httpAllowed 参与 ProfileSafetyValidator 处理的 httpAllowed 输入值。
-     * @param agentRuntimeProvider 参与 ProfileSafetyValidator 处理的 agentRuntimeProvider 输入值。
+     * @param environment Spring 环境及当前激活 profile。
+     * @param persistenceMode 当前启用的持久化模式
+     * @param bootstrapAdminEnabled 是否启用启动期管理员初始化
+     * @param devJwtFallbackEnabled 是否启用仅限开发环境的 JWT 密钥回退
+     * @param fakeRuntimeEnabled 是否启用模拟 Agent 运行时
+     * @param agentScopeRuntimeEnabled AgentScope 真实运行时是否启用
+     * @param httpAllowed 当前配置是否允许调用外部 HTTP 工具
+     * @param agentRuntimeProvider 为当前流程提供外部数据的组件。
      */
     public ProfileSafetyValidator(
             Environment environment,
@@ -60,7 +60,7 @@ public class ProfileSafetyValidator implements InitializingBean {
 
     @Override
     /**
-     * afterPropertiesSet：处理该类内部的业务逻辑或辅助计算。
+     * 在应用启动后校验 profile、持久化和安全配置组合。
      */
     public void afterPropertiesSet() {
         Set<String> activeProfiles = Arrays.stream(environment.getActiveProfiles())

@@ -41,11 +41,11 @@ public class AuthController {
     private final BootstrapAdminProperties bootstrapAdminProperties;
     private final AuditAppender auditAppender;
     /**
-     * AuthController：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code AuthController} 实例并保存其运行所需依赖。
      *
-     * @param jwtService 参与 AuthController 处理的 jwtService 输入值。
-     * @param bootstrapAdminProperties bootstrapAdminProperties 对应的配置数据，用于驱动本次处理。
-     * @param auditAppender 参与 AuthController 处理的 auditAppender 输入值。
+     * @param jwtService 负责当前业务流程的服务。
+     * @param bootstrapAdminProperties 启动管理员账号及凭据引用配置
+     * @param auditAppender 负责追加安全审计事件的组件。
      */
     public AuthController(JwtService jwtService, BootstrapAdminProperties bootstrapAdminProperties, AuditAppender auditAppender) {
         this.jwtService = jwtService;
@@ -102,9 +102,9 @@ public class AuthController {
     }
 
     /**
-     * principalFrom：处理该类内部的业务逻辑或辅助计算。
+     * 将认证信息转换为平台主体，并校验所需身份字段完整。
      *
-     * @param request 当前业务请求参数，承载调用方提交的数据。
+     * @param request 客户端提交的登录凭据
      */
     private String principalFrom(LoginRequest request) {
         if (request == null || request.username() == null || request.username().isBlank()) {
@@ -114,7 +114,7 @@ public class AuthController {
     }
 
     /**
-     * auditLogin：处理该类内部的业务逻辑或辅助计算。
+     * 记录登录成功或失败审计，并在严格模式下传播写入失败。
      *
      * @param principalId 目标 principal 标识，用于定位本次处理对象。
      * @param status 当前处理状态，用于驱动状态分支或记录结果。

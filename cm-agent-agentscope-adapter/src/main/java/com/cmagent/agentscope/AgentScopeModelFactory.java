@@ -17,6 +17,10 @@ public class AgentScopeModelFactory {
 
     /**
      * 创建与 Provider 类型匹配的 AgentScope 聊天模型。
+      *
+      * @param config 当前模型或工具配置
+      * @param agent 当前 Agent 定义
+      * @param credential 调用模型所需的受控凭据
      */
     public Model create(ModelConfig config, AgentDefinition agent, ModelCredential credential) {
         Objects.requireNonNull(config, "config 不能为空");

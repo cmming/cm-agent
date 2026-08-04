@@ -58,6 +58,9 @@ class DynamicHttpToolExecutorTest {
     private int port;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.setExecutor(Executors.newCachedThreadPool());
@@ -71,11 +74,17 @@ class DynamicHttpToolExecutorTest {
     }
 
     @AfterEach
+    /**
+     * 清理测试用例创建的资源。
+     */
     void tearDown() {
         server.stop(0);
     }
 
     @Test
+    /**
+     * 验证或支持 {@code disabledReturnsFixedFailureBeforeSecretUriDnsOrNetwork} 所描述的测试场景。
+     */
     void disabledReturnsFixedFailureBeforeSecretUriDnsOrNetwork() {
         properties.setEnabled(false);
         AtomicInteger secretResolutions = new AtomicInteger();
@@ -94,6 +103,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code missingSecretFailsBeforeDnsAndNetwork} 所描述的测试场景。
+     */
     void missingSecretFailsBeforeDnsAndNetwork() {
         AtomicInteger hits = new AtomicInteger();
         server.createContext("/secret", exchange -> {
@@ -112,6 +124,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code blockingSecretProviderUsesCallDeadlineWithoutDnsOrNetwork} 所描述的测试场景。
+     */
     void blockingSecretProviderUsesCallDeadlineWithoutDnsOrNetwork() throws Exception {
         AtomicInteger hits = new AtomicInteger();
         CountDownLatch interrupted = new CountDownLatch(1);
@@ -144,6 +159,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code interruptedSecretProviderReturnDoesNotContinueWithAnotherReference} 所描述的测试场景。
+     */
     void interruptedSecretProviderReturnDoesNotContinueWithAnotherReference() throws Exception {
         AtomicInteger hits = new AtomicInteger();
         AtomicInteger lookups = new AtomicInteger();
@@ -182,6 +200,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code multipleSecretLookupsShareOneCallDeadline} 所描述的测试场景。
+     */
     void multipleSecretLookupsShareOneCallDeadline() throws Exception {
         AtomicInteger hits = new AtomicInteger();
         AtomicInteger lookups = new AtomicInteger();
@@ -217,6 +238,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code secretProviderExceptionUsesFixedFailureWithoutLeakingDetails} 所描述的测试场景。
+     */
     void secretProviderExceptionUsesFixedFailureWithoutLeakingDetails() {
         AtomicInteger hits = new AtomicInteger();
         server.createContext("/secret-exception", exchange -> {
@@ -239,6 +263,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code getEncodesPathAndQueryInjectsSecretAndRedactsResponse} 所描述的测试场景。
+     */
     void getEncodesPathAndQueryInjectsSecretAndRedactsResponse() {
         AtomicReference<String> rawPath = new AtomicReference<>();
         AtomicReference<String> rawQuery = new AtomicReference<>();
@@ -270,6 +297,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code postSendsMappedJsonBodyAndContentTypeOnce} 所描述的测试场景。
+     */
     void postSendsMappedJsonBodyAndContentTypeOnce() {
         AtomicInteger hits = new AtomicInteger();
         AtomicReference<String> body = new AtomicReference<>();
@@ -300,6 +330,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code nonSuccessStatusNeverReturnsOrReadsBody} 所描述的测试场景。
+     */
     void nonSuccessStatusNeverReturnsOrReadsBody() {
         String sensitiveBody = "password=不得泄露";
         server.createContext("/failed", exchange -> respond(
@@ -315,6 +348,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code BinaryAndOversizedResponses} 异常场景会被正确拒绝。
+     */
     void rejectsBinaryAndOversizedResponses() {
         server.createContext("/binary", exchange -> respond(
                 exchange, 200, "application/octet-stream", "binary-secret"));
@@ -332,6 +368,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code requestsIdentityEncodingAndRejectsEncodedOrAmbiguousResponseHeaders} 所描述的测试场景。
+     */
     void requestsIdentityEncodingAndRejectsEncodedOrAmbiguousResponseHeaders() {
         AtomicReference<String> acceptEncoding = new AtomicReference<>();
         server.createContext("/identity", exchange -> {
@@ -366,6 +405,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code MultipleLocationValuesWithoutFollowingRedirect} 异常场景会被正确拒绝。
+     */
     void rejectsMultipleLocationValuesWithoutFollowingRedirect() {
         AtomicInteger finalHits = new AtomicInteger();
         server.createContext("/multi-location", exchange -> {
@@ -386,6 +428,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code contentTypeAndAcceptEncodingAreReservedRequestHeaders} 所描述的测试场景。
+     */
     void contentTypeAndAcceptEncodingAreReservedRequestHeaders() {
         HttpParameterMapping dynamicContentType = mapping(
                 "/name", HttpParameterLocation.HEADER, "Content-Type", "", true);
@@ -404,6 +449,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code CrlfInDynamicAndSecretRequestHeaderValuesBeforeNetwork} 异常场景会被正确拒绝。
+     */
     void rejectsCrlfInDynamicAndSecretRequestHeaderValuesBeforeNetwork() {
         AtomicInteger hits = new AtomicInteger();
         server.createContext("/header-injection", exchange -> {
@@ -432,6 +480,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code resultRedactionRemovesAuthorizationCookieSensitiveQueryAndCompleteUrl} 所描述的测试场景。
+     */
     void resultRedactionRemovesAuthorizationCookieSensitiveQueryAndCompleteUrl() {
         String response = """
                 Authorization: Bearer response-auth-value
@@ -454,6 +505,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code jsonRedactionRecursivelyNormalizesSensitiveKeys} 所描述的测试场景。
+     */
     void jsonRedactionRecursivelyNormalizesSensitiveKeys() throws Exception {
         String response = """
                 {
@@ -494,6 +548,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code textRedactionHandlesQuotedKeysAndNonBearerAuthorization} 所描述的测试场景。
+     */
     void textRedactionHandlesQuotedKeysAndNonBearerAuthorization() {
         String response = """
                 payload={"access_token":"text-access-token","Api-Key"='text-api-key'}
@@ -510,6 +567,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code textRedactionRemovesExceptionDetailsThroughSharedToolOutputSanitizer} 所描述的测试场景。
+     */
     void textRedactionRemovesExceptionDetailsThroughSharedToolOutputSanitizer() {
         String response = """
                 {"access_token":"token-value","client_secret":"secret-value"}
@@ -524,6 +584,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code invalidJsonResponseUsesFixedFailure} 所描述的测试场景。
+     */
     void invalidJsonResponseUsesFixedFailure() {
         server.createContext("/invalid-json", exchange -> respond(
                 exchange, 200, "application/json", "{\"token\":\"不得泄露\""));
@@ -535,6 +598,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code serializedRedactedJsonStillHonorsResponseSizeLimit} 所描述的测试场景。
+     */
     void serializedRedactedJsonStillHonorsResponseSizeLimit() {
         properties.setMaxResponseBytes(12);
         server.createContext("/serialized-limit", exchange -> respond(
@@ -550,6 +616,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code timeoutReturnsFixedFailureWithoutLeakingUrl} 所描述的测试场景。
+     */
     void timeoutReturnsFixedFailureWithoutLeakingUrl() {
         server.createContext("/slow", exchange -> {
             try {
@@ -569,6 +638,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证 {@code TimeoutOutsideConfiguredBoundsBeforeDnsAndNetwork} 异常场景会被正确拒绝。
+     */
     void rejectsTimeoutOutsideConfiguredBoundsBeforeDnsAndNetwork() {
         AtomicInteger hits = new AtomicInteger();
         server.createContext("/timeout-bounds", exchange -> {
@@ -586,6 +658,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code singleDeadlineIncludesSlowDnsResolution} 所描述的测试场景。
+     */
     void singleDeadlineIncludesSlowDnsResolution() throws Exception {
         HttpToolUrlPolicy urlPolicy = new HttpToolUrlPolicy(properties, host -> {
             try {
@@ -608,6 +683,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code singleDeadlineIsSharedAcrossMultipleSlowRedirects} 所描述的测试场景。
+     */
     void singleDeadlineIsSharedAcrossMultipleSlowRedirects() {
         server.createContext("/deadline-r0", exchange -> slowRedirect(exchange, "/deadline-r1", 70));
         server.createContext("/deadline-r1", exchange -> slowRedirect(exchange, "/deadline-r2", 70));
@@ -620,6 +698,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code singleDeadlineClosesBodyWhenHeadersAreFastButBodyIsSlow} 所描述的测试场景。
+     */
     void singleDeadlineClosesBodyWhenHeadersAreFastButBodyIsSlow() {
         server.createContext("/slow-body", exchange -> {
             exchange.getResponseHeaders().set("Content-Type", "text/plain");
@@ -644,6 +725,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code requestCompletesWhenAllPhasesStayWithinSingleDeadline} 所描述的测试场景。
+     */
     void requestCompletesWhenAllPhasesStayWithinSingleDeadline() {
         server.createContext("/within-deadline", exchange -> {
             try {
@@ -661,6 +745,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code followsRelativeRedirectsAndRevalidatesEveryHop} 所描述的测试场景。
+     */
     void followsRelativeRedirectsAndRevalidatesEveryHop() {
         server.createContext("/redirect", exchange -> redirect(exchange, 302, "/final"));
         server.createContext("/final", exchange -> respond(exchange, 200, "text/plain", "完成"));
@@ -674,6 +761,11 @@ class DynamicHttpToolExecutorTest {
 
     @ParameterizedTest
     @ValueSource(ints = {302, 303, 307, 308})
+    /**
+     * 验证或支持 {@code sameOriginPostRedirectUsesDefinedMethodAndBodySemantics} 所描述的测试场景。
+     *
+     * @param status 测试 HTTP 或运行状态
+     */
     void sameOriginPostRedirectUsesDefinedMethodAndBodySemantics(int status) {
         AtomicReference<String> finalMethod = new AtomicReference<>();
         AtomicReference<String> finalBody = new AtomicReference<>();
@@ -705,6 +797,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code crossOriginRedirectNeverForwardsHeadersSecretsOrPostBody} 所描述的测试场景。
+     */
     void crossOriginRedirectNeverForwardsHeadersSecretsOrPostBody() throws Exception {
         HttpServer other = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         AtomicInteger targetHits = new AtomicInteger();
@@ -738,6 +833,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code crossOriginBlockedRedirectTargetIsNeverRequested} 所描述的测试场景。
+     */
     void crossOriginBlockedRedirectTargetIsNeverRequested() {
         AtomicInteger privateHits = new AtomicInteger();
         server.createContext("/redirect", exchange -> redirect(
@@ -754,6 +852,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code stopsAfterConfiguredRedirectLimit} 所描述的测试场景。
+     */
     void stopsAfterConfiguredRedirectLimit() {
         AtomicInteger hits = new AtomicInteger();
         for (int index = 0; index <= 4; index++) {
@@ -771,6 +872,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code invalidSecretHeaderNameFailsBeforeDnsAndNetwork} 所描述的测试场景。
+     */
     void invalidSecretHeaderNameFailsBeforeDnsAndNetwork() {
         AtomicInteger hits = new AtomicInteger();
         server.createContext("/headers", exchange -> {
@@ -789,6 +893,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code doesNotRetryNonSuccessResponse} 所描述的测试场景。
+     */
     void doesNotRetryNonSuccessResponse() {
         AtomicInteger hits = new AtomicInteger();
         server.createContext("/once", exchange -> {
@@ -803,6 +910,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code tlsFailureUsesFixedRedactedError} 所描述的测试场景。
+     */
     void tlsFailureUsesFixedRedactedError() {
         HttpToolUrlPolicy urlPolicy = new HttpToolUrlPolicy(properties, host ->
                 List.of(InetAddress.getByName("93.184.216.34")));
@@ -823,6 +933,9 @@ class DynamicHttpToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code connectionFailureUsesFixedErrorWithoutCompleteUrl} 所描述的测试场景。
+     */
     void connectionFailureUsesFixedErrorWithoutCompleteUrl() throws Exception {
         HttpToolUrlPolicy urlPolicy = new HttpToolUrlPolicy(properties, host ->
                 List.of(InetAddress.getByName("93.184.216.34")));
@@ -844,11 +957,22 @@ class DynamicHttpToolExecutorTest {
         assertThat(result.toString()).doesNotContain("不得泄露").doesNotContain(closedUrl);
     }
 
+    /**
+     * 验证或支持 {@code executeGet} 所描述的测试场景。
+     *
+     * @param path 测试辅助方法使用的 path 参数
+     * @param timeout 测试超时
+     */
     private ToolExecutionResult executeGet(String path, Duration timeout) {
         HttpToolConfig config = config(HttpToolMethod.GET, url(path), List.of(), Map.of(), timeout);
         return executor(secretProvider()).execute(tool(config.urlTemplate()), config, request("{}"));
     }
 
+    /**
+     * 验证或支持 {@code executor} 所描述的测试场景。
+     *
+     * @param secretProvider 测试辅助方法使用的 secretProvider 参数
+     */
     private DynamicHttpToolExecutor executor(HttpToolSecretProvider secretProvider) {
         HostAddressResolver resolver = host -> {
             dnsResolutions.incrementAndGet();
@@ -858,6 +982,12 @@ class DynamicHttpToolExecutorTest {
         return executor(secretProvider, urlPolicy);
     }
 
+    /**
+     * 验证或支持 {@code executor} 所描述的测试场景。
+     *
+     * @param secretProvider 测试辅助方法使用的 secretProvider 参数
+     * @param urlPolicy 测试辅助方法使用的 urlPolicy 参数
+     */
     private DynamicHttpToolExecutor executor(
             HttpToolSecretProvider secretProvider, HttpToolUrlPolicy urlPolicy) {
         HttpToolInputMapper inputMapper = new HttpToolInputMapper(
@@ -865,41 +995,91 @@ class DynamicHttpToolExecutorTest {
         return new DynamicHttpToolExecutor(properties, secretProvider, urlPolicy, inputMapper, objectMapper);
     }
 
+    /**
+     * 验证或支持 {@code secretProvider} 所描述的测试场景。
+     */
     private HttpToolSecretProvider secretProvider() {
         return (tenantId, secretRef) -> java.util.Optional.of(SECRET_VALUE);
     }
 
+    /**
+     * 构造测试配置。
+     *
+     * @param method 测试辅助方法使用的 method 参数
+     * @param url 测试辅助方法使用的 url 参数
+     * @param mappings 测试辅助方法使用的 mappings 参数
+     * @param secrets 测试辅助方法使用的 secrets 参数
+     * @param timeout 测试超时
+     */
     private HttpToolConfig config(HttpToolMethod method, String url, List<HttpParameterMapping> mappings,
                                   Map<String, String> secrets, Duration timeout) {
         return new HttpToolConfig(TENANT_ID, TOOL_ID, method, url, INPUT_SCHEMA, mappings, secrets, timeout);
     }
 
+    /**
+     * 构造测试工具定义。
+     *
+     * @param endpoint 测试辅助方法使用的 endpoint 参数
+     */
     private ToolDefinition tool(String endpoint) {
         return new ToolDefinition(TOOL_ID, TENANT_ID, "http-test", "HTTP 测试", ToolType.HTTP,
                 INPUT_SCHEMA, ToolRiskLevel.LOW, true, endpoint, "tester", "tester");
     }
 
+    /**
+     * 构造测试使用的运行或 HTTP 请求。
+     *
+     * @param input 测试输入
+     */
     private ToolExecutionRequest request(String input) {
         PrincipalRef principal = new PrincipalRef(TENANT_ID, "tester", "测试用户", Set.of());
         return new ToolExecutionRequest(TENANT_ID, null, principal, null, "call-1", TOOL_ID, input,
                 ToolInvocationSource.DEBUG);
     }
 
+    /**
+     * 验证或支持 {@code mapping} 所描述的测试场景。
+     *
+     * @param source 测试辅助方法使用的 source 参数
+     * @param location 测试辅助方法使用的 location 参数
+     * @param targetName 测试辅助方法使用的 targetName 参数
+     * @param targetPointer 测试辅助方法使用的 targetPointer 参数
+     * @param required 测试辅助方法使用的 required 参数
+     */
     private HttpParameterMapping mapping(String source, HttpParameterLocation location,
                                          String targetName, String targetPointer, boolean required) {
         return new HttpParameterMapping(source, location, targetName, targetPointer, required, "");
     }
 
+    /**
+     * 验证或支持 {@code url} 所描述的测试场景。
+     *
+     * @param path 测试辅助方法使用的 path 参数
+     */
     private String url(String path) {
         return "http://127.0.0.1:" + port + path;
     }
 
+    /**
+     * 验证或支持 {@code redirect} 所描述的测试场景。
+     *
+     * @param exchange 本地 HTTP 请求交换对象
+     * @param status 测试 HTTP 或运行状态
+     * @param location 测试辅助方法使用的 location 参数
+     */
     private static void redirect(HttpExchange exchange, int status, String location) throws IOException {
         exchange.getResponseHeaders().set("Location", location);
         exchange.sendResponseHeaders(status, -1);
         exchange.close();
     }
 
+    /**
+     * 验证或支持 {@code slowRedirect} 所描述的测试场景。
+     *
+     * @param exchange 本地 HTTP 请求交换对象
+     * @param location 测试辅助方法使用的 location 参数
+     * @param delayMillis 测试辅助方法使用的 delayMillis 参数
+     */
     private static void slowRedirect(HttpExchange exchange, String location, long delayMillis) throws IOException {
         try {
             Thread.sleep(delayMillis);
@@ -910,6 +1090,14 @@ class DynamicHttpToolExecutorTest {
         }
     }
 
+    /**
+     * 处理本地测试服务器收到的请求。
+     *
+     * @param exchange 本地 HTTP 请求交换对象
+     * @param status 测试 HTTP 或运行状态
+     * @param contentType 测试辅助方法使用的 contentType 参数
+     * @param body 测试响应体
+     */
     private static void respond(HttpExchange exchange, int status, String contentType, String body)
             throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
@@ -919,6 +1107,13 @@ class DynamicHttpToolExecutorTest {
         exchange.close();
     }
 
+    /**
+     * 验证或支持 {@code respondWithoutContentType} 所描述的测试场景。
+     *
+     * @param exchange 本地 HTTP 请求交换对象
+     * @param status 测试 HTTP 或运行状态
+     * @param body 测试响应体
+     */
     private static void respondWithoutContentType(HttpExchange exchange, int status, String body)
             throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);

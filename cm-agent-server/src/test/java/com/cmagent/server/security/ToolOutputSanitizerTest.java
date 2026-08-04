@@ -10,6 +10,9 @@ class ToolOutputSanitizerTest {
     private final ToolOutputSanitizer sanitizer = new ToolOutputSanitizer(new ObjectMapper());
 
     @Test
+    /**
+     * 验证或支持 {@code recursivelyRedactsJsonSecretsUrlsAndExceptionDetails} 所描述的测试场景。
+     */
     void recursivelyRedactsJsonSecretsUrlsAndExceptionDetails() {
         String output = sanitizer.sanitize("""
                 {"access_token":"token-value","cookie":"cookie-value","safe":"https://private.example.test/a",
@@ -20,6 +23,9 @@ class ToolOutputSanitizerTest {
     }
 
     @Test
+    /**
+     * 验证系统会脱敏 {@code QuotedTextKeysAuthorizationUrlsAndSuppressedStackDetails}。
+     */
     void redactsQuotedTextKeysAuthorizationUrlsAndSuppressedStackDetails() {
         String output = sanitizer.sanitize("""
                 payload={"access_token":"token-value","client_secret":"secret-value"}
@@ -32,6 +38,9 @@ class ToolOutputSanitizerTest {
     }
 
     @Test
+    /**
+     * 验证系统会脱敏 {@code PrefixedStructuredSecretKeysWithoutMaskingOrdinaryFields}。
+     */
     void redactsPrefixedStructuredSecretKeysWithoutMaskingOrdinaryFields() throws Exception {
         String output = sanitizer.sanitize("""
                 {

@@ -21,7 +21,7 @@ public class BootstrapAdminConfiguration {
     }
 
     /**
-     * BootstrapAdminValidator：封装本模块的相关实现逻辑。
+     * 创建 {@code BootstrapAdminValidator} 实例并保存其运行所需依赖。
      */
     static class BootstrapAdminValidator {
     }

@@ -82,6 +82,9 @@ class ManagementCommandServiceTest {
     private AuditAppender auditAppender;
 
     @Test
+    /**
+     * 验证或支持 {@code memoryUpdateAuditFailureRestoresDefinitionHttpConfigurationAndMcpPublication} 所描述的测试场景。
+     */
     void memoryUpdateAuditFailureRestoresDefinitionHttpConfigurationAndMcpPublication() {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         ToolDefinition existing = httpTool("orders-old");
@@ -114,6 +117,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryDeleteAuditFailureRestoresToolAndAllAttachedData} 所描述的测试场景。
+     */
     void memoryDeleteAuditFailureRestoresToolAndAllAttachedData() {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         ToolDefinition existing = httpTool("orders");
@@ -142,6 +148,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryRevokeAuditFailureRestoresGrantAndAgentAssociation} 所描述的测试场景。
+     */
     void memoryRevokeAuditFailureRestoresGrantAndAgentAssociation() {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         ToolDefinition existing = httpTool("orders");
@@ -164,6 +173,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code concurrentMemoryGrantAndRevokeForDifferentToolsKeepBothChanges} 所描述的测试场景。
+     */
     void concurrentMemoryGrantAndRevokeForDifferentToolsKeepBothChanges() throws Exception {
         UUID removedToolId = UUID.fromString("00000000-0000-0000-0000-000000000102");
         InMemoryPlatformStore store = new InMemoryPlatformStore();
@@ -219,6 +231,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code concurrentGrantCannotLeaveAgentPointingToDeletedTool} 所描述的测试场景。
+     */
     void concurrentGrantCannotLeaveAgentPointingToDeletedTool() throws Exception {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         ToolDefinition existing = httpTool("orders");
@@ -231,17 +246,33 @@ class ManagementCommandServiceTest {
         CountDownLatch grantReachedRepository = new CountDownLatch(1);
         AgentDefinitionRepository coordinatedAgents = new AgentDefinitionRepository() {
             @Override
+            /**
+             * 验证或支持 {@code save} 所描述的测试场景。
+             *
+             * @param agent 测试 Agent 定义
+             */
             public AgentDefinition save(AgentDefinition agent) {
                 return delegate.save(agent);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndId} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             */
             public Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId) {
                 grantReachedRepository.countDown();
                 return delegate.findByTenantAndId(tenantId, agentId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             */
             public List<AgentDefinition> listByTenant(UUID tenantId) {
                 List<AgentDefinition> snapshot = delegate.listByTenant(tenantId);
                 deleteReadReferences.countDown();
@@ -250,11 +281,25 @@ class ManagementCommandServiceTest {
             }
 
             @Override
+            /**
+             * 验证或支持 {@code addToolToAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 return delegate.addToolToAgent(tenantId, agentId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code removeToolFromAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 return delegate.removeToolFromAgent(tenantId, agentId, toolId);
             }
@@ -300,6 +345,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code successfulMemoryDeleteRemovesExistingMcpPublicationBeforeToolDefinition} 所描述的测试场景。
+     */
     void successfulMemoryDeleteRemovesExistingMcpPublicationBeforeToolDefinition() {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         ToolDefinition existing = httpTool("orders");
@@ -314,6 +362,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryInFlightToolCallCanPersistAfterRevokeAndDelete} 所描述的测试场景。
+     */
     void memoryInFlightToolCallCanPersistAfterRevokeAndDelete() {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         ToolDefinition existing = httpTool("in-flight-orders");
@@ -352,6 +403,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updateHttpToolReplacesEditableDefinitionConfigurationAndMcpState} 所描述的测试场景。
+     */
     void updateHttpToolReplacesEditableDefinitionConfigurationAndMcpState() {
         ToolDefinition existing = httpTool("orders-old");
         HttpToolCreateSpec replacement = new HttpToolCreateSpec(
@@ -415,6 +469,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updateLocalToolRejectsRenameWithoutWritingAnything} 所描述的测试场景。
+     */
     void updateLocalToolRejectsRenameWithoutWritingAnything() {
         ToolDefinition existing = localTool("local_search");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
@@ -440,6 +497,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updatePublishedLocalToolPreservesPublicationWithoutHttpConfiguration} 所描述的测试场景。
+     */
     void updatePublishedLocalToolPreservesPublicationWithoutHttpConfiguration() {
         ToolDefinition existing = localTool("local_search");
         McpToolPublication publication =
@@ -473,6 +533,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updatePublishedLocalToolCanCancelPublication} 所描述的测试场景。
+     */
     void updatePublishedLocalToolCanCancelPublication() {
         ToolDefinition existing = localTool("local_search");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
@@ -500,6 +563,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updateUnpublishedLocalToolCannotBypassDedicatedPublicationValidation} 所描述的测试场景。
+     */
     void updateUnpublishedLocalToolCannotBypassDedicatedPublicationValidation() {
         ToolDefinition existing = localTool("local_search");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
@@ -528,6 +594,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updateDisabledLocalPublicationCannotBeMistakenForPublishedState} 所描述的测试场景。
+     */
     void updateDisabledLocalPublicationCannotBeMistakenForPublishedState() {
         ToolDefinition existing = localTool("local_search");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
@@ -555,6 +624,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updateToolRejectsTypeChangeWithoutWritingAnything} 所描述的测试场景。
+     */
     void updateToolRejectsTypeChangeWithoutWritingAnything() {
         ToolDefinition existing = localTool("local_search");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
@@ -579,6 +651,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updateToolRejectsAnotherToolWithSameTenantName} 所描述的测试场景。
+     */
     void updateToolRejectsAnotherToolWithSameTenantName() {
         ToolDefinition existing = httpTool("orders-old");
         ToolDefinition duplicate = new ToolDefinition(
@@ -618,6 +693,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updateHttpToolRejectsMissingHttpConfiguration} 所描述的测试场景。
+     */
     void updateHttpToolRejectsMissingHttpConfiguration() {
         ToolDefinition existing = httpTool("orders");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
@@ -643,6 +721,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updateLocalToolRejectsHttpConfiguration} 所描述的测试场景。
+     */
     void updateLocalToolRejectsHttpConfiguration() {
         ToolDefinition existing = localTool("local_search");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(existing));
@@ -668,6 +749,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updateToolDoesNotSeeAnotherTenantResource} 所描述的测试场景。
+     */
     void updateToolDoesNotSeeAnotherTenantResource() {
         UUID otherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.empty());
@@ -693,6 +777,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code deleteToolDoesNotSeeAnotherTenantResource} 所描述的测试场景。
+     */
     void deleteToolDoesNotSeeAnotherTenantResource() {
         UUID otherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.empty());
@@ -707,6 +794,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code revokeToolDoesNotSeeAnotherTenantResource} 所描述的测试场景。
+     */
     void revokeToolDoesNotSeeAnotherTenantResource() {
         UUID otherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.empty());
@@ -722,6 +812,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code deleteReferencedToolReturnsConflictWithoutSideEffects} 所描述的测试场景。
+     */
     void deleteReferencedToolReturnsConflictWithoutSideEffects() {
         ToolDefinition tool = httpTool("orders");
         AgentDefinition agent = agent(List.of(TOOL_ID));
@@ -741,6 +834,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code deleteToolWithCallHistoryReturnsExplicitConflictWithoutSideEffects} 所描述的测试场景。
+     */
     void deleteToolWithCallHistoryReturnsExplicitConflictWithoutSideEffects() {
         ToolDefinition tool = httpTool("orders");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
@@ -761,6 +857,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code deleteUnreferencedToolCleansAttachedDataAndWritesAudit} 所描述的测试场景。
+     */
     void deleteUnreferencedToolCleansAttachedDataAndWritesAudit() {
         ToolDefinition tool = httpTool("orders");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
@@ -786,6 +885,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code revokeToolRemovesGrantAndAgentAssociationAndWritesAudit} 所描述的测试场景。
+     */
     void revokeToolRemovesGrantAndAgentAssociationAndWritesAudit() {
         ToolDefinition tool = httpTool("orders");
         AgentDefinition existingAgent = agent(List.of(TOOL_ID));
@@ -807,30 +909,63 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryFallbackDoesNotPersistAgentWhenAuditFails} 所描述的测试场景。
+     */
     void memoryFallbackDoesNotPersistAgentWhenAuditFails() {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         AgentDefinitionRepository agentRepository = new AgentDefinitionRepository() {
             @Override
+            /**
+             * 验证或支持 {@code save} 所描述的测试场景。
+             *
+             * @param agent 测试 Agent 定义
+             */
             public AgentDefinition save(AgentDefinition agent) {
                 return store.saveAgent(agent);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndId} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             */
             public Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId) {
                 return store.findAgent(tenantId, agentId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             */
             public List<AgentDefinition> listByTenant(UUID tenantId) {
                 return store.listAgents(tenantId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code addToolToAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.addToolToAgent(tenantId, agentId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code removeToolFromAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.removeToolFromAgent(tenantId, agentId, toolId);
             }
@@ -859,6 +994,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryFallbackDoesNotPersistToolOrSuccessAuditWhenHttpConfigurationIsInvalid} 所描述的测试场景。
+     */
     void memoryFallbackDoesNotPersistToolOrSuccessAuditWhenHttpConfigurationIsInvalid() {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         ManagementCommandService service = memoryBackedService(store);
@@ -882,6 +1020,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code httpCreationValidatesSchemaBeforeAnyPersistence} 所描述的测试场景。
+     */
     void httpCreationValidatesSchemaBeforeAnyPersistence() {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         ManagementCommandService service = memoryBackedService(store);
@@ -905,6 +1046,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code initialMcpPublicationRejectsInvalidToolNameBeforePersistence} 所描述的测试场景。
+     */
     void initialMcpPublicationRejectsInvalidToolNameBeforePersistence() {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         ManagementCommandService service = memoryBackedService(store);
@@ -922,6 +1066,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code initialMcpPublicationWritesCreateAndPublicationAudits} 所描述的测试场景。
+     */
     void initialMcpPublicationWritesCreateAndPublicationAudits() {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         ManagementCommandService service = memoryBackedService(store);
@@ -939,6 +1086,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code initialMcpPublicationAuditFailureRollsBackCreatedResources} 所描述的测试场景。
+     */
     void initialMcpPublicationAuditFailureRollsBackCreatedResources() {
         when(toolRepository.listByTenant(TENANT_ID)).thenReturn(List.of());
         when(toolRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -964,10 +1114,18 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code memoryInitialMcpPublicationAuditFailureDoesNotLeaveToolCreateAudit} 所描述的测试场景。
+     */
     void memoryInitialMcpPublicationAuditFailureDoesNotLeaveToolCreateAudit() {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         AuditAppender failingAuditAppender = new AuditAppender(new com.cmagent.core.audit.AuditEventRepository() {
             @Override
+            /**
+             * 验证或支持 {@code append} 所描述的测试场景。
+             *
+             * @param event 测试审计事件
+             */
             public void append(com.cmagent.core.audit.AuditEvent event) {
                 if ("MCP_TOOL_PUBLISHED".equals(event.eventType())) {
                     throw new AuditPersistenceException(
@@ -978,16 +1136,33 @@ class ManagementCommandServiceTest {
             }
 
             @Override
+            /**
+             * 验证或支持 {@code appendAll} 所描述的测试场景。
+             *
+             * @param events 测试审计事件集合
+             */
             public void appendAll(List<com.cmagent.core.audit.AuditEvent> events) {
                 throw new IllegalStateException("memory audit unavailable");
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param limit 测试辅助方法使用的 limit 参数
+             */
             public List<com.cmagent.core.audit.AuditEvent> listByTenant(UUID tenantId, int limit) {
                 return store.listByTenant(tenantId, limit);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param pageRequest 测试辅助方法使用的 pageRequest 参数
+             */
             public List<com.cmagent.core.audit.AuditEvent> listByTenant(
                     UUID tenantId, com.cmagent.core.audit.AuditPageRequest pageRequest
             ) {
@@ -1008,6 +1183,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code duplicateNameConstraintIsMappedToConflict} 所描述的测试场景。
+     */
     void duplicateNameConstraintIsMappedToConflict() {
         when(toolRepository.listByTenant(TENANT_ID)).thenReturn(List.of());
         when(toolRepository.save(any())).thenThrow(new DuplicateKeyException(
@@ -1026,6 +1204,9 @@ class ManagementCommandServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code concurrentMemoryCreatesWithSameTenantAndNameProduceOneConflict} 所描述的测试场景。
+     */
     void concurrentMemoryCreatesWithSameTenantAndNameProduceOneConflict() throws Exception {
         InMemoryPlatformStore store = new InMemoryPlatformStore();
         ToolDefinitionRepository tools = new BarrierToolDefinitionRepository(memoryToolRepository(store), 2);
@@ -1045,6 +1226,12 @@ class ManagementCommandServiceTest {
         assertThat(store.listTools(TENANT_ID)).hasSize(1);
     }
 
+    /**
+     * 验证或支持 {@code createWithStatus} 所描述的测试场景。
+     *
+     * @param service 测试辅助方法使用的 service 参数
+     * @param principal 测试认证主体
+     */
     private static int createWithStatus(ManagementCommandService service, PrincipalRef principal) {
         try {
             service.createTool(principal, "concurrent-memory-name", "并发测试", ToolType.LOCAL, ToolRiskLevel.LOW);
@@ -1054,6 +1241,9 @@ class ManagementCommandServiceTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code mockedService} 所描述的测试场景。
+     */
     private ManagementCommandService mockedService() {
         return new ManagementCommandService(
                 agentRepository,
@@ -1067,6 +1257,11 @@ class ManagementCommandServiceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code httpTool} 所描述的测试场景。
+     *
+     * @param name 测试对象名称
+     */
     private static ToolDefinition httpTool(String name) {
         return new ToolDefinition(
                 TOOL_ID,
@@ -1083,6 +1278,11 @@ class ManagementCommandServiceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code localTool} 所描述的测试场景。
+     *
+     * @param name 测试对象名称
+     */
     private static ToolDefinition localTool(String name) {
         return new ToolDefinition(
                 TOOL_ID,
@@ -1099,6 +1299,11 @@ class ManagementCommandServiceTest {
         );
     }
 
+    /**
+     * 构造测试 Agent 定义。
+     *
+     * @param toolIds 测试辅助方法使用的 toolIds 参数
+     */
     private static AgentDefinition agent(List<UUID> toolIds) {
         return new AgentDefinition(
                 AGENT_ID,
@@ -1117,6 +1322,12 @@ class ManagementCommandServiceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code statefulMemoryService} 所描述的测试场景。
+     *
+     * @param store 内存测试存储
+     * @param memoryAuditAppender 测试辅助方法使用的 memoryAuditAppender 参数
+     */
     private ManagementCommandService statefulMemoryService(
             InMemoryPlatformStore store,
             AuditAppender memoryAuditAppender
@@ -1124,6 +1335,13 @@ class ManagementCommandServiceTest {
         return statefulMemoryService(store, memoryAgentRepository(store), memoryAuditAppender);
     }
 
+    /**
+     * 验证或支持 {@code statefulMemoryService} 所描述的测试场景。
+     *
+     * @param store 内存测试存储
+     * @param agents 测试辅助方法使用的 agents 参数
+     * @param memoryAuditAppender 测试辅助方法使用的 memoryAuditAppender 参数
+     */
     private ManagementCommandService statefulMemoryService(
             InMemoryPlatformStore store,
             AgentDefinitionRepository agents,
@@ -1141,14 +1359,32 @@ class ManagementCommandServiceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code memoryBackedService} 所描述的测试场景。
+     *
+     * @param store 内存测试存储
+     */
     private ManagementCommandService memoryBackedService(InMemoryPlatformStore store) {
         return memoryBackedService(store, memoryToolRepository(store));
     }
 
+    /**
+     * 验证或支持 {@code memoryBackedService} 所描述的测试场景。
+     *
+     * @param store 内存测试存储
+     * @param memoryTools 测试辅助方法使用的 memoryTools 参数
+     */
     private ManagementCommandService memoryBackedService(InMemoryPlatformStore store, ToolDefinitionRepository memoryTools) {
         return memoryBackedService(store, memoryTools, new AuditAppender(store));
     }
 
+    /**
+     * 验证或支持 {@code memoryBackedService} 所描述的测试场景。
+     *
+     * @param store 内存测试存储
+     * @param memoryTools 测试辅助方法使用的 memoryTools 参数
+     * @param memoryAuditAppender 测试辅助方法使用的 memoryAuditAppender 参数
+     */
     private ManagementCommandService memoryBackedService(
             InMemoryPlatformStore store,
             ToolDefinitionRepository memoryTools,
@@ -1164,10 +1400,16 @@ class ManagementCommandServiceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code httpToolConfigValidator} 所描述的测试场景。
+     */
     private static HttpToolConfigValidator httpToolConfigValidator() {
         return new HttpToolConfigValidator(new ObjectMapper());
     }
 
+    /**
+     * 验证或支持 {@code validHttpSpec} 所描述的测试场景。
+     */
     private static HttpToolCreateSpec validHttpSpec() {
         return new HttpToolCreateSpec(
                 HttpToolMethod.POST,
@@ -1179,6 +1421,9 @@ class ManagementCommandServiceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code updatedHttpSpec} 所描述的测试场景。
+     */
     private static HttpToolCreateSpec updatedHttpSpec() {
         return new HttpToolCreateSpec(
                 HttpToolMethod.POST,
@@ -1190,6 +1435,12 @@ class ManagementCommandServiceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code httpConfiguration} 所描述的测试场景。
+     *
+     * @param tool 测试工具定义
+     * @param spec 测试辅助方法使用的 spec 参数
+     */
     private static HttpToolConfig httpConfiguration(ToolDefinition tool, HttpToolCreateSpec spec) {
         return new HttpToolConfig(
                 tool.tenantId(),
@@ -1203,6 +1454,12 @@ class ManagementCommandServiceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code awaitLatch} 所描述的测试场景。
+     *
+     * @param latch 协调并发测试的同步器
+     * @param failureMessage 测试辅助方法使用的 failureMessage 参数
+     */
     private static void awaitLatch(CountDownLatch latch, String failureMessage) {
         try {
             if (!latch.await(5, TimeUnit.SECONDS)) {
@@ -1214,48 +1471,105 @@ class ManagementCommandServiceTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code memoryAgentRepository} 所描述的测试场景。
+     *
+     * @param store 内存测试存储
+     */
     private static AgentDefinitionRepository memoryAgentRepository(InMemoryPlatformStore store) {
         return new AgentDefinitionRepository() {
             @Override
+            /**
+             * 验证或支持 {@code save} 所描述的测试场景。
+             *
+             * @param agent 测试 Agent 定义
+             */
             public AgentDefinition save(AgentDefinition agent) {
                 return store.saveAgent(agent);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndId} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             */
             public Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId) {
                 return store.findAgent(tenantId, agentId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             */
             public List<AgentDefinition> listByTenant(UUID tenantId) {
                 return store.listAgents(tenantId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code addToolToAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.addToolToAgent(tenantId, agentId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code removeToolFromAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 return store.removeToolFromAgent(tenantId, agentId, toolId);
             }
         };
     }
 
+    /**
+     * 验证或支持 {@code memoryHttpConfigRepository} 所描述的测试场景。
+     *
+     * @param store 内存测试存储
+     */
     private static HttpToolConfigRepository memoryHttpConfigRepository(InMemoryPlatformStore store) {
         return new HttpToolConfigRepository() {
             @Override
+            /**
+             * 验证或支持 {@code save} 所描述的测试场景。
+             *
+             * @param config 测试配置
+             */
             public HttpToolConfig save(HttpToolConfig config) {
                 return store.saveHttpToolConfig(config);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndToolId} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public Optional<HttpToolConfig> findByTenantAndToolId(UUID tenantId, UUID toolId) {
                 return store.findHttpToolConfig(tenantId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndToolIds} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolIds 测试辅助方法使用的 toolIds 参数
+             */
             public java.util.Map<UUID, HttpToolConfig> findByTenantAndToolIds(
                     UUID tenantId, List<UUID> toolIds
             ) {
@@ -1267,25 +1581,53 @@ class ManagementCommandServiceTest {
             }
 
             @Override
+            /**
+             * 验证或支持 {@code delete} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public void delete(UUID tenantId, UUID toolId) {
                 store.deleteHttpToolConfig(tenantId, toolId);
             }
         };
     }
 
+    /**
+     * 验证或支持 {@code memoryMcpPublicationRepository} 所描述的测试场景。
+     *
+     * @param store 内存测试存储
+     */
     private static McpToolPublicationRepository memoryMcpPublicationRepository(InMemoryPlatformStore store) {
         return new McpToolPublicationRepository() {
             @Override
+            /**
+             * 验证或支持 {@code save} 所描述的测试场景。
+             *
+             * @param publication 测试辅助方法使用的 publication 参数
+             */
             public McpToolPublication save(McpToolPublication publication) {
                 return store.saveMcpToolPublication(publication);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndToolId} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public Optional<McpToolPublication> findByTenantAndToolId(UUID tenantId, UUID toolId) {
                 return store.findMcpToolPublication(tenantId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndToolIds} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolIds 测试辅助方法使用的 toolIds 参数
+             */
             public java.util.Map<UUID, McpToolPublication> findByTenantAndToolIds(
                     UUID tenantId, List<UUID> toolIds
             ) {
@@ -1297,35 +1639,74 @@ class ManagementCommandServiceTest {
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listEnabledByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             */
             public List<McpToolPublication> listEnabledByTenant(UUID tenantId) {
                 return store.listEnabledMcpToolPublications(tenantId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code delete} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public void delete(UUID tenantId, UUID toolId) {
                 store.deleteMcpToolPublication(tenantId, toolId);
             }
         };
     }
 
+    /**
+     * 验证或支持 {@code memoryGrantRepository} 所描述的测试场景。
+     *
+     * @param store 内存测试存储
+     */
     private static ToolGrantRepository memoryGrantRepository(InMemoryPlatformStore store) {
         return new ToolGrantRepository() {
             @Override
+            /**
+             * 验证或支持 {@code save} 所描述的测试场景。
+             *
+             * @param grant 测试辅助方法使用的 grant 参数
+             */
             public com.cmagent.core.domain.ToolGrant save(com.cmagent.core.domain.ToolGrant grant) {
                 return store.saveGrant(grant);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             */
             public List<com.cmagent.core.domain.ToolGrant> listByTenant(UUID tenantId) {
                 return store.listGrants(tenantId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenantAndAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             */
             public List<com.cmagent.core.domain.ToolGrant> listByTenantAndAgent(UUID tenantId, UUID agentId) {
                 return store.listGrants(tenantId, agentId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenantAgentAndTool} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public List<com.cmagent.core.domain.ToolGrant> listByTenantAgentAndTool(
                     UUID tenantId, UUID agentId, UUID toolId
             ) {
@@ -1333,50 +1714,106 @@ class ManagementCommandServiceTest {
             }
 
             @Override
+            /**
+             * 验证或支持 {@code delete} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public void delete(UUID tenantId, UUID agentId, UUID toolId) {
                 store.deleteGrant(tenantId, agentId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code deleteByTenantAndToolId} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public void deleteByTenantAndToolId(UUID tenantId, UUID toolId) {
                 store.deleteGrantsByTenantAndToolId(tenantId, toolId);
             }
         };
     }
 
+    /**
+     * 验证或支持 {@code memoryToolRepository} 所描述的测试场景。
+     *
+     * @param store 内存测试存储
+     */
     private static ToolDefinitionRepository memoryToolRepository(InMemoryPlatformStore store) {
         return new ToolDefinitionRepository() {
             @Override
+            /**
+             * 验证或支持 {@code save} 所描述的测试场景。
+             *
+             * @param tool 测试工具定义
+             */
             public ToolDefinition save(ToolDefinition tool) {
                 return store.saveTool(tool);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code restoreDeletedToolForCompensation} 所描述的测试场景。
+             *
+             * @param tool 测试工具定义
+             */
             public boolean restoreDeletedToolForCompensation(ToolDefinition tool) {
                 return store.restoreDeletedToolForCompensation(tool);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code update} 所描述的测试场景。
+             *
+             * @param tool 测试工具定义
+             */
             public ToolDefinition update(ToolDefinition tool) {
                 return store.updateTool(tool);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndId} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
                 return store.findTool(tenantId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             */
             public List<ToolDefinition> listByTenant(UUID tenantId) {
                 return store.listTools(tenantId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code hasToolCallHistory} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
                 return store.hasToolCallHistory(tenantId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code delete} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public void delete(UUID tenantId, UUID toolId) {
                 store.deleteTool(tenantId, toolId);
             }
@@ -1387,27 +1824,54 @@ class ManagementCommandServiceTest {
         private final ToolDefinitionRepository delegate;
         private final CountDownLatch listBarrier;
 
+        /**
+         * 创建 {@code BarrierToolDefinitionRepository} 测试辅助实例。
+         *
+         * @param delegate 测试辅助方法使用的 delegate 参数
+         * @param callers 测试辅助方法使用的 callers 参数
+         */
         private BarrierToolDefinitionRepository(ToolDefinitionRepository delegate, int callers) {
             this.delegate = delegate;
             this.listBarrier = new CountDownLatch(callers);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code save} 所描述的测试场景。
+         *
+         * @param tool 测试工具定义
+         */
         public ToolDefinition save(ToolDefinition tool) {
             return delegate.save(tool);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code update} 所描述的测试场景。
+         *
+         * @param tool 测试工具定义
+         */
         public ToolDefinition update(ToolDefinition tool) {
             return delegate.update(tool);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code findByTenantAndId} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         * @param toolId 测试工具标识
+         */
         public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
             return delegate.findByTenantAndId(tenantId, toolId);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code listByTenant} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         */
         public List<ToolDefinition> listByTenant(UUID tenantId) {
             List<ToolDefinition> tools = delegate.listByTenant(tenantId);
             listBarrier.countDown();
@@ -1423,39 +1887,84 @@ class ManagementCommandServiceTest {
         }
 
         @Override
+        /**
+         * 验证或支持 {@code hasToolCallHistory} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         * @param toolId 测试工具标识
+         */
         public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
             return delegate.hasToolCallHistory(tenantId, toolId);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code delete} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         * @param toolId 测试工具标识
+         */
         public void delete(UUID tenantId, UUID toolId) {
             delegate.delete(tenantId, toolId);
         }
     }
 
+    /**
+     * 验证或支持 {@code emptyAgentRepository} 所描述的测试场景。
+     */
     private AgentDefinitionRepository emptyAgentRepository() {
         return new AgentDefinitionRepository() {
             @Override
+            /**
+             * 验证或支持 {@code save} 所描述的测试场景。
+             *
+             * @param agent 测试 Agent 定义
+             */
             public AgentDefinition save(AgentDefinition agent) {
                 return agent;
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndId} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             */
             public Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId) {
                 return Optional.empty();
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             */
             public List<AgentDefinition> listByTenant(UUID tenantId) {
                 return List.of();
             }
 
             @Override
+            /**
+             * 验证或支持 {@code addToolToAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 throw new UnsupportedOperationException();
             }
 
             @Override
+            /**
+             * 验证或支持 {@code removeToolFromAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 throw new UnsupportedOperationException();
             }

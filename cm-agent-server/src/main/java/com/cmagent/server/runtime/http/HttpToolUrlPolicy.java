@@ -24,7 +24,7 @@ public class HttpToolUrlPolicy {
 
     @Autowired
     /**
-     * HttpToolUrlPolicy：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code HttpToolUrlPolicy} 实例并保存其运行所需依赖。
      *
      * @param properties 模块配置属性，用于读取运行参数。
      */
@@ -32,10 +32,10 @@ public class HttpToolUrlPolicy {
         this(properties, host -> List.of(InetAddress.getAllByName(host)));
     }
     /**
-     * HttpToolUrlPolicy：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code HttpToolUrlPolicy} 实例并保存其运行所需依赖。
      *
      * @param properties 模块配置属性，用于读取运行参数。
-     * @param addressResolver 参与 HttpToolUrlPolicy 处理的 addressResolver 输入值。
+     * @param addressResolver 执行 DNS 解析的可替换组件。
      */
     public HttpToolUrlPolicy(HttpToolProperties properties, HostAddressResolver addressResolver) {
         this.properties = Objects.requireNonNull(properties, "properties 不能为空");
@@ -82,9 +82,9 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * origin：处理该类内部的业务逻辑或辅助计算。
+     * 提取 URI 的协议、规范主机和有效端口作为源站。
      *
-     * @param uri 参与 origin 处理的 uri 输入值。
+     * @param uri 待校验或请求的 URI。
      */
     private Origin origin(URI uri) {
         if (uri == null || uri.isOpaque() || uri.getRawUserInfo() != null || uri.getRawFragment() != null) {
@@ -97,9 +97,9 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * normalizeScheme：规范化输入值以便后续处理。
+     * 规范化并校验 URI 协议。
      *
-     * @param scheme 参与 normalizeScheme 处理的 scheme 输入值。
+     * @param scheme URI 协议。
      */
     private String normalizeScheme(String scheme) {
         if (scheme == null) {
@@ -109,10 +109,10 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * validateSchemeAndPort：校验输入、状态或前置条件。
+     * 校验协议与端口组合是否允许。
      *
-     * @param scheme 参与 validateSchemeAndPort 处理的 scheme 输入值。
-     * @param port 参与 validateSchemeAndPort 处理的 port 输入值。
+     * @param scheme URI 协议。
+     * @param port URI 显式端口，未指定时为负数。
      */
     private void validateSchemeAndPort(String scheme, int port) {
         if ("https".equals(scheme)) {
@@ -129,9 +129,9 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * canonicalHost：转换并生成规范化输出。
+     * 将主机名规范化为不带尾点的小写 ASCII 形式。
      *
-     * @param uri 参与 canonicalHost 处理的 uri 输入值。
+     * @param uri 待校验或请求的 URI。
      */
     private String canonicalHost(URI uri) {
         String host = uri.getHost();
@@ -158,9 +158,9 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * isAllowedHost：判断当前条件是否成立。
+     * 判断规范主机是否命中允许列表。
      *
-     * @param host 参与 isAllowedHost 处理的 host 输入值。
+     * @param host 待规范化或校验的主机名。
      */
     private boolean isAllowedHost(String host) {
         for (String configured : properties.getAllowedHosts()) {
@@ -181,9 +181,9 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * canonicalAllowedHost：转换并生成规范化输出。
+     * 规范化配置中的允许主机。
      *
-     * @param configured 参与 canonicalAllowedHost 处理的 configured 输入值。
+     * @param configured 配置中已经声明的目标名称集合。
      */
     private String canonicalAllowedHost(String configured) {
         if (configured == null || configured.isBlank()) {
@@ -210,9 +210,9 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * resolve：解析并定位可用的目标对象。
+     * 解析并返回满足安全策略的目标对象。
      *
-     * @param host 参与 resolve 处理的 host 输入值。
+     * @param host 待规范化或校验的主机名。
      */
     private List<InetAddress> resolve(String host) {
         try {
@@ -224,20 +224,20 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * isLocalhost：判断当前条件是否成立。
+     * 判断主机名是否为 localhost 或其子域。
      *
-     * @param host 参与 isLocalhost 处理的 host 输入值。
+     * @param host 待规范化或校验的主机名。
      */
     private boolean isLocalhost(String host) {
         return "localhost".equals(host) || host.endsWith(".localhost");
     }
 
     /**
-     * canonicalUri：转换并生成规范化输出。
+     * 构造去除用户信息和片段的规范 URI。
      *
-     * @param original 参与 canonicalUri 处理的 original 输入值。
-     * @param scheme 参与 canonicalUri 处理的 scheme 输入值。
-     * @param host 参与 canonicalUri 处理的 host 输入值。
+     * @param original 待复制的原始 Schema 节点。
+     * @param scheme URI 协议。
+     * @param host 待规范化或校验的主机名。
      */
     private URI canonicalUri(URI original, String scheme, String host) {
         StringBuilder value = new StringBuilder(scheme).append("://").append(host);
@@ -258,9 +258,9 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * isPublicAddress：判断当前条件是否成立。
+     * 判断解析地址是否为允许访问的公网地址。
      *
-     * @param address 参与 isPublicAddress 处理的 address 集合。
+     * @param address DNS 解析得到的网络地址。
      */
     private boolean isPublicAddress(InetAddress address) {
         if (address == null || address.isAnyLocalAddress() || address.isLoopbackAddress()
@@ -278,9 +278,9 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * isPublicIpv4：判断当前条件是否成立。
+     * 判断 IPv4 地址是否不在受限地址段。
      *
-     * @param bytes 参与 isPublicIpv4 处理的 bytes 集合。
+     * @param bytes 网络地址的原始字节。
      */
     private boolean isPublicIpv4(byte[] bytes) {
         long value = ((long) bytes[0] & 0xff) << 24
@@ -305,9 +305,9 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * isPublicIpv6：判断当前条件是否成立。
+     * 判断 IPv6 地址是否不在回环、链路本地等受限范围。
      *
-     * @param bytes 参与 isPublicIpv6 处理的 bytes 集合。
+     * @param bytes 网络地址的原始字节。
      */
     private boolean isPublicIpv6(byte[] bytes) {
         if ((bytes[0] & 0xe0) != 0x20) {
@@ -320,11 +320,11 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * hasIpv6Prefix：判断当前条件是否成立。
+     * 判断 IPv6 地址是否匹配指定前缀。
      *
-     * @param address 参与 hasIpv6Prefix 处理的 address 集合。
-     * @param prefix 参与 hasIpv6Prefix 处理的 prefix 输入值。
-     * @param prefixLength 参与 hasIpv6Prefix 处理的 prefixLength 输入值。
+     * @param address DNS 解析得到的网络地址。
+     * @param prefix 待匹配的网络或路径前缀。
+     * @param prefixLength 参与匹配的前缀位数。
      */
     private static boolean hasIpv6Prefix(byte[] address, byte[] prefix, int prefixLength) {
         int fullBytes = prefixLength / 8;
@@ -342,11 +342,11 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * inIpv4Range：处理该类内部的业务逻辑或辅助计算。
+     * 判断 IPv4 数值是否落在指定网段。
      *
-     * @param value 参与 inIpv4Range 处理的 value 输入值。
-     * @param networkAddress 参与 inIpv4Range 处理的 networkAddress 集合。
-     * @param prefixLength 参与 inIpv4Range 处理的 prefixLength 输入值。
+     * @param value 待检查、转换或规范化的值。
+     * @param networkAddress 待判断的网络地址。
+     * @param prefixLength 参与匹配的前缀位数。
      */
     private static boolean inIpv4Range(long value, String networkAddress, int prefixLength) {
         long mask = prefixLength == 0 ? 0 : 0xffff_ffffL << (32 - prefixLength) & 0xffff_ffffL;
@@ -354,9 +354,9 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * ipv4Value：处理该类内部的业务逻辑或辅助计算。
+     * 将四字节 IPv4 地址转换为无符号整数。
      *
-     * @param value 参与 ipv4Value 处理的 value 输入值。
+     * @param value 待检查、转换或规范化的值。
      */
     private static long ipv4Value(String value) {
         String[] parts = value.split("\\.");
@@ -367,14 +367,14 @@ public class HttpToolUrlPolicy {
     }
 
     /**
-     * rejected：处理该类内部的业务逻辑或辅助计算。
+     * 创建不暴露内部网络细节的 URL 拒绝异常。
      */
     private static IllegalArgumentException rejected() {
         return new IllegalArgumentException(REJECTED_MESSAGE);
     }
 
     /**
-     * Origin：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code Origin} 在 HTTP 工具流程中使用的不可变数据。
      */
     private record Origin(String scheme, String host, int port) {
     }

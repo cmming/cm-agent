@@ -23,6 +23,9 @@ class AgentScopeRuntimeConfigurationTest {
             .withUserConfiguration(AgentScopeRuntimeConfiguration.class, ToolGatewayConfiguration.class);
 
     @Test
+    /**
+     * 验证或支持 {@code enabledConfigurationProvidesRealRuntime} 所描述的测试场景。
+     */
     void enabledConfigurationProvidesRealRuntime() {
         contextRunner.withPropertyValues(
                         "cm-agent.fake-runtime-enabled=false",
@@ -38,6 +41,9 @@ class AgentScopeRuntimeConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code fakeAndRealRuntimeCannotBeEnabledTogether} 所描述的测试场景。
+     */
     void fakeAndRealRuntimeCannotBeEnabledTogether() {
         contextRunner.withPropertyValues(
                         "cm-agent.fake-runtime-enabled=true",
@@ -47,6 +53,9 @@ class AgentScopeRuntimeConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code customCredentialProviderReplacesExternalCredentialMapping} 所描述的测试场景。
+     */
     void customCredentialProviderReplacesExternalCredentialMapping() {
         contextRunner.withBean(ModelCredentialProvider.class,
                         () -> (tenantId, modelConfigId) -> new ModelCredential("unit-test-custom-key"))
@@ -61,6 +70,9 @@ class AgentScopeRuntimeConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code customRuntimePreventsDefaultRuntimeAndCredentialBeans} 所描述的测试场景。
+     */
     void customRuntimePreventsDefaultRuntimeAndCredentialBeans() {
         contextRunner.withBean(AgentRuntime.class, () -> request -> null)
                 .withPropertyValues("cm-agent.agentscope.enabled=true")
@@ -73,6 +85,9 @@ class AgentScopeRuntimeConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code defaultCredentialProviderRejectsMissingCredentialsAtStartup} 所描述的测试场景。
+     */
     void defaultCredentialProviderRejectsMissingCredentialsAtStartup() {
         contextRunner.withPropertyValues("cm-agent.agentscope.enabled=true")
                 .run(context -> assertThat(context).hasFailed()
@@ -84,6 +99,9 @@ class AgentScopeRuntimeConfigurationTest {
     @Configuration(proxyBeanMethods = false)
     static class ToolGatewayConfiguration {
         @Bean
+        /**
+         * 验证或支持 {@code toolInvocationGateway} 所描述的测试场景。
+         */
         ToolInvocationGateway toolInvocationGateway() {
             return request -> ToolInvocationResult.succeeded("测试结果");
         }

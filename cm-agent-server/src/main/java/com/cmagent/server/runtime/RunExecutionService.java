@@ -50,16 +50,16 @@ public class RunExecutionService {
 
     @Autowired
     /**
-     * RunExecutionService：执行当前流程并返回处理结果。
+     * 创建 {@code RunExecutionService} 实例并保存其运行所需依赖。
      *
-     * @param runtime 参与 RunExecutionService 处理的 runtime 输入值。
-     * @param agentRepository 参与 RunExecutionService 处理的 agentRepository 输入值。
-     * @param modelConfigRepository 参与 RunExecutionService 处理的 modelConfigRepository 输入值。
-     * @param toolRepository 参与 RunExecutionService 处理的 toolRepository 输入值。
-     * @param grantRepository 参与 RunExecutionService 处理的 grantRepository 输入值。
-     * @param toolAuthorizationPolicy 参与 RunExecutionService 处理的 toolAuthorizationPolicy 输入值。
-     * @param persistenceService 参与 RunExecutionService 处理的 persistenceService 输入值。
-     * @param redactor 参与 RunExecutionService 处理的 redactor 输入值。
+     * @param runtime 执行 Agent 请求的运行时实现
+     * @param agentRepository 负责访问领域数据的仓储。
+     * @param modelConfigRepository 负责访问领域数据的仓储。
+     * @param toolRepository 负责访问领域数据的仓储。
+     * @param grantRepository 负责访问领域数据的仓储。
+     * @param toolAuthorizationPolicy 校验 Agent 工具授权关系的策略
+     * @param persistenceService 负责当前业务流程的服务。
+     * @param redactor 负责清理敏感文本的脱敏器。
      */
     public RunExecutionService(
             AgentRuntime runtime,
@@ -141,10 +141,10 @@ public class RunExecutionService {
     }
 
     /**
-     * bestEffortFailureClosure：处理该类内部的业务逻辑或辅助计算。
+     * 尽最大努力将异常运行收口为失败状态。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
-     * @param runningRun 参与 bestEffortFailureClosure 处理的 runningRun 输入值。
+     * @param runningRun 已经持久化且状态为 RUNNING 的记录。
      */
     private void bestEffortFailureClosure(PrincipalRef principal, RunRecord runningRun) {
         try {
@@ -156,17 +156,17 @@ public class RunExecutionService {
     }
 
     /**
-     * bestEffortFailureAudit：处理该类内部的业务逻辑或辅助计算。
+     * 尽最大努力追加运行失败审计。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
-     * @param runningRun 参与 bestEffortFailureAudit 处理的 runningRun 输入值。
+     * @param runningRun 已经持久化且状态为 RUNNING 的记录。
      */
     private void bestEffortFailureAudit(PrincipalRef principal, RunRecord runningRun) {
         persistenceService.appendFailureAudit(principal, runningRun);
     }
 
     /**
-     * authorizedTools：处理该类内部的业务逻辑或辅助计算。
+     * 筛选当前主体获准在本次运行中使用的工具。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param agent 当前处理的 Agent 定义。
@@ -190,10 +190,10 @@ public class RunExecutionService {
     }
 
     /**
-     * responseWithPersistentId：处理该类内部的业务逻辑或辅助计算。
+     * 使用已持久化的运行 ID 重建响应。
      *
-     * @param completedRun 参与 responseWithPersistentId 处理的 completedRun 输入值。
-     * @param result 参与 responseWithPersistentId 处理的 result 输入值。
+     * @param completedRun 已进入终态、等待持久化的运行记录
+     * @param result 上一步得到的处理结果。
      */
     private AgentRunResult responseWithPersistentId(com.cmagent.core.domain.RunRecord completedRun, AgentRunResult result) {
         List<ToolCallRecord> toolCalls = result.toolCalls() == null
@@ -205,6 +205,11 @@ public class RunExecutionService {
         );
     }
 
+    /**
+     * 脱敏工具调用记录中的输入、输出和错误信息。
+     *
+     * @param record 当前处理的运行或工具调用记录
+     */
     private ToolCallRecord redactToolCall(ToolCallRecord record) {
         return new ToolCallRecord(
                 record.toolId(), record.toolName(), redactor.redact(record.inputSummary()),
@@ -214,13 +219,13 @@ public class RunExecutionService {
     }
 
     /**
-     * RuntimeExecutionException：运行期异常，表示当前模块的处理失败。
+     * 表示 {@code RuntimeExecutionException} 对应失败场景的受控异常。
      */
     public static final class RuntimeExecutionException extends RuntimeException {
         /**
-         * RuntimeExecutionException：执行当前流程并返回处理结果。
+         * 表示 {@code RuntimeExecutionException} 对应失败场景的受控异常。
          *
-         * @param cause 参与 RuntimeExecutionException 处理的 cause 输入值。
+         * @param cause 触发当前失败的原始异常。
          */
         public RuntimeExecutionException(Throwable cause) {
             super(CONTROLLED_FAILURE, cause);

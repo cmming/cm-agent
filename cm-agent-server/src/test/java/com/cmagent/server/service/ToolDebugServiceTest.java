@@ -59,6 +59,9 @@ class ToolDebugServiceTest {
     private PrincipalRef principal;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         service = new ToolDebugService(toolRepository, executionService, auditAppender,
                 new com.cmagent.server.security.ToolOutputSanitizer(new com.fasterxml.jackson.databind.ObjectMapper()),
@@ -67,6 +70,9 @@ class ToolDebugServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code httpDebugUsesDebugSourceWithoutAgentOrRunAndWritesStrictAudits} 所描述的测试场景。
+     */
     void httpDebugUsesDebugSourceWithoutAgentOrRunAndWritesStrictAudits() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "http-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
@@ -92,6 +98,9 @@ class ToolDebugServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code crossTenantToolIsNotFoundWithoutExecutingOrAuditingDetails} 所描述的测试场景。
+     */
     void crossTenantToolIsNotFoundWithoutExecutingOrAuditingDetails() {
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool(OTHER_TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "foreign")));
 
@@ -103,6 +112,9 @@ class ToolDebugServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code unavailableLocalToolWritesFailureAuditWithoutStartedAudit} 所描述的测试场景。
+     */
     void unavailableLocalToolWritesFailureAuditWithoutStartedAudit() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.LOCAL, ToolRiskLevel.LOW, "local-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
@@ -118,6 +130,9 @@ class ToolDebugServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code highRiskDebugRequiresExactServerSideToolNameConfirmation} 所描述的测试场景。
+     */
     void highRiskDebugRequiresExactServerSideToolNameConfirmation() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.HIGH, "dangerous_tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
@@ -130,6 +145,9 @@ class ToolDebugServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code failedStartAuditPreventsExecution} 所描述的测试场景。
+     */
     void failedStartAuditPreventsExecution() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "http-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
@@ -146,6 +164,9 @@ class ToolDebugServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code failedCompletionAuditIsPropagatedAfterExecution} 所描述的测试场景。
+     */
     void failedCompletionAuditIsPropagatedAfterExecution() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "http-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
@@ -162,6 +183,9 @@ class ToolDebugServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code failedDebugNeverExposesToolErrorOrStackTrace} 所描述的测试场景。
+     */
     void failedDebugNeverExposesToolErrorOrStackTrace() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "http-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
@@ -178,6 +202,9 @@ class ToolDebugServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code localDebugOutputNeverExposesJsonSecretsUrlsOrStackTrace} 所描述的测试场景。
+     */
     void localDebugOutputNeverExposesJsonSecretsUrlsOrStackTrace() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.LOCAL, ToolRiskLevel.LOW, "local-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
@@ -198,6 +225,9 @@ class ToolDebugServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code preparationPersistenceFailurePropagatesWithoutAnyDebugAudit} 所描述的测试场景。
+     */
     void preparationPersistenceFailurePropagatesWithoutAnyDebugAudit() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "http-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
@@ -213,6 +243,9 @@ class ToolDebugServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code localExecutionDataAccessFailureAfterStartedAuditReturnsControlledFailure} 所描述的测试场景。
+     */
     void localExecutionDataAccessFailureAfterStartedAuditReturnsControlledFailure() {
         ToolDefinition tool = tool(TENANT_ID, ToolType.LOCAL, ToolRiskLevel.LOW, "local-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
@@ -233,6 +266,9 @@ class ToolDebugServiceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 已安装内置add通过现有调试链路执行() {
         var objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
         var example = new MysqlLocalExampleCatalog(objectMapper).find("add").orElseThrow();
@@ -258,6 +294,14 @@ class ToolDebugServiceTest {
         assertThat(response.output()).isEqualTo("{\"sum\":0.3}");
     }
 
+    /**
+     * 构造测试工具定义。
+     *
+     * @param tenantId 测试租户标识
+     * @param type 测试辅助方法使用的 type 参数
+     * @param riskLevel 测试辅助方法使用的 riskLevel 参数
+     * @param name 测试对象名称
+     */
     private static ToolDefinition tool(UUID tenantId, ToolType type, ToolRiskLevel riskLevel, String name) {
         return new ToolDefinition(TOOL_ID, tenantId, name, "测试工具", type, "{}", riskLevel,
                 true, type == ToolType.HTTP ? "https://example.invalid" : "", "admin", "admin");
