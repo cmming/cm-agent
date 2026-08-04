@@ -8,9 +8,9 @@ import java.util.List;
 /** 抽象 DNS 解析，以便 HTTP 目标地址策略可测试并防范解析结果漂移。 */
 public interface HostAddressResolver {
     /**
-     * resolve：解析并定位可用的目标对象。
+     * 解析并返回满足安全策略的目标对象。
      *
-     * @param host 参与 resolve 处理的 host 输入值。
+     * @param host 待规范化或校验的主机名。
      */
     List<InetAddress> resolve(String host) throws UnknownHostException;
 }

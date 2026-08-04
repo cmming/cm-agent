@@ -49,16 +49,16 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     private final ConcurrentHashMap<String, HttpToolConfig> httpToolConfigs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, McpToolPublication> mcpToolPublications = new ConcurrentHashMap<>();
     /**
-     * saveHttpToolConfig：保存当前对象及其关联配置。
+     * 保存传入的领域对象或配置，并返回当前存储快照。
      *
-     * @param config 待处理的工具或运行时配置。
+     * @param config 待保存的动态 HTTP 工具配置
      */
     public HttpToolConfig saveHttpToolConfig(HttpToolConfig config) {
         httpToolConfigs.put(toolKey(config.tenantId(), config.toolId()), config);
         return config;
     }
     /**
-     * findHttpToolConfig：查询并返回当前上下文中的匹配结果。
+     * 按租户和工具标识查询动态 HTTP 工具配置，并再次校验键值归属。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -68,7 +68,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                 .filter(config -> tenantId.equals(config.tenantId()) && toolId.equals(config.toolId()));
     }
     /**
-     * deleteHttpToolConfig：删除或撤销当前目标的关联状态。
+     * 删除当前租户边界内的目标记录或关联。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -77,7 +77,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         httpToolConfigs.remove(toolKey(tenantId, toolId));
     }
     /**
-     * saveMcpToolPublication：保存当前对象及其关联配置。
+     * 保存传入的领域对象或配置，并返回当前存储快照。
      *
      * @param publication 待保存或校验的 MCP 发布记录。
      */
@@ -86,7 +86,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         return publication;
     }
     /**
-     * findMcpToolPublication：查询并返回当前上下文中的匹配结果。
+     * 按租户和工具标识查询 MCP 发布记录，并再次校验键值归属。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -96,7 +96,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                 .filter(publication -> tenantId.equals(publication.tenantId()) && toolId.equals(publication.toolId()));
     }
     /**
-     * deleteMcpToolPublication：删除或撤销当前目标的关联状态。
+     * 删除当前租户边界内的目标记录或关联。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -105,7 +105,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         mcpToolPublications.remove(toolKey(tenantId, toolId));
     }
     /**
-     * listEnabledMcpToolPublications：查询并返回符合条件的集合。
+     * 列出当前范围内符合条件的记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      */
@@ -117,7 +117,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     /**
-     * toolKey：转换内部数据为目标表示。
+     * 组合租户和工具 ID 形成内存映射键。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -127,21 +127,21 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     /**
-     * TenantToolName：不可变数据载体，用于在本模块内传递结构化信息。
+     * 创建 {@code TenantToolName} 实例并保存其运行所需依赖。
      */
     private record TenantToolName(UUID tenantId, String name) {
     }
     /**
-     * saveModelConfig：保存当前对象及其关联配置。
+     * 保存传入的领域对象或配置，并返回当前存储快照。
      *
-     * @param modelConfig modelConfig 对应的配置数据，用于驱动本次处理。
+     * @param modelConfig 待保存的模型提供商配置
      */
     public ModelConfig saveModelConfig(ModelConfig modelConfig) {
         modelConfigs.put(modelConfig.id(), modelConfig);
         return modelConfig;
     }
     /**
-     * findModelConfig：查询并返回当前上下文中的匹配结果。
+     * 按租户和配置标识查询模型配置，防止返回跨租户数据。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param modelConfigId 模型配置标识，用于定位目标模型配置。
@@ -154,7 +154,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         return Optional.of(modelConfig);
     }
     /**
-     * saveAgent：保存当前对象及其关联配置。
+     * 保存传入的领域对象或配置，并返回当前存储快照。
      *
      * @param agent 当前处理的 Agent 定义。
      */
@@ -163,7 +163,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         return agent;
     }
     /**
-     * findAgent：查询并返回当前上下文中的匹配结果。
+     * 按租户和 Agent 标识查询定义，防止返回跨租户数据。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
@@ -176,7 +176,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         return Optional.of(agent);
     }
     /**
-     * listAgents：查询并返回符合条件的集合。
+     * 列出当前范围内符合条件的记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      */
@@ -188,7 +188,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                 .toList();
     }
     /**
-     * addToolToAgent：处理该类内部的业务逻辑或辅助计算。
+     * 增加指定目标或关联。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
@@ -272,7 +272,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         return result;
     }
     /**
-     * saveTool：保存当前对象及其关联配置。
+     * 保存传入的领域对象或配置，并返回当前存储快照。
      *
      * @param tool 当前处理的工具定义。
      */
@@ -301,6 +301,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     /**
      * 原位恢复与墓碑身份完全匹配的受管 LOCAL 工具。
+     *
+     * @param tool 待恢复的受管 LOCAL 工具定义
+     * @return 是否成功恢复
      */
     public boolean restoreManagedLocalTool(ToolDefinition tool) {
         Objects.requireNonNull(tool, "tool 不能为空");
@@ -341,6 +344,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     /**
      * 恢复当前命令刚软删除的完整快照，仅供无事务命令失败补偿。
+     *
+     * @param tool 删除前的完整工具快照
+     * @return 是否成功恢复
      */
     public boolean restoreDeletedToolForCompensation(ToolDefinition tool) {
         Objects.requireNonNull(tool, "tool 不能为空");
@@ -402,7 +408,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         }
     }
     /**
-     * findTool：查询并返回当前上下文中的匹配结果。
+     * 按租户和工具标识查询定义，防止返回跨租户数据。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -415,7 +421,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         return Optional.of(tool);
     }
     /**
-     * deleteTool：删除或撤销当前目标的关联状态。
+     * 删除当前租户边界内的目标记录或关联。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -431,7 +437,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         }
     }
     /**
-     * listTools：查询并返回符合条件的集合。
+     * 列出当前范围内符合条件的记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      */
@@ -445,6 +451,10 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     /**
      * 判断指定工具是否已经产生需要保留的调用历史。
+     *
+     * @param tenantId 当前租户标识
+     * @param toolId 目标工具标识
+     * @return 存在调用历史时返回 {@code true}
      */
     public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
         synchronized (toolCalls) {
@@ -454,9 +464,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         }
     }
     /**
-     * saveGrant：保存当前对象及其关联配置。
+     * 保存传入的领域对象或配置，并返回当前存储快照。
      *
-     * @param grant 参与 saveGrant 处理的 grant 输入值。
+     * @param grant 待保存或校验的工具授权。
      */
     public ToolGrant saveGrant(ToolGrant grant) {
         synchronized (grants) {
@@ -472,7 +482,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         }
     }
     /**
-     * listGrants：查询并返回符合条件的集合。
+     * 列出当前范围内符合条件的记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      */
@@ -484,7 +494,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         }
     }
     /**
-     * listGrants：查询并返回符合条件的集合。
+     * 列出当前范围内符合条件的记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
@@ -497,7 +507,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         }
     }
     /**
-     * listGrants：查询并返回符合条件的集合。
+     * 列出当前范围内符合条件的记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
@@ -542,9 +552,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     @Override
     /**
-     * append：追加处理结果或审计记录。
+     * 线程安全地追加单条审计事件。
      *
-     * @param event 参与 append 处理的 event 输入值。
+     * @param event 待处理的审计事件。
      */
     public void append(AuditEvent event) {
         synchronized (auditEvents) {
@@ -554,9 +564,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     @Override
     /**
-     * appendAll：追加处理结果或审计记录。
+     * 线程安全地批量追加审计事件快照。
      *
-     * @param events 参与 appendAll 处理的 events 集合。
+     * @param events 待追加的审计事件集合
      */
     public void appendAll(List<AuditEvent> events) {
         Objects.requireNonNull(events, "events 不能为空");
@@ -567,10 +577,10 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     @Override
     /**
-     * listByTenant：查询并返回符合条件的集合。
+     * 按租户及方法声明的条件列出匹配记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
-     * @param limit 参与 listByTenant 处理的 limit 输入值。
+     * @param limit 单页最大返回数量。
      */
     public List<AuditEvent> listByTenant(UUID tenantId, int limit) {
         if (limit <= 0) {
@@ -587,7 +597,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     @Override
     /**
-     * supportsCursorPagination：处理该类内部的业务逻辑或辅助计算。
+     * 声明当前仓储支持稳定复合游标分页。
      */
     public boolean supportsCursorPagination() {
         return true;
@@ -595,7 +605,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     @Override
     /**
-     * listByTenant：查询并返回符合条件的集合。
+     * 按租户及方法声明的条件列出匹配记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param pageRequest 分页查询参数，定义查询范围和游标。
@@ -613,7 +623,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         }
     }
     /**
-     * listAuditEvents：查询并返回符合条件的集合。
+     * 列出当前范围内符合条件的记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      */
@@ -621,10 +631,10 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         return listAuditEvents(tenantId, 100);
     }
     /**
-     * listAuditEvents：查询并返回符合条件的集合。
+     * 列出当前范围内符合条件的记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
-     * @param limit 参与 listAuditEvents 处理的 limit 输入值。
+     * @param limit 单页最大返回数量。
      */
     public List<AuditEvent> listAuditEvents(UUID tenantId, int limit) {
         return listByTenant(tenantId, limit);
@@ -632,7 +642,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     @Override
     /**
-     * save：保存当前对象及其关联配置。
+     * 保存传入的领域对象或配置，并返回当前存储快照。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param run 当前处理的运行记录。
@@ -651,14 +661,14 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     @Override
     /**
-     * complete：处理该类内部的业务逻辑或辅助计算。
+     * 完成当前状态转换并返回最终结果。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param runId 目标运行记录标识，用于定位关联的执行数据。
      * @param status 当前处理状态，用于驱动状态分支或记录结果。
      * @param output 本次处理产生或待处理的输出内容。
-     * @param errorMessage 参与 complete 处理的 errorMessage 输入值。
-     * @param finishedAt 参与 complete 处理的 finishedAt 输入值。
+     * @param errorMessage 已控制敏感信息的错误说明。
+     * @param finishedAt 运行进入终态的时间
      */
     public RunRecord complete(
             UUID tenantId,
@@ -681,7 +691,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     @Override
     /**
-     * findByTenantAndAgentAndId：查询并返回当前上下文中的匹配结果。
+     * 按租户及方法声明的标识查询匹配记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
@@ -700,7 +710,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     @Override
     /**
-     * listByTenantAndAgent：查询并返回符合条件的集合。
+     * 按租户及方法声明的条件列出匹配记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param agentId 目标 Agent 标识，用于定位关联的 Agent 定义。
@@ -720,10 +730,10 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     @Override
     /**
-     * saveAll：保存当前对象及其关联配置。
+     * 保存传入的领域对象或配置，并返回当前存储快照。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
-     * @param toolCallBatch 参与 saveAll 处理的 toolCallBatch 输入值。
+     * @param toolCallBatch 同一运行下待原子保存的工具调用批次
      */
     public void saveAll(UUID tenantId, RunToolCallBatch toolCallBatch) {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
@@ -751,7 +761,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     @Override
     /**
-     * listByTenantAndRun：查询并返回符合条件的集合。
+     * 按租户及方法声明的条件列出匹配记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param runId 目标运行记录标识，用于定位关联的执行数据。
@@ -768,7 +778,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     /**
-     * findByTenantAndId：查询并返回当前上下文中的匹配结果。
+     * 按租户及方法声明的标识查询匹配记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param runId 目标运行记录标识，用于定位关联的执行数据。
@@ -782,7 +792,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     /**
-     * auditEventOrder：处理该类内部的业务逻辑或辅助计算。
+     * 返回审计事件复合游标使用的稳定排序器。
      */
     private static Comparator<AuditEvent> auditEventOrder() {
         return Comparator.comparing(AuditEvent::createdAt).reversed()
@@ -790,9 +800,9 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     /**
-     * isBeforeAuditCursor：判断当前条件是否成立。
+     * 判断审计事件是否严格位于复合游标之后一页。
      *
-     * @param event 参与 isBeforeAuditCursor 处理的 event 输入值。
+     * @param event 待处理的审计事件。
      * @param pageRequest 分页查询参数，定义查询范围和游标。
      */
     private static boolean isBeforeAuditCursor(AuditEvent event, AuditPageRequest pageRequest) {

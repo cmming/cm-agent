@@ -17,11 +17,21 @@ import java.util.Objects;
 public final class AddToolExecutor implements ToolExecutor {
     private final ObjectMapper objectMapper;
 
+    /**
+     * 校验并构造 {@code AddToolExecutor} 实例。
+     *
+     * @param objectMapper JSON 映射器
+     */
     public AddToolExecutor(ObjectMapper objectMapper) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
     }
 
     @Override
+    /**
+     * 执行本地示例工具并返回 JSON 结果。
+     *
+     * @param request 当前业务或工具执行请求。
+     */
     public ToolExecutionResult execute(ToolExecutionRequest request) {
         try {
             JsonNode input = objectMapper.readTree(request.inputJson());

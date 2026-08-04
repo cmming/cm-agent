@@ -32,6 +32,9 @@ class AuditControllerTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     @Test
+    /**
+     * 验证或支持 {@code auditPageCopiesMutableItemsBeforeHoldingThem} 所描述的测试场景。
+     */
     void auditPageCopiesMutableItemsBeforeHoldingThem() {
         AuditEvent event = auditEvent("11111111-1111-1111-1111-111111111111");
         List<AuditEvent> mutableItems = new ArrayList<>(List.of(event));
@@ -46,16 +49,25 @@ class AuditControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code legacyRepositoryDoesNotAdvertiseCursorPagination} 所描述的测试场景。
+     */
     void legacyRepositoryDoesNotAdvertiseCursorPagination() {
         assertThat(new LegacyAuditEventRepository(List.of()).supportsCursorPagination()).isFalse();
     }
 
     @Test
+    /**
+     * 验证或支持 {@code inMemoryRepositoryAdvertisesCursorPagination} 所描述的测试场景。
+     */
     void inMemoryRepositoryAdvertisesCursorPagination() {
         assertThat(new InMemoryPlatformStore().supportsCursorPagination()).isTrue();
     }
 
     @Test
+    /**
+     * 验证或支持 {@code legacyRepositoryReturnsFullFirstPageWithoutAttemptingCursorProbe} 所描述的测试场景。
+     */
     void legacyRepositoryReturnsFullFirstPageWithoutAttemptingCursorProbe() throws Exception {
         LegacyAuditEventRepository repository = new LegacyAuditEventRepository(
                 List.of(auditEvent("11111111-1111-1111-1111-111111111111"))
@@ -83,6 +95,9 @@ class AuditControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code legacyRepositoryRejectsCursorBeforeRepositoryPageCall} 所描述的测试场景。
+     */
     void legacyRepositoryRejectsCursorBeforeRepositoryPageCall() throws Exception {
         LegacyAuditEventRepository repository = new LegacyAuditEventRepository(
                 List.of(auditEvent("11111111-1111-1111-1111-111111111111"))
@@ -112,6 +127,9 @@ class AuditControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code auditResponseRedactsPersistedMessage} 所描述的测试场景。
+     */
     void auditResponseRedactsPersistedMessage() throws Exception {
         AuditEvent raw = new AuditEvent(
                 UUID.fromString("11111111-1111-1111-1111-111111111111"), TENANT_ID, "admin", "LOGIN",
@@ -139,6 +157,11 @@ class AuditControllerTest {
                 .andExpect(jsonPath("$.items[0].message").value("password=<已脱敏> <已脱敏>"));
     }
 
+    /**
+     * 验证或支持 {@code auditEvent} 所描述的测试场景。
+     *
+     * @param id 测试辅助方法使用的 id 参数
+     */
     private static AuditEvent auditEvent(String id) {
         return new AuditEvent(
                 UUID.fromString(id),
@@ -156,16 +179,32 @@ class AuditControllerTest {
     private static final class LegacyAuditEventRepository implements AuditEventRepository {
         private final List<AuditEvent> events;
 
+        /**
+         * 创建 {@code LegacyAuditEventRepository} 测试辅助实例。
+         *
+         * @param events 测试审计事件集合
+         */
         private LegacyAuditEventRepository(List<AuditEvent> events) {
             this.events = events;
         }
 
         @Override
+        /**
+         * 验证或支持 {@code append} 所描述的测试场景。
+         *
+         * @param event 测试审计事件
+         */
         public void append(AuditEvent event) {
             events.add(event);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code listByTenant} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         * @param limit 测试辅助方法使用的 limit 参数
+         */
         public List<AuditEvent> listByTenant(UUID tenantId, int limit) {
             return events.stream()
                     .filter(event -> event.tenantId().equals(tenantId))

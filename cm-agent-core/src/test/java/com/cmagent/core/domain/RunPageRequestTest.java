@@ -14,6 +14,9 @@ class RunPageRequestTest {
     private static final UUID ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     @Test
+    /**
+     * 验证或支持 {@code requestRejectsInvalidLimitsAndIncompleteCursor} 所描述的测试场景。
+     */
     void requestRejectsInvalidLimitsAndIncompleteCursor() {
         assertThatThrownBy(() -> new RunPageRequest(0, null, null))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -30,6 +33,9 @@ class RunPageRequestTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code repositoryListRequiresValidatedPageRequest} 所描述的测试场景。
+     */
     void repositoryListRequiresValidatedPageRequest() {
         assertThatCode(() -> RunRepository.class.getMethod(
                 "listByTenantAndAgent", UUID.class, UUID.class, RunPageRequest.class))

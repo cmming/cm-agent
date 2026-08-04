@@ -20,12 +20,21 @@ import java.util.concurrent.atomic.AtomicReference;
 public class ControlledAgentScopeRuntimeTestConfiguration {
 
     @Bean
+    /**
+     * 验证或支持 {@code controlledAgentScopeExecutor} 所描述的测试场景。
+     */
     ControlledExecutor controlledAgentScopeExecutor() {
         return new ControlledExecutor();
     }
 
     @Bean
     @Primary
+    /**
+     * 验证或支持 {@code controlledAgentScopeRuntime} 所描述的测试场景。
+     *
+     * @param gateway 测试工具调用网关
+     * @param executor 测试执行器
+     */
     AgentScopeRuntimeAdapter controlledAgentScopeRuntime(
             ToolInvocationGateway gateway,
             ControlledExecutor executor
@@ -44,6 +53,13 @@ public class ControlledAgentScopeRuntimeTestConfiguration {
         private final AtomicInteger invocationCount = new AtomicInteger();
 
         @Override
+        /**
+         * 验证或支持 {@code execute} 所描述的测试场景。
+         *
+         * @param spec 测试辅助方法使用的 spec 参数
+         * @param credential 测试模型凭据
+         * @param toolGateway 测试辅助方法使用的 toolGateway 参数
+         */
         public AgentScopeExecutionResult execute(
                 AgentScopeRunSpec spec,
                 ModelCredential credential,
@@ -59,6 +75,9 @@ public class ControlledAgentScopeRuntimeTestConfiguration {
                     "fake-runtime: " + spec.userInput(), nextToolCalls.getAndSet(List.of()));
         }
 
+        /**
+         * 验证或支持 {@code reset} 所描述的测试场景。
+         */
         public void reset() {
             lastRequest.set(null);
             nextToolCalls.set(List.of());
@@ -66,18 +85,34 @@ public class ControlledAgentScopeRuntimeTestConfiguration {
             invocationCount.set(0);
         }
 
+        /**
+         * 验证或支持 {@code returnToolCalls} 所描述的测试场景。
+         *
+         * @param toolCalls 测试辅助方法使用的 toolCalls 参数
+         */
         public void returnToolCalls(List<ToolCallRecord> toolCalls) {
             nextToolCalls.set(List.copyOf(toolCalls));
         }
 
+        /**
+         * 验证或支持 {@code failNext} 所描述的测试场景。
+         *
+         * @param failure 测试构造的失败
+         */
         public void failNext(RuntimeException failure) {
             nextFailure.set(failure);
         }
 
+        /**
+         * 验证或支持 {@code lastRequest} 所描述的测试场景。
+         */
         public AgentRunRequest lastRequest() {
             return lastRequest.get();
         }
 
+        /**
+         * 验证或支持 {@code invocationCount} 所描述的测试场景。
+         */
         public int invocationCount() {
             return invocationCount.get();
         }

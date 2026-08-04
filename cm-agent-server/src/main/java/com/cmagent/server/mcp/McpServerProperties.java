@@ -93,9 +93,9 @@ public class McpServerProperties implements InitializingBean {
     }
 
     /**
-     * normalized：规范化输入值以便后续处理。
+     * 规范化输入以便稳定比较和处理。
      *
-     * @param values 参与 normalized 处理的 values 集合。
+     * @param values 待规范化的配置值列表。
      */
     private static List<String> normalized(List<String> values) {
         LinkedHashSet<String> normalized = new LinkedHashSet<>();

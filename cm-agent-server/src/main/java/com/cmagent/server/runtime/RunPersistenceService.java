@@ -46,13 +46,13 @@ public class RunPersistenceService {
 
     @Autowired
     /**
-     * RunPersistenceService：执行当前流程并返回处理结果。
+     * 创建 {@code RunPersistenceService} 实例并保存其运行所需依赖。
      *
-     * @param runRepository 参与 RunPersistenceService 处理的 runRepository 输入值。
-     * @param toolCallRepository 参与 RunPersistenceService 处理的 toolCallRepository 输入值。
-     * @param auditAppender 参与 RunPersistenceService 处理的 auditAppender 输入值。
-     * @param redactor 参与 RunPersistenceService 处理的 redactor 输入值。
-     * @param transactionTemplate 参与 RunPersistenceService 处理的 transactionTemplate 输入值。
+     * @param runRepository 负责访问领域数据的仓储。
+     * @param toolCallRepository 负责访问相关领域数据的仓储。
+     * @param auditAppender 负责追加安全审计事件的组件。
+     * @param redactor 负责清理敏感文本的脱敏器。
+     * @param transactionTemplate 保证多步写入原子性的事务模板。
      */
     public RunPersistenceService(
             RunRepository runRepository,
@@ -103,7 +103,7 @@ public class RunPersistenceService {
      * @param runningRun 已存在的运行中记录
      * @param result     Agent 运行结果
      * @param toolCalls  本次运行产生的工具调用记录
-     * @param authorizedTools 参与 complete 处理的 authorizedTools 集合。
+     * @param authorizedTools 已通过授权校验、允许本次运行调用的工具集合
      * @return 完成后的运行记录
      * @throws RuntimeException 持久化或审计失败时抛出
      */
@@ -223,7 +223,7 @@ public class RunPersistenceService {
     }
 
     /**
-     * redactRun：清理或脱敏可能包含敏感信息的内容。
+     * 脱敏运行记录中的输入、输出和错误信息。
      *
      * @param run 当前处理的运行记录。
      */
@@ -236,9 +236,9 @@ public class RunPersistenceService {
     }
 
     /**
-     * redactToolCall：清理或脱敏可能包含敏感信息的内容。
+     * 脱敏工具调用记录中的输入摘要、输出和错误信息。
      *
-     * @param toolCall 参与 redactToolCall 处理的 toolCall 输入值。
+     * @param toolCall 运行时返回的单次工具调用结果
      */
     private RunToolCall redactToolCall(RunToolCall toolCall) {
         return new RunToolCall(
@@ -250,13 +250,13 @@ public class RunPersistenceService {
     }
 
     /**
-     * mapToolCalls：转换内部数据为目标表示。
+     * 将运行时工具调用结果映射为持久化记录。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param runId 目标运行记录标识，用于定位关联的执行数据。
-     * @param authorizedTools 参与 mapToolCalls 处理的 authorizedTools 集合。
-     * @param records 参与 mapToolCalls 处理的 records 集合。
-     * @param createdAt 参与 mapToolCalls 处理的 createdAt 输入值。
+     * @param authorizedTools 已通过授权校验、允许本次运行调用的工具集合
+     * @param records 等待补全并持久化的工具调用记录集合
+     * @param createdAt 工具调用记录的统一创建时间
      */
     private List<RunToolCall> mapToolCalls(
             UUID tenantId,
@@ -306,11 +306,11 @@ public class RunPersistenceService {
     }
 
     /**
-     * resolveTool：解析并定位可用的目标对象。
+     * 在本次运行授权工具集合中解析目标工具。
      *
-     * @param record 参与 resolveTool 处理的 record 输入值。
+     * @param record 当前处理的运行或工具调用记录
      * @param byId 目标 by 标识，用于定位本次处理对象。
-     * @param byName 参与 resolveTool 处理的 byName 输入值。
+     * @param byName 按工具名称建立的授权工具索引
      */
     private ToolDefinition resolveTool(
             ToolCallRecord record,
@@ -335,7 +335,7 @@ public class RunPersistenceService {
     }
 
     /**
-     * appendAudit：追加处理结果或审计记录。
+     * 根据运行最终状态追加完成审计，并保持资源标识与持久化记录一致。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param run 当前处理的运行记录。
@@ -350,7 +350,7 @@ public class RunPersistenceService {
     }
 
     /**
-     * finalStatus：处理该类内部的业务逻辑或辅助计算。
+     * 根据运行时结果确定可持久化的最终状态。
      *
      * @param status 当前处理状态，用于驱动状态分支或记录结果。
      */
@@ -359,10 +359,10 @@ public class RunPersistenceService {
     }
 
     /**
-     * finishedAt：处理该类内部的业务逻辑或辅助计算。
+     * 确定运行结果应使用的完成时间。
      *
      * @param run 当前处理的运行记录。
-     * @param candidate 参与 finishedAt 处理的 candidate 输入值。
+     * @param candidate 待与授权记录匹配的工具调用记录
      */
     private static Instant finishedAt(RunRecord run, Instant candidate) {
         if (candidate != null && !candidate.isBefore(run.startedAt())) {
@@ -373,7 +373,7 @@ public class RunPersistenceService {
     }
 
     /**
-     * completionMessage：处理该类内部的业务逻辑或辅助计算。
+     * 生成运行完成审计事件的安全摘要。
      *
      * @param status 当前处理状态，用于驱动状态分支或记录结果。
      */
@@ -386,18 +386,24 @@ public class RunPersistenceService {
     }
 
     /**
-     * requireResult：校验输入、状态或前置条件。
+     * 校验事务回调必须返回非空结果。
      *
-     * @param result 参与 requireResult 处理的 result 输入值。
+     * @param result 上一步得到的处理结果。
      */
     private static <T> T requireResult(T result) {
         return Objects.requireNonNull(result, "事务未返回结果");
     }
 
     /**
-     * RunDetail：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code RunDetail} 在当前流程中使用的不可变数据。
      */
     public record RunDetail(RunRecord run, List<RunToolCall> toolCalls) {
+        /**
+         * 校验并构造 {@code RunDetail} 实例。
+         *
+         * @param run 当前运行记录。
+         * @param toolCalls 当前运行关联的工具调用记录。
+         */
         public RunDetail {
             toolCalls = List.copyOf(toolCalls);
         }

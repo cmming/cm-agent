@@ -37,6 +37,9 @@ class JdbcAuditEventRepositoryTest {
     private TransactionTemplate transactionTemplate;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         DataSource dataSource = new DriverManagerDataSource(
                 postgres.getJdbcUrl(),
@@ -65,6 +68,9 @@ class JdbcAuditEventRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code appendAndListByTenant} 所描述的测试场景。
+     */
     void appendAndListByTenant() {
         UUID tenantA = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID tenantB = UUID.fromString("00000000-0000-0000-0000-000000000002");
@@ -129,6 +135,9 @@ class JdbcAuditEventRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code listByTenantRejectsNonPositiveLimit} 所描述的测试场景。
+     */
     void listByTenantRejectsNonPositiveLimit() {
         assertThatThrownBy(() -> repository.listByTenant(UUID.fromString("00000000-0000-0000-0000-000000000001"), 0))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -136,11 +145,17 @@ class JdbcAuditEventRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code advertisesCursorPaginationSupport} 所描述的测试场景。
+     */
     void advertisesCursorPaginationSupport() {
         assertThat(repository.supportsCursorPagination()).isTrue();
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void appendAll在第二条写入失败时不会留下首条审计() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         AuditEvent existing = auditEvent("11111111-1111-1111-1111-111111111111", tenantId,
@@ -158,6 +173,9 @@ class JdbcAuditEventRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void appendAll加入已有事务并随外层回滚() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         AuditEvent first = auditEvent("11111111-1111-1111-1111-111111111111", tenantId,
@@ -174,6 +192,9 @@ class JdbcAuditEventRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void appendAll在MySql第二条写入失败时不会留下首条审计() {
         AuditRepositoryFixture fixture = mysqlFixture();
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -192,6 +213,9 @@ class JdbcAuditEventRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void appendAll在MySql加入已有事务并随外层回滚() {
         AuditRepositoryFixture fixture = mysqlFixture();
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -209,6 +233,9 @@ class JdbcAuditEventRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code listByTenantPageUsesCreatedAtAndIdKeysetWithinTenant} 所描述的测试场景。
+     */
     void listByTenantPageUsesCreatedAtAndIdKeysetWithinTenant() {
         UUID tenantA = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID tenantB = UUID.fromString("00000000-0000-0000-0000-000000000002");
@@ -232,6 +259,13 @@ class JdbcAuditEventRepositoryTest {
         assertThat(secondPage).extracting(AuditEvent::tenantId).containsOnly(tenantA);
     }
 
+    /**
+     * 验证或支持 {@code auditEvent} 所描述的测试场景。
+     *
+     * @param id 测试辅助方法使用的 id 参数
+     * @param tenantId 测试租户标识
+     * @param createdAt 测试辅助方法使用的 createdAt 参数
+     */
     private static AuditEvent auditEvent(String id, UUID tenantId, Instant createdAt) {
         return new AuditEvent(
                 UUID.fromString(id), tenantId, "principal", "TEST", "RESOURCE", id,
@@ -239,6 +273,9 @@ class JdbcAuditEventRepositoryTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code mysqlFixture} 所描述的测试场景。
+     */
     private static AuditRepositoryFixture mysqlFixture() {
         DataSource dataSource = new DriverManagerDataSource(
                 mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword()
@@ -259,6 +296,11 @@ class JdbcAuditEventRepositoryTest {
         return new AuditRepositoryFixture(new JdbcAuditEventRepository(JdbcClient.create(dataSource), template), template);
     }
 
+    /**
+     * 验证或支持 {@code seedTenants} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private static void seedTenants(DataSource dataSource) {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
         Timestamp now = Timestamp.from(Instant.parse("2026-06-18T00:00:00Z"));

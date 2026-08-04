@@ -59,6 +59,9 @@ class JdbcRuntimeRepositoryMySqlTest {
     private DataSource dataSource;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         dataSource = new DriverManagerDataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").cleanDisabled(false).load().clean();
@@ -80,6 +83,9 @@ class JdbcRuntimeRepositoryMySqlTest {
     }
 
     @Test
+    /**
+     * 验证 {@code mysqlFindsOnlyModelConfigOwnedByTenant} 所描述的业务行为。
+     */
     void mysqlFindsOnlyModelConfigOwnedByTenant() {
         ModelConfig own = modelConfigRepository.findByTenantAndId(TENANT_A, MODEL_A).orElseThrow();
 
@@ -89,6 +95,9 @@ class JdbcRuntimeRepositoryMySqlTest {
     }
 
     @Test
+    /**
+     * 验证 {@code mysqlRunRepositoryKeepsTenantAndKeysetBoundaries} 所描述的业务行为。
+     */
     void mysqlRunRepositoryKeepsTenantAndKeysetBoundaries() {
         Instant startedAt = Instant.parse("2026-07-14T03:00:00Z");
         UUID newest = UUID.fromString("30000000-0000-0000-0000-000000000010");
@@ -105,6 +114,9 @@ class JdbcRuntimeRepositoryMySqlTest {
     }
 
     @Test
+    /**
+     * 验证 {@code mysqlToolCallRepositoryKeepsBatchAtomicityAndTenantIsolation} 所描述的业务行为。
+     */
     void mysqlToolCallRepositoryKeepsBatchAtomicityAndTenantIsolation() {
         RunToolCall valid = toolCall(UUID.fromString("50000000-0000-0000-0000-000000000001"), RUN_A, TOOL_A);
         RunToolCall invalidTool = toolCall(UUID.fromString("50000000-0000-0000-0000-000000000002"), RUN_A,
@@ -121,6 +133,9 @@ class JdbcRuntimeRepositoryMySqlTest {
     }
 
     @Test
+    /**
+     * 验证 {@code mysqlHttpConfigAndMcpPublicationKeepTenantIsolation} 所描述的业务行为。
+     */
     void mysqlHttpConfigAndMcpPublicationKeepTenantIsolation() {
         HttpToolConfig config = JdbcHttpToolConfigRepositoryTest.config(
                 TENANT_A, TOOL_A, "https://api-a.invalid/v1/{customerId}", Duration.ofSeconds(3));
@@ -136,6 +151,9 @@ class JdbcRuntimeRepositoryMySqlTest {
     }
 
     @Test
+    /**
+     * 验证 {@code mysqlConcurrentFirstSavesAreIdempotent} 所描述的业务行为。
+     */
     void mysqlConcurrentFirstSavesAreIdempotent() throws Exception {
         HttpToolConfig first = JdbcHttpToolConfigRepositoryTest.config(
                 TENANT_A, TOOL_A, "https://api-a.invalid/v1/{customerId}", Duration.ofSeconds(3));
@@ -166,6 +184,9 @@ class JdbcRuntimeRepositoryMySqlTest {
     }
 
     @Test
+    /**
+     * 验证 {@code mysqlConcurrentFirstPublicationSavesAreIdempotent} 所描述的业务行为。
+     */
     void mysqlConcurrentFirstPublicationSavesAreIdempotent() throws Exception {
         McpToolPublication enabled = new McpToolPublication(TENANT_A, TOOL_A, true, "tester-a");
         McpToolPublication disabled = new McpToolPublication(TENANT_A, TOOL_A, false, "tester-b");
@@ -191,6 +212,14 @@ class JdbcRuntimeRepositoryMySqlTest {
         assertThat(mcpToolPublicationRepository.findByTenantAndToolId(TENANT_A, TOOL_A)).get().isIn(enabled, disabled);
     }
 
+    /**
+     * 验证 {@code savePublicationAfterStart} 所描述的业务行为。
+     *
+     * @param repository 测试仓储
+     * @param publication 测试辅助方法使用的 publication 参数
+     * @param ready 测试辅助方法使用的 ready 参数
+     * @param start 测试辅助方法使用的 start 参数
+     */
     private static void savePublicationAfterStart(
             JdbcMcpToolPublicationRepository repository,
             McpToolPublication publication,
@@ -202,6 +231,14 @@ class JdbcRuntimeRepositoryMySqlTest {
         repository.save(publication);
     }
 
+    /**
+     * 验证 {@code saveAfterStart} 所描述的业务行为。
+     *
+     * @param repository 测试仓储
+     * @param config 测试配置
+     * @param ready 测试辅助方法使用的 ready 参数
+     * @param start 测试辅助方法使用的 start 参数
+     */
     private static void saveAfterStart(
             JdbcHttpToolConfigRepository repository,
             HttpToolConfig config,
@@ -213,6 +250,11 @@ class JdbcRuntimeRepositoryMySqlTest {
         repository.save(config);
     }
 
+    /**
+     * 验证 {@code awaitStart} 所描述的业务行为。
+     *
+     * @param start 测试辅助方法使用的 start 参数
+     */
     private static void awaitStart(CountDownLatch start) {
         try {
             start.await();
@@ -222,11 +264,23 @@ class JdbcRuntimeRepositoryMySqlTest {
         }
     }
 
+    /**
+     * 验证 {@code toolCall} 所描述的业务行为。
+     *
+     * @param id 测试辅助方法使用的 id 参数
+     * @param runId 测试运行标识
+     * @param toolId 测试工具标识
+     */
     private static RunToolCall toolCall(UUID id, UUID runId, UUID toolId) {
         return new RunToolCall(id, TENANT_A, runId, toolId, "echo", "input", "output", RunStatus.SUCCEEDED,
                 true, 12L, "", Instant.parse("2026-07-14T04:00:00Z"));
     }
 
+    /**
+     * 验证 {@code seedData} 所描述的业务行为。
+     *
+     * @param dataSource 测试数据源
+     */
     private static void seedData(DataSource dataSource) {
         JdbcClient jdbc = JdbcClient.create(dataSource);
         Timestamp now = Timestamp.from(Instant.parse("2026-07-14T00:00:00Z"));
@@ -242,11 +296,27 @@ class JdbcRuntimeRepositoryMySqlTest {
         insertRun(jdbc, RUN_B, TENANT_B, AGENT_B, now);
     }
 
+    /**
+     * 验证 {@code insertTenant} 所描述的业务行为。
+     *
+     * @param jdbc 测试辅助方法使用的 jdbc 参数
+     * @param id 测试辅助方法使用的 id 参数
+     * @param code 测试辅助方法使用的 code 参数
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertTenant(JdbcClient jdbc, UUID id, String code, Timestamp now) {
         jdbc.sql("INSERT INTO tenants (id, code, name, enabled, created_at) VALUES (:id, :code, :name, true, :createdAt)")
                 .param("id", id.toString()).param("code", code).param("name", code).param("createdAt", now).update();
     }
 
+    /**
+     * 验证 {@code insertModel} 所描述的业务行为。
+     *
+     * @param jdbc 测试辅助方法使用的 jdbc 参数
+     * @param id 测试辅助方法使用的 id 参数
+     * @param tenantId 测试租户标识
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertModel(JdbcClient jdbc, UUID id, UUID tenantId, Timestamp now) {
         jdbc.sql("""
                 INSERT INTO model_configs (id, tenant_id, provider_type, display_name, base_url, model_name,
@@ -256,6 +326,15 @@ class JdbcRuntimeRepositoryMySqlTest {
                 """).param("id", id.toString()).param("tenantId", tenantId.toString()).param("createdAt", now).update();
     }
 
+    /**
+     * 验证 {@code insertAgent} 所描述的业务行为。
+     *
+     * @param jdbc 测试辅助方法使用的 jdbc 参数
+     * @param id 测试辅助方法使用的 id 参数
+     * @param tenantId 测试租户标识
+     * @param modelId 测试辅助方法使用的 modelId 参数
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertAgent(JdbcClient jdbc, UUID id, UUID tenantId, UUID modelId, Timestamp now) {
         jdbc.sql("""
                 INSERT INTO agent_definitions (id, tenant_id, name, description, system_prompt, model_provider_id,
@@ -267,6 +346,14 @@ class JdbcRuntimeRepositoryMySqlTest {
                 .param("createdAt", now).param("updatedAt", now).update();
     }
 
+    /**
+     * 验证 {@code insertTool} 所描述的业务行为。
+     *
+     * @param jdbc 测试辅助方法使用的 jdbc 参数
+     * @param id 测试辅助方法使用的 id 参数
+     * @param tenantId 测试租户标识
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertTool(JdbcClient jdbc, UUID id, UUID tenantId, Timestamp now) {
         jdbc.sql("""
                 INSERT INTO tool_definitions (id, tenant_id, name, description, type, input_schema, risk_level,
@@ -277,6 +364,15 @@ class JdbcRuntimeRepositoryMySqlTest {
                 .param("updatedAt", now).update();
     }
 
+    /**
+     * 验证 {@code insertRun} 所描述的业务行为。
+     *
+     * @param jdbc 测试辅助方法使用的 jdbc 参数
+     * @param id 测试辅助方法使用的 id 参数
+     * @param tenantId 测试租户标识
+     * @param agentId 测试 Agent 标识
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertRun(JdbcClient jdbc, UUID id, UUID tenantId, UUID agentId, Timestamp now) {
         jdbc.sql("""
                 INSERT INTO runs (id, tenant_id, agent_id, principal_id, status, input_text, output_text,

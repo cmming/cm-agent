@@ -65,6 +65,9 @@ class AgentScopeToolBridgeTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
+    /**
+     * 验证对外暴露的 {@code ValidObjectJsonSchema}。
+     */
     void exposesValidObjectJsonSchema() {
         AgentScopeToolBridge bridge = bridge(request(), tool(validSchema()), ignored -> ToolInvocationResult.succeeded("ok"));
 
@@ -76,6 +79,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code ValidObjectJsonSchemaWithNullKeywordValue} 合法场景会被接受。
+     */
     void acceptsValidObjectJsonSchemaWithNullKeywordValue() {
         AgentScopeToolBridge bridge = bridge(
                 request(),
@@ -87,6 +93,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code NonObjectJsonSchema} 异常场景会被正确拒绝。
+     */
     void rejectsNonObjectJsonSchema() {
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> bridge(request(), tool("{\"type\":\"array\",\"items\":{}}"),
@@ -95,6 +104,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code MalformedJsonSchemaWithoutLeakingParserDetails} 异常场景会被正确拒绝。
+     */
     void rejectsMalformedJsonSchemaWithoutLeakingParserDetails() {
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> bridge(request(), tool("{not-json}"),
@@ -103,6 +115,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code routesSuccessfulCallThroughGatewayWithCompleteContext} 所描述的业务行为。
+     */
     void routesSuccessfulCallThroughGatewayWithCompleteContext() {
         List<ToolInvocationRequest> invocations = new CopyOnWriteArrayList<>();
         ToolInvocationGateway gateway = invocation -> {
@@ -137,6 +152,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code forwardsModelSuppliedToolNameForGatewayConsistencyGovernance} 所描述的业务行为。
+     */
     void forwardsModelSuppliedToolNameForGatewayConsistencyGovernance() {
         List<ToolInvocationRequest> invocations = new CopyOnWriteArrayList<>();
         AgentScopeToolBridge bridge = bridge(request(), tool(validSchema()), invocation -> {
@@ -160,6 +178,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code ControlledFailureToErrorResultAndRecord} 的映射结果。
+     */
     void mapsControlledFailureToErrorResultAndRecord() {
         AgentScopeToolBridge bridge = bridge(request(), tool(validSchema()),
                 ignored -> ToolInvocationResult.failed("工具执行失败"));
@@ -177,6 +198,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code DeniedCallToDeniedUnauthorizedRecord} 的映射结果。
+     */
     void mapsDeniedCallToDeniedUnauthorizedRecord() {
         AgentScopeToolBridge bridge = bridge(request(), tool(validSchema()),
                 ignored -> ToolInvocationResult.denied("没有工具权限"));
@@ -193,6 +217,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证系统会记录 {@code ConcurrentCallsAndReturnsImmutableSnapshots}。
+     */
     void recordsConcurrentCallsAndReturnsImmutableSnapshots() {
         AgentScopeToolBridge bridge = bridge(request(), tool(validSchema()),
                 ignored -> ToolInvocationResult.succeeded("ok"));
@@ -211,6 +238,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证系统会转换 {@code UnexpectedExceptionToControlledErrorWithoutLeakingInputOrCause}。
+     */
     void convertsUnexpectedExceptionToControlledErrorWithoutLeakingInputOrCause() {
         String sensitiveValue = "secret-input-and-key";
         AgentScopeToolBridge bridge = bridge(request(), tool(validSchema()), ignored -> {
@@ -233,6 +263,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code rethrowsInfrastructureFailureWithoutCreatingOrdinaryFailureRecord} 所描述的业务行为。
+     */
     void rethrowsInfrastructureFailureWithoutCreatingOrdinaryFailureRecord() {
         ToolInvocationInfrastructureException failure = new ToolInvocationInfrastructureException(
                 "审计写入失败", new IllegalStateException("数据库不可用"));
@@ -245,6 +278,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code retainsInfrastructureFailureAfterReactiveCallerConsumesError} 所描述的业务行为。
+     */
     void retainsInfrastructureFailureAfterReactiveCallerConsumesError() {
         ToolInvocationInfrastructureException failure = new ToolInvocationInfrastructureException(
                 "审计写入失败", new IllegalStateException("数据库不可用"));
@@ -261,6 +297,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code firstInfrastructureFailureStopsConcurrentLaterGatewayCalls} 所描述的业务行为。
+     */
     void firstInfrastructureFailureStopsConcurrentLaterGatewayCalls() {
         ToolInvocationInfrastructureException first = new ToolInvocationInfrastructureException(
                 "首次审计写入失败", new IllegalStateException("首次数据库不可用"));
@@ -287,6 +326,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code interruptedWaiterNeverEntersGatewayAfterCurrentInvocationReturns} 所描述的业务行为。
+     */
     void interruptedWaiterNeverEntersGatewayAfterCurrentInvocationReturns() throws Exception {
         AgentScopeRunGate runGate = new AgentScopeRunGate();
         CountDownLatch holderEntered = new CountDownLatch(1);
@@ -330,6 +372,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code lateGatewayResultAfterTimeoutNeverCreatesToolRecord} 所描述的业务行为。
+     */
     void lateGatewayResultAfterTimeoutNeverCreatesToolRecord() throws Exception {
         AgentScopeRunGate runGate = new AgentScopeRunGate();
         CountDownLatch gatewayEntered = new CountDownLatch(1);
@@ -363,6 +408,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code ordinaryReactiveCancellationDoesNotMarkToolTimeout} 所描述的业务行为。
+     */
     void ordinaryReactiveCancellationDoesNotMarkToolTimeout() throws Exception {
         AgentScopeRunGate runGate = new AgentScopeRunGate(Duration.ofMillis(20));
         CountDownLatch gatewayEntered = new CountDownLatch(1);
@@ -409,6 +457,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code cancellationGateClosesBeforeCancellationReachesUpstream} 所描述的业务行为。
+     */
     void cancellationGateClosesBeforeCancellationReachesUpstream() {
         AgentScopeRunGate runGate = new AgentScopeRunGate(Duration.ofSeconds(1));
         AgentScopeToolBridge bridge = new AgentScopeToolBridge(
@@ -426,6 +477,9 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
+    /**
+     * 验证 {@code fatalFailureAfterConfiguredTimeoutDoesNotMarkToolTimeout} 所描述的业务行为。
+     */
     void fatalFailureAfterConfiguredTimeoutDoesNotMarkToolTimeout() throws Exception {
         AgentScopeRunGate runGate = new AgentScopeRunGate(Duration.ofMillis(20));
         ToolInvocationInfrastructureException failure = new ToolInvocationInfrastructureException(
@@ -444,6 +498,13 @@ class AgentScopeToolBridgeTest {
         assertThat(runGate.isToolTimedOut()).isFalse();
     }
 
+    /**
+     * 验证 {@code bridge} 所描述的业务行为。
+     *
+     * @param request 测试使用的请求对象
+     * @param tool 测试工具定义
+     * @param gateway 测试工具调用网关
+     */
     private AgentScopeToolBridge bridge(
             AgentRunRequest request,
             ToolDefinition tool,
@@ -452,10 +513,18 @@ class AgentScopeToolBridgeTest {
         return new AgentScopeToolBridge(request, tool, gateway, objectMapper);
     }
 
+    /**
+     * 验证 {@code outputText} 所描述的业务行为。
+     *
+     * @param block 测试辅助方法使用的 block 参数
+     */
     private static String outputText(ToolResultBlock block) {
         return ((TextBlock) block.getOutput().getFirst()).getText();
     }
 
+    /**
+     * 验证 {@code toolCallParam} 所描述的业务行为。
+     */
     private static ToolCallParam toolCallParam() {
         Map<String, Object> input = Map.of("value", "hello");
         ToolUseBlock toolUse = ToolUseBlock.builder()
@@ -470,18 +539,39 @@ class AgentScopeToolBridgeTest {
                 .build();
     }
 
+    /**
+     * 验证 {@code toolCallParam} 所描述的业务行为。
+     *
+     * @param index 测试辅助方法使用的 index 参数
+     */
     private static ToolCallParam toolCallParam(int index) {
         return toolCallParam("hello-" + index, "tool-call-" + index);
     }
 
+    /**
+     * 验证 {@code toolCallParam} 所描述的业务行为。
+     *
+     * @param value 测试输入值
+     */
     private static ToolCallParam toolCallParam(String value) {
         return toolCallParam(value, "tool-call-sensitive");
     }
 
+    /**
+     * 验证 {@code toolCallParam} 所描述的业务行为。
+     *
+     * @param value 测试输入值
+     * @param toolCallId 测试工具调用标识
+     */
     private static ToolCallParam toolCallParam(String value, String toolCallId) {
         return toolCallParam(value, toolCallId, "echo");
     }
 
+    /**
+     * 验证 {@code invocationRequest} 所描述的业务行为。
+     *
+     * @param toolCallId 测试工具调用标识
+     */
     private static ToolInvocationRequest invocationRequest(String toolCallId) {
         return new ToolInvocationRequest(
                 TENANT_ID, AGENT_ID,
@@ -489,6 +579,12 @@ class AgentScopeToolBridgeTest {
                 RUN_ID, toolCallId, TOOL_ID, "echo", "{}");
     }
 
+    /**
+     * 等待并发测试任务进入阻塞状态。
+     *
+     * @param threadReference 测试辅助方法使用的 threadReference 参数
+     * @param timeout 测试超时
+     */
     private static boolean awaitWaiting(
             AtomicReference<Thread> threadReference,
             Duration timeout
@@ -510,17 +606,33 @@ class AgentScopeToolBridgeTest {
 
         private final CountDownLatch gatewayReturned;
 
+        /**
+         * 创建 {@code CancelAwaitingExecutor} 测试辅助实例。
+         *
+         * @param gatewayReturned 测试辅助方法使用的 gatewayReturned 参数
+         */
         private CancelAwaitingExecutor(CountDownLatch gatewayReturned) {
             super(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
             this.gatewayReturned = gatewayReturned;
         }
 
         @Override
+        /**
+         * 验证 {@code newTaskFor} 所描述的业务行为。
+         *
+         * @param callable 测试辅助方法使用的 callable 参数
+         */
         protected <T> RunnableFuture<T> newTaskFor(Callable<T> callable) {
             return delayedCancelTask(callable);
         }
 
         @Override
+        /**
+         * 验证 {@code newTaskFor} 所描述的业务行为。
+         *
+         * @param runnable 测试辅助方法使用的 runnable 参数
+         * @param value 测试输入值
+         */
         protected <T> RunnableFuture<T> newTaskFor(Runnable runnable, T value) {
             return delayedCancelTask(() -> {
                 runnable.run();
@@ -528,9 +640,19 @@ class AgentScopeToolBridgeTest {
             });
         }
 
+        /**
+         * 验证 {@code delayedCancelTask} 所描述的业务行为。
+         *
+         * @param callable 测试辅助方法使用的 callable 参数
+         */
         private <T> RunnableFuture<T> delayedCancelTask(Callable<T> callable) {
             return new FutureTask<>(callable) {
                 @Override
+                /**
+                 * 验证 {@code cancel} 所描述的业务行为。
+                 *
+                 * @param mayInterruptIfRunning 测试辅助方法使用的 mayInterruptIfRunning 参数
+                 */
                 public boolean cancel(boolean mayInterruptIfRunning) {
                     boolean cancelled = super.cancel(mayInterruptIfRunning);
                     try {
@@ -545,6 +667,13 @@ class AgentScopeToolBridgeTest {
         }
     }
 
+    /**
+     * 验证 {@code toolCallParam} 所描述的业务行为。
+     *
+     * @param value 测试输入值
+     * @param toolCallId 测试工具调用标识
+     * @param toolName 测试辅助方法使用的 toolName 参数
+     */
     private static ToolCallParam toolCallParam(String value, String toolCallId, String toolName) {
         Map<String, Object> input = Map.of("value", value);
         ToolUseBlock toolUse = ToolUseBlock.builder()
@@ -559,6 +688,9 @@ class AgentScopeToolBridgeTest {
                 .build();
     }
 
+    /**
+     * 构造测试使用的运行或 HTTP 请求。
+     */
     private static AgentRunRequest request() {
         AgentDefinition agent = new AgentDefinition(
                 AGENT_ID, TENANT_ID, "企业助手", "", "你是企业助手", MODEL_ID,
@@ -571,12 +703,20 @@ class AgentScopeToolBridgeTest {
         return new AgentRunRequest(RUN_ID, TENANT_ID, agent, modelConfig, principal, "调用工具", List.of(tool));
     }
 
+    /**
+     * 构造测试工具定义。
+     *
+     * @param inputSchema 测试辅助方法使用的 inputSchema 参数
+     */
     private static ToolDefinition tool(String inputSchema) {
         return new ToolDefinition(
                 TOOL_ID, TENANT_ID, "echo", "回显输入", ToolType.LOCAL,
                 inputSchema, ToolRiskLevel.LOW, true, "", "tester", "tester");
     }
 
+    /**
+     * 验证 {@code validSchema} 所描述的业务行为。
+     */
     private static String validSchema() {
         return "{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"]}";
     }

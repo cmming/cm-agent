@@ -29,6 +29,9 @@ class CmAgentToolClientTest {
     private CmAgentToolClient client;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         properties = new HttpToolExampleProperties();
         properties.setBaseUrl("http://localhost:8080");
@@ -45,6 +48,9 @@ class CmAgentToolClientTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code shouldCreateAndDebugHttpToolThroughPublicApi} 所描述的测试场景。
+     */
     void shouldCreateAndDebugHttpToolThroughPublicApi() {
         mockServer.expect(requestTo("http://localhost:8080/api/tools"))
                 .andExpect(method(HttpMethod.POST))
@@ -79,6 +85,9 @@ class CmAgentToolClientTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code shouldRedactJwtFromErrorMessage} 所描述的测试场景。
+     */
     void shouldRedactJwtFromErrorMessage() {
         mockServer.expect(requestTo("http://localhost:8080/api/tools"))
                 .andRespond(withStatus(org.springframework.http.HttpStatus.UNAUTHORIZED)
@@ -95,6 +104,9 @@ class CmAgentToolClientTest {
         mockServer.verify();
     }
 
+    /**
+     * 验证或支持 {@code createdToolResponse} 所描述的测试场景。
+     */
     private String createdToolResponse() {
         return """
                 {

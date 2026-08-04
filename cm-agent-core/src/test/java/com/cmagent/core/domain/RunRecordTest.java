@@ -21,6 +21,9 @@ class RunRecordTest {
 
 
     @Test
+    /**
+     * 验证或支持 {@code createRejectsBlankPrincipal} 所描述的测试场景。
+     */
     void createRejectsBlankPrincipal() {
         assertThatThrownBy(() -> RunRecord.create(
                 UUID.randomUUID(),
@@ -34,6 +37,9 @@ class RunRecordTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code createProducesUnfinishedRunningRunAndNormalizesNullText} 所描述的测试场景。
+     */
     void createProducesUnfinishedRunningRunAndNormalizesNullText() {
         RunRecord run = RunRecord.create(ID, TENANT_ID, AGENT_ID, "principal", null, STARTED_AT);
 
@@ -45,6 +51,9 @@ class RunRecordTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code constructorRejectsRunningRunWithFinishedAt} 所描述的测试场景。
+     */
     void constructorRejectsRunningRunWithFinishedAt() {
         assertThatThrownBy(() -> new RunRecord(
                 ID,
@@ -62,6 +71,9 @@ class RunRecordTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code constructorRejectsTerminalRunWithoutFinishedAt} 所描述的测试场景。
+     */
     void constructorRejectsTerminalRunWithoutFinishedAt() {
         assertThatThrownBy(() -> new RunRecord(
                 ID,
@@ -79,6 +91,9 @@ class RunRecordTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code constructorRejectsFinishedAtBeforeStartedAt} 所描述的测试场景。
+     */
     void constructorRejectsFinishedAtBeforeStartedAt() {
         assertThatThrownBy(() -> new RunRecord(
                 ID,
@@ -96,6 +111,9 @@ class RunRecordTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code completeRejectsAlreadyTerminalRun} 所描述的测试场景。
+     */
     void completeRejectsAlreadyTerminalRun() {
         RunRecord completed = new RunRecord(
                 ID,
@@ -119,6 +137,9 @@ class RunRecordTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code completeRejectsRunningAsFinalStatus} 所描述的测试场景。
+     */
     void completeRejectsRunningAsFinalStatus() {
         RunRecord running = RunRecord.create(ID, TENANT_ID, AGENT_ID, "principal", "input", STARTED_AT);
 
@@ -128,6 +149,9 @@ class RunRecordTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code completeRejectsMissingFinishedAt} 所描述的测试场景。
+     */
     void completeRejectsMissingFinishedAt() {
         RunRecord running = RunRecord.create(ID, TENANT_ID, AGENT_ID, "principal", "input", STARTED_AT);
 
@@ -137,6 +161,9 @@ class RunRecordTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code completeRejectsFinishedAtBeforeStartedAt} 所描述的测试场景。
+     */
     void completeRejectsFinishedAtBeforeStartedAt() {
         RunRecord running = RunRecord.create(ID, TENANT_ID, AGENT_ID, "principal", "input", STARTED_AT);
 
@@ -150,6 +177,9 @@ class RunRecordTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code repositoryWritesExplicitlyRequireTenantScope} 所描述的测试场景。
+     */
     void repositoryWritesExplicitlyRequireTenantScope() {
         assertThatCode(() -> RunRepository.class.getMethod("save", UUID.class, RunRecord.class))
                 .doesNotThrowAnyException();
@@ -158,6 +188,9 @@ class RunRecordTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code keysetUsesDescendingStartedAtAndIdAndExcludesCursorTuple} 所描述的测试场景。
+     */
     void keysetUsesDescendingStartedAtAndIdAndExcludesCursorTuple() {
         RunRecord latest = RunRecord.create(
                 UUID.fromString("00000000-0000-0000-0000-000000000003"),
@@ -193,6 +226,9 @@ class RunRecordTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code keysetUsesChar36LexicographicOrderAcrossUuidSignBoundary} 所描述的测试场景。
+     */
     void keysetUsesChar36LexicographicOrderAcrossUuidSignBoundary() {
         RunRecord lowerLexicographicId = RunRecord.create(
                 UUID.fromString("7fffffff-ffff-ffff-ffff-ffffffffffff"),

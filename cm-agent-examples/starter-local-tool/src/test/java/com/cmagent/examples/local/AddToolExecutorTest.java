@@ -17,6 +17,9 @@ class AddToolExecutorTest {
     private final AddToolExecutor executor = new AddToolExecutor(objectMapper);
 
     @Test
+    /**
+     * 验证或支持 {@code shouldAddIntegers} 所描述的测试场景。
+     */
     void shouldAddIntegers() throws Exception {
         ToolExecutionResult result = executor.execute(request("""
                 {"left":2,"right":3}
@@ -27,6 +30,9 @@ class AddToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code shouldAddDecimalsExactly} 所描述的测试场景。
+     */
     void shouldAddDecimalsExactly() throws Exception {
         ToolExecutionResult result = executor.execute(request("""
                 {"left":0.1,"right":0.2}
@@ -37,6 +43,9 @@ class AddToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code shouldAddNegativeNumbers} 所描述的测试场景。
+     */
     void shouldAddNegativeNumbers() throws Exception {
         ToolExecutionResult result = executor.execute(request("""
                 {"left":-5.5,"right":2}
@@ -47,6 +56,9 @@ class AddToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code shouldRejectInvalidJson} 所描述的测试场景。
+     */
     void shouldRejectInvalidJson() {
         ToolExecutionResult result = executor.execute(request("{"));
 
@@ -55,6 +67,9 @@ class AddToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code shouldRejectMissingOperand} 所描述的测试场景。
+     */
     void shouldRejectMissingOperand() {
         ToolExecutionResult result = executor.execute(request("""
                 {"left":1}
@@ -65,6 +80,9 @@ class AddToolExecutorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code shouldRejectNonNumericOperand} 所描述的测试场景。
+     */
     void shouldRejectNonNumericOperand() {
         ToolExecutionResult result = executor.execute(request("""
                 {"left":"1","right":2}
@@ -74,10 +92,20 @@ class AddToolExecutorTest {
         assertThat(result.errorMessage()).isEqualTo("left 和 right 必须是数字");
     }
 
+    /**
+     * 构造测试使用的运行或 HTTP 请求。
+     *
+     * @param inputJson 测试辅助方法使用的 inputJson 参数
+     */
     private ToolExecutionRequest request(String inputJson) {
         return new ToolExecutionRequest(TOOL_ID, inputJson);
     }
 
+    /**
+     * 验证或支持 {@code sum} 所描述的测试场景。
+     *
+     * @param result 待断言的处理结果
+     */
     private java.math.BigDecimal sum(ToolExecutionResult result) throws Exception {
         JsonNode output = objectMapper.readTree(result.outputSummary());
         return output.path("sum").decimalValue();

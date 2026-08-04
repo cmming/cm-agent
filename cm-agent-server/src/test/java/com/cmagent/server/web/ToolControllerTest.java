@@ -84,6 +84,9 @@ class ToolControllerTest {
     private ManagementCommandService managementCommandService;
 
     @Test
+    /**
+     * 验证或支持 {@code localCreateKeepsExistingFieldsAndHasNoHttpConfiguration} 所描述的测试场景。
+     */
     void localCreateKeepsExistingFieldsAndHasNoHttpConfiguration() throws Exception {
         String token = token(TENANT_A, "admin");
         String toolId = createLocal(token, "echo");
@@ -108,6 +111,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code httpCreateCanonicalizesNestedJsonAndExposesOnlySecretReferences} 所描述的测试场景。
+     */
     void httpCreateCanonicalizesNestedJsonAndExposesOnlySecretReferences() throws Exception {
         String token = token(TENANT_A, "admin");
         String response = mockMvc.perform(post("/api/tools")
@@ -141,6 +147,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code httpCreateRequiresHttpConfigurationAndLocalRejectsIt} 所描述的测试场景。
+     */
     void httpCreateRequiresHttpConfigurationAndLocalRejectsIt() throws Exception {
         String token = token(TENANT_A, "admin");
 
@@ -161,6 +170,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code httpCreateRejectsNullParameterMapping} 所描述的测试场景。
+     */
     void httpCreateRejectsNullParameterMapping() throws Exception {
         String token = token(TENANT_A, "admin");
 
@@ -176,6 +188,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code httpCreateRejectsNullSecretHeaderValueAndBlankKeyAsBadRequest} 所描述的测试场景。
+     */
     void httpCreateRejectsNullSecretHeaderValueAndBlankKeyAsBadRequest() throws Exception {
         String token = token(TENANT_A, "admin");
 
@@ -213,6 +228,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code duplicateNameIsRejectedWithinTenantButAllowedAcrossTenants} 所描述的测试场景。
+     */
     void duplicateNameIsRejectedWithinTenantButAllowedAcrossTenants() throws Exception {
         String tenantAToken = token(TENANT_A, "admin-a");
         String tenantBToken = token(TENANT_B, "admin-b");
@@ -232,6 +250,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code auditFailureLeavesNoHttpToolConfigurationOrPublication} 所描述的测试场景。
+     */
     void auditFailureLeavesNoHttpToolConfigurationOrPublication() throws Exception {
         String token = token(TENANT_A, "admin");
         doThrow(new AuditPersistenceException("审计写入失败", new IllegalStateException("audit unavailable")))
@@ -249,6 +270,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code debugPermissionDeniedWritesAuditBeforeAnyToolExecution} 所描述的测试场景。
+     */
     void debugPermissionDeniedWritesAuditBeforeAnyToolExecution() throws Exception {
         String token = token(TENANT_A, "reader");
         String toolId = createLocal(token, "debug-target");
@@ -267,6 +291,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code publicationEndpointsUseManagementPermissionAndDeleteIsIdempotent} 所描述的测试场景。
+     */
     void publicationEndpointsUseManagementPermissionAndDeleteIsIdempotent() throws Exception {
         String token = token(TENANT_A, "admin");
         String toolId = createLocal(token, "local_publish_target");
@@ -281,6 +308,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code httpUpdateUsesGrantPermissionAndReturnsUpdatedSummary} 所描述的测试场景。
+     */
     void httpUpdateUsesGrantPermissionAndReturnsUpdatedSummary() throws Exception {
         String managerToken = token(TENANT_A, "manager");
         String toolId = createHttp(managerToken, "orders-before-update");
@@ -307,6 +337,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code concurrentHttpUpdatesEachReturnTheirOwnCommittedSnapshot} 所描述的测试场景。
+     */
     void concurrentHttpUpdatesEachReturnTheirOwnCommittedSnapshot() throws Exception {
         String managerToken = token(TENANT_A, "manager");
         String toolId = createHttp(managerToken, "orders-before-concurrent-update");
@@ -362,6 +395,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updateDeniedWithoutGrantPermissionWritesAccessDeniedAudit} 所描述的测试场景。
+     */
     void updateDeniedWithoutGrantPermissionWritesAccessDeniedAudit() throws Exception {
         String managerToken = token(TENANT_A, "manager");
         String toolId = createHttp(managerToken, "update-denied");
@@ -381,6 +417,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updateReturnsNotFoundForToolOutsideCurrentTenant} 所描述的测试场景。
+     */
     void updateReturnsNotFoundForToolOutsideCurrentTenant() throws Exception {
         String tenantAToken = token(TENANT_A, "manager-a");
         String tenantBToken = token(TENANT_B, "manager-b");
@@ -395,6 +434,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code updateRejectsDuplicateNameWithinTenant} 所描述的测试场景。
+     */
     void updateRejectsDuplicateNameWithinTenant() throws Exception {
         String managerToken = token(TENANT_A, "manager");
         String firstToolId = createHttp(managerToken, "update-first");
@@ -408,6 +450,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code deleteUsesDeletePermissionAndReturnsNoContent} 所描述的测试场景。
+     */
     void deleteUsesDeletePermissionAndReturnsNoContent() throws Exception {
         String managerToken = token(TENANT_A, "manager");
         String toolId = createLocal(managerToken, "delete-success");
@@ -421,6 +466,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code deleteDeniedWithoutDeletePermissionWritesAccessDeniedAudit} 所描述的测试场景。
+     */
     void deleteDeniedWithoutDeletePermissionWritesAccessDeniedAudit() throws Exception {
         String managerToken = token(TENANT_A, "manager");
         String toolId = createLocal(managerToken, "delete-denied");
@@ -439,6 +487,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code deleteRejectsToolStillReferencedByAgent} 所描述的测试场景。
+     */
     void deleteRejectsToolStillReferencedByAgent() throws Exception {
         String managerToken = token(TENANT_A, "manager");
         String toolId = createLocal(managerToken, "delete-referenced");
@@ -455,6 +506,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code deleteCannotReachToolFromAnotherTenant} 所描述的测试场景。
+     */
     void deleteCannotReachToolFromAnotherTenant() throws Exception {
         String tenantAManagerToken = token(TENANT_A, "manager-a");
         String toolId = createLocal(tenantAManagerToken, "cross-tenant-delete");
@@ -469,6 +523,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code revokeUsesGrantPermissionAndReturnsUpdatedAgent} 所描述的测试场景。
+     */
     void revokeUsesGrantPermissionAndReturnsUpdatedAgent() throws Exception {
         String managerToken = token(TENANT_A, "manager");
         String toolId = createLocal(managerToken, "revoke-success");
@@ -486,6 +543,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code revokeDeniedWithoutGrantPermissionWritesAccessDeniedAudit} 所描述的测试场景。
+     */
     void revokeDeniedWithoutGrantPermissionWritesAccessDeniedAudit() throws Exception {
         String managerToken = token(TENANT_A, "manager");
         String toolId = createLocal(managerToken, "revoke-denied");
@@ -506,6 +566,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code revokeReturnsNotFoundWhenAgentDoesNotExist} 所描述的测试场景。
+     */
     void revokeReturnsNotFoundWhenAgentDoesNotExist() throws Exception {
         String managerToken = token(TENANT_A, "manager");
         String toolId = createLocal(managerToken, "revoke-missing-agent");
@@ -518,6 +581,9 @@ class ToolControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code createReturnsTheToolCreatedByCommandInsteadOfAnotherSameNameSummary} 所描述的测试场景。
+     */
     void createReturnsTheToolCreatedByCommandInsteadOfAnotherSameNameSummary() {
         PermissionEvaluator permissionEvaluator = mock(PermissionEvaluator.class);
         AuditAppender controllerAuditAppender = mock(AuditAppender.class);
@@ -549,6 +615,12 @@ class ToolControllerTest {
         verify(toolQueryService, never()).listByTenant(TENANT_A);
     }
 
+    /**
+     * 验证或支持 {@code localTool} 所描述的测试场景。
+     *
+     * @param id 测试辅助方法使用的 id 参数
+     * @param name 测试对象名称
+     */
     private static ToolDefinition localTool(UUID id, String name) {
         return new ToolDefinition(
                 id, TENANT_A, name, "", ToolType.LOCAL, "{\"type\":\"object\"}", ToolRiskLevel.LOW,
@@ -556,6 +628,12 @@ class ToolControllerTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code createLocal} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     * @param name 测试对象名称
+     */
     private String createLocal(String token, String name) throws Exception {
         String response = mockMvc.perform(post("/api/tools")
                         .header("Authorization", bearer(token))
@@ -570,6 +648,12 @@ class ToolControllerTest {
         return JsonPath.read(response, "$.id");
     }
 
+    /**
+     * 验证或支持 {@code createHttp} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     * @param name 测试对象名称
+     */
     private String createHttp(String token, String name) throws Exception {
         String response = mockMvc.perform(post("/api/tools")
                         .header("Authorization", bearer(token))
@@ -582,6 +666,12 @@ class ToolControllerTest {
         return JsonPath.read(response, "$.id");
     }
 
+    /**
+     * 验证或支持 {@code saveAgent} 所描述的测试场景。
+     *
+     * @param tenantId 测试租户标识
+     * @param agentId 测试 Agent 标识
+     */
     private void saveAgent(UUID tenantId, UUID agentId) {
         store.saveAgent(new AgentDefinition(
                 agentId,
@@ -600,6 +690,13 @@ class ToolControllerTest {
         ));
     }
 
+    /**
+     * 验证或支持 {@code grantTool} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     * @param toolId 测试工具标识
+     * @param agentId 测试 Agent 标识
+     */
     private void grantTool(String token, String toolId, UUID agentId) throws Exception {
         mockMvc.perform(post("/api/tools/{id}/grants", toolId)
                         .header("Authorization", bearer(token))
@@ -608,6 +705,12 @@ class ToolControllerTest {
                 .andExpect(status().isOk());
     }
 
+    /**
+     * 验证或支持 {@code httpRequest} 所描述的测试场景。
+     *
+     * @param name 测试对象名称
+     * @param mcpPublished 测试辅助方法使用的 mcpPublished 参数
+     */
     private String httpRequest(String name, boolean mcpPublished) {
         return """
                 {
@@ -640,6 +743,11 @@ class ToolControllerTest {
                 """.formatted(name, mcpPublished);
     }
 
+    /**
+     * 验证或支持 {@code httpUpdateRequest} 所描述的测试场景。
+     *
+     * @param name 测试对象名称
+     */
     private String httpUpdateRequest(String name) {
         return """
                 {
@@ -666,14 +774,32 @@ class ToolControllerTest {
                 """.formatted(name);
     }
 
+    /**
+     * 验证或支持 {@code token} 所描述的测试场景。
+     *
+     * @param tenantId 测试租户标识
+     * @param principalId 测试辅助方法使用的 principalId 参数
+     */
     private String token(UUID tenantId, String principalId) {
         return jwtService.createToken(tenantId, principalId, "测试管理员", List.of("tool:read", "tool:grant"));
     }
 
+    /**
+     * 验证或支持 {@code token} 所描述的测试场景。
+     *
+     * @param tenantId 测试租户标识
+     * @param principalId 测试辅助方法使用的 principalId 参数
+     * @param permissions 测试辅助方法使用的 permissions 参数
+     */
     private String token(UUID tenantId, String principalId, List<String> permissions) {
         return jwtService.createToken(tenantId, principalId, "测试主体", permissions);
     }
 
+    /**
+     * 验证或支持 {@code bearer} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     */
     private static String bearer(String token) {
         return "Bearer " + token;
     }

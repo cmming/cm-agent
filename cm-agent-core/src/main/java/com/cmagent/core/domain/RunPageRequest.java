@@ -8,7 +8,11 @@ import java.util.UUID;
  */
 public record RunPageRequest(int limit, Instant beforeStartedAt, UUID beforeId) {
     /**
-     * 构造 RunPageRequest 实例并校验输入参数。
+     * 校验运行记录分页容量及复合游标的完整性。
+      *
+      * @param limit 单页最大返回数量
+      * @param beforeStartedAt 运行游标中的开始时间
+      * @param beforeId 复合游标中的上一条记录标识
      */
     public RunPageRequest {
         if (limit < 1 || limit > 100) {

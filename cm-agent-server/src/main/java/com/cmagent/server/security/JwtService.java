@@ -19,9 +19,9 @@ public class JwtService {
     private static final Duration TOKEN_TTL = Duration.ofHours(8);
     private final SecretKey signingKey;
     /**
-     * JwtService：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code JwtService} 实例并保存其运行所需依赖。
      *
-     * @param jwtSigningKey 参与 JwtService 处理的 jwtSigningKey 输入值。
+     * @param jwtSigningKey 用于签发和校验 JWT 的密钥对象
      */
     public JwtService(SecretKey jwtSigningKey) {
         this.signingKey = jwtSigningKey;
@@ -74,7 +74,7 @@ public class JwtService {
     }
 
     /**
-     * JwtSession：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code JwtSession} 在当前流程中使用的不可变数据。
      */
     public record JwtSession(UUID tenantId, String principalId, String displayName, List<String> permissions) {
     }

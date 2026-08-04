@@ -11,6 +11,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AuditPageRequestTest {
 
     @Test
+    /**
+     * 验证 {@code BoundedLimitAndCompleteCursor} 合法场景会被接受。
+     */
     void acceptsBoundedLimitAndCompleteCursor() {
         assertThatCode(() -> new AuditPageRequest(1, null, null)).doesNotThrowAnyException();
         assertThatCode(() -> new AuditPageRequest(
@@ -21,6 +24,9 @@ class AuditPageRequestTest {
     }
 
     @Test
+    /**
+     * 验证 {@code LimitOutsideOneToOneHundred} 异常场景会被正确拒绝。
+     */
     void rejectsLimitOutsideOneToOneHundred() {
         assertThatThrownBy(() -> new AuditPageRequest(0, null, null))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -31,6 +37,9 @@ class AuditPageRequestTest {
     }
 
     @Test
+    /**
+     * 验证 {@code PartialCursor} 异常场景会被正确拒绝。
+     */
     void rejectsPartialCursor() {
         assertThatThrownBy(() -> new AuditPageRequest(20, Instant.now(), null))
                 .isInstanceOf(IllegalArgumentException.class)

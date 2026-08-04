@@ -19,6 +19,9 @@ import static org.mockito.Mockito.mock;
 class McpServerConfigurationTest {
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 默认关闭时不注册任何McpBean和端点() {
         contextRunner().run(context -> {
             assertThat(context).doesNotHaveBean(McpServerProperties.class);
@@ -29,6 +32,9 @@ class McpServerConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 启用但白名单为空时启动失败() {
         contextRunner()
                 .withPropertyValues("cm-agent.mcp.enabled=true")
@@ -37,6 +43,9 @@ class McpServerConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 启用后按同一配置注册自定义端点() {
         contextRunner()
                 .withPropertyValues(
@@ -57,6 +66,9 @@ class McpServerConfigurationTest {
                 });
     }
 
+    /**
+     * 验证或支持 {@code contextRunner} 所描述的测试场景。
+     */
     private ApplicationContextRunner contextRunner() {
         ObjectMapper objectMapper = new ObjectMapper();
         return new ApplicationContextRunner()

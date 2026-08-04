@@ -8,15 +8,15 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * FakeAgentRuntime 的核心领域类型。
+ * 提供回显输入的模拟 Agent 运行时，用于本地开发和快速测试。
  */
 public class FakeAgentRuntime implements AgentRuntime {
 
     /**
-     * 执行 run 操作。
-     */
-    /**
-     * 定义 run 操作。
+     * 生成确定性的成功结果，供本地开发和不依赖真实模型的测试使用。
+     *
+     * @param request 当前 Agent 运行请求
+     * @return 回显输入的模拟运行结果
      */
     @Override
     public AgentRunResult run(AgentRunRequest request) {

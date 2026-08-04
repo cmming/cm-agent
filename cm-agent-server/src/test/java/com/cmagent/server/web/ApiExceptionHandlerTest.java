@@ -24,6 +24,9 @@ class ApiExceptionHandlerTest {
     private MockMvc mockMvc;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(new FailingController())
                 .setControllerAdvice(new ApiExceptionHandler())
@@ -31,6 +34,9 @@ class ApiExceptionHandlerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code validationFailureUsesControlledChineseResponse} 所描述的测试场景。
+     */
     void validationFailureUsesControlledChineseResponse() throws Exception {
         mockMvc.perform(get("/test/resources/not-a-uuid"))
                 .andExpect(status().isBadRequest())
@@ -39,6 +45,9 @@ class ApiExceptionHandlerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code persistenceFailureDoesNotExposeJdbcCredentialsOrSql} 所描述的测试场景。
+     */
     void persistenceFailureDoesNotExposeJdbcCredentialsOrSql() throws Exception {
         mockMvc.perform(get("/test/persistence"))
                 .andExpect(status().isServiceUnavailable())
@@ -50,6 +59,9 @@ class ApiExceptionHandlerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code auditPersistenceFailureMapsToServiceUnavailable} 所描述的测试场景。
+     */
     void auditPersistenceFailureMapsToServiceUnavailable() throws Exception {
         mockMvc.perform(get("/test/audit-persistence"))
                 .andExpect(status().isServiceUnavailable())
@@ -59,6 +71,9 @@ class ApiExceptionHandlerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code runtimeFailureDoesNotExposeBearerTokenOrApiKey} 所描述的测试场景。
+     */
     void runtimeFailureDoesNotExposeBearerTokenOrApiKey() throws Exception {
         mockMvc.perform(get("/test/runtime"))
                 .andExpect(status().isInternalServerError())
@@ -69,6 +84,9 @@ class ApiExceptionHandlerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code conflictUsesControlledBusinessReason} 所描述的测试场景。
+     */
     void conflictUsesControlledBusinessReason() throws Exception {
         mockMvc.perform(get("/test/conflict"))
                 .andExpect(status().isConflict())
@@ -79,11 +97,19 @@ class ApiExceptionHandlerTest {
     @RestController
     static class FailingController {
         @GetMapping("/test/resources/{id}")
+        /**
+         * 验证或支持 {@code resource} 所描述的测试场景。
+         *
+         * @param id 测试辅助方法使用的 id 参数
+         */
         UUID resource(@PathVariable UUID id) {
             return id;
         }
 
         @GetMapping("/test/persistence")
+        /**
+         * 验证或支持 {@code persistence} 所描述的测试场景。
+         */
         void persistence() {
             throw new DataAccessResourceFailureException(
                     "select * from users where password='unit-password' jdbc:postgresql://unit-user:unit-password@db.example/cm_agent"
@@ -91,11 +117,17 @@ class ApiExceptionHandlerTest {
         }
 
         @GetMapping("/test/runtime")
+        /**
+         * 验证或支持 {@code runtime} 所描述的测试场景。
+         */
         void runtime() {
             throw new IllegalStateException("Bearer unit-test-token apiKey=unit-test-api-key");
         }
 
         @GetMapping("/test/audit-persistence")
+        /**
+         * 验证或支持 {@code auditPersistence} 所描述的测试场景。
+         */
         void auditPersistence() {
             throw new AuditPersistenceException(
                     "审计写入失败",
@@ -104,6 +136,9 @@ class ApiExceptionHandlerTest {
         }
 
         @GetMapping("/test/conflict")
+        /**
+         * 验证或支持 {@code conflict} 所描述的测试场景。
+         */
         void conflict() {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,

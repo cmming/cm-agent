@@ -22,11 +22,11 @@ public class ToolQueryService {
     private final McpToolPublicationRepository mcpToolPublicationRepository;
     private final ToolRuntimeReadiness toolRuntimeReadiness;
     /**
-     * ToolQueryService：转换内部数据为目标表示。
+     * 创建 {@code ToolQueryService} 实例并保存其运行所需依赖。
      *
-     * @param toolRepository 参与 ToolQueryService 处理的 toolRepository 输入值。
-     * @param httpToolConfigRepository 参与 ToolQueryService 处理的 httpToolConfigRepository 输入值。
-     * @param mcpToolPublicationRepository 参与 ToolQueryService 处理的 mcpToolPublicationRepository 输入值。
+     * @param toolRepository 工具定义仓储。
+     * @param httpToolConfigRepository 负责访问相关领域数据的仓储。
+     * @param mcpToolPublicationRepository 负责访问相关领域数据的仓储。
      * @param toolRuntimeReadiness 用于判断工具运行时是否就绪。
      */
     public ToolQueryService(
@@ -94,6 +94,13 @@ public class ToolQueryService {
         return toSummary(tool, httpConfig, mcpPublished);
     }
 
+    /**
+     * 将内部查询结果转换为不含敏感信息的摘要。
+     *
+     * @param tool 当前处理的工具定义
+     * @param httpConfig 可选的 HTTP 工具配置。
+     * @param publication 可选的 MCP 发布记录。
+     */
     private ToolSummary toSummary(
             ToolDefinition tool,
             HttpToolConfig httpConfig,
@@ -102,6 +109,13 @@ public class ToolQueryService {
         return toSummary(tool, httpConfig, publication != null && publication.enabled());
     }
 
+    /**
+     * 将内部查询结果转换为不含敏感信息的摘要。
+     *
+     * @param tool 当前处理的工具定义
+     * @param httpConfig 可选的 HTTP 工具配置。
+     * @param mcpPublished 是否同时发布为 MCP 工具。
+     */
     private ToolSummary toSummary(ToolDefinition tool, HttpToolConfig httpConfig, boolean mcpPublished) {
         return new ToolSummary(tool, httpConfig, mcpPublished, toolRuntimeReadiness.isReady(tool, httpConfig));
     }

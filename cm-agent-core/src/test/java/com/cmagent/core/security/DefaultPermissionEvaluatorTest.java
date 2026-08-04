@@ -11,6 +11,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DefaultPermissionEvaluatorTest {
 
     @Test
+    /**
+     * 验证或支持 {@code allowWhenPrincipalHasPermission} 所描述的测试场景。
+     */
     void allowWhenPrincipalHasPermission() {
         PrincipalRef principal = new PrincipalRef(
                 UUID.fromString("00000000-0000-0000-0000-000000000001"),
@@ -26,6 +29,9 @@ class DefaultPermissionEvaluatorTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code denyWhenPrincipalMissesPermission} 所描述的测试场景。
+     */
     void denyWhenPrincipalMissesPermission() {
         PrincipalRef principal = new PrincipalRef(
                 UUID.fromString("00000000-0000-0000-0000-000000000001"),

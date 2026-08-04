@@ -74,95 +74,154 @@ class ManagementCommandServiceJdbcPersistenceTest {
     static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4");
 
     @Test
+    /**
+     * 验证或支持 {@code concurrentSameTenantNameMapsThePostgreSqlUniqueConstraintToConflict} 所描述的测试场景。
+     */
     void concurrentSameTenantNameMapsThePostgreSqlUniqueConstraintToConflict() throws Exception {
         assertConcurrentNameConflict(postgresDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code concurrentSameTenantNameMapsTheMySqlUniqueConstraintToConflict} 所描述的测试场景。
+     */
     void concurrentSameTenantNameMapsTheMySqlUniqueConstraintToConflict() throws Exception {
         assertConcurrentNameConflict(mysqlDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code auditWriteFailureRollsBackHttpToolDataInPostgreSql} 所描述的测试场景。
+     */
     void auditWriteFailureRollsBackHttpToolDataInPostgreSql() {
         assertAuditWriteFailureRollsBackHttpToolData(postgresDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code auditWriteFailureRollsBackHttpToolDataInMySql} 所描述的测试场景。
+     */
     void auditWriteFailureRollsBackHttpToolDataInMySql() {
         assertAuditWriteFailureRollsBackHttpToolData(mysqlDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code toolUpdateRevokeAndDeletePersistAtomicallyInPostgreSql} 所描述的测试场景。
+     */
     void toolUpdateRevokeAndDeletePersistAtomicallyInPostgreSql() {
         assertToolMutationsPersistAtomically(postgresDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code toolUpdateRevokeAndDeletePersistAtomicallyInMySql} 所描述的测试场景。
+     */
     void toolUpdateRevokeAndDeletePersistAtomicallyInMySql() {
         assertToolMutationsPersistAtomically(mysqlDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code auditFailuresRollBackAllToolMutationsInPostgreSql} 所描述的测试场景。
+     */
     void auditFailuresRollBackAllToolMutationsInPostgreSql() {
         assertAuditFailuresRollBackAllToolMutations(postgresDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code auditFailuresRollBackAllToolMutationsInMySql} 所描述的测试场景。
+     */
     void auditFailuresRollBackAllToolMutationsInMySql() {
         assertAuditFailuresRollBackAllToolMutations(mysqlDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code concurrentExistingGrantAndDeleteNeverLeaveDanglingAgentToolInPostgreSql} 所描述的测试场景。
+     */
     void concurrentExistingGrantAndDeleteNeverLeaveDanglingAgentToolInPostgreSql() throws Exception {
         assertConcurrentExistingGrantAndDeleteNeverLeaveDanglingAgentTool(postgresDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code concurrentExistingGrantAndDeleteNeverLeaveDanglingAgentToolInMySql} 所描述的测试场景。
+     */
     void concurrentExistingGrantAndDeleteNeverLeaveDanglingAgentToolInMySql() throws Exception {
         assertConcurrentExistingGrantAndDeleteNeverLeaveDanglingAgentTool(mysqlDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code toolCallHistoryBlocksDeleteAndRemainsInPostgreSql} 所描述的测试场景。
+     */
     void toolCallHistoryBlocksDeleteAndRemainsInPostgreSql() {
         assertToolCallHistoryBlocksDeleteAndRemains(postgresDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code toolCallHistoryBlocksDeleteAndRemainsInMySql} 所描述的测试场景。
+     */
     void toolCallHistoryBlocksDeleteAndRemainsInMySql() {
         assertToolCallHistoryBlocksDeleteAndRemains(mysqlDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code crossInstanceDifferentToolGrantAndRevokeKeepAllChangesInPostgreSql} 所描述的测试场景。
+     */
     void crossInstanceDifferentToolGrantAndRevokeKeepAllChangesInPostgreSql() throws Exception {
         assertCrossInstanceDifferentToolGrantAndRevokeKeepAllChanges(postgresDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code crossInstanceDifferentToolGrantAndRevokeKeepAllChangesInMySql} 所描述的测试场景。
+     */
     void crossInstanceDifferentToolGrantAndRevokeKeepAllChangesInMySql() throws Exception {
         assertCrossInstanceDifferentToolGrantAndRevokeKeepAllChanges(mysqlDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code concurrentUpdateAndDeleteSerializeOnToolRowInPostgreSql} 所描述的测试场景。
+     */
     void concurrentUpdateAndDeleteSerializeOnToolRowInPostgreSql() throws Exception {
         assertConcurrentUpdateAndDeleteSerializeOnToolRow(postgresDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code concurrentUpdateAndDeleteSerializeOnToolRowInMySql} 所描述的测试场景。
+     */
     void concurrentUpdateAndDeleteSerializeOnToolRowInMySql() throws Exception {
         assertConcurrentUpdateAndDeleteSerializeOnToolRow(mysqlDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code inFlightToolCallPersistsAfterRevokeAndDeleteInPostgreSql} 所描述的测试场景。
+     */
     void inFlightToolCallPersistsAfterRevokeAndDeleteInPostgreSql() {
         assertInFlightToolCallPersistsAfterRevokeAndDelete(postgresDataSource());
     }
 
     @Test
+    /**
+     * 验证或支持 {@code inFlightToolCallPersistsAfterRevokeAndDeleteInMySql} 所描述的测试场景。
+     */
     void inFlightToolCallPersistsAfterRevokeAndDeleteInMySql() {
         assertInFlightToolCallPersistsAfterRevokeAndDelete(mysqlDataSource());
     }
 
+    /**
+     * 验证或支持 {@code assertInFlightToolCallPersistsAfterRevokeAndDelete} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private void assertInFlightToolCallPersistsAfterRevokeAndDelete(DataSource dataSource) {
         migrateAndSeedTenant(dataSource);
         TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -221,6 +280,14 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 .single()).isEqualTo(1);
     }
 
+    /**
+     * 验证或支持 {@code insertRunningRun} 所描述的测试场景。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     * @param runId 测试运行标识
+     * @param agentId 测试 Agent 标识
+     * @param startedAt 测试辅助方法使用的 startedAt 参数
+     */
     private void insertRunningRun(JdbcClient jdbcClient, UUID runId, UUID agentId, Instant startedAt) {
         jdbcClient.sql("""
                         INSERT INTO runs (
@@ -240,6 +307,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 .update();
     }
 
+    /**
+     * 验证或支持 {@code assertConcurrentNameConflict} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private void assertConcurrentNameConflict(DataSource dataSource) throws Exception {
         migrateAndSeedTenant(dataSource);
         TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -264,6 +336,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
         assertThat(jdbcTools.listByTenant(TENANT_ID)).hasSize(1);
     }
 
+    /**
+     * 验证或支持 {@code assertAuditWriteFailureRollsBackHttpToolData} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private void assertAuditWriteFailureRollsBackHttpToolData(DataSource dataSource) {
         migrateAndSeedTenant(dataSource);
         TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -292,6 +369,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
         assertThat(countRows(jdbcClient, "audit_events")).isZero();
     }
 
+    /**
+     * 验证或支持 {@code assertToolMutationsPersistAtomically} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private void assertToolMutationsPersistAtomically(DataSource dataSource) {
         migrateAndSeedTenant(dataSource);
         TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -346,6 +428,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 .contains("TOOL_UPDATE", "TOOL_GRANT_REVOKE", "TOOL_DELETE");
     }
 
+    /**
+     * 验证或支持 {@code assertAuditFailuresRollBackAllToolMutations} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private void assertAuditFailuresRollBackAllToolMutations(DataSource dataSource) {
         migrateAndSeedTenant(dataSource);
         TransactionTemplate transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -419,6 +506,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 .doesNotContain("TOOL_UPDATE", "TOOL_GRANT_REVOKE", "TOOL_DELETE");
     }
 
+    /**
+     * 验证或支持 {@code assertConcurrentExistingGrantAndDeleteNeverLeaveDanglingAgentTool} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private void assertConcurrentExistingGrantAndDeleteNeverLeaveDanglingAgentTool(DataSource dataSource)
             throws Exception {
         migrateAndSeedTenant(dataSource);
@@ -519,6 +611,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
         assertThat(setupGrants.listByTenantAgentAndTool(TENANT_ID, agentId, toolId)).hasSize(1);
     }
 
+    /**
+     * 验证或支持 {@code assertToolCallHistoryBlocksDeleteAndRemains} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private void assertToolCallHistoryBlocksDeleteAndRemains(DataSource dataSource) {
         migrateAndSeedTenant(dataSource);
         TransactionTemplate transactionTemplate =
@@ -598,6 +695,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 .doesNotContain("TOOL_DELETE");
     }
 
+    /**
+     * 验证或支持 {@code assertCrossInstanceDifferentToolGrantAndRevokeKeepAllChanges} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private void assertCrossInstanceDifferentToolGrantAndRevokeKeepAllChanges(DataSource dataSource)
             throws Exception {
         migrateAndSeedTenant(dataSource);
@@ -646,6 +748,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
         assertThat(setupGrants.listByTenantAgentAndTool(TENANT_ID, agentId, removeToolId)).isEmpty();
     }
 
+    /**
+     * 验证或支持 {@code assertConcurrentUpdateAndDeleteSerializeOnToolRow} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private void assertConcurrentUpdateAndDeleteSerializeOnToolRow(DataSource dataSource) throws Exception {
         migrateAndSeedTenant(dataSource);
         JdbcClient setupClient = JdbcClient.create(dataSource);
@@ -711,9 +818,19 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 .contains("TOOL_UPDATE", "TOOL_DELETE");
     }
 
+    /**
+     * 验证或支持 {@code failingDatabaseAuditAppender} 所描述的测试场景。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     */
     private static AuditAppender failingDatabaseAuditAppender(JdbcClient jdbcClient) {
         AuditEventRepository repository = new AuditEventRepository() {
             @Override
+            /**
+             * 验证或支持 {@code append} 所描述的测试场景。
+             *
+             * @param event 测试审计事件
+             */
             public void append(AuditEvent event) {
                 jdbcClient.sql("INSERT INTO audit_events (id) VALUES (:id)")
                         .param("id", UUID.randomUUID().toString())
@@ -721,6 +838,12 @@ class ManagementCommandServiceJdbcPersistenceTest {
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param limit 测试辅助方法使用的 limit 参数
+             */
             public List<AuditEvent> listByTenant(UUID tenantId, int limit) {
                 return List.of();
             }
@@ -728,6 +851,12 @@ class ManagementCommandServiceJdbcPersistenceTest {
         return new AuditAppender(repository);
     }
 
+    /**
+     * 验证或支持 {@code countRows} 所描述的测试场景。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     * @param tableName 测试辅助方法使用的 tableName 参数
+     */
     private static int countRows(JdbcClient jdbcClient, String tableName) {
         return jdbcClient.sql("SELECT COUNT(*) FROM " + tableName + " WHERE tenant_id = :tenantId")
                 .param("tenantId", TENANT_ID.toString())
@@ -735,6 +864,9 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 .single();
     }
 
+    /**
+     * 验证或支持 {@code httpToolSpec} 所描述的测试场景。
+     */
     private static HttpToolCreateSpec httpToolSpec() {
         return new HttpToolCreateSpec(
                 HttpToolMethod.POST,
@@ -746,6 +878,9 @@ class ManagementCommandServiceJdbcPersistenceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code replacementHttpToolSpec} 所描述的测试场景。
+     */
     private static HttpToolCreateSpec replacementHttpToolSpec() {
         return new HttpToolCreateSpec(
                 HttpToolMethod.POST,
@@ -757,6 +892,12 @@ class ManagementCommandServiceJdbcPersistenceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code createWithStatus} 所描述的测试场景。
+     *
+     * @param service 测试辅助方法使用的 service 参数
+     * @param principal 测试认证主体
+     */
     private static int createWithStatus(ManagementCommandService service, PrincipalRef principal) {
         try {
             service.createTool(principal, "concurrent-name", "并发测试", ToolType.LOCAL, ToolRiskLevel.LOW);
@@ -766,6 +907,13 @@ class ManagementCommandServiceJdbcPersistenceTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code grantWithStatus} 所描述的测试场景。
+     *
+     * @param service 测试辅助方法使用的 service 参数
+     * @param toolId 测试工具标识
+     * @param agentId 测试 Agent 标识
+     */
     private static int grantWithStatus(Object service, UUID toolId, UUID agentId) {
         try {
             service.getClass()
@@ -779,6 +927,13 @@ class ManagementCommandServiceJdbcPersistenceTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code revokeWithStatus} 所描述的测试场景。
+     *
+     * @param service 测试辅助方法使用的 service 参数
+     * @param toolId 测试工具标识
+     * @param agentId 测试 Agent 标识
+     */
     private static int revokeWithStatus(Object service, UUID toolId, UUID agentId) {
         try {
             service.getClass()
@@ -792,6 +947,13 @@ class ManagementCommandServiceJdbcPersistenceTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code updateLocalWithStatus} 所描述的测试场景。
+     *
+     * @param service 测试辅助方法使用的 service 参数
+     * @param toolId 测试工具标识
+     * @param toolName 测试辅助方法使用的 toolName 参数
+     */
     private static int updateLocalWithStatus(Object service, UUID toolId, String toolName) {
         try {
             Class<?> specClass = java.util.Arrays.stream(service.getClass().getDeclaredClasses())
@@ -827,6 +989,12 @@ class ManagementCommandServiceJdbcPersistenceTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code deleteWithStatus} 所描述的测试场景。
+     *
+     * @param service 测试辅助方法使用的 service 参数
+     * @param toolId 测试工具标识
+     */
     private static int deleteWithStatus(Object service, UUID toolId) {
         try {
             service.getClass()
@@ -840,6 +1008,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code responseStatus} 所描述的测试场景。
+     *
+     * @param failure 测试构造的失败
+     */
     private static int responseStatus(Throwable failure) {
         if (failure instanceof ResponseStatusException exception) {
             return exception.getStatusCode().value();
@@ -847,6 +1020,17 @@ class ManagementCommandServiceJdbcPersistenceTest {
         throw new IllegalStateException("隔离服务执行失败", failure);
     }
 
+    /**
+     * 验证或支持 {@code isolatedService} 所描述的测试场景。
+     *
+     * @param transactionTemplate 测试事务模板
+     * @param agents 测试辅助方法使用的 agents 参数
+     * @param tools 测试工具集合
+     * @param httpConfigs 测试辅助方法使用的 httpConfigs 参数
+     * @param publications 测试辅助方法使用的 publications 参数
+     * @param grants 测试辅助方法使用的 grants 参数
+     * @param auditAppender 测试辅助方法使用的 auditAppender 参数
+     */
     private static Object isolatedService(
             TransactionTemplate transactionTemplate,
             AgentDefinitionRepository agents,
@@ -886,6 +1070,14 @@ class ManagementCommandServiceJdbcPersistenceTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code blockingGrantAgentRepository} 所描述的测试场景。
+     *
+     * @param delegate 测试辅助方法使用的 delegate 参数
+     * @param grantReadAgent 测试辅助方法使用的 grantReadAgent 参数
+     * @param deleteSawNoReference 测试辅助方法使用的 deleteSawNoReference 参数
+     * @param deleteAttemptedToolLock 测试辅助方法使用的 deleteAttemptedToolLock 参数
+     */
     private static AgentDefinitionRepository blockingGrantAgentRepository(
             AgentDefinitionRepository delegate,
             CountDownLatch grantReadAgent,
@@ -894,6 +1086,12 @@ class ManagementCommandServiceJdbcPersistenceTest {
     ) {
         return new DelegatingAgentDefinitionRepository(delegate) {
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndId} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             */
             public Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId) {
                 Optional<AgentDefinition> result = super.findByTenantAndId(tenantId, agentId);
                 grantReadAgent.countDown();
@@ -907,49 +1105,101 @@ class ManagementCommandServiceJdbcPersistenceTest {
         };
     }
 
+    /**
+     * 验证或支持 {@code signalingDeleteToolRepository} 所描述的测试场景。
+     *
+     * @param delegate 测试辅助方法使用的 delegate 参数
+     * @param deleteAttemptedToolLock 测试辅助方法使用的 deleteAttemptedToolLock 参数
+     */
     private static ToolDefinitionRepository signalingDeleteToolRepository(
             ToolDefinitionRepository delegate,
             CountDownLatch deleteAttemptedToolLock
     ) {
         return new ToolDefinitionRepository() {
             @Override
+            /**
+             * 验证或支持 {@code save} 所描述的测试场景。
+             *
+             * @param tool 测试工具定义
+             */
             public ToolDefinition save(ToolDefinition tool) {
                 return delegate.save(tool);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code update} 所描述的测试场景。
+             *
+             * @param tool 测试工具定义
+             */
             public ToolDefinition update(ToolDefinition tool) {
                 return delegate.update(tool);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndId} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
                 return delegate.findByTenantAndId(tenantId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndIdForUpdate} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public Optional<ToolDefinition> findByTenantAndIdForUpdate(UUID tenantId, UUID toolId) {
                 deleteAttemptedToolLock.countDown();
                 return delegate.findByTenantAndIdForUpdate(tenantId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             */
             public List<ToolDefinition> listByTenant(UUID tenantId) {
                 return delegate.listByTenant(tenantId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code hasToolCallHistory} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
                 return delegate.hasToolCallHistory(tenantId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code delete} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public void delete(UUID tenantId, UUID toolId) {
                 delegate.delete(tenantId, toolId);
             }
         };
     }
 
+    /**
+     * 验证或支持 {@code pausingUpdateToolRepository} 所描述的测试场景。
+     *
+     * @param delegate 测试辅助方法使用的 delegate 参数
+     * @param updateLocked 测试辅助方法使用的 updateLocked 参数
+     * @param deleteAttemptedLock 测试辅助方法使用的 deleteAttemptedLock 参数
+     */
     private static ToolDefinitionRepository pausingUpdateToolRepository(
             ToolDefinitionRepository delegate,
             CountDownLatch updateLocked,
@@ -957,21 +1207,43 @@ class ManagementCommandServiceJdbcPersistenceTest {
     ) {
         return new ToolDefinitionRepository() {
             @Override
+            /**
+             * 验证或支持 {@code save} 所描述的测试场景。
+             *
+             * @param tool 测试工具定义
+             */
             public ToolDefinition save(ToolDefinition tool) {
                 return delegate.save(tool);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code update} 所描述的测试场景。
+             *
+             * @param tool 测试工具定义
+             */
             public ToolDefinition update(ToolDefinition tool) {
                 return delegate.update(tool);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndId} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
                 return delegate.findByTenantAndId(tenantId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndIdForUpdate} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public Optional<ToolDefinition> findByTenantAndIdForUpdate(UUID tenantId, UUID toolId) {
                 Optional<ToolDefinition> result = delegate.findByTenantAndIdForUpdate(tenantId, toolId);
                 updateLocked.countDown();
@@ -980,22 +1252,47 @@ class ManagementCommandServiceJdbcPersistenceTest {
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             */
             public List<ToolDefinition> listByTenant(UUID tenantId) {
                 return delegate.listByTenant(tenantId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code hasToolCallHistory} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
                 return delegate.hasToolCallHistory(tenantId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code delete} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public void delete(UUID tenantId, UUID toolId) {
                 delegate.delete(tenantId, toolId);
             }
         };
     }
 
+    /**
+     * 验证或支持 {@code blockingDeleteAgentRepository} 所描述的测试场景。
+     *
+     * @param delegate 测试辅助方法使用的 delegate 参数
+     * @param toolId 测试工具标识
+     * @param deleteSawNoReference 测试辅助方法使用的 deleteSawNoReference 参数
+     * @param grantFinished 测试辅助方法使用的 grantFinished 参数
+     */
     private static AgentDefinitionRepository blockingDeleteAgentRepository(
             AgentDefinitionRepository delegate,
             UUID toolId,
@@ -1004,6 +1301,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
     ) {
         return new DelegatingAgentDefinitionRepository(delegate) {
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             */
             public List<AgentDefinition> listByTenant(UUID tenantId) {
                 List<AgentDefinition> snapshot = super.listByTenant(tenantId);
                 boolean referenced = snapshot.stream().anyMatch(agent -> agent.toolIds().contains(toolId));
@@ -1016,6 +1318,12 @@ class ManagementCommandServiceJdbcPersistenceTest {
         };
     }
 
+    /**
+     * 验证或支持 {@code awaitLatch} 所描述的测试场景。
+     *
+     * @param latch 协调并发测试的同步器
+     * @param message 测试辅助方法使用的 message 参数
+     */
     private static void awaitLatch(CountDownLatch latch, String message) {
         try {
             if (!latch.await(20, TimeUnit.SECONDS)) {
@@ -1027,6 +1335,14 @@ class ManagementCommandServiceJdbcPersistenceTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code service} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     * @param transactionTemplate 测试事务模板
+     * @param tools 测试工具集合
+     * @param auditAppender 测试辅助方法使用的 auditAppender 参数
+     */
     private static ManagementCommandService service(
             DataSource dataSource,
             TransactionTemplate transactionTemplate,
@@ -1046,6 +1362,13 @@ class ManagementCommandServiceJdbcPersistenceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code isolatedServiceWithMutationBarrier} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     * @param transactionTemplate 测试事务模板
+     * @param mutationsReady 测试辅助方法使用的 mutationsReady 参数
+     */
     private static Object isolatedServiceWithMutationBarrier(
             DataSource dataSource,
             TransactionTemplate transactionTemplate,
@@ -1060,17 +1383,34 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 )
         ) {
             @Override
+            /**
+             * 验证或支持 {@code addToolToAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 awaitConcurrentMutation();
                 return super.addToolToAgent(tenantId, agentId, toolId);
             }
 
             @Override
+            /**
+             * 验证或支持 {@code removeToolFromAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 awaitConcurrentMutation();
                 return super.removeToolFromAgent(tenantId, agentId, toolId);
             }
 
+            /**
+             * 验证或支持 {@code awaitConcurrentMutation} 所描述的测试场景。
+             */
             private void awaitConcurrentMutation() {
                 mutationsReady.countDown();
                 awaitLatch(mutationsReady, "同一 Agent 的并发授权与撤销未同时到达");
@@ -1091,6 +1431,17 @@ class ManagementCommandServiceJdbcPersistenceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code service} 所描述的测试场景。
+     *
+     * @param transactionTemplate 测试事务模板
+     * @param agents 测试辅助方法使用的 agents 参数
+     * @param tools 测试工具集合
+     * @param httpConfigs 测试辅助方法使用的 httpConfigs 参数
+     * @param publications 测试辅助方法使用的 publications 参数
+     * @param grants 测试辅助方法使用的 grants 参数
+     * @param auditAppender 测试辅助方法使用的 auditAppender 参数
+     */
     private static ManagementCommandService service(
             TransactionTemplate transactionTemplate,
             AgentDefinitionRepository agents,
@@ -1112,6 +1463,12 @@ class ManagementCommandServiceJdbcPersistenceTest {
         );
     }
 
+    /**
+     * 构造测试 Agent 定义。
+     *
+     * @param agentId 测试 Agent 标识
+     * @param toolIds 测试辅助方法使用的 toolIds 参数
+     */
     private static AgentDefinition agent(UUID agentId, List<UUID> toolIds) {
         return new AgentDefinition(
                 agentId,
@@ -1130,10 +1487,21 @@ class ManagementCommandServiceJdbcPersistenceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code localTool} 所描述的测试场景。
+     *
+     * @param toolId 测试工具标识
+     */
     private static ToolDefinition localTool(UUID toolId) {
         return localTool(toolId, "并发本地工具");
     }
 
+    /**
+     * 验证或支持 {@code localTool} 所描述的测试场景。
+     *
+     * @param toolId 测试工具标识
+     * @param name 测试对象名称
+     */
     private static ToolDefinition localTool(UUID toolId, String name) {
         return new ToolDefinition(
                 toolId,
@@ -1150,6 +1518,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code migrateAndSeedTenant} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private static void migrateAndSeedTenant(DataSource dataSource) {
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
                 .cleanDisabled(false).load().clean();
@@ -1183,71 +1556,149 @@ class ManagementCommandServiceJdbcPersistenceTest {
                 .update();
     }
 
+    /**
+     * 验证或支持 {@code postgresDataSource} 所描述的测试场景。
+     */
     private static DataSource postgresDataSource() {
         return new DriverManagerDataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
     }
 
+    /**
+     * 验证或支持 {@code mysqlDataSource} 所描述的测试场景。
+     */
     private static DataSource mysqlDataSource() {
         return new DriverManagerDataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
     }
 
+    /**
+     * 验证或支持 {@code emptyAgentRepository} 所描述的测试场景。
+     */
     private static AgentDefinitionRepository emptyAgentRepository() {
         return new AgentDefinitionRepository() {
             @Override
+            /**
+             * 验证或支持 {@code save} 所描述的测试场景。
+             *
+             * @param agent 测试 Agent 定义
+             */
             public AgentDefinition save(AgentDefinition agent) {
                 return agent;
             }
 
             @Override
+            /**
+             * 验证或支持 {@code findByTenantAndId} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             */
             public Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId) {
                 return Optional.empty();
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             */
             public List<AgentDefinition> listByTenant(UUID tenantId) {
                 return List.of();
             }
 
             @Override
+            /**
+             * 验证或支持 {@code addToolToAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 throw new UnsupportedOperationException();
             }
 
             @Override
+            /**
+             * 验证或支持 {@code removeToolFromAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
                 throw new UnsupportedOperationException();
             }
         };
     }
 
+    /**
+     * 验证或支持 {@code emptyGrantRepository} 所描述的测试场景。
+     */
     private static ToolGrantRepository emptyGrantRepository() {
         return new ToolGrantRepository() {
             @Override
+            /**
+             * 验证或支持 {@code save} 所描述的测试场景。
+             *
+             * @param grant 测试辅助方法使用的 grant 参数
+             */
             public ToolGrant save(ToolGrant grant) {
                 return grant;
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             */
             public List<ToolGrant> listByTenant(UUID tenantId) {
                 return List.of();
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenantAndAgent} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             */
             public List<ToolGrant> listByTenantAndAgent(UUID tenantId, UUID agentId) {
                 return List.of();
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenantAgentAndTool} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public List<ToolGrant> listByTenantAgentAndTool(UUID tenantId, UUID agentId, UUID toolId) {
                 return List.of();
             }
 
             @Override
+            /**
+             * 验证或支持 {@code delete} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param agentId 测试 Agent 标识
+             * @param toolId 测试工具标识
+             */
             public void delete(UUID tenantId, UUID agentId, UUID toolId) {
                 throw new UnsupportedOperationException();
             }
 
             @Override
+            /**
+             * 验证或支持 {@code deleteByTenantAndToolId} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param toolId 测试工具标识
+             */
             public void deleteByTenantAndToolId(UUID tenantId, UUID toolId) {
                 throw new UnsupportedOperationException();
             }
@@ -1258,27 +1709,54 @@ class ManagementCommandServiceJdbcPersistenceTest {
         private final ToolDefinitionRepository delegate;
         private final CountDownLatch listBarrier;
 
+        /**
+         * 创建 {@code BarrierToolDefinitionRepository} 测试辅助实例。
+         *
+         * @param delegate 测试辅助方法使用的 delegate 参数
+         * @param callers 测试辅助方法使用的 callers 参数
+         */
         private BarrierToolDefinitionRepository(ToolDefinitionRepository delegate, int callers) {
             this.delegate = delegate;
             this.listBarrier = new CountDownLatch(callers);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code save} 所描述的测试场景。
+         *
+         * @param tool 测试工具定义
+         */
         public ToolDefinition save(ToolDefinition tool) {
             return delegate.save(tool);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code update} 所描述的测试场景。
+         *
+         * @param tool 测试工具定义
+         */
         public ToolDefinition update(ToolDefinition tool) {
             return delegate.update(tool);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code findByTenantAndId} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         * @param toolId 测试工具标识
+         */
         public Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId) {
             return delegate.findByTenantAndId(tenantId, toolId);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code listByTenant} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         */
         public List<ToolDefinition> listByTenant(UUID tenantId) {
             List<ToolDefinition> tools = delegate.listByTenant(tenantId);
             listBarrier.countDown();
@@ -1294,11 +1772,23 @@ class ManagementCommandServiceJdbcPersistenceTest {
         }
 
         @Override
+        /**
+         * 验证或支持 {@code hasToolCallHistory} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         * @param toolId 测试工具标识
+         */
         public boolean hasToolCallHistory(UUID tenantId, UUID toolId) {
             return delegate.hasToolCallHistory(tenantId, toolId);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code delete} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         * @param toolId 测试工具标识
+         */
         public void delete(UUID tenantId, UUID toolId) {
             delegate.delete(tenantId, toolId);
         }
@@ -1307,31 +1797,66 @@ class ManagementCommandServiceJdbcPersistenceTest {
     private static class DelegatingAgentDefinitionRepository implements AgentDefinitionRepository {
         private final AgentDefinitionRepository delegate;
 
+        /**
+         * 创建 {@code DelegatingAgentDefinitionRepository} 测试辅助实例。
+         *
+         * @param delegate 测试辅助方法使用的 delegate 参数
+         */
         private DelegatingAgentDefinitionRepository(AgentDefinitionRepository delegate) {
             this.delegate = delegate;
         }
 
         @Override
+        /**
+         * 验证或支持 {@code save} 所描述的测试场景。
+         *
+         * @param agent 测试 Agent 定义
+         */
         public AgentDefinition save(AgentDefinition agent) {
             return delegate.save(agent);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code findByTenantAndId} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         * @param agentId 测试 Agent 标识
+         */
         public Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId) {
             return delegate.findByTenantAndId(tenantId, agentId);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code listByTenant} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         */
         public List<AgentDefinition> listByTenant(UUID tenantId) {
             return delegate.listByTenant(tenantId);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code addToolToAgent} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         * @param agentId 测试 Agent 标识
+         * @param toolId 测试工具标识
+         */
         public AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId) {
             return delegate.addToolToAgent(tenantId, agentId, toolId);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code removeToolFromAgent} 所描述的测试场景。
+         *
+         * @param tenantId 测试租户标识
+         * @param agentId 测试 Agent 标识
+         * @param toolId 测试工具标识
+         */
         public AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId) {
             return delegate.removeToolFromAgent(tenantId, agentId, toolId);
         }
@@ -1340,11 +1865,22 @@ class ManagementCommandServiceJdbcPersistenceTest {
     private static final class IsolatedManagementCommandServiceClassLoader extends ClassLoader {
         private static final String SERVICE_CLASS_NAME = ManagementCommandService.class.getName();
 
+        /**
+         * 创建 {@code IsolatedManagementCommandServiceClassLoader} 测试辅助实例。
+         *
+         * @param parent 测试辅助方法使用的 parent 参数
+         */
         private IsolatedManagementCommandServiceClassLoader(ClassLoader parent) {
             super(parent);
         }
 
         @Override
+        /**
+         * 验证或支持 {@code loadClass} 所描述的测试场景。
+         *
+         * @param name 测试对象名称
+         * @param resolve 测试辅助方法使用的 resolve 参数
+         */
         protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
             synchronized (getClassLoadingLock(name)) {
                 if (name.equals(SERVICE_CLASS_NAME) || name.startsWith(SERVICE_CLASS_NAME + "$")) {
@@ -1361,6 +1897,11 @@ class ManagementCommandServiceJdbcPersistenceTest {
             }
         }
 
+        /**
+         * 验证或支持 {@code findIsolatedClass} 所描述的测试场景。
+         *
+         * @param name 测试对象名称
+         */
         private Class<?> findIsolatedClass(String name) throws ClassNotFoundException {
             String resourceName = name.replace('.', '/') + ".class";
             try (InputStream input = getParent().getResourceAsStream(resourceName)) {

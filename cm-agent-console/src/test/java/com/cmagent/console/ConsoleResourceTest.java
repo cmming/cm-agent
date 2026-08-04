@@ -11,6 +11,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ConsoleResourceTest {
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 控制台包含独立登录页和全部管理模块() throws IOException {
         String html = resource("META-INF/resources/index.html");
 
@@ -24,6 +27,9 @@ class ConsoleResourceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 控制台样式包含响应式和键盘焦点规则() throws IOException {
         String css = resource("META-INF/resources/assets/styles.css");
 
@@ -33,6 +39,9 @@ class ConsoleResourceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 控制台核心脚本可独立发布且不持久化令牌() throws IOException {
         String script = resource("META-INF/resources/assets/console-core.js");
 
@@ -42,6 +51,9 @@ class ConsoleResourceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 控制台编排认证和资源管理且安全渲染动态文本() throws IOException {
         String html = resource("META-INF/resources/index.html");
         String script = resource("META-INF/resources/assets/app.js");
@@ -58,6 +70,9 @@ class ConsoleResourceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 控制台展示运行详情和审计游标分页() throws IOException {
         String html = resource("META-INF/resources/index.html");
         String script = resource("META-INF/resources/assets/app.js");
@@ -74,6 +89,9 @@ class ConsoleResourceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void Tool类型选项与后端枚举保持一致() throws IOException {
         String html = resource("META-INF/resources/index.html");
 
@@ -82,6 +100,9 @@ class ConsoleResourceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 控制台提供HTTP配置MCP发布和受控调试入口() throws IOException {
         String html = resource("META-INF/resources/index.html");
         String core = resource("META-INF/resources/assets/console-core.js");
@@ -106,6 +127,9 @@ class ConsoleResourceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 控制台提供内置Local示例安装和运行时就绪提示() throws IOException {
         String html = resource("META-INF/resources/index.html");
         String core = resource("META-INF/resources/assets/console-core.js");
@@ -124,6 +148,11 @@ class ConsoleResourceTest {
         ).doesNotContain(".innerHTML");
     }
 
+    /**
+     * 验证或支持 {@code resource} 所描述的测试场景。
+     *
+     * @param path 测试辅助方法使用的 path 参数
+     */
     private String resource(String path) throws IOException {
         try (InputStream input = getClass().getClassLoader().getResourceAsStream(path)) {
             assertThat(input).as("资源应存在：%s", path).isNotNull();

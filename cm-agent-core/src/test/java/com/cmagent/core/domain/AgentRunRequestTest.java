@@ -20,6 +20,9 @@ class AgentRunRequestTest {
     private static final UUID TOOL_ID = UUID.fromString("00000000-0000-0000-0000-000000000101");
 
     @Test
+    /**
+     * 验证 {@code MissingRunId} 异常场景会被正确拒绝。
+     */
     void rejectsMissingRunId() {
         assertThatThrownBy(() -> new AgentRunRequest(
                 null, TENANT_ID, agent(TENANT_ID), model(TENANT_ID), principal(TENANT_ID), "你好", List.of()))
@@ -27,6 +30,9 @@ class AgentRunRequestTest {
     }
 
     @Test
+    /**
+     * 验证 {@code CrossTenantAgent} 异常场景会被正确拒绝。
+     */
     void rejectsCrossTenantAgent() {
         UUID anotherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
@@ -37,6 +43,9 @@ class AgentRunRequestTest {
     }
 
     @Test
+    /**
+     * 验证 {@code CrossTenantModelConfig} 异常场景会被正确拒绝。
+     */
     void rejectsCrossTenantModelConfig() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         AgentDefinition agent = agent(tenantId);
@@ -49,6 +58,9 @@ class AgentRunRequestTest {
     }
 
     @Test
+    /**
+     * 验证 {@code ModelConfigNotBoundToAgent} 异常场景会被正确拒绝。
+     */
     void rejectsModelConfigNotBoundToAgent() {
         UUID anotherModelId = UUID.fromString("00000000-0000-0000-0000-000000000402");
         ModelConfig anotherModel = new ModelConfig(
@@ -62,6 +74,9 @@ class AgentRunRequestTest {
     }
 
     @Test
+    /**
+     * 验证 {@code MissingAgentModelProviderIdWithClassifiedMessage} 异常场景会被正确拒绝。
+     */
     void rejectsMissingAgentModelProviderIdWithClassifiedMessage() {
         AgentDefinition agent = new AgentDefinition(
                 AGENT_ID, TENANT_ID, "企业助手", "", "你是企业助手", null,
@@ -74,6 +89,9 @@ class AgentRunRequestTest {
     }
 
     @Test
+    /**
+     * 验证 {@code MissingModelConfigIdWithClassifiedMessage} 异常场景会被正确拒绝。
+     */
     void rejectsMissingModelConfigIdWithClassifiedMessage() {
         ModelConfig model = new ModelConfig(
                 null, TENANT_ID, ModelProviderType.OPENAI_COMPATIBLE,
@@ -86,6 +104,9 @@ class AgentRunRequestTest {
     }
 
     @Test
+    /**
+     * 验证 {@code CrossTenantPrincipal} 异常场景会被正确拒绝。
+     */
     void rejectsCrossTenantPrincipal() {
         UUID anotherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
@@ -96,6 +117,9 @@ class AgentRunRequestTest {
     }
 
     @Test
+    /**
+     * 验证 {@code CrossTenantTool} 异常场景会被正确拒绝。
+     */
     void rejectsCrossTenantTool() {
         UUID anotherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
 
@@ -107,6 +131,9 @@ class AgentRunRequestTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code copiesAuthorizedTools} 所描述的测试场景。
+     */
     void copiesAuthorizedTools() {
         List<ToolDefinition> tools = new ArrayList<>(List.of(tool(TENANT_ID)));
         AgentRunRequest request = new AgentRunRequest(
@@ -117,6 +144,9 @@ class AgentRunRequestTest {
     }
 
     @Test
+    /**
+     * 验证对外暴露的 {@code AgentIdFromDefinition}。
+     */
     void exposesAgentIdFromDefinition() {
         AgentRunRequest request = new AgentRunRequest(
                 RUN_ID, TENANT_ID, agent(TENANT_ID), model(TENANT_ID), principal(TENANT_ID), "你好", List.of());
@@ -124,22 +154,42 @@ class AgentRunRequestTest {
         assertThat(request.agentId()).isEqualTo(AGENT_ID);
     }
 
+    /**
+     * 构造测试 Agent 定义。
+     *
+     * @param tenantId 测试租户标识
+     */
     private static AgentDefinition agent(UUID tenantId) {
         return new AgentDefinition(
                 AGENT_ID, tenantId, "企业助手", "", "你是企业助手", MODEL_ID,
                 "agent-model", 0.2, 5, true, List.of(), "tester", "tester");
     }
 
+    /**
+     * 构造测试模型配置。
+     *
+     * @param tenantId 测试租户标识
+     */
     private static ModelConfig model(UUID tenantId) {
         return new ModelConfig(
                 MODEL_ID, tenantId, ModelProviderType.OPENAI_COMPATIBLE,
                 "测试模型", "https://example.invalid/v1", "default-model", true);
     }
 
+    /**
+     * 构造测试认证主体。
+     *
+     * @param tenantId 测试租户标识
+     */
     private static PrincipalRef principal(UUID tenantId) {
         return new PrincipalRef(tenantId, "principal", "测试主体", Set.of("agent:run"));
     }
 
+    /**
+     * 构造测试工具定义。
+     *
+     * @param tenantId 测试租户标识
+     */
     private static ToolDefinition tool(UUID tenantId) {
         return new ToolDefinition(
                 TOOL_ID, tenantId, "echo", "回显", ToolType.LOCAL,

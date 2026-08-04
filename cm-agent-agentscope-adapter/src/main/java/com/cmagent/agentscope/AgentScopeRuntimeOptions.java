@@ -10,6 +10,10 @@ public record AgentScopeRuntimeOptions(Duration modelTimeout, Duration toolTimeo
 
     /**
      * 校验超时和模型重试次数满足运行时约束。
+      *
+      * @param modelTimeout 单次模型调用超时
+      * @param toolTimeout 单次工具调用超时
+      * @param modelMaxAttempts 模型调用最大尝试次数
      */
     public AgentScopeRuntimeOptions {
         Objects.requireNonNull(modelTimeout, "modelTimeout 不能为空");

@@ -73,11 +73,17 @@ class RunControllerTest {
     private AuditAppender auditAppender;
 
     @BeforeEach
+    /**
+     * 验证或支持 {@code resetRuntime} 所描述的测试场景。
+     */
     void resetRuntime() {
         agentRuntime.reset();
     }
 
     @Test
+    /**
+     * 验证或支持 {@code createAgentGrantToolRunAndAudit} 所描述的测试场景。
+     */
     void createAgentGrantToolRunAndAudit() throws Exception {
         String accessToken = loginToken();
         String agentId = createAgent(accessToken);
@@ -139,6 +145,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code runWithoutToolGrantStillSucceeds} 所描述的测试场景。
+     */
     void runWithoutToolGrantStillSucceeds() throws Exception {
         String accessToken = loginToken();
         String agentId = createAgent(accessToken);
@@ -158,6 +167,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code disabledModelConfigIsRejectedBeforeRuntimeInvocation} 所描述的测试场景。
+     */
     void disabledModelConfigIsRejectedBeforeRuntimeInvocation() throws Exception {
         String accessToken = loginToken();
         String agentId = createAgent(accessToken);
@@ -177,6 +189,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code crossTenantModelConfigIsRejectedBeforeRuntimeInvocation} 所描述的测试场景。
+     */
     void crossTenantModelConfigIsRejectedBeforeRuntimeInvocation() throws Exception {
         String accessToken = loginToken();
         String agentId = createAgent(accessToken);
@@ -197,6 +212,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code runDetailAndListAreTenantScopedAndUseOpaqueCursor} 所描述的测试场景。
+     */
     void runDetailAndListAreTenantScopedAndUseOpaqueCursor() throws Exception {
         String accessToken = loginToken();
         String otherTenantToken = tokenWithPermissions(
@@ -249,6 +267,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code runQueryRejectsInvalidLimitAndCursorWithoutLeakingInput} 所描述的测试场景。
+     */
     void runQueryRejectsInvalidLimitAndCursorWithoutLeakingInput() throws Exception {
         String accessToken = loginToken();
         String agentId = createAgent(accessToken);
@@ -267,6 +288,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code createAgentRejectsBlankFieldsWithoutPersisting} 所描述的测试场景。
+     */
     void createAgentRejectsBlankFieldsWithoutPersisting() throws Exception {
         String accessToken = loginToken();
         assertCount(accessToken, "/api/agents", 0);
@@ -283,6 +307,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code createToolRejectsBlankFieldsWithoutPersisting} 所描述的测试场景。
+     */
     void createToolRejectsBlankFieldsWithoutPersisting() throws Exception {
         String accessToken = loginToken();
         assertCount(accessToken, "/api/tools", 0);
@@ -299,6 +326,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code createAgentWithoutWritePermissionIsForbidden} 所描述的测试场景。
+     */
     void createAgentWithoutWritePermissionIsForbidden() throws Exception {
         String token = tokenWithPermissions("readonly", List.of("agent:read"));
 
@@ -312,6 +342,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code listAgentsWithoutReadPermissionIsForbidden} 所描述的测试场景。
+     */
     void listAgentsWithoutReadPermissionIsForbidden() throws Exception {
         String token = tokenWithPermissions("agent-list-lite", List.of("agent:write"));
 
@@ -321,6 +354,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code getAgentWithoutReadPermissionIsForbidden} 所描述的测试场景。
+     */
     void getAgentWithoutReadPermissionIsForbidden() throws Exception {
         String fullToken = loginToken();
         String agentId = createAgent(fullToken);
@@ -332,6 +368,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code createAndGrantToolWithoutGrantPermissionIsForbidden} 所描述的测试场景。
+     */
     void createAndGrantToolWithoutGrantPermissionIsForbidden() throws Exception {
         String createToken = loginToken();
         String agentId = createAgent(createToken);
@@ -357,6 +396,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code listToolsWithoutReadPermissionIsForbidden} 所描述的测试场景。
+     */
     void listToolsWithoutReadPermissionIsForbidden() throws Exception {
         String token = tokenWithPermissions("tool-list-lite", List.of("agent:write", "tool:grant"));
 
@@ -366,6 +408,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code runWithoutRunPermissionIsForbidden} 所描述的测试场景。
+     */
     void runWithoutRunPermissionIsForbidden() throws Exception {
         String setupToken = loginToken();
         String agentId = createAgent(setupToken);
@@ -391,6 +436,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code createAgentWithoutAuthenticationIsRejected} 所描述的测试场景。
+     */
     void createAgentWithoutAuthenticationIsRejected() throws Exception {
         mockMvc.perform(post("/api/agents")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -401,6 +449,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code listAuditEventsWithoutReadPermissionIsForbidden} 所描述的测试场景。
+     */
     void listAuditEventsWithoutReadPermissionIsForbidden() throws Exception {
         String token = tokenWithPermissions("audit-lite", List.of("agent:run"));
 
@@ -418,6 +469,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code listAuditEventsDefaultsToOneHundred} 所描述的测试场景。
+     */
     void listAuditEventsDefaultsToOneHundred() throws Exception {
         appendAuditEvents(101);
         String token = tokenWithPermissions("auditor", List.of("audit:read"));
@@ -430,6 +484,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code listAuditEventsHonorsLimit} 所描述的测试场景。
+     */
     void listAuditEventsHonorsLimit() throws Exception {
         appendAuditEvents(3);
         String token = tokenWithPermissions("auditor", List.of("audit:read"));
@@ -443,6 +500,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code listAuditEventsRejectsOutOfRangeLimit} 所描述的测试场景。
+     */
     void listAuditEventsRejectsOutOfRangeLimit() throws Exception {
         String token = tokenWithPermissions("auditor", List.of("audit:read"));
 
@@ -458,6 +518,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code listAuditEventsSupportsOpaqueCursorPagination} 所描述的测试场景。
+     */
     void listAuditEventsSupportsOpaqueCursorPagination() throws Exception {
         appendAuditEvents(3);
         String token = tokenWithPermissions("auditor", List.of("audit:read"));
@@ -483,6 +546,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code listAuditEventsRejectsInvalidCursorWithoutLeakingCursorText} 所描述的测试场景。
+     */
     void listAuditEventsRejectsInvalidCursorWithoutLeakingCursorText() throws Exception {
         String token = tokenWithPermissions("auditor", List.of("audit:read"));
 
@@ -496,6 +562,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code runFailureIsAuditedAndReturnsServerError} 所描述的测试场景。
+     */
     void runFailureIsAuditedAndReturnsServerError() throws Exception {
         String accessToken = loginToken();
         agentRuntime.failNextRun();
@@ -531,6 +600,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code runtimeFailureWithUnavailableFailureAuditReturnsAuditUnavailableAfterFailureClosure} 所描述的测试场景。
+     */
     void runtimeFailureWithUnavailableFailureAuditReturnsAuditUnavailableAfterFailureClosure() throws Exception {
         String accessToken = loginToken();
         String agentId = createAgent(accessToken);
@@ -568,6 +640,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code runResponseUsesPersistedFinalStatusAndSanitizedFields} 所描述的测试场景。
+     */
     void runResponseUsesPersistedFinalStatusAndSanitizedFields() throws Exception {
         String accessToken = loginToken();
         String agentId = createAgent(accessToken);
@@ -598,6 +673,9 @@ class RunControllerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code grantIsIdempotent} 所描述的测试场景。
+     */
     void grantIsIdempotent() throws Exception {
         String accessToken = loginToken();
         String agentId = createAgent(accessToken);
@@ -633,6 +711,11 @@ class RunControllerTest {
         assertThat(agentRuntime.lastRequest().tools()).extracting(ToolDefinition::name).containsExactly("echo");
     }
 
+    /**
+     * 验证或支持 {@code createAgent} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     */
     private String createAgent(String token) throws Exception {
         String response = mockMvc.perform(post("/api/agents")
                         .header("Authorization", bearer(token))
@@ -647,6 +730,11 @@ class RunControllerTest {
         return JsonPath.read(response, "$.id");
     }
 
+    /**
+     * 验证或支持 {@code createTool} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     */
     private String createTool(String token) throws Exception {
         String response = mockMvc.perform(post("/api/tools")
                         .header("Authorization", bearer(token))
@@ -661,6 +749,13 @@ class RunControllerTest {
         return JsonPath.read(response, "$.id");
     }
 
+    /**
+     * 验证或支持 {@code assertCount} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     * @param path 测试辅助方法使用的 path 参数
+     * @param expected 测试辅助方法使用的 expected 参数
+     */
     private void assertCount(String token, String path, int expected) throws Exception {
         mockMvc.perform(get(path)
                         .header("Authorization", bearer(token)))
@@ -668,6 +763,11 @@ class RunControllerTest {
                 .andExpect(jsonPath("$.length()").value(expected));
     }
 
+    /**
+     * 验证或支持 {@code appendAuditEvents} 所描述的测试场景。
+     *
+     * @param count 测试辅助方法使用的 count 参数
+     */
     private void appendAuditEvents(int count) {
         for (int i = 0; i < count; i++) {
             store.append(new AuditEvent(
@@ -684,6 +784,9 @@ class RunControllerTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code loginToken} 所描述的测试场景。
+     */
     private String loginToken() throws Exception {
         return tokenWithPermissions("admin", List.of(
                 "agent:run",
@@ -696,14 +799,32 @@ class RunControllerTest {
         ));
     }
 
+    /**
+     * 验证或支持 {@code tokenWithPermissions} 所描述的测试场景。
+     *
+     * @param principalId 测试辅助方法使用的 principalId 参数
+     * @param permissions 测试辅助方法使用的 permissions 参数
+     */
     private String tokenWithPermissions(String principalId, List<String> permissions) {
         return tokenWithPermissions(TENANT_ID, principalId, permissions);
     }
 
+    /**
+     * 验证或支持 {@code tokenWithPermissions} 所描述的测试场景。
+     *
+     * @param tenantId 测试租户标识
+     * @param principalId 测试辅助方法使用的 principalId 参数
+     * @param permissions 测试辅助方法使用的 permissions 参数
+     */
     private String tokenWithPermissions(UUID tenantId, String principalId, List<String> permissions) {
         return jwtService.createToken(tenantId, principalId, "系统管理员", permissions);
     }
 
+    /**
+     * 验证或支持 {@code bearer} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     */
     private static String bearer(String token) {
         return "Bearer " + token;
     }
@@ -713,6 +834,9 @@ class RunControllerTest {
 
         @Bean
         @Primary
+        /**
+         * 验证或支持 {@code agentRuntime} 所描述的测试场景。
+         */
         CapturingAgentRuntime agentRuntime() {
             return new CapturingAgentRuntime();
         }
@@ -724,6 +848,11 @@ class RunControllerTest {
         private final AtomicBoolean failNextRun = new AtomicBoolean(false);
 
         @Override
+        /**
+         * 验证或支持 {@code run} 所描述的测试场景。
+         *
+         * @param request 测试使用的请求对象
+         */
         public AgentRunResult run(AgentRunRequest request) {
             lastRequest.set(request);
             if (failNextRun.getAndSet(false)) {
@@ -745,18 +874,32 @@ class RunControllerTest {
             );
         }
 
+        /**
+         * 验证或支持 {@code failNextRun} 所描述的测试场景。
+         */
         void failNextRun() {
             failNextRun.set(true);
         }
 
+        /**
+         * 验证或支持 {@code returnNext} 所描述的测试场景。
+         *
+         * @param result 待断言的处理结果
+         */
         void returnNext(AgentRunResult result) {
             nextResult.set(result);
         }
 
+        /**
+         * 验证或支持 {@code lastRequest} 所描述的测试场景。
+         */
         AgentRunRequest lastRequest() {
             return lastRequest.get();
         }
 
+        /**
+         * 验证或支持 {@code reset} 所描述的测试场景。
+         */
         void reset() {
             lastRequest.set(null);
             nextResult.set(null);

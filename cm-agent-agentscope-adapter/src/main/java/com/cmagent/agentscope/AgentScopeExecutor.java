@@ -11,6 +11,10 @@ interface AgentScopeExecutor {
 
     /**
      * 使用模型凭据和工具网关执行一次 AgentScope 运行。
+      *
+      * @param spec AgentScope 运行规格
+      * @param credential 调用模型所需的受控凭据
+      * @param toolGateway 受治理的工具调用网关
      */
     AgentScopeExecutionResult execute(
             AgentScopeRunSpec spec,

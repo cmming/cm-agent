@@ -54,6 +54,9 @@ class MigrationTest {
     static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4");
 
     @Test
+    /**
+     * 验证 {@code migratePostgreSQL} 所描述的业务行为。
+     */
     void migratePostgreSQL() {
         Flyway flyway = Flyway.configure()
                 .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
@@ -64,6 +67,9 @@ class MigrationTest {
     }
 
     @Test
+    /**
+     * 验证 {@code migrateMySQL} 所描述的业务行为。
+     */
     void migrateMySQL() {
         Flyway flyway = Flyway.configure()
                 .dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
@@ -73,6 +79,14 @@ class MigrationTest {
         assertSchemaContract(flyway.migrate().migrationsExecuted, mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
     }
 
+    /**
+     * 验证 {@code assertSchemaContract} 所描述的业务行为。
+     *
+     * @param migrationsExecuted 测试辅助方法使用的 migrationsExecuted 参数
+     * @param jdbcUrl 测试辅助方法使用的 jdbcUrl 参数
+     * @param username 测试辅助方法使用的 username 参数
+     * @param password 测试辅助方法使用的 password 参数
+     */
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
         assertThat(migrationsExecuted).isEqualTo(5);
 
@@ -112,6 +126,11 @@ class MigrationTest {
         }
     }
 
+    /**
+     * 验证 {@code tableNames} 所描述的业务行为。
+     *
+     * @param connection 测试辅助方法使用的 connection 参数
+     */
     private static Set<String> tableNames(Connection connection) throws SQLException {
         DatabaseMetaData metadata = connection.getMetaData();
         try (ResultSet resultSet = metadata.getTables(null, null, "%", new String[]{"TABLE"})) {
@@ -126,6 +145,12 @@ class MigrationTest {
         }
     }
 
+    /**
+     * 验证 {@code indexNames} 所描述的业务行为。
+     *
+     * @param connection 测试辅助方法使用的 connection 参数
+     * @param tableName 测试辅助方法使用的 tableName 参数
+     */
     private static Set<String> indexNames(Connection connection, String tableName) throws SQLException {
         DatabaseMetaData metadata = connection.getMetaData();
         try (ResultSet resultSet = metadata.getIndexInfo(null, null, tableName, false, false)) {
@@ -140,6 +165,13 @@ class MigrationTest {
         }
     }
 
+    /**
+     * 验证 {@code indexColumns} 所描述的业务行为。
+     *
+     * @param connection 测试辅助方法使用的 connection 参数
+     * @param tableName 测试辅助方法使用的 tableName 参数
+     * @param indexName 测试辅助方法使用的 indexName 参数
+     */
     private static List<String> indexColumns(Connection connection, String tableName, String indexName) throws SQLException {
         DatabaseMetaData metadata = connection.getMetaData();
         Map<Short, String> columnsByPosition = new TreeMap<>();
@@ -156,6 +188,13 @@ class MigrationTest {
         return new ArrayList<>(columnsByPosition.values());
     }
 
+    /**
+     * 验证 {@code isNullable} 所描述的业务行为。
+     *
+     * @param connection 测试辅助方法使用的 connection 参数
+     * @param tableName 测试辅助方法使用的 tableName 参数
+     * @param columnName 测试辅助方法使用的 columnName 参数
+     */
     private static boolean isNullable(Connection connection, String tableName, String columnName) throws SQLException {
         DatabaseMetaData metadata = connection.getMetaData();
         try (ResultSet resultSet = metadata.getColumns(null, null, tableName, columnName)) {
@@ -166,6 +205,12 @@ class MigrationTest {
         }
     }
 
+    /**
+     * 验证 {@code importedKeyTargets} 所描述的业务行为。
+     *
+     * @param connection 测试辅助方法使用的 connection 参数
+     * @param tableName 测试辅助方法使用的 tableName 参数
+     */
     private static Set<String> importedKeyTargets(Connection connection, String tableName) throws SQLException {
         DatabaseMetaData metadata = connection.getMetaData();
         try (ResultSet resultSet = metadata.getImportedKeys(null, null, tableName)) {
@@ -180,6 +225,12 @@ class MigrationTest {
         }
     }
 
+    /**
+     * 验证 {@code uniqueIndexColumns} 所描述的业务行为。
+     *
+     * @param connection 测试辅助方法使用的 connection 参数
+     * @param tableName 测试辅助方法使用的 tableName 参数
+     */
     private static List<Set<String>> uniqueIndexColumns(Connection connection, String tableName) throws SQLException {
         DatabaseMetaData metadata = connection.getMetaData();
         Map<String, Set<String>> columnsByIndex = new TreeMap<>();

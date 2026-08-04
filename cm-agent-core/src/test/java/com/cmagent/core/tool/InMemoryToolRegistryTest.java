@@ -16,6 +16,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class InMemoryToolRegistryTest {
 
     @Test
+    /**
+     * 验证或支持 {@code registerAndExecuteLocalTool} 所描述的测试场景。
+     */
     void registerAndExecuteLocalTool() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID toolId = UUID.fromString("00000000-0000-0000-0000-000000000101");
@@ -45,6 +48,9 @@ class InMemoryToolRegistryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code legacyRequestConstructorRemainsExecutable} 所描述的测试场景。
+     */
     void legacyRequestConstructorRemainsExecutable() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID toolId = UUID.fromString("00000000-0000-0000-0000-000000000103");
@@ -62,6 +68,9 @@ class InMemoryToolRegistryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code completeRuntimeContextRemainsExecutable} 所描述的测试场景。
+     */
     void completeRuntimeContextRemainsExecutable() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID agentId = UUID.fromString("00000000-0000-0000-0000-000000000201");
@@ -84,6 +93,9 @@ class InMemoryToolRegistryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code PartialRuntimeContext} 异常场景会被正确拒绝。
+     */
     void rejectsPartialRuntimeContext() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID toolId = UUID.fromString("00000000-0000-0000-0000-000000000105");
@@ -95,6 +107,9 @@ class InMemoryToolRegistryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code BlankToolCallIdInCompleteRuntimeContext} 异常场景会被正确拒绝。
+     */
     void rejectsBlankToolCallIdInCompleteRuntimeContext() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         PrincipalRef principal = new PrincipalRef(
@@ -113,6 +128,9 @@ class InMemoryToolRegistryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code CrossTenantPrincipalInCompleteRuntimeContext} 异常场景会被正确拒绝。
+     */
     void rejectsCrossTenantPrincipalInCompleteRuntimeContext() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         PrincipalRef principal = new PrincipalRef(
@@ -132,6 +150,9 @@ class InMemoryToolRegistryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code executeMissingToolReturnsNotRegisteredMessage} 所描述的测试场景。
+     */
     void executeMissingToolReturnsNotRegisteredMessage() {
         InMemoryToolRegistry registry = new InMemoryToolRegistry();
         UUID toolId = UUID.fromString("00000000-0000-0000-0000-000000000102");
@@ -143,6 +164,9 @@ class InMemoryToolRegistryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code snapshotCapturesOriginalRegistrationAcrossSameIdReplacement} 所描述的测试场景。
+     */
     void snapshotCapturesOriginalRegistrationAcrossSameIdReplacement() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID otherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
@@ -176,6 +200,9 @@ class InMemoryToolRegistryTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void agent请求要求完整运行上下文且结果工厂保留状态信息() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID toolId = UUID.fromString("00000000-0000-0000-0000-000000000108");
@@ -207,6 +234,9 @@ class InMemoryToolRegistryTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void MCP请求禁止绑定伪造运行上下文() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         PrincipalRef principal = new PrincipalRef(

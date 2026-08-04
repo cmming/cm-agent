@@ -12,6 +12,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DynamicToolDocumentationContractTest {
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 动态HTTP工具和MCP文档覆盖生产安全与调用契约() throws IOException {
         String readme = readRepositoryFile("README.md");
         String configuration = readRepositoryFile("docs/configuration.md");
@@ -28,6 +31,11 @@ class DynamicToolDocumentationContractTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code readRepositoryFile} 所描述的测试场景。
+     *
+     * @param relativePath 测试辅助方法使用的 relativePath 参数
+     */
     private String readRepositoryFile(String relativePath) throws IOException {
         Path directory = Path.of("").toAbsolutePath();
         while (directory != null) {

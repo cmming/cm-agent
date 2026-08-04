@@ -7,10 +7,10 @@ import com.cmagent.core.runtime.ToolInvocationInfrastructureException;
  */
 public class AuditPersistenceException extends ToolInvocationInfrastructureException {
     /**
-     * AuditPersistenceException：处理该类内部的业务逻辑或辅助计算。
+     * 表示 {@code AuditPersistenceException} 对应失败场景的受控异常。
      *
      * @param message 处理结果或审计消息。
-     * @param cause 参与 AuditPersistenceException 处理的 cause 输入值。
+     * @param cause 触发当前失败的原始异常。
      */
     public AuditPersistenceException(String message, Throwable cause) {
         super(message, cause);

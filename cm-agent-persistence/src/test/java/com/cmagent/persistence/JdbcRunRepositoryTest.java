@@ -34,6 +34,9 @@ class JdbcRunRepositoryTest {
     private JdbcRunRepository repository;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         DataSource dataSource = new DriverManagerDataSource(
                 postgres.getJdbcUrl(),
@@ -47,6 +50,9 @@ class JdbcRunRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code tenantCannotReadAnotherTenantsRun} 所描述的测试场景。
+     */
     void tenantCannotReadAnotherTenantsRun() {
         UUID runA = UUID.fromString("30000000-0000-0000-0000-000000000001");
         UUID runB = UUID.fromString("30000000-0000-0000-0000-000000000002");
@@ -63,6 +69,9 @@ class JdbcRunRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code listUsesStartedAtAndCanonicalUuidKeysetOrder} 所描述的测试场景。
+     */
     void listUsesStartedAtAndCanonicalUuidKeysetOrder() {
         Instant startedAt = Instant.parse("2026-07-14T03:00:00Z");
         UUID lowerId = UUID.fromString("30000000-0000-0000-0000-000000000010");
@@ -82,6 +91,9 @@ class JdbcRunRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code saveRejectsExplicitTenantDifferentFromRunTenant} 所描述的测试场景。
+     */
     void saveRejectsExplicitTenantDifferentFromRunTenant() {
         RunRecord run = RunRecord.create(
                 UUID.fromString("30000000-0000-0000-0000-000000000004"),
@@ -98,6 +110,9 @@ class JdbcRunRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code completeUpdatesExactlyOneRunningRunInTenant} 所描述的测试场景。
+     */
     void completeUpdatesExactlyOneRunningRunInTenant() {
         UUID runId = UUID.fromString("30000000-0000-0000-0000-000000000005");
         Instant startedAt = Instant.parse("2026-07-14T05:00:00Z");
@@ -112,6 +127,11 @@ class JdbcRunRepositoryTest {
                 .hasMessage("Run 不存在");
     }
 
+    /**
+     * 验证或支持 {@code seedAgents} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private static void seedAgents(DataSource dataSource) {
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
         Timestamp now = Timestamp.from(Instant.parse("2026-07-14T00:00:00Z"));
@@ -123,6 +143,14 @@ class JdbcRunRepositoryTest {
         insertAgent(jdbcClient, AGENT_B, TENANT_B, UUID.fromString("40000000-0000-0000-0000-000000000002"), now);
     }
 
+    /**
+     * 验证或支持 {@code insertTenant} 所描述的测试场景。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     * @param tenantId 测试租户标识
+     * @param code 测试辅助方法使用的 code 参数
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertTenant(JdbcClient jdbcClient, UUID tenantId, String code, Timestamp now) {
         jdbcClient.sql("INSERT INTO tenants (id, code, name, enabled, created_at) VALUES (:id, :code, :name, true, :createdAt)")
                 .param("id", tenantId.toString())
@@ -132,6 +160,14 @@ class JdbcRunRepositoryTest {
                 .update();
     }
 
+    /**
+     * 验证或支持 {@code insertModelConfig} 所描述的测试场景。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     * @param modelId 测试辅助方法使用的 modelId 参数
+     * @param tenantId 测试租户标识
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertModelConfig(JdbcClient jdbcClient, UUID modelId, UUID tenantId, Timestamp now) {
         jdbcClient.sql("""
                         INSERT INTO model_configs (
@@ -148,6 +184,15 @@ class JdbcRunRepositoryTest {
                 .update();
     }
 
+    /**
+     * 验证或支持 {@code insertAgent} 所描述的测试场景。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     * @param agentId 测试 Agent 标识
+     * @param tenantId 测试租户标识
+     * @param modelId 测试辅助方法使用的 modelId 参数
+     * @param now 测试辅助方法使用的 now 参数
+     */
     private static void insertAgent(JdbcClient jdbcClient, UUID agentId, UUID tenantId, UUID modelId, Timestamp now) {
         jdbcClient.sql("""
                         INSERT INTO agent_definitions (

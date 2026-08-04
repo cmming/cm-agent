@@ -7,7 +7,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * AgentRunRequest 的核心领域类型。
+ * 封装一次 Agent 运行所需的定义、模型、主体、输入和授权工具。
  */
 public record AgentRunRequest(
         UUID runId,
@@ -20,7 +20,15 @@ public record AgentRunRequest(
 ) {
 
     /**
-     * 构造 AgentRunRequest 实例并校验输入参数。
+     * 校验运行请求的租户、主体、模型绑定和工具集合是否一致。
+      *
+      * @param runId 目标运行标识
+      * @param tenantId 当前租户标识
+      * @param agent 当前 Agent 定义
+      * @param modelConfig Agent 绑定的模型配置
+      * @param principal 当前认证主体
+      * @param input 调用方输入
+      * @param tools 本次运行授权的工具集合
      */
     public AgentRunRequest {
         Objects.requireNonNull(runId, "runId 不能为空");
@@ -52,7 +60,9 @@ public record AgentRunRequest(
     }
 
     /**
-     * 执行 agentId 操作。
+     * 从当前 Agent 定义中取得 Agent 标识。
+     *
+     * @return 当前运行绑定的 Agent 标识
      */
     public UUID agentId() {
         return agent.id();

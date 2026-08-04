@@ -50,7 +50,7 @@ public class ToolOutputSanitizer {
 
     private final ObjectMapper objectMapper;
     /**
-     * ToolOutputSanitizer：转换内部数据为目标表示。
+     * 创建 {@code ToolOutputSanitizer} 实例并保存其运行所需依赖。
      *
      * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
      */
@@ -93,10 +93,10 @@ public class ToolOutputSanitizer {
     }
 
     /**
-     * sanitizeJson：清理或脱敏可能包含敏感信息的内容。
+     * 递归脱敏 JSON 中名称敏感的字段和值。
      *
-     * @param node 参与 sanitizeJson 处理的 node 输入值。
-     * @param secretValues 参与 sanitizeJson 处理的 secretValues 集合。
+     * @param node 当前解析或清理的 JSON 节点
+     * @param secretValues 本次调用中临时使用的 Secret 值。
      */
     private JsonNode sanitizeJson(JsonNode node, List<String> secretValues) {
         if (node.isObject()) {
@@ -124,10 +124,10 @@ public class ToolOutputSanitizer {
     }
 
     /**
-     * sanitizeText：清理或脱敏可能包含敏感信息的内容。
+     * 对非 JSON 文本执行模式匹配脱敏。
      *
-     * @param value 参与 sanitizeText 处理的 value 输入值。
-     * @param secretValues 参与 sanitizeText 处理的 secretValues 集合。
+     * @param value 待检查、转换或规范化的值。
+     * @param secretValues 本次调用中临时使用的 Secret 值。
      */
     private String sanitizeText(String value, List<String> secretValues) {
         String redacted = value;
@@ -144,18 +144,18 @@ public class ToolOutputSanitizer {
     }
 
     /**
-     * normalizeSensitiveKey：规范化输入值以便后续处理。
+     * 规范化输入以便稳定比较和处理。
      *
-     * @param key 参与 normalizeSensitiveKey 处理的 key 输入值。
+     * @param key 待判断是否敏感的原始字段名
      */
     private String normalizeSensitiveKey(String key) {
         return key.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
 
     /**
-     * isSensitiveJsonKey：判断当前条件是否成立。
+     * 判断方法名所描述的业务条件是否成立。
      *
-     * @param normalizedKey 参与 isSensitiveJsonKey 处理的 normalizedKey 输入值。
+     * @param normalizedKey 经过大小写和分隔符规范化的字段名
      */
     private boolean isSensitiveJsonKey(String normalizedKey) {
         if (SENSITIVE_JSON_KEYS.contains(normalizedKey)) {

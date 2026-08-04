@@ -37,6 +37,9 @@ class AgentScopeRuntimeAdapterTest {
     private static final Instant FIXED_TIME = Instant.parse("2026-07-16T00:00:00Z");
 
     @Test
+    /**
+     * 验证 {@code CompleteRequestToRunSpec} 的映射结果。
+     */
     void mapsCompleteRequestToRunSpec() {
         AgentScopeRuntimeAdapter adapter = adapter((spec, credential, gateway) ->
                 AgentScopeExecutionResult.succeeded("真实回答", List.of()));
@@ -53,6 +56,9 @@ class AgentScopeRuntimeAdapterTest {
     }
 
     @Test
+    /**
+     * 验证 {@code SuccessfulExecutionToCoreResult} 的映射结果。
+     */
     void mapsSuccessfulExecutionToCoreResult() {
         AgentRuntime runtime = adapter((spec, credential, gateway) ->
                 AgentScopeExecutionResult.succeeded("真实回答", List.of()));
@@ -69,6 +75,9 @@ class AgentScopeRuntimeAdapterTest {
     }
 
     @Test
+    /**
+     * 验证处理过程会保留 {@code DeniedExecutionAsDeniedRun}。
+     */
     void preservesDeniedExecutionAsDeniedRun() {
         AgentRuntime runtime = adapter((spec, credential, gateway) ->
                 AgentScopeExecutionResult.denied("没有工具权限", List.of()));
@@ -81,6 +90,9 @@ class AgentScopeRuntimeAdapterTest {
     }
 
     @Test
+    /**
+     * 验证处理过程会保留 {@code ControlledTimeoutMessage}。
+     */
     void preservesControlledTimeoutMessage() {
         AgentRuntime runtime = adapter((spec, credential, gateway) ->
                 AgentScopeExecutionResult.failed("Agent 运行超时", List.of()));
@@ -93,6 +105,9 @@ class AgentScopeRuntimeAdapterTest {
     }
 
     @Test
+    /**
+     * 验证 {@code UnavailableCredentialWithoutLeakingCauseOrCredential} 的映射结果。
+     */
     void mapsUnavailableCredentialWithoutLeakingCauseOrCredential() {
         String sensitiveValue = "credential-sensitive-value";
         ModelCredentialProvider provider = (tenantId, modelConfigId) -> {
@@ -112,6 +127,9 @@ class AgentScopeRuntimeAdapterTest {
     }
 
     @Test
+    /**
+     * 验证异常传播会保留 {@code UnexpectedExecutorFailure}。
+     */
     void propagatesUnexpectedExecutorFailure() {
         IllegalStateException failure = new IllegalStateException("未知执行失败");
         AgentRuntime runtime = adapter((spec, credential, gateway) -> {
@@ -122,6 +140,9 @@ class AgentScopeRuntimeAdapterTest {
     }
 
     @Test
+    /**
+     * 验证 {@code executionResultRejectsRunningStatus} 所描述的业务行为。
+     */
     void executionResultRejectsRunningStatus() {
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> new AgentScopeExecutionResult(
@@ -130,6 +151,9 @@ class AgentScopeRuntimeAdapterTest {
     }
 
     @Test
+    /**
+     * 验证 {@code completedResultPrefersDeniedRecordWhenFinalMessageIsMissing} 所描述的业务行为。
+     */
     void completedResultPrefersDeniedRecordWhenFinalMessageIsMissing() {
         ToolCallRecord denied = new ToolCallRecord(
                 UUID.fromString("00000000-0000-0000-0000-000000000501"),
@@ -144,6 +168,11 @@ class AgentScopeRuntimeAdapterTest {
         assertThat(result.errorMessage()).isEqualTo("没有工具权限");
     }
 
+    /**
+     * 验证 {@code adapter} 所描述的业务行为。
+     *
+     * @param executor 测试执行器
+     */
     private static AgentScopeRuntimeAdapter adapter(AgentScopeExecutor executor) {
         ModelCredentialProvider credentialProvider =
                 (tenantId, modelConfigId) -> new ModelCredential("unit-test-key");
@@ -151,10 +180,16 @@ class AgentScopeRuntimeAdapterTest {
         return new AgentScopeRuntimeAdapter(credentialProvider, toolGateway, executor, fixedClock());
     }
 
+    /**
+     * 创建时间固定的测试时钟。
+     */
     private static Clock fixedClock() {
         return Clock.fixed(FIXED_TIME, ZoneOffset.UTC);
     }
 
+    /**
+     * 构造测试使用的运行或 HTTP 请求。
+     */
     private static AgentRunRequest request() {
         AgentDefinition agent = new AgentDefinition(
                 AGENT_ID, TENANT_ID, "企业助手", "", "你是企业助手", MODEL_ID,

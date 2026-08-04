@@ -13,16 +13,29 @@ import java.sql.Timestamp;
 import java.util.List;
 import java.util.UUID;
 
+/** 使用 JDBC 批量保存和查询运行过程中产生的工具调用记录。 */
 public class JdbcToolCallRepository implements ToolCallRepository {
     private final JdbcClient jdbcClient;
     private final TransactionTemplate transactionTemplate;
 
+    /**
+     * 创建工具调用仓储。
+     *
+     * @param jdbcClient 执行参数化 SQL 的 JDBC 客户端
+     * @param transactionTemplate 保证批量工具调用原子写入的事务模板
+     */
     public JdbcToolCallRepository(JdbcClient jdbcClient, TransactionTemplate transactionTemplate) {
         this.jdbcClient = jdbcClient;
         this.transactionTemplate = transactionTemplate;
     }
 
     @Override
+    /**
+     * 在同一事务中批量保存一次运行产生的工具调用。
+     *
+     * @param tenantId 当前租户标识，必须与批次及每条记录一致
+     * @param toolCalls 待保存的工具调用批次
+     */
     public void saveAll(UUID tenantId, RunToolCallBatch toolCalls) {
         toolCalls.requireTenant(tenantId);
         transactionTemplate.executeWithoutResult(transactionStatus -> {
@@ -54,6 +67,13 @@ public class JdbcToolCallRepository implements ToolCallRepository {
     }
 
     @Override
+    /**
+     * 按发生顺序查询指定运行的全部工具调用。
+     *
+     * @param tenantId 租户标识
+     * @param runId 运行标识
+     * @return 工具调用列表
+     */
     public List<RunToolCall> listByTenantAndRun(UUID tenantId, UUID runId) {
         return jdbcClient.sql("""
                         SELECT id, tenant_id, run_id, tool_id, tool_name, input_summary, output_summary,
@@ -68,6 +88,14 @@ public class JdbcToolCallRepository implements ToolCallRepository {
                 .list();
     }
 
+    /**
+     * 将当前结果集行转换为工具调用领域对象。
+     *
+     * @param resultSet 已定位到当前行的查询结果
+     * @param rowNum 当前行序号，仅满足 JDBC 行映射器签名
+     * @return 工具调用领域对象
+     * @throws SQLException 读取列值失败时抛出
+     */
     private RunToolCall mapToolCall(ResultSet resultSet, int rowNum) throws SQLException {
         long durationMillis = resultSet.getLong("duration_ms");
         Long duration = resultSet.wasNull() ? null : durationMillis;
@@ -87,6 +115,12 @@ public class JdbcToolCallRepository implements ToolCallRepository {
         );
     }
 
+    /**
+     * 将空白文本规范化为数据库 {@code NULL}。
+     *
+     * @param value 待规范化文本
+     * @return 空白时返回 {@code null}，否则返回原值
+     */
     private static String nullIfBlank(String value) {
         return value == null || value.isBlank() ? null : value;
     }

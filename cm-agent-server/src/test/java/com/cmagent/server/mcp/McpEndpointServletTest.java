@@ -32,11 +32,17 @@ class McpEndpointServletTest {
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000811");
 
     @AfterEach
+    /**
+     * 验证或支持 {@code clearSecurityContext} 所描述的测试场景。
+     */
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void properties默认关闭且启用时白名单必须非空() {
         McpServerProperties defaults = new McpServerProperties();
         assertThat(defaults.isEnabled()).isFalse();
@@ -55,6 +61,9 @@ class McpEndpointServletTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 每次请求创建独立Server并在异常时关闭() throws Exception {
         PermissionEvaluator permissions = mock(PermissionEvaluator.class);
         AuditAppender audits = mock(AuditAppender.class);
@@ -68,12 +77,21 @@ class McpEndpointServletTest {
                     captured.set(principal);
                     return new McpEndpointServlet.RequestServer() {
                         @Override
+                        /**
+                         * 验证或支持 {@code service} 所描述的测试场景。
+                         *
+                         * @param request 测试使用的请求对象
+                         * @param response 测试使用的 HTTP 响应
+                         */
                         public void service(jakarta.servlet.http.HttpServletRequest request,
                                             jakarta.servlet.http.HttpServletResponse response) throws ServletException {
                             throw new ServletException("测试服务异常");
                         }
 
                         @Override
+                        /**
+                         * 模拟或记录 Agent 资源关闭动作。
+                         */
                         public void close() {
                             closes.incrementAndGet();
                         }
@@ -95,6 +113,9 @@ class McpEndpointServletTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 缺少权限返回403写拒绝审计且不创建Server() throws Exception {
         PermissionEvaluator permissions = mock(PermissionEvaluator.class);
         AuditAppender audits = mock(AuditAppender.class);
@@ -117,6 +138,9 @@ class McpEndpointServletTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 官方Transport处理Get405并拒绝多值Origin和Host() throws Exception {
         PermissionEvaluator permissions = mock(PermissionEvaluator.class);
         PrincipalRef principal = authenticate(Set.of(McpPublishedToolCatalog.INVOKE_PERMISSION));
@@ -148,6 +172,9 @@ class McpEndpointServletTest {
         assertThat(hostResponse.getStatus()).isIn(403, 421);
     }
 
+    /**
+     * 验证或支持 {@code properties} 所描述的测试场景。
+     */
     private static McpServerProperties properties() {
         McpServerProperties properties = new McpServerProperties();
         properties.setEnabled(true);
@@ -158,6 +185,11 @@ class McpEndpointServletTest {
         return properties;
     }
 
+    /**
+     * 验证或支持 {@code authenticate} 所描述的测试场景。
+     *
+     * @param permissions 测试辅助方法使用的 permissions 参数
+     */
     private static PrincipalRef authenticate(Set<String> permissions) {
         JwtService.JwtSession session = new JwtService.JwtSession(
                 TENANT, "mcp-user", "MCP 用户", List.copyOf(permissions)
@@ -168,6 +200,9 @@ class McpEndpointServletTest {
         return new PrincipalRef(TENANT, "mcp-user", "MCP 用户", permissions);
     }
 
+    /**
+     * 验证或支持 {@code post} 所描述的测试场景。
+     */
     private static MockHttpServletRequest post() throws IOException {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/mcp");
         request.setContentType("application/json");

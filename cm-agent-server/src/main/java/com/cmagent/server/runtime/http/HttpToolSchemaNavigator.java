@@ -16,11 +16,8 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * 负责 HTTP 工具输入 Schema 的路径导航、局部投影、引用解析与类型域推导。
- */
-
-/**
- * 在 JSON Schema 中解析嵌套对象、数组和 required 约束。
+ * 负责 HTTP 工具输入 Schema 的路径导航、局部投影、引用解析、类型域推导，
+ * 并校验嵌套对象、数组和 {@code required} 约束。
  */
 final class HttpToolSchemaNavigator {
     private static final int MAX_REFERENCE_TRAVERSAL_DEPTH = 256;
@@ -32,7 +29,7 @@ final class HttpToolSchemaNavigator {
 
     private final ObjectMapper objectMapper;
     /**
-     * HttpToolSchemaNavigator：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code HttpToolSchemaNavigator} 实例并保存其运行所需依赖。
      *
      * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
      */
@@ -40,10 +37,10 @@ final class HttpToolSchemaNavigator {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
     }
     /**
-     * projectSourceSchema：转换内部数据为目标表示。
+     * 投影源路径对应的 Schema，并保留验证默认值所需定义。
      *
-     * @param rootSchema 参与 projectSourceSchema 处理的 rootSchema 输入值。
-     * @param sourcePointer 参与 projectSourceSchema 处理的 sourcePointer 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param sourcePointer 参数映射使用的源 JSON Pointer。
      */
     JsonNode projectSourceSchema(JsonNode rootSchema, String sourcePointer) {
         Projection projection = projectSourceSchema(
@@ -60,20 +57,14 @@ final class HttpToolSchemaNavigator {
         return projection.schema();
     }
     /**
-     * analyzeSourceShape：处理该类内部的业务逻辑或辅助计算。
+     * 分析源路径可能出现的值类型以及缺失可能性。
      *
-     * @param rootSchema 参与 analyzeSourceShape 处理的 rootSchema 输入值。
-     * @param sourcePointer 参与 analyzeSourceShape 处理的 sourcePointer 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param sourcePointer 参数映射使用的源 JSON Pointer。
      */
     SchemaShape analyzeSourceShape(JsonNode rootSchema, String sourcePointer) {
         List<String> tokens = HttpToolConfigValidator.pointerTokens(sourcePointer, "sourcePointer");
         PathShape result = analyzePathShape(
-                /**
-                 * SchemaNode：处理该类内部的业务逻辑或辅助计算。
-                 *
-                 * @param rootSchema 参与 SchemaNode 处理的 rootSchema 输入值。
-                 * @param of 参与 SchemaNode 处理的 of 输入值。
-                 */
                 rootSchema, new SchemaNode(rootSchema, List.of()), tokens, 0, ALL_TYPES, new HashSet<>()
         );
         if (!result.found()) {
@@ -82,10 +73,10 @@ final class HttpToolSchemaNavigator {
         return result.shape();
     }
     /**
-     * validateTerminalLocalReferences：校验输入、状态或前置条件。
+     * 校验终点 Schema 中的本地引用可解析且无非法循环。
      *
-     * @param rootSchema 参与 validateTerminalLocalReferences 处理的 rootSchema 输入值。
-     * @param sourcePointers 参与 validateTerminalLocalReferences 处理的 sourcePointers 集合。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param sourcePointers 全部参数映射使用的源 JSON Pointer 集合。
      */
     void validateTerminalLocalReferences(JsonNode rootSchema, List<String> sourcePointers) {
         ReferenceTraversalContext context = new ReferenceTraversalContext();
@@ -99,14 +90,14 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * projectSourceSchema：转换内部数据为目标表示。
+     * 投影源路径对应的 Schema，并保留验证默认值所需定义。
      *
-     * @param rootSchema 参与 projectSourceSchema 处理的 rootSchema 输入值。
-     * @param current 参与 projectSourceSchema 处理的 current 输入值。
-     * @param tokens 参与 projectSourceSchema 处理的 tokens 集合。
-     * @param tokenIndex 参与 projectSourceSchema 处理的 tokenIndex 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param current 当前遍历或异常链节点。
+     * @param tokens 拆分并反转义后的路径片段列表。
+     * @param tokenIndex 当前处理的路径片段下标。
      * @param allowedContainerTypes 控制 allowedContainerTypes 对应处理分支的布尔开关。
-     * @param visited 参与 projectSourceSchema 处理的 visited 输入值。
+     * @param visited 已访问的 Schema 节点集合，用于检测循环引用。
      */
     private Projection projectSourceSchema(
             JsonNode rootSchema,
@@ -120,6 +111,7 @@ final class HttpToolSchemaNavigator {
             return new Projection(true, current.node().deepCopy());
         }
         SourceTraversalKey key = new SourceTraversalKey(current.schemaPath(), tokenIndex, allowedContainerTypes);
+        // 路径、片段位置和容器类型共同组成遍历状态，用于阻断引用或组合分支形成的递归环。
         if (!visited.add(key) || !current.node().isObject()) {
             return Projection.missing(objectMapper);
         }
@@ -130,6 +122,7 @@ final class HttpToolSchemaNavigator {
         String token = tokens.get(tokenIndex);
         List<JsonNode> cumulative = new ArrayList<>();
         List<JsonNode> directAlternatives = new ArrayList<>();
+        // 同一路径片段可能命中对象属性或数组元素，两者作为直接备选分支合并。
         JsonNode properties = current.node().get("properties");
         if (parentTypes.contains(ValueType.OBJECT)
                 && properties != null && properties.isObject() && properties.has(token)) {
@@ -161,6 +154,7 @@ final class HttpToolSchemaNavigator {
             cumulative.add(alternativeSchema("anyOf", directAlternatives));
         }
 
+        // $ref 与 allOf 都会累积约束，必须保留而不能用后解析的分支覆盖直接路径结果。
         SchemaNode referenced = resolveLocalReference(rootSchema, current);
         if (referenced != null) {
             Projection reference = projectSourceSchema(
@@ -206,6 +200,7 @@ final class HttpToolSchemaNavigator {
                 compositionFound = compositionFound || branch.found();
             }
             if (compositionFound) {
+                // 仅保留实际包含目标路径的组合分支，避免无关分支把投影误判为缺失。
                 List<JsonNode> alternatives = projectedBranches.stream()
                         .filter(Projection::found)
                         .map(Projection::schema)
@@ -216,14 +211,15 @@ final class HttpToolSchemaNavigator {
         if (cumulative.isEmpty()) {
             return Projection.missing(objectMapper);
         }
+        // 多来源约束最终以 allOf 累积，保持原 Schema 对目标值的共同限制。
         return new Projection(true, cumulativeSchema(cumulative));
     }
 
     /**
-     * alternativeSchema：处理该类内部的业务逻辑或辅助计算。
+     * 合并 anyOf 或 oneOf 分支得到备选 Schema。
      *
-     * @param keyword 参与 alternativeSchema 处理的 keyword 输入值。
-     * @param alternatives 参与 alternativeSchema 处理的 alternatives 集合。
+     * @param keyword 当前处理的 JSON Schema 关键字。
+     * @param alternatives 组合关键字声明的备选 Schema 列表。
      */
     private JsonNode alternativeSchema(String keyword, List<JsonNode> alternatives) {
         if (alternatives.size() == 1) {
@@ -236,9 +232,9 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * cumulativeSchema：处理该类内部的业务逻辑或辅助计算。
+     * 合并 allOf 分支得到累计约束 Schema。
      *
-     * @param constraints 参与 cumulativeSchema 处理的 constraints 集合。
+     * @param constraints 当前汇总的 Schema 约束集合。
      */
     private JsonNode cumulativeSchema(List<JsonNode> constraints) {
         if (constraints.size() == 1) {
@@ -251,14 +247,14 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * analyzePathShape：处理该类内部的业务逻辑或辅助计算。
+     * 分析某条源路径沿途需要的对象或数组容器形态。
      *
-     * @param rootSchema 参与 analyzePathShape 处理的 rootSchema 输入值。
-     * @param current 参与 analyzePathShape 处理的 current 输入值。
-     * @param tokens 参与 analyzePathShape 处理的 tokens 集合。
-     * @param tokenIndex 参与 analyzePathShape 处理的 tokenIndex 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param current 当前遍历或异常链节点。
+     * @param tokens 拆分并反转义后的路径片段列表。
+     * @param tokenIndex 当前处理的路径片段下标。
      * @param allowedContainerTypes 控制 allowedContainerTypes 对应处理分支的布尔开关。
-     * @param visited 参与 analyzePathShape 处理的 visited 输入值。
+     * @param visited 已访问的 Schema 节点集合，用于检测循环引用。
      */
     private PathShape analyzePathShape(
             JsonNode rootSchema,
@@ -376,10 +372,10 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * resolveSourceNodes：解析并定位可用的目标对象。
+     * 解析源路径在各组合 Schema 分支中可能对应的节点。
      *
-     * @param rootSchema 参与 resolveSourceNodes 处理的 rootSchema 输入值。
-     * @param sourcePointer 参与 resolveSourceNodes 处理的 sourcePointer 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param sourcePointer 参数映射使用的源 JSON Pointer。
      */
     private List<SchemaNode> resolveSourceNodes(JsonNode rootSchema, String sourcePointer) {
         List<String> tokens = HttpToolConfigValidator.pointerTokens(sourcePointer, "sourcePointer");
@@ -398,14 +394,14 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * findChildSchemas：查询并返回当前上下文中的匹配结果。
+     * 查找当前 Schema 节点指定属性的所有候选子 Schema。
      *
-     * @param rootSchema 参与 findChildSchemas 处理的 rootSchema 输入值。
-     * @param current 参与 findChildSchemas 处理的 current 输入值。
-     * @param token 参与 findChildSchemas 处理的 token 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param current 当前遍历或异常链节点。
+     * @param token 当前 JSON Pointer 路径片段。
      * @param allowedContainerTypes 控制 allowedContainerTypes 对应处理分支的布尔开关。
-     * @param visited 参与 findChildSchemas 处理的 visited 输入值。
-     * @param matches 参与 findChildSchemas 处理的 matches 集合。
+     * @param visited 已访问的 Schema 节点集合，用于检测循环引用。
+     * @param matches 用于收集候选子 Schema 的结果集合。
      */
     private void findChildSchemas(
             JsonNode rootSchema,
@@ -458,10 +454,10 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * resolveArrayItem：解析并定位可用的目标对象。
+     * 解析数组 items 对当前索引生效的子 Schema。
      *
-     * @param current 参与 resolveArrayItem 处理的 current 输入值。
-     * @param itemIndex 参与 resolveArrayItem 处理的 itemIndex 输入值。
+     * @param current 当前遍历或异常链节点。
+     * @param itemIndex 目标数组元素下标。
      */
     private SchemaNode resolveArrayItem(SchemaNode current, int itemIndex) {
         JsonNode prefixItems = current.node().get("prefixItems");
@@ -476,10 +472,10 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * parseArrayIndexForParent：读取并解析输入内容。
+     * 按父节点约束解析数组索引片段。
      *
-     * @param parentTypes 参与 parseArrayIndexForParent 处理的 parentTypes 集合。
-     * @param token 参与 parseArrayIndexForParent 处理的 token 输入值。
+     * @param parentTypes 父 Schema 允许的值类型集合。
+     * @param token 当前 JSON Pointer 路径片段。
      */
     private static HttpToolArrayIndex.ParseResult parseArrayIndexForParent(
             Set<ValueType> parentTypes,
@@ -496,11 +492,11 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * analyzeShape：处理该类内部的业务逻辑或辅助计算。
+     * 汇总 Schema 节点声明及组合分支中的可能类型。
      *
-     * @param rootSchema 参与 analyzeShape 处理的 rootSchema 输入值。
-     * @param schemaNode 参与 analyzeShape 处理的 schemaNode 输入值。
-     * @param visited 参与 analyzeShape 处理的 visited 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param schemaNode 当前分析的 Schema 节点。
+     * @param visited 已访问的 Schema 节点集合，用于检测循环引用。
      */
     private SchemaShape analyzeShape(JsonNode rootSchema, SchemaNode schemaNode, Set<List<Object>> visited) {
         if (!visited.add(schemaNode.schemaPath())) {
@@ -592,10 +588,10 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * resolveLocalReference：解析并定位可用的目标对象。
+     * 解析本地 $ref，并用遍历状态防止循环引用。
      *
-     * @param rootSchema 参与 resolveLocalReference 处理的 rootSchema 输入值。
-     * @param schemaNode 参与 resolveLocalReference 处理的 schemaNode 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param schemaNode 当前分析的 Schema 节点。
      */
     private SchemaNode resolveLocalReference(JsonNode rootSchema, SchemaNode schemaNode) {
         JsonNode referenceNode = schemaNode.node().get("$ref");
@@ -630,12 +626,12 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * validateTerminalLocalReferences：校验输入、状态或前置条件。
+     * 校验终点 Schema 中的本地引用可解析且无非法循环。
      *
-     * @param rootSchema 参与 validateTerminalLocalReferences 处理的 rootSchema 输入值。
-     * @param current 参与 validateTerminalLocalReferences 处理的 current 输入值。
-     * @param directReferenceChain 参与 validateTerminalLocalReferences 处理的 directReferenceChain 输入值。
-     * @param context 参与 validateTerminalLocalReferences 处理的 context 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param current 当前遍历或异常链节点。
+     * @param directReferenceChain 当前直接 $ref 引用链。
+     * @param context 本次 Schema 分析的遍历上下文。
      */
     private void validateTerminalLocalReferences(
             JsonNode rootSchema,
@@ -713,13 +709,13 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * validateSchemaMapChildren：校验输入、状态或前置条件。
+     * 逐项校验对象形式 Schema 关键字的子节点。
      *
-     * @param rootSchema 参与 validateSchemaMapChildren 处理的 rootSchema 输入值。
-     * @param current 参与 validateSchemaMapChildren 处理的 current 输入值。
-     * @param keyword 参与 validateSchemaMapChildren 处理的 keyword 输入值。
-     * @param directReferenceChain 参与 validateSchemaMapChildren 处理的 directReferenceChain 输入值。
-     * @param context 参与 validateSchemaMapChildren 处理的 context 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param current 当前遍历或异常链节点。
+     * @param keyword 当前处理的 JSON Schema 关键字。
+     * @param directReferenceChain 当前直接 $ref 引用链。
+     * @param context 本次 Schema 分析的遍历上下文。
      */
     private void validateSchemaMapChildren(
             JsonNode rootSchema,
@@ -741,13 +737,13 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * validateSchemaChild：校验输入、状态或前置条件。
+     * 校验单个 Schema 子节点及其本地引用。
      *
-     * @param rootSchema 参与 validateSchemaChild 处理的 rootSchema 输入值。
-     * @param current 参与 validateSchemaChild 处理的 current 输入值。
-     * @param keyword 参与 validateSchemaChild 处理的 keyword 输入值。
-     * @param directReferenceChain 参与 validateSchemaChild 处理的 directReferenceChain 输入值。
-     * @param context 参与 validateSchemaChild 处理的 context 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param current 当前遍历或异常链节点。
+     * @param keyword 当前处理的 JSON Schema 关键字。
+     * @param directReferenceChain 当前直接 $ref 引用链。
+     * @param context 本次 Schema 分析的遍历上下文。
      */
     private void validateSchemaChild(
             JsonNode rootSchema,
@@ -769,13 +765,13 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * validateSchemaArrayChildren：校验输入、状态或前置条件。
+     * 逐项校验数组形式 Schema 关键字的子节点。
      *
-     * @param rootSchema 参与 validateSchemaArrayChildren 处理的 rootSchema 输入值。
-     * @param current 参与 validateSchemaArrayChildren 处理的 current 输入值。
-     * @param keyword 参与 validateSchemaArrayChildren 处理的 keyword 输入值。
-     * @param directReferenceChain 参与 validateSchemaArrayChildren 处理的 directReferenceChain 输入值。
-     * @param context 参与 validateSchemaArrayChildren 处理的 context 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param current 当前遍历或异常链节点。
+     * @param keyword 当前处理的 JSON Schema 关键字。
+     * @param directReferenceChain 当前直接 $ref 引用链。
+     * @param context 本次 Schema 分析的遍历上下文。
      */
     private void validateSchemaArrayChildren(
             JsonNode rootSchema,
@@ -799,10 +795,10 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * resolveRequiredLocalReference：解析并定位可用的目标对象。
+     * 解析必须存在的本地引用，否则抛出配置错误。
      *
-     * @param rootSchema 参与 resolveRequiredLocalReference 处理的 rootSchema 输入值。
-     * @param reference 参与 resolveRequiredLocalReference 处理的 reference 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param reference 待解析的本地 $ref 文本。
      */
     private SchemaNode resolveRequiredLocalReference(JsonNode rootSchema, String reference) {
         final List<String> tokens;
@@ -836,9 +832,9 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * typesFromType：处理该类内部的业务逻辑或辅助计算。
+     * 从 type 关键字提取声明的值类型集合。
      *
-     * @param typeNode 参与 typesFromType 处理的 typeNode 输入值。
+     * @param typeNode Schema 的 type 关键字节点。
      */
     private static Set<ValueType> typesFromType(JsonNode typeNode) {
         Set<ValueType> types = EnumSet.noneOf(ValueType.class);
@@ -855,10 +851,10 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * addDeclaredType：处理该类内部的业务逻辑或辅助计算。
+     * 把单个 Schema 类型名称加入值类型集合。
      *
-     * @param types 参与 addDeclaredType 处理的 types 集合。
-     * @param declaredType 参与 addDeclaredType 处理的 declaredType 输入值。
+     * @param types 当前汇总的 Schema 值类型集合。
+     * @param declaredType Schema 显式声明的类型名称。
      */
     private static void addDeclaredType(Set<ValueType> types, String declaredType) {
         switch (declaredType) {
@@ -878,9 +874,9 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * typeOfValue：处理该类内部的业务逻辑或辅助计算。
+     * 根据 JSON 默认值节点判断其实际类型。
      *
-     * @param value 参与 typeOfValue 处理的 value 输入值。
+     * @param value 待检查、转换或规范化的值。
      */
     private static ValueType typeOfValue(JsonNode value) {
         if (value.isTextual()) {
@@ -905,10 +901,10 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * addArrayItemTypes：处理该类内部的业务逻辑或辅助计算。
+     * 汇总数组 items 声明的元素类型。
      *
-     * @param itemTypes 参与 addArrayItemTypes 处理的 itemTypes 集合。
-     * @param value 参与 addArrayItemTypes 处理的 value 输入值。
+     * @param itemTypes 数组元素可能的值类型集合。
+     * @param value 待检查、转换或规范化的值。
      */
     private static void addArrayItemTypes(Set<ValueType> itemTypes, JsonNode value) {
         if (value.isArray()) {
@@ -917,9 +913,9 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * withoutNull：处理该类内部的业务逻辑或辅助计算。
+     * 从值类型集合中移除 null。
      *
-     * @param types 参与 withoutNull 处理的 types 集合。
+     * @param types 当前汇总的 Schema 值类型集合。
      */
     private static Set<ValueType> withoutNull(Set<ValueType> types) {
         Set<ValueType> result = EnumSet.noneOf(ValueType.class);
@@ -929,10 +925,10 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * intersectTypes：处理该类内部的业务逻辑或辅助计算。
+     * 计算两个值类型集合的交集。
      *
-     * @param left 参与 intersectTypes 处理的 left 输入值。
-     * @param right 参与 intersectTypes 处理的 right 输入值。
+     * @param left 参与集合运算的左侧值。
+     * @param right 参与集合运算的右侧值。
      */
     private static Set<ValueType> intersectTypes(Set<ValueType> left, Set<ValueType> right) {
         Set<ValueType> result = EnumSet.noneOf(ValueType.class);
@@ -942,14 +938,14 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * sourceMissing：处理该类内部的业务逻辑或辅助计算。
+     * 创建“源路径不存在”的受控配置异常。
      */
     private static IllegalArgumentException sourceMissing() {
         return new IllegalArgumentException("sourcePointer 未指向 Schema 中存在的输入节点");
     }
 
     /**
-     * ValueType：枚举本模块使用的有限状态或类型。
+     * 枚举 {@code ValueType} 支持的有限状态或类型。
      */
     private enum ValueType {
         /** JSON 字符串值。 */
@@ -969,39 +965,45 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * SchemaShape：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code SchemaShape} 在 HTTP 工具流程中使用的不可变数据。
      */
     record SchemaShape(Set<ValueType> types, Set<ValueType> arrayItemTypes) {
+        /**
+         * 校验并构造 {@code SchemaShape} 实例。
+         *
+     * @param types 当前 Schema 节点允许的 JSON 类型集合
+     * @param arrayItemTypes 数组元素允许的 JSON 类型集合
+         */
         SchemaShape {
             types = Set.copyOf(types);
             arrayItemTypes = Set.copyOf(arrayItemTypes);
         }
         /**
-         * hasNoKnownNonNullType：判断当前条件是否成立。
+         * 判断 Schema 是否没有任何已知非 null 类型。
          */
         boolean hasNoKnownNonNullType() {
             return withoutNull(types).isEmpty();
         }
         /**
-         * isOnlyArray：判断当前条件是否成立。
+         * 判断 Schema 是否只允许数组。
          */
         boolean isOnlyArray() {
             return withoutNull(types).equals(Set.of(ValueType.ARRAY));
         }
         /**
-         * hasArrayAlternative：判断当前条件是否成立。
+         * 判断 Schema 是否包含数组分支。
          */
         boolean hasArrayAlternative() {
             return withoutNull(types).contains(ValueType.ARRAY);
         }
         /**
-         * isScalarSafe：判断当前条件是否成立。
+         * 判断 Schema 的非 null 类型是否都可安全转为标量文本。
          */
         boolean isScalarSafe() {
             return SCALAR_TYPES.containsAll(withoutNull(types));
         }
         /**
-         * isQuerySafe：判断当前条件是否成立。
+         * 判断 Schema 是否适合转换为查询参数。
          */
         boolean isQuerySafe() {
             Set<ValueType> possibleTypes = withoutNull(types);
@@ -1018,23 +1020,23 @@ final class HttpToolSchemaNavigator {
         }
 
         /**
-         * all：处理该类内部的业务逻辑或辅助计算。
+         * 创建包含全部值类型的集合。
          */
         private static SchemaShape all() {
             return new SchemaShape(ALL_TYPES, ALL_TYPES);
         }
 
         /**
-         * empty：处理该类内部的业务逻辑或辅助计算。
+         * 创建不包含任何值类型的集合。
          */
         private static SchemaShape empty() {
             return new SchemaShape(Set.of(), Set.of());
         }
 
         /**
-         * intersect：处理该类内部的业务逻辑或辅助计算。
+         * 返回两个 Schema 节点约束的交集。
          *
-         * @param other 参与 intersect 处理的 other 输入值。
+         * @param other 参与集合运算的另一个 Schema 类型集合。
          */
         private SchemaShape intersect(SchemaShape other) {
             Set<ValueType> intersectedTypes = EnumSet.noneOf(ValueType.class);
@@ -1047,9 +1049,9 @@ final class HttpToolSchemaNavigator {
         }
 
         /**
-         * union：处理该类内部的业务逻辑或辅助计算。
+         * 返回两个 Schema 节点约束的并集。
          *
-         * @param other 参与 union 处理的 other 输入值。
+         * @param other 参与集合运算的另一个 Schema 类型集合。
          */
         private SchemaShape union(SchemaShape other) {
             Set<ValueType> unionTypes = EnumSet.noneOf(ValueType.class);
@@ -1067,18 +1069,24 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * SchemaNode：不可变数据载体，用于在本模块内传递结构化信息。
+     * 创建 {@code SchemaNode} 实例并保存其运行所需依赖。
      */
     private record SchemaNode(JsonNode node, List<Object> schemaPath) {
+        /**
+         * 校验并构造 {@code SchemaNode} 实例。
+         *
+     * @param node 当前解析或清理的 JSON 节点
+     * @param schemaPath 当前节点在输入 Schema 中的定位路径
+         */
         private SchemaNode {
             schemaPath = List.copyOf(schemaPath);
         }
 
         /**
-         * append：追加处理结果或审计记录。
+         * 在当前 Schema 路径后追加一个片段。
          *
-         * @param pathElement 参与 append 处理的 pathElement 输入值。
-         * @param child 参与 append 处理的 child 输入值。
+         * @param pathElement 当前待解析的路径片段。
+         * @param child 当前父节点下待校验的子 Schema。
          */
         private SchemaNode append(Object pathElement, JsonNode child) {
             List<Object> childPath = new ArrayList<>(schemaPath);
@@ -1088,13 +1096,20 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * SourceTraversalKey：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code SourceTraversalKey} 在 HTTP 工具流程中使用的不可变数据。
      */
     private record SourceTraversalKey(
             List<Object> schemaPath,
             int tokenIndex,
             Set<ValueType> allowedContainerTypes
     ) {
+        /**
+         * 校验并构造 {@code SourceTraversalKey} 实例。
+         *
+     * @param schemaPath 当前节点在输入 Schema 中的定位路径
+     * @param tokenIndex 当前正在解析的 JSON Pointer 片段下标
+     * @param allowedContainerTypes 当前层级允许作为容器的 JSON 类型集合
+         */
         private SourceTraversalKey {
             schemaPath = List.copyOf(schemaPath);
             allowedContainerTypes = Set.copyOf(allowedContainerTypes);
@@ -1102,9 +1117,15 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * ContainerTraversalKey：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code ContainerTraversalKey} 在 HTTP 工具流程中使用的不可变数据。
      */
     private record ContainerTraversalKey(List<Object> schemaPath, Set<ValueType> allowedContainerTypes) {
+        /**
+         * 校验并构造 {@code ContainerTraversalKey} 实例。
+         *
+     * @param schemaPath 当前节点在输入 Schema 中的定位路径
+     * @param allowedContainerTypes 当前层级允许作为容器的 JSON 类型集合
+         */
         private ContainerTraversalKey {
             schemaPath = List.copyOf(schemaPath);
             allowedContainerTypes = Set.copyOf(allowedContainerTypes);
@@ -1112,11 +1133,11 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * Projection：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code Projection} 在 HTTP 工具流程中使用的不可变数据。
      */
     private record Projection(boolean found, JsonNode schema) {
         /**
-         * missing：处理该类内部的业务逻辑或辅助计算。
+         * 创建表示源路径缺失的分析结果。
          *
          * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
          */
@@ -1126,11 +1147,11 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * PathShape：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code PathShape} 在 HTTP 工具流程中使用的不可变数据。
      */
     private record PathShape(boolean found, SchemaShape shape) {
         /**
-         * missing：处理该类内部的业务逻辑或辅助计算。
+         * 创建表示源路径缺失的分析结果。
          */
         private static PathShape missing() {
             return new PathShape(false, SchemaShape.all());
@@ -1138,12 +1159,18 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * ReferenceTraversalState：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code ReferenceTraversalState} 在 HTTP 工具流程中使用的不可变数据。
      */
     private record ReferenceTraversalState(
             List<Object> schemaPath,
             Set<List<Object>> directReferenceChain
     ) {
+        /**
+         * 校验并构造 {@code ReferenceTraversalState} 实例。
+         *
+     * @param schemaPath 当前节点在输入 Schema 中的定位路径
+     * @param directReferenceChain 用于检测循环引用的直接 Schema 引用链
+         */
         private ReferenceTraversalState {
             schemaPath = List.copyOf(schemaPath);
             directReferenceChain = Set.copyOf(directReferenceChain);
@@ -1151,7 +1178,7 @@ final class HttpToolSchemaNavigator {
     }
 
     /**
-     * ReferenceTraversalContext：封装本模块的相关实现逻辑。
+     * 创建 {@code ReferenceTraversalContext} 实例并保存其运行所需依赖。
      */
     private static final class ReferenceTraversalContext {
         private final Set<List<Object>> visitingPaths = new HashSet<>();
@@ -1160,43 +1187,43 @@ final class HttpToolSchemaNavigator {
         private int traversedStates;
 
         /**
-         * isCompleted：判断当前条件是否成立。
+         * 判断本地引用是否已经完成校验。
          *
-         * @param state 参与 isCompleted 处理的 state 输入值。
+         * @param state 当前遍历状态。
          */
         private boolean isCompleted(ReferenceTraversalState state) {
             return completedStates.contains(state);
         }
 
         /**
-         * enter：处理该类内部的业务逻辑或辅助计算。
+         * 进入本地引用遍历并检测循环。
          *
-         * @param schemaPath 参与 enter 处理的 schemaPath 输入值。
+         * @param schemaPath 当前节点在 Schema 文档中的路径。
          */
         private boolean enter(List<Object> schemaPath) {
             return visitingPaths.add(schemaPath);
         }
 
         /**
-         * exit：处理该类内部的业务逻辑或辅助计算。
+         * 退出当前本地引用遍历节点。
          *
-         * @param schemaPath 参与 exit 处理的 schemaPath 输入值。
+         * @param schemaPath 当前节点在 Schema 文档中的路径。
          */
         private void exit(List<Object> schemaPath) {
             visitingPaths.remove(schemaPath);
         }
 
         /**
-         * complete：处理该类内部的业务逻辑或辅助计算。
+         * 标记当前本地引用已完成校验。
          *
-         * @param state 参与 complete 处理的 state 输入值。
+         * @param state 当前遍历状态。
          */
         private void complete(ReferenceTraversalState state) {
             completedStates.add(state);
         }
 
         /**
-         * enterTraversalDepth：处理该类内部的业务逻辑或辅助计算。
+         * 增加遍历深度并执行复杂度上限检查。
          */
         private void enterTraversalDepth() {
             traversalDepth++;
@@ -1206,14 +1233,14 @@ final class HttpToolSchemaNavigator {
         }
 
         /**
-         * exitTraversalDepth：处理该类内部的业务逻辑或辅助计算。
+         * 减少当前遍历深度。
          */
         private void exitTraversalDepth() {
             traversalDepth--;
         }
 
         /**
-         * recordTraversalState：处理该类内部的业务逻辑或辅助计算。
+         * 记录已访问节点并执行总遍历次数上限检查。
          */
         private void recordTraversalState() {
             traversedStates++;

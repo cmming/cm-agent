@@ -1,19 +1,16 @@
 package com.cmagent.server.runtime.http;
 
 /**
- * 统一解析 JSON Pointer 中可能表示数组下标的 token，并限制可构造数组的最大下标。
- */
-
-/**
- * JSON Pointer 数组下标的值对象，负责保证下标格式和范围有效。
+ * 统一解析 JSON Pointer 中可能表示数组下标的 token，
+ * 并限制可构造数组的最大下标以保证格式和范围安全。
  */
 record HttpToolArrayIndex(int value) {
     static final int MAX_VALUE = 10_000;
     private static final String INVALID_MESSAGE = "JSON Pointer 数组索引无效或超过安全上限";
     /**
-     * parse：读取并解析输入内容。
+     * 解析数组索引文本并返回结构化结果。
      *
-     * @param token 参与 parse 处理的 token 输入值。
+     * @param token 当前 JSON Pointer 路径片段。
      */
     static ParseResult parse(String token) {
         if (token == null || token.isEmpty()) {
@@ -37,55 +34,61 @@ record HttpToolArrayIndex(int value) {
         return ParseResult.valid(new HttpToolArrayIndex(value));
     }
     /**
-     * invalidException：处理该类内部的业务逻辑或辅助计算。
+     * 创建数组索引格式不合法异常。
      */
     static IllegalArgumentException invalidException() {
         return new IllegalArgumentException(INVALID_MESSAGE);
     }
 
     /**
-     * ParseResult：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code ParseResult} 在 HTTP 工具流程中使用的不可变数据。
      */
     record ParseResult(Status status, HttpToolArrayIndex index) {
+        /**
+         * 校验并构造 {@code ParseResult} 实例。
+         *
+     * @param status 数组路径片段的解析状态
+     * @param index 数组路径片段解析得到的元素下标
+         */
         ParseResult {
             if ((status == Status.VALID) != (index != null)) {
                 throw new IllegalArgumentException("数组索引解析结果不一致");
             }
         }
         /**
-         * nonNumeric：处理该类内部的业务逻辑或辅助计算。
+         * 创建“数组索引不是数字”的解析结果。
          */
         static ParseResult nonNumeric() {
             return new ParseResult(Status.NON_NUMERIC, null);
         }
         /**
-         * invalid：处理该类内部的业务逻辑或辅助计算。
+         * 创建通用无效解析结果。
          */
         static ParseResult invalid() {
             return new ParseResult(Status.INVALID, null);
         }
         /**
-         * valid：处理该类内部的业务逻辑或辅助计算。
+         * 创建包含有效数组下标的解析结果。
          *
-         * @param index 参与 valid 处理的 index 输入值。
+         * @param index 目标数组下标。
          */
         static ParseResult valid(HttpToolArrayIndex index) {
             return new ParseResult(Status.VALID, index);
         }
         /**
-         * isValid：判断当前条件是否成立。
+         * 判断数组索引解析结果是否有效。
          */
         boolean isValid() {
             return status == Status.VALID;
         }
         /**
-         * isInvalid：判断当前条件是否成立。
+         * 判断数组索引解析结果是否无效。
          */
         boolean isInvalid() {
             return status == Status.INVALID;
         }
         /**
-         * requiresArrayContainer：校验输入、状态或前置条件。
+         * 校验当前位置必须由数组容器承载。
          */
         boolean requiresArrayContainer() {
             if (isInvalid()) {
@@ -94,7 +97,7 @@ record HttpToolArrayIndex(int value) {
             return isValid();
         }
         /**
-         * requireValue：校验输入、状态或前置条件。
+         * 校验并返回有效数组下标。
          */
         int requireValue() {
             if (!isValid()) {
@@ -105,7 +108,7 @@ record HttpToolArrayIndex(int value) {
     }
 
     /**
-     * Status：枚举本模块使用的有限状态或类型。
+     * 枚举 {@code Status} 支持的有限状态或类型。
      */
     enum Status {
         /** 路径片段不是数组下标。 */

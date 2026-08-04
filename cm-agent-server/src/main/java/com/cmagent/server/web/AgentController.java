@@ -32,12 +32,12 @@ public class AgentController {
     private final AuditAppender auditAppender;
     private final ManagementCommandService managementCommandService;
     /**
-     * AgentController：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code AgentController} 实例并保存其运行所需依赖。
      *
-     * @param agentRepository 参与 AgentController 处理的 agentRepository 输入值。
-     * @param permissionEvaluator 参与 AgentController 处理的 permissionEvaluator 输入值。
-     * @param auditAppender 参与 AgentController 处理的 auditAppender 输入值。
-     * @param managementCommandService 参与 AgentController 处理的 managementCommandService 输入值。
+     * @param agentRepository 负责访问相关领域数据的仓储。
+     * @param permissionEvaluator 执行主体权限判断的组件。
+     * @param auditAppender 负责追加安全审计事件的组件。
+     * @param managementCommandService 负责当前业务流程的服务。
      */
     public AgentController(
             AgentDefinitionRepository agentRepository,
@@ -81,7 +81,7 @@ public class AgentController {
     /**
      * 创建 Agent；业务编排和审计由命令服务统一处理。
      *
-     * @param request 当前业务请求参数，承载调用方提交的数据。
+     * @param request 创建或更新 Agent 所需的请求 DTO
      * @param authentication Spring Security 认证信息，用于解析当前登录主体。
      */
     public AgentDefinition create(@Valid @RequestBody AgentCreateRequest request, Authentication authentication) {
@@ -93,7 +93,7 @@ public class AgentController {
     }
 
     /**
-     * principal：处理该类内部的业务逻辑或辅助计算。
+     * 从 Spring Security 认证对象提取可信主体上下文。
      *
      * @param authentication Spring Security 认证信息，用于解析当前登录主体。
      */
@@ -107,11 +107,11 @@ public class AgentController {
     }
 
     /**
-     * authorize：处理该类内部的业务逻辑或辅助计算。
+     * 校验主体是否拥有目标权限，并在拒绝时记录审计事件。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
-     * @param permission 参与 authorize 处理的 permission 输入值。
-     * @param resourceType 参与 authorize 处理的 resourceType 输入值。
+     * @param permission 待校验的权限编码。
+     * @param resourceType 审计资源类型。
      * @param resourceId 目标 resource 标识，用于定位本次处理对象。
      */
     private void authorize(PrincipalRef principal, String permission, String resourceType, String resourceId) {
@@ -123,7 +123,7 @@ public class AgentController {
     }
 
     /**
-     * AgentCreateRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code AgentCreateRequest} 在当前流程中使用的不可变数据。
      */
     public record AgentCreateRequest(
             @jakarta.validation.constraints.NotBlank String name,

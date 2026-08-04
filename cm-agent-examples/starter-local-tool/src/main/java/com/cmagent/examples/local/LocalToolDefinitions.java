@@ -17,6 +17,9 @@ public final class LocalToolDefinitions {
     public static final UUID ADD_TOOL_ID =
             UUID.fromString("00000000-0000-0000-0000-000000000102");
 
+    /**
+     * 创建本地示例工具定义集合。
+     */
     private LocalToolDefinitions() {
     }
 

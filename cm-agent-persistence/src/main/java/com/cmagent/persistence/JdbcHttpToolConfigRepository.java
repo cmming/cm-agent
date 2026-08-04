@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.Objects;
 import java.util.UUID;
 
+/** 使用 JDBC 持久化动态 HTTP 工具配置及其参数映射。 */
 public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
     private static final TypeReference<List<HttpParameterMapping>> PARAMETER_MAPPINGS_TYPE = new TypeReference<>() { };
     private static final TypeReference<Map<String, String>> SECRET_HEADERS_TYPE = new TypeReference<>() { };
@@ -30,6 +31,13 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
+    /**
+     * 创建 HTTP 工具配置仓储。
+     *
+     * @param jdbcClient 执行参数化 SQL 的 JDBC 客户端
+     * @param objectMapper 序列化参数映射和 Secret 引用的 JSON 组件
+     * @param transactionTemplate 保证工具锁定与配置写入原子性的事务模板
+     */
     public JdbcHttpToolConfigRepository(
             JdbcClient jdbcClient,
             ObjectMapper objectMapper,
@@ -41,10 +49,22 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
     }
 
     @Override
+    /**
+     * 在事务中保存 HTTP 工具配置。
+     *
+     * @param config 待保存的 HTTP 工具配置
+     * @return 已保存的配置
+     */
     public HttpToolConfig save(HttpToolConfig config) {
         return transactionTemplate.execute(status -> saveWithinTransaction(config));
     }
 
+    /**
+     * 锁定所属工具后执行配置插入或更新，避免与工具删除并发交错。
+     *
+     * @param config 待保存的 HTTP 工具配置
+     * @return 已保存的配置
+     */
     private HttpToolConfig saveWithinTransaction(HttpToolConfig config) {
         lockToolDefinition(config.tenantId(), config.toolId());
         Timestamp now = Timestamp.from(Instant.now());
@@ -94,6 +114,12 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
         return config;
     }
 
+    /**
+     * 按租户锁定所属工具，并拒绝不存在或已删除的工具。
+     *
+     * @param tenantId 租户标识
+     * @param toolId 工具标识
+     */
     private void lockToolDefinition(UUID tenantId, UUID toolId) {
         boolean exists = jdbcClient.sql("""
                         SELECT id
@@ -112,6 +138,13 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
     }
 
     @Override
+    /**
+     * 查询租户内单个工具的 HTTP 配置。
+     *
+     * @param tenantId 租户标识
+     * @param toolId 工具标识
+     * @return 匹配的 HTTP 配置
+     */
     public Optional<HttpToolConfig> findByTenantAndToolId(UUID tenantId, UUID toolId) {
         return jdbcClient.sql("""
                         SELECT config.tenant_id, config.tool_id, config.method, config.url_template,
@@ -130,6 +163,13 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
     }
 
     @Override
+    /**
+     * 批量查询租户内多个工具的 HTTP 配置，并以工具 ID 建立索引。
+     *
+     * @param tenantId 租户标识
+     * @param toolIds 待查询的工具标识集合
+     * @return 工具 ID 到 HTTP 配置的映射
+     */
     public Map<UUID, HttpToolConfig> findByTenantAndToolIds(UUID tenantId, List<UUID> toolIds) {
         if (toolIds.isEmpty()) {
             return Map.of();
@@ -154,6 +194,12 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
     }
 
     @Override
+    /**
+     * 删除租户内指定工具的 HTTP 配置。
+     *
+     * @param tenantId 租户标识
+     * @param toolId 工具标识
+     */
     public void delete(UUID tenantId, UUID toolId) {
         jdbcClient.sql("DELETE FROM tool_http_configs WHERE tenant_id = :tenantId AND tool_id = :toolId")
                 .param("tenantId", tenantId.toString())
@@ -161,6 +207,14 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
                 .update();
     }
 
+    /**
+     * 将结果集行及其中的 JSON 字段还原为 HTTP 工具配置。
+     *
+     * @param resultSet 已定位到当前行的查询结果
+     * @param rowNum 当前行序号，仅满足 JDBC 行映射器签名
+     * @return HTTP 工具配置
+     * @throws SQLException 读取列值失败时抛出
+     */
     private HttpToolConfig mapConfig(ResultSet resultSet, int rowNum) throws SQLException {
         return new HttpToolConfig(
                 UUID.fromString(resultSet.getString("tenant_id")),
@@ -174,6 +228,12 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
         );
     }
 
+    /**
+     * 将配置字段序列化为数据库 JSON 文本。
+     *
+     * @param value 待序列化对象
+     * @return JSON 文本
+     */
     private String writeJson(Object value) {
         try {
             return objectMapper.writeValueAsString(value);
@@ -182,6 +242,14 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
         }
     }
 
+    /**
+     * 按指定泛型类型反序列化数据库 JSON 文本。
+     *
+     * @param value JSON 文本
+     * @param type 目标类型引用
+     * @param <T> 目标对象类型
+     * @return 反序列化结果
+     */
     private <T> T readJson(String value, TypeReference<T> type) {
         try {
             return objectMapper.readValue(value, type);

@@ -40,12 +40,12 @@ public class RunController {
     private final PermissionEvaluator permissionEvaluator;
     private final AuditAppender auditAppender;
     /**
-     * RunController：执行当前流程并返回处理结果。
+     * 创建 {@code RunController} 实例并保存其运行所需依赖。
      *
-     * @param executionService 参与 RunController 处理的 executionService 输入值。
-     * @param persistenceService 参与 RunController 处理的 persistenceService 输入值。
-     * @param permissionEvaluator 参与 RunController 处理的 permissionEvaluator 输入值。
-     * @param auditAppender 参与 RunController 处理的 auditAppender 输入值。
+     * @param executionService 负责当前业务流程的服务。
+     * @param persistenceService 负责当前业务流程的服务。
+     * @param permissionEvaluator 执行主体权限判断的组件。
+     * @param auditAppender 负责追加安全审计事件的组件。
      */
     public RunController(
             RunExecutionService executionService,
@@ -142,7 +142,7 @@ public class RunController {
     }
 
     /**
-     * decodeCursor：读取并解析输入内容。
+     * 解码并校验复合分页游标。
      *
      * @param cursor 分页游标，用于定位下一页数据。
      */
@@ -166,7 +166,7 @@ public class RunController {
     }
 
     /**
-     * encodeCursor：转换并生成规范化输出。
+     * 将最后一条记录的位置编码为下一页游标。
      *
      * @param run 当前处理的运行记录。
      */
@@ -176,7 +176,7 @@ public class RunController {
     }
 
     /**
-     * principal：处理该类内部的业务逻辑或辅助计算。
+     * 从 Spring Security 认证对象提取可信主体上下文。
      *
      * @param authentication Spring Security 认证信息，用于解析当前登录主体。
      */
@@ -189,11 +189,11 @@ public class RunController {
     }
 
     /**
-     * authorize：处理该类内部的业务逻辑或辅助计算。
+     * 校验主体是否拥有目标权限，并在拒绝时记录审计事件。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
-     * @param permission 参与 authorize 处理的 permission 输入值。
-     * @param resourceType 参与 authorize 处理的 resourceType 输入值。
+     * @param permission 待校验的权限编码。
+     * @param resourceType 审计资源类型。
      * @param resourceId 目标 resource 标识，用于定位本次处理对象。
      */
     private void authorize(PrincipalRef principal, String permission, String resourceType, String resourceId) {
@@ -205,31 +205,43 @@ public class RunController {
     }
 
     /**
-     * RunRequest：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code RunRequest} 在当前流程中使用的不可变数据。
      */
     public record RunRequest(@NotBlank String input) {
     }
 
     /**
-     * RunPageResponse：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code RunPageResponse} 在当前流程中使用的不可变数据。
      */
     public record RunPageResponse(List<RunRecord> items, String nextCursor) {
+        /**
+         * 校验并构造 {@code RunPageResponse} 实例。
+         *
+         * @param items 当前页数据。
+         * @param nextCursor 下一页复合游标，可为空。
+         */
         public RunPageResponse {
             items = List.copyOf(items);
         }
     }
 
     /**
-     * RunDetailResponse：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code RunDetailResponse} 在当前流程中使用的不可变数据。
      */
     public record RunDetailResponse(RunRecord run, List<RunToolCall> toolCalls) {
+        /**
+         * 校验并构造 {@code RunDetailResponse} 实例。
+         *
+         * @param run 当前运行记录。
+         * @param toolCalls 当前运行关联的工具调用记录。
+         */
         public RunDetailResponse {
             toolCalls = List.copyOf(toolCalls);
         }
     }
 
     /**
-     * CursorPosition：不可变数据载体，用于在本模块内传递结构化信息。
+     * 封装 {@code CursorPosition} 在当前流程中使用的不可变数据。
      */
     private record CursorPosition(Instant startedAt, UUID id) {
     }

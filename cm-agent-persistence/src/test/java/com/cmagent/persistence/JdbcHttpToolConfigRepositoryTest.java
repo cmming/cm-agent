@@ -44,6 +44,9 @@ class JdbcHttpToolConfigRepositoryTest {
     private DataSource dataSource;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         dataSource = new DriverManagerDataSource(
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
@@ -55,6 +58,9 @@ class JdbcHttpToolConfigRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证持久化能够保存 {@code NestedMappingsDefaultsAndSecretReferencesWithinTenant}。
+     */
     void savesNestedMappingsDefaultsAndSecretReferencesWithinTenant() {
         HttpToolConfig configA = config(TENANT_A, TOOL_A, "https://api-a.invalid/v1/{customerId}", Duration.ofSeconds(3));
         HttpToolConfig configB = config(TENANT_B, TOOL_B, "https://api-b.invalid/v1/{customerId}", Duration.ofSeconds(5));
@@ -72,6 +78,9 @@ class JdbcHttpToolConfigRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证更新流程能够处理 {@code AndDeletesOnlyTheTargetTenantConfiguration}。
+     */
     void updatesAndDeletesOnlyTheTargetTenantConfiguration() {
         HttpToolConfig original = config(TENANT_A, TOOL_A, "https://api-a.invalid/v1/{customerId}", Duration.ofSeconds(3));
         HttpToolConfig updated = config(TENANT_A, TOOL_A, "https://api-a.invalid/v2/{customerId}", Duration.ofSeconds(7));
@@ -92,6 +101,9 @@ class JdbcHttpToolConfigRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code bulkFindUsesTenantScope} 所描述的测试场景。
+     */
     void bulkFindUsesTenantScope() {
         HttpToolConfig configA = config(TENANT_A, TOOL_A, "https://api-a.invalid/v1/{customerId}", Duration.ofSeconds(3));
         HttpToolConfig configB = config(TENANT_B, TOOL_B, "https://api-b.invalid/v1/{customerId}", Duration.ofSeconds(5));
@@ -103,6 +115,9 @@ class JdbcHttpToolConfigRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证 {@code SecretHeaderValuesThatAreNotReferencesBeforePersistence} 异常场景会被正确拒绝。
+     */
     void rejectsSecretHeaderValuesThatAreNotReferencesBeforePersistence() {
         assertThatThrownBy(() -> repository.save(new HttpToolConfig(
                 TENANT_A, TOOL_A, HttpToolMethod.POST, "https://api-a.invalid", "{}", List.of(),
@@ -112,6 +127,9 @@ class JdbcHttpToolConfigRepositoryTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code concurrentFirstSavesAreIdempotent} 所描述的测试场景。
+     */
     void concurrentFirstSavesAreIdempotent() throws Exception {
         HttpToolConfig first = config(TENANT_A, TOOL_A, "https://api-a.invalid/v1/{customerId}", Duration.ofSeconds(3));
         HttpToolConfig second = config(TENANT_A, TOOL_A, "https://api-a.invalid/v2/{customerId}", Duration.ofSeconds(4));
@@ -135,6 +153,14 @@ class JdbcHttpToolConfigRepositoryTest {
         assertThat(repository.findByTenantAndToolId(TENANT_A, TOOL_A)).get().isIn(first, second);
     }
 
+    /**
+     * 验证或支持 {@code saveAfterStart} 所描述的测试场景。
+     *
+     * @param repository 测试仓储
+     * @param config 测试配置
+     * @param ready 测试辅助方法使用的 ready 参数
+     * @param start 测试辅助方法使用的 start 参数
+     */
     private static void saveAfterStart(
             JdbcHttpToolConfigRepository repository,
             HttpToolConfig config,
@@ -146,6 +172,11 @@ class JdbcHttpToolConfigRepositoryTest {
         repository.save(config);
     }
 
+    /**
+     * 验证或支持 {@code awaitStart} 所描述的测试场景。
+     *
+     * @param start 测试辅助方法使用的 start 参数
+     */
     private static void awaitStart(CountDownLatch start) {
         try {
             start.await();
@@ -155,6 +186,11 @@ class JdbcHttpToolConfigRepositoryTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code repository} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private static JdbcHttpToolConfigRepository repository(DataSource dataSource) {
         return new JdbcHttpToolConfigRepository(
                 JdbcClient.create(dataSource),
@@ -163,6 +199,14 @@ class JdbcHttpToolConfigRepositoryTest {
         );
     }
 
+    /**
+     * 构造测试配置。
+     *
+     * @param tenantId 测试租户标识
+     * @param toolId 测试工具标识
+     * @param urlTemplate 测试辅助方法使用的 urlTemplate 参数
+     * @param timeout 测试超时
+     */
     static HttpToolConfig config(UUID tenantId, UUID toolId, String urlTemplate, Duration timeout) {
         return new HttpToolConfig(
                 tenantId,
@@ -183,6 +227,11 @@ class JdbcHttpToolConfigRepositoryTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code seedData} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     static void seedData(DataSource dataSource) {
         JdbcClient jdbc = JdbcClient.create(dataSource);
         Timestamp now = Timestamp.from(Instant.parse("2026-07-21T00:00:00Z"));
@@ -192,11 +241,28 @@ class JdbcHttpToolConfigRepositoryTest {
         insertTool(jdbc, TOOL_B, TENANT_B, "http-b", now);
     }
 
+    /**
+     * 验证或支持 {@code insertTenant} 所描述的测试场景。
+     *
+     * @param jdbc 测试辅助方法使用的 jdbc 参数
+     * @param tenantId 测试租户标识
+     * @param code 测试辅助方法使用的 code 参数
+     * @param now 测试辅助方法使用的 now 参数
+     */
     static void insertTenant(JdbcClient jdbc, UUID tenantId, String code, Timestamp now) {
         jdbc.sql("INSERT INTO tenants (id, code, name, enabled, created_at) VALUES (:id, :code, :name, true, :createdAt)")
                 .param("id", tenantId.toString()).param("code", code).param("name", code).param("createdAt", now).update();
     }
 
+    /**
+     * 验证或支持 {@code insertTool} 所描述的测试场景。
+     *
+     * @param jdbc 测试辅助方法使用的 jdbc 参数
+     * @param toolId 测试工具标识
+     * @param tenantId 测试租户标识
+     * @param name 测试对象名称
+     * @param now 测试辅助方法使用的 now 参数
+     */
     static void insertTool(JdbcClient jdbc, UUID toolId, UUID tenantId, String name, Timestamp now) {
         jdbc.sql("""
                         INSERT INTO tool_definitions (id, tenant_id, name, description, type, input_schema, risk_level,

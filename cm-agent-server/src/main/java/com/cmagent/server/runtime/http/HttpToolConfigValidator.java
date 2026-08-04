@@ -43,7 +43,7 @@ public class HttpToolConfigValidator {
     private final Schema metaSchema;
     private final HttpToolSchemaNavigator schemaNavigator;
     /**
-     * HttpToolConfigValidator：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code HttpToolConfigValidator} 实例并保存其运行所需依赖。
      *
      * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
      */
@@ -70,18 +70,18 @@ public class HttpToolConfigValidator {
         validateMappings(config, rootSchema);
     }
     /**
-     * parseAndValidateSchema：读取并解析输入内容。
+     * 严格解析并校验工具输入 JSON Schema。
      *
-     * @param config 待处理的工具或运行时配置。
+     * @param config 待解析并完整校验的动态 HTTP 工具配置
      */
     JsonNode parseAndValidateSchema(HttpToolConfig config) {
         validate(config);
         return parseJsonStrict(config.inputSchema(), "inputSchema 不是合法 JSON");
     }
     /**
-     * compile：处理该类内部的业务逻辑或辅助计算。
+     * 编译 JSON Schema，供运行时输入校验复用。
      *
-     * @param schemaNode 参与 compile 处理的 schemaNode 输入值。
+     * @param schemaNode 当前分析的 Schema 节点。
      */
     Schema compile(JsonNode schemaNode) {
         try {
@@ -93,10 +93,10 @@ public class HttpToolConfigValidator {
         }
     }
     /**
-     * isArrayAt：判断当前条件是否成立。
+     * 判断指定 JSON Pointer 在 Schema 中是否指向数组。
      *
-     * @param rootSchema 参与 isArrayAt 处理的 rootSchema 输入值。
-     * @param sourcePointer 参与 isArrayAt 处理的 sourcePointer 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param sourcePointer 参数映射使用的源 JSON Pointer。
      */
     boolean isArrayAt(JsonNode rootSchema, String sourcePointer) {
         HttpToolSchemaNavigator.SchemaShape shape = schemaNavigator.analyzeSourceShape(
@@ -114,10 +114,10 @@ public class HttpToolConfigValidator {
         return false;
     }
     /**
-     * pointerTokens：处理该类内部的业务逻辑或辅助计算。
+     * 将 JSON Pointer 拆分为已反转义的路径片段。
      *
-     * @param pointer 参与 pointerTokens 处理的 pointer 输入值。
-     * @param fieldName 参与 pointerTokens 处理的 fieldName 输入值。
+     * @param pointer 待解析的 JSON Pointer。
+     * @param fieldName 当前遍历的 Schema 字段名。
      */
     static List<String> pointerTokens(String pointer, String fieldName) {
         if (pointer == null || (!pointer.isEmpty() && !pointer.startsWith("/"))) {
@@ -144,10 +144,10 @@ public class HttpToolConfigValidator {
     }
 
     /**
-     * parseJsonStrict：读取并解析输入内容。
+     * 严格解析 JSON，拒绝重复字段和尾随内容。
      *
-     * @param value 参与 parseJsonStrict 处理的 value 输入值。
-     * @param errorMessage 参与 parseJsonStrict 处理的 errorMessage 输入值。
+     * @param value 待检查、转换或规范化的值。
+     * @param errorMessage 配置不合法时使用的受控错误说明。
      */
     private JsonNode parseJsonStrict(String value, String errorMessage) {
         try {
@@ -164,9 +164,9 @@ public class HttpToolConfigValidator {
     }
 
     /**
-     * validateSchemaDocument：校验输入、状态或前置条件。
+     * 校验 Schema 根节点和允许使用的关键字。
      *
-     * @param rootSchema 参与 validateSchemaDocument 处理的 rootSchema 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
      */
     private void validateSchemaDocument(JsonNode rootSchema) {
         if (!rootSchema.isObject()) {
@@ -187,10 +187,10 @@ public class HttpToolConfigValidator {
     }
 
     /**
-     * validateMappings：校验输入、状态或前置条件。
+     * 校验参数映射的源路径、目标位置和重复冲突。
      *
-     * @param config 待处理的工具或运行时配置。
-     * @param rootSchema 参与 validateMappings 处理的 rootSchema 输入值。
+     * @param config 提供输入 Schema 和参数映射规则的动态 HTTP 工具配置
+     * @param rootSchema 工具输入的根 JSON Schema。
      */
     private void validateMappings(HttpToolConfig config, JsonNode rootSchema) {
         Set<String> targets = new HashSet<>();
@@ -213,10 +213,10 @@ public class HttpToolConfigValidator {
     }
 
     /**
-     * validateDefault：校验输入、状态或前置条件。
+     * 校验映射默认值与源 Schema 类型兼容。
      *
-     * @param mapping 参与 validateDefault 处理的 mapping 输入值。
-     * @param rootSchema 参与 validateDefault 处理的 rootSchema 输入值。
+     * @param mapping 当前 HTTP 参数映射。
+     * @param rootSchema 工具输入的根 JSON Schema。
      */
     private void validateDefault(HttpParameterMapping mapping, JsonNode rootSchema) {
         if (!mapping.hasDefaultValue()) {
@@ -241,11 +241,11 @@ public class HttpToolConfigValidator {
     }
 
     /**
-     * copyDefinitionKeyword：处理该类内部的业务逻辑或辅助计算。
+     * 复制并规范化 definitions 或 $defs 关键字。
      *
-     * @param source 参与 copyDefinitionKeyword 处理的 source 输入值。
-     * @param target 参与 copyDefinitionKeyword 处理的 target 输入值。
-     * @param keyword 参与 copyDefinitionKeyword 处理的 keyword 输入值。
+     * @param source 待转换或复制的源节点。
+     * @param target 目标 JSON 节点、路径或业务对象。
+     * @param keyword 当前处理的 JSON Schema 关键字。
      */
     private static void copyDefinitionKeyword(JsonNode source, ObjectNode target, String keyword) {
         if (source.has(keyword)) {
@@ -254,10 +254,10 @@ public class HttpToolConfigValidator {
     }
 
     /**
-     * validateLocationType：校验输入、状态或前置条件。
+     * 校验参数值类型适合目标 HTTP 位置。
      *
-     * @param mapping 参与 validateLocationType 处理的 mapping 输入值。
-     * @param rootSchema 参与 validateLocationType 处理的 rootSchema 输入值。
+     * @param mapping 当前 HTTP 参数映射。
+     * @param rootSchema 工具输入的根 JSON Schema。
      */
     private void validateLocationType(HttpParameterMapping mapping, JsonNode rootSchema) {
         if (mapping.location() == HttpParameterLocation.BODY) {
@@ -279,13 +279,13 @@ public class HttpToolConfigValidator {
     }
 
     /**
-     * validateTarget：校验输入、状态或前置条件。
+     * 校验目标名称、路径占位符和请求体指针。
      *
-     * @param mapping 参与 validateTarget 处理的 mapping 输入值。
-     * @param targets 参与 validateTarget 处理的 targets 集合。
-     * @param bodyTargets 参与 validateTarget 处理的 bodyTargets 集合。
-     * @param bodyContainerShapes 参与 validateTarget 处理的 bodyContainerShapes 集合。
-     * @param pathTargets 参与 validateTarget 处理的 pathTargets 集合。
+     * @param mapping 当前 HTTP 参数映射。
+     * @param targets 已经占用的目标位置集合。
+     * @param bodyTargets 已经占用的 BODY JSON Pointer 集合。
+     * @param bodyContainerShapes 各 BODY 路径要求的容器形态索引。
+     * @param pathTargets URL 模板中已声明的路径占位符集合。
      */
     private void validateTarget(
             HttpParameterMapping mapping,
@@ -327,10 +327,10 @@ public class HttpToolConfigValidator {
     }
 
     /**
-     * validateBodyContainerShapes：校验输入、状态或前置条件。
+     * 校验多个 BODY 映射不会要求冲突的容器类型。
      *
-     * @param target 参与 validateBodyContainerShapes 处理的 target 输入值。
-     * @param bodyContainerShapes 参与 validateBodyContainerShapes 处理的 bodyContainerShapes 集合。
+     * @param target 目标 JSON 节点、路径或业务对象。
+     * @param bodyContainerShapes 各 BODY 路径要求的容器形态索引。
      */
     private void validateBodyContainerShapes(
             List<String> target,
@@ -349,9 +349,9 @@ public class HttpToolConfigValidator {
     }
 
     /**
-     * extractPathPlaceholders：处理该类内部的业务逻辑或辅助计算。
+     * 提取 URL 模板中的路径占位符集合。
      *
-     * @param urlTemplate 参与 extractPathPlaceholders 处理的 urlTemplate 输入值。
+     * @param urlTemplate HTTP 工具配置的 URL 模板。
      */
     private static Set<String> extractPathPlaceholders(String urlTemplate) {
         Set<String> placeholders = new LinkedHashSet<>();
@@ -363,17 +363,17 @@ public class HttpToolConfigValidator {
     }
 
     /**
-     * isPrefix：判断当前条件是否成立。
+     * 判断一个 JSON Pointer 片段序列是否为另一个的前缀。
      *
-     * @param prefix 参与 isPrefix 处理的 prefix 输入值。
-     * @param value 参与 isPrefix 处理的 value 输入值。
+     * @param prefix 待匹配的网络或路径前缀。
+     * @param value 待检查、转换或规范化的值。
      */
     private static boolean isPrefix(List<String> prefix, List<String> value) {
         return prefix.size() <= value.size() && value.subList(0, prefix.size()).equals(prefix);
     }
 
     /**
-     * ContainerShape：枚举本模块使用的有限状态或类型。
+     * 封装 {@code ContainerShape} 在 HTTP 工具流程中使用的不可变数据。
      */
     private enum ContainerShape {
         /** 当前节点按 JSON 对象容器处理。 */

@@ -31,14 +31,14 @@ public class McpPublicationService {
     private final AuditAppender auditAppender;
     private final TransactionTemplate transactionTemplate;
     /**
-     * McpPublicationService：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code McpPublicationService} 实例并保存其运行所需依赖。
      *
-     * @param toolRepository 参与 McpPublicationService 处理的 toolRepository 输入值。
-     * @param httpToolConfigRepository 参与 McpPublicationService 处理的 httpToolConfigRepository 输入值。
-     * @param publicationRepository 参与 McpPublicationService 处理的 publicationRepository 输入值。
-     * @param registry 参与 McpPublicationService 处理的 registry 输入值。
-     * @param auditAppender 参与 McpPublicationService 处理的 auditAppender 输入值。
-     * @param transactionTemplate 参与 McpPublicationService 处理的 transactionTemplate 输入值。
+     * @param toolRepository 工具定义仓储。
+     * @param httpToolConfigRepository 负责访问相关领域数据的仓储。
+     * @param publicationRepository 负责访问相关领域数据的仓储。
+     * @param registry 本地工具执行器注册表。
+     * @param auditAppender 负责追加安全审计事件的组件。
+     * @param transactionTemplate 保证多步写入原子性的事务模板。
      */
     public McpPublicationService(
             ToolDefinitionRepository toolRepository,
@@ -108,7 +108,7 @@ public class McpPublicationService {
     }
 
     /**
-     * publishAndAudit：处理该类内部的业务逻辑或辅助计算。
+     * 发布工具并记录成功或失败审计。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param publication 待保存或校验的 MCP 发布记录。
@@ -121,7 +121,7 @@ public class McpPublicationService {
     }
 
     /**
-     * unpublishAndAudit：删除或撤销当前目标的关联状态。
+     * 取消工具发布并记录成功或失败审计。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param tool 当前处理的工具定义。
@@ -133,7 +133,7 @@ public class McpPublicationService {
     }
 
     /**
-     * findVisibleTool：查询并返回当前上下文中的匹配结果。
+     * 查询当前租户内仍可见的工具。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -147,7 +147,7 @@ public class McpPublicationService {
     }
 
     /**
-     * validatePublishable：校验输入、状态或前置条件。
+     * 校验工具类型、状态和运行配置是否允许发布。
      *
      * @param tool 当前处理的工具定义。
      */
@@ -165,7 +165,7 @@ public class McpPublicationService {
     }
 
     /**
-     * rejectConflictingEnabledName：处理该类内部的业务逻辑或辅助计算。
+     * 拒绝不满足安全或一致性要求的输入。
      *
      * @param tool 当前处理的工具定义。
      */
@@ -184,7 +184,7 @@ public class McpPublicationService {
     }
 
     /**
-     * isSameRegistration：判断当前条件是否成立。
+     * 判断两个本地工具注册是否指向同一执行器。
      *
      * @param tool 当前处理的工具定义。
      */
@@ -198,11 +198,11 @@ public class McpPublicationService {
     }
 
     /**
-     * restore：处理该类内部的业务逻辑或辅助计算。
+     * 在事务失败时恢复原 MCP 发布状态。
      *
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
-     * @param previous 参与 restore 处理的 previous 集合。
+     * @param previous 更新前的 MCP 发布记录，用于失败补偿
      */
     private void restore(UUID tenantId, UUID toolId, Optional<McpToolPublication> previous) {
         if (previous.isPresent()) {

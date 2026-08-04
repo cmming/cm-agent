@@ -24,10 +24,10 @@ public class HttpToolInputMapper {
     private final ObjectMapper objectMapper;
     private final HttpToolConfigValidator configValidator;
     /**
-     * HttpToolInputMapper：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code HttpToolInputMapper} 实例并保存其运行所需依赖。
      *
      * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
-     * @param configValidator 参与 HttpToolInputMapper 处理的 configValidator 输入值。
+     * @param configValidator 复用严格 JSON Schema 校验规则的组件。
      */
     public HttpToolInputMapper(ObjectMapper objectMapper, HttpToolConfigValidator configValidator) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
@@ -59,11 +59,11 @@ public class HttpToolInputMapper {
     }
 
     /**
-     * applyDefaults：处理该类内部的业务逻辑或辅助计算。
+     * 把映射默认值补入缺失或显式为 null 的输入位置。
      *
-     * @param config 待处理的工具或运行时配置。
-     * @param rootSchema 参与 applyDefaults 处理的 rootSchema 输入值。
-     * @param effectiveInput 参与 applyDefaults 处理的 effectiveInput 输入值。
+     * @param config 提供默认值和参数映射规则的动态 HTTP 工具配置
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param effectiveInput 应用默认值后的有效输入副本。
      */
     private void applyDefaults(HttpToolConfig config, JsonNode rootSchema, ObjectNode effectiveInput) {
         for (HttpParameterMapping mapping : config.parameterMappings()) {
@@ -77,10 +77,10 @@ public class HttpToolInputMapper {
     }
 
     /**
-     * ensureRequiredMappings：校验输入、状态或前置条件。
+     * 确认所有必填映射在默认值处理后都有输入。
      *
-     * @param config 待处理的工具或运行时配置。
-     * @param effectiveInput 参与 ensureRequiredMappings 处理的 effectiveInput 输入值。
+     * @param config 提供必填参数映射规则的动态 HTTP 工具配置
+     * @param effectiveInput 应用默认值后的有效输入副本。
      */
     private void ensureRequiredMappings(HttpToolConfig config, ObjectNode effectiveInput) {
         for (HttpParameterMapping mapping : config.parameterMappings()) {
@@ -92,10 +92,10 @@ public class HttpToolInputMapper {
     }
 
     /**
-     * mapValues：转换内部数据为目标表示。
+     * 把输入值按配置分别映射到 PATH、QUERY、HEADER 和 BODY。
      *
-     * @param config 待处理的工具或运行时配置。
-     * @param effectiveInput 参与 mapValues 处理的 effectiveInput 输入值。
+     * @param config 提供各 HTTP 位置映射规则的动态 HTTP 工具配置
+     * @param effectiveInput 应用默认值后的有效输入副本。
      */
     private PreparedHttpToolRequest mapValues(HttpToolConfig config, ObjectNode effectiveInput) {
         Map<String, String> pathValues = new LinkedHashMap<>();
@@ -124,9 +124,9 @@ public class HttpToolInputMapper {
     }
 
     /**
-     * parseDefault：读取并解析输入内容。
+     * 将映射默认值解析为 JSON 节点。
      *
-     * @param defaultValueJson 参与 parseDefault 处理的 defaultValueJson 输入值。
+     * @param defaultValueJson 映射配置中的默认值 JSON 文本。
      */
     private JsonNode parseDefault(String defaultValueJson) {
         try {
@@ -137,9 +137,9 @@ public class HttpToolInputMapper {
     }
 
     /**
-     * scalarText：处理该类内部的业务逻辑或辅助计算。
+     * 将标量节点转换为可写入路径或请求头的文本。
      *
-     * @param value 参与 scalarText 处理的 value 输入值。
+     * @param value 待检查、转换或规范化的值。
      */
     private static String scalarText(JsonNode value) {
         if (!value.isValueNode() || value.isNull()) {
@@ -149,9 +149,9 @@ public class HttpToolInputMapper {
     }
 
     /**
-     * queryTexts：处理该类内部的业务逻辑或辅助计算。
+     * 将标量或标量数组转换为查询参数值列表。
      *
-     * @param value 参与 queryTexts 处理的 value 输入值。
+     * @param value 待检查、转换或规范化的值。
      */
     private static List<String> queryTexts(JsonNode value) {
         if (!value.isArray()) {
@@ -163,11 +163,11 @@ public class HttpToolInputMapper {
     }
 
     /**
-     * setObjectPath：更新当前配置或状态。
+     * 沿 JSON Pointer 创建对象层级并写入目标值。
      *
-     * @param root 参与 setObjectPath 处理的 root 输入值。
-     * @param tokens 参与 setObjectPath 处理的 tokens 集合。
-     * @param value 参与 setObjectPath 处理的 value 输入值。
+     * @param root 当前处理的 JSON 根节点。
+     * @param tokens 拆分并反转义后的路径片段列表。
+     * @param value 待检查、转换或规范化的值。
      */
     private static void setObjectPath(ObjectNode root, List<String> tokens, JsonNode value) {
         if (tokens.isEmpty()) {
@@ -216,12 +216,12 @@ public class HttpToolInputMapper {
     }
 
     /**
-     * setInputPath：更新当前配置或状态。
+     * 沿输入路径创建对象或数组容器并写入默认值。
      *
-     * @param root 参与 setInputPath 处理的 root 输入值。
-     * @param rootSchema 参与 setInputPath 处理的 rootSchema 输入值。
-     * @param tokens 参与 setInputPath 处理的 tokens 集合。
-     * @param value 参与 setInputPath 处理的 value 输入值。
+     * @param root 当前处理的 JSON 根节点。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param tokens 拆分并反转义后的路径片段列表。
+     * @param value 待检查、转换或规范化的值。
      */
     private void setInputPath(ObjectNode root, JsonNode rootSchema, List<String> tokens, JsonNode value) {
         if (tokens.isEmpty()) {
@@ -270,11 +270,11 @@ public class HttpToolInputMapper {
     }
 
     /**
-     * shouldCreateArray：处理该类内部的业务逻辑或辅助计算。
+     * 根据下一路径片段判断是否需要创建数组容器。
      *
-     * @param rootSchema 参与 shouldCreateArray 处理的 rootSchema 输入值。
-     * @param tokens 参与 shouldCreateArray 处理的 tokens 集合。
-     * @param inclusiveIndex 参与 shouldCreateArray 处理的 inclusiveIndex 输入值。
+     * @param rootSchema 工具输入的根 JSON Schema。
+     * @param tokens 拆分并反转义后的路径片段列表。
+     * @param inclusiveIndex 包含当前位的前缀末端下标。
      */
     private boolean shouldCreateArray(JsonNode rootSchema, List<String> tokens, int inclusiveIndex) {
         StringBuilder pointer = new StringBuilder();
@@ -285,18 +285,18 @@ public class HttpToolInputMapper {
     }
 
     /**
-     * objectMapperArrayNode：处理该类内部的业务逻辑或辅助计算。
+     * 创建与当前映射器兼容的空数组节点。
      *
-     * @param parent 参与 objectMapperArrayNode 处理的 parent 输入值。
+     * @param parent 当前路径片段的父容器。
      */
     private static ArrayNode objectMapperArrayNode(ArrayNode parent) {
         return parent.arrayNode();
     }
 
     /**
-     * objectMapperObjectNode：处理该类内部的业务逻辑或辅助计算。
+     * 创建与当前映射器兼容的空对象节点。
      *
-     * @param parent 参与 objectMapperObjectNode 处理的 parent 输入值。
+     * @param parent 当前路径片段的父容器。
      */
     private static ObjectNode objectMapperObjectNode(ArrayNode parent) {
         return parent.objectNode();

@@ -26,6 +26,11 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
 
     /**
      * 创建运行时适配器实例。
+      *
+      * @param credentialProvider 按租户和模型配置解析凭据的组件
+      * @param toolGateway 受治理的工具调用网关
+      * @param executor AgentScope 或异步任务执行器
+      * @param clock 提供可测试时间的时钟
      */
     AgentScopeRuntimeAdapter(
             ModelCredentialProvider credentialProvider,
@@ -41,6 +46,11 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
 
     /**
      * 根据运行时选项创建使用默认执行器的适配器。
+      *
+      * @param credentialProvider 按租户和模型配置解析凭据的组件
+      * @param toolGateway 受治理的工具调用网关
+      * @param options AgentScope 运行选项
+      * @param clock 提供可测试时间的时钟
      */
     public static AgentScopeRuntimeAdapter create(
             ModelCredentialProvider credentialProvider,
@@ -57,6 +67,8 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
 
     /**
      * 将领域运行请求包装为 AgentScope 执行规格。
+      *
+      * @param request 当前运行或工具调用请求
      */
     public AgentScopeRunSpec toRunSpec(AgentRunRequest request) {
         return new AgentScopeRunSpec(request);
@@ -64,6 +76,8 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
 
     /**
      * 执行一次运行请求，并将凭据异常转换为失败结果。
+      *
+      * @param request 当前运行或工具调用请求
      */
     @Override
     public AgentRunResult run(AgentRunRequest request) {

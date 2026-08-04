@@ -17,6 +17,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class FakeAgentRuntimeTest {
 
     @Test
+    /**
+     * 验证或支持 {@code echoRunInputForDeterministicTests} 所描述的测试场景。
+     */
     void echoRunInputForDeterministicTests() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID modelId = UUID.fromString("00000000-0000-0000-0000-000000000401");

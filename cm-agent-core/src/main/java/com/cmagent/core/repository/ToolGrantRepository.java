@@ -6,36 +6,54 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * ToolGrantRepository 的核心领域类型。
+ * 定义 Agent 与工具授权关系的保存和查询契约。
  */
 public interface ToolGrantRepository {
     /**
-     * 定义 save 操作。
+     * 在当前租户边界内保存领域记录。
+      *
+      * @param grant 工具授权定义
      */
     ToolGrant save(ToolGrant grant);
 
     /**
-     * 定义 listByTenant 操作。
+     * 按租户边界列出可见记录。
+      *
+      * @param tenantId 当前租户标识
      */
     List<ToolGrant> listByTenant(UUID tenantId);
 
     /**
-     * 定义 listByTenantAndAgent 操作。
+     * 按租户和 Agent 标识列出授权记录。
+      *
+      * @param tenantId 当前租户标识
+      * @param agentId 目标 Agent 标识
      */
     List<ToolGrant> listByTenantAndAgent(UUID tenantId, UUID agentId);
 
     /**
-     * 定义 listByTenantAgentAndTool 操作。
+     * 按租户、Agent 和工具标识精确查询授权记录。
+      *
+      * @param tenantId 当前租户标识
+      * @param agentId 目标 Agent 标识
+      * @param toolId 目标工具标识
      */
     List<ToolGrant> listByTenantAgentAndTool(UUID tenantId, UUID agentId, UUID toolId);
 
     /**
      * 删除指定租户中 Agent 对工具的授权。
+      *
+      * @param tenantId 当前租户标识
+      * @param agentId 目标 Agent 标识
+      * @param toolId 目标工具标识
      */
     void delete(UUID tenantId, UUID agentId, UUID toolId);
 
     /**
      * 删除指定租户中工具的全部授权。
+      *
+      * @param tenantId 当前租户标识
+      * @param toolId 目标工具标识
      */
     void deleteByTenantAndToolId(UUID tenantId, UUID toolId);
 }

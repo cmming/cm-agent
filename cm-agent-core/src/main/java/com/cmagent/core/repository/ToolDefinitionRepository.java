@@ -7,11 +7,13 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * ToolDefinitionRepository 的核心领域类型。
+ * 定义工具元数据按租户保存、查询和删除的持久化契约。
  */
 public interface ToolDefinitionRepository {
     /**
-     * 定义 save 操作。
+     * 在当前租户边界内保存领域记录。
+      *
+      * @param tool 当前工具定义
      */
     ToolDefinition save(ToolDefinition tool);
 
@@ -23,6 +25,8 @@ public interface ToolDefinitionRepository {
      * 复活任意已删除工具。</p>
      *
      * @return 匹配墓碑并完成恢复时返回 {@code true}，没有匹配墓碑时返回 {@code false}
+      *
+      * @param tool 当前工具定义
      */
     default boolean restoreManagedLocalTool(ToolDefinition tool) {
         return false;
@@ -33,6 +37,8 @@ public interface ToolDefinitionRepository {
      *
      * <p>实现必须要求租户、ID、墓碑原名称和类型与快照完全匹配。业务创建和重新安装流程不得
      * 调用该方法。</p>
+      *
+      * @param tool 当前工具定义
      */
     default boolean restoreDeletedToolForCompensation(ToolDefinition tool) {
         return false;
@@ -40,11 +46,16 @@ public interface ToolDefinitionRepository {
 
     /**
      * 更新指定租户中的工具定义。
+      *
+      * @param tool 当前工具定义
      */
     ToolDefinition update(ToolDefinition tool);
 
     /**
-     * 定义 findByTenantAndId 操作。
+     * 按租户和资源标识查询唯一记录。
+      *
+      * @param tenantId 当前租户标识
+      * @param toolId 目标工具标识
      */
     Optional<ToolDefinition> findByTenantAndId(UUID tenantId, UUID toolId);
 
@@ -52,13 +63,18 @@ public interface ToolDefinitionRepository {
      * 在当前事务中读取并锁定指定租户的工具定义。
      *
      * <p>不支持数据库行锁的实现沿用普通租户范围读取；JDBC 实现应覆盖此方法并持有行锁直至事务结束。</p>
+      *
+      * @param tenantId 当前租户标识
+      * @param toolId 目标工具标识
      */
     default Optional<ToolDefinition> findByTenantAndIdForUpdate(UUID tenantId, UUID toolId) {
         return findByTenantAndId(tenantId, toolId);
     }
 
     /**
-     * 定义 listByTenant 操作。
+     * 按租户边界列出可见记录。
+      *
+      * @param tenantId 当前租户标识
      */
     List<ToolDefinition> listByTenant(UUID tenantId);
 
@@ -66,11 +82,17 @@ public interface ToolDefinitionRepository {
      * 判断工具是否已经产生需要长期保留的调用历史。
      *
      * <p>调用历史存在时不得物理删除工具定义，否则会破坏运行历史的可追溯性。</p>
+      *
+      * @param tenantId 当前租户标识
+      * @param toolId 目标工具标识
      */
     boolean hasToolCallHistory(UUID tenantId, UUID toolId);
 
     /**
      * 从管理面删除工具，但实现必须保留运行中调用稍后写入历史所需的引用锚点。
+      *
+      * @param tenantId 当前租户标识
+      * @param toolId 目标工具标识
      */
     void delete(UUID tenantId, UUID toolId);
 }

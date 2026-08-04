@@ -3,7 +3,7 @@ package com.cmagent.core.domain;
 import java.util.UUID;
 
 /**
- * ToolDefinition 的核心领域类型。
+ * 描述租户内工具的名称、类型、风险级别、输入模式和启用状态。
  */
 public record ToolDefinition(
         UUID id,

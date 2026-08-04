@@ -36,14 +36,14 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
     private final AuditAppender auditAppender;
     private final SensitiveDataRedactor redactor;
     /**
-     * GovernedToolInvocationService：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code GovernedToolInvocationService} 实例并保存其运行所需依赖。
      *
-     * @param toolRepository 参与 GovernedToolInvocationService 处理的 toolRepository 输入值。
-     * @param grantRepository 参与 GovernedToolInvocationService 处理的 grantRepository 输入值。
-     * @param policy 参与 GovernedToolInvocationService 处理的 policy 输入值。
-     * @param executionService 参与 GovernedToolInvocationService 处理的 executionService 输入值。
-     * @param auditAppender 参与 GovernedToolInvocationService 处理的 auditAppender 输入值。
-     * @param redactor 参与 GovernedToolInvocationService 处理的 redactor 输入值。
+     * @param toolRepository 负责访问领域数据的仓储。
+     * @param grantRepository 负责访问领域数据的仓储。
+     * @param policy 工具调用授权策略
+     * @param executionService 执行已准备工具的服务。
+     * @param auditAppender 负责追加安全审计事件的组件。
+     * @param redactor 负责清理敏感文本的脱敏器。
      */
     public GovernedToolInvocationService(
             ToolDefinitionRepository toolRepository,
@@ -117,10 +117,10 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
     }
 
     /**
-     * isVisibleDefinition：判断当前条件是否成立。
+     * 判断重新读取的工具定义是否仍与调用快照一致。
      *
-     * @param request 当前业务请求参数，承载调用方提交的数据。
-     * @param definition 参与 isVisibleDefinition 处理的 definition 输入值。
+     * @param request 包含租户、主体、Agent、运行和工具输入的治理调用请求
+     * @param definition 当前工具定义
      */
     private boolean isVisibleDefinition(ToolInvocationRequest request, ToolDefinition definition) {
         return definition.enabled()
@@ -130,10 +130,10 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
     }
 
     /**
-     * appendAudit：追加处理结果或审计记录。
+     * 使用调用请求中的可信上下文追加工具调用审计事件。
      *
-     * @param request 当前业务请求参数，承载调用方提交的数据。
-     * @param eventType 参与 appendAudit 处理的 eventType 输入值。
+     * @param request 包含租户、主体、Agent、运行和工具输入的治理调用请求
+     * @param eventType 工具调用审计事件类型
      * @param status 当前处理状态，用于驱动状态分支或记录结果。
      * @param message 处理结果或审计消息。
      */

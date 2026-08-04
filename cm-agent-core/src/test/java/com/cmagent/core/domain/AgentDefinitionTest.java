@@ -10,6 +10,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AgentDefinitionTest {
 
     @Test
+    /**
+     * 验证或支持 {@code createEnabledAgentWithTenantAndTools} 所描述的测试场景。
+     */
     void createEnabledAgentWithTenantAndTools() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         UUID toolId = UUID.fromString("00000000-0000-0000-0000-000000000101");

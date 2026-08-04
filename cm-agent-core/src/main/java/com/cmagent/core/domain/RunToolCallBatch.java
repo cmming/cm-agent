@@ -9,7 +9,10 @@ import java.util.UUID;
  */
 public record RunToolCallBatch(UUID tenantId, List<RunToolCall> toolCalls) {
     /**
-     * 构造 RunToolCallBatch 实例并校验输入参数。
+     * 校验批次归属并复制工具调用集合，防止外部修改。
+      *
+      * @param tenantId 当前租户标识
+      * @param toolCalls 本次运行产生的工具调用记录
      */
     public RunToolCallBatch {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
@@ -21,6 +24,8 @@ public record RunToolCallBatch(UUID tenantId, List<RunToolCall> toolCalls) {
 
     /**
      * Verifies the explicit repository scope before an implementation performs its first write.
+      *
+      * @param tenantId 当前租户标识
      */
     public void requireTenant(UUID tenantId) {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");

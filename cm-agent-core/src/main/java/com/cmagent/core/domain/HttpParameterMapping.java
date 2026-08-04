@@ -3,7 +3,7 @@ package com.cmagent.core.domain;
 import java.util.Objects;
 
 /**
- * HttpParameterMapping 的核心领域类型。
+ * 定义工具输入字段到路径、查询、请求头或请求体的映射规则。
  */
 public record HttpParameterMapping(
         String sourcePointer,
@@ -15,7 +15,14 @@ public record HttpParameterMapping(
 ) {
 
     /**
-     * 构造 HttpParameterMapping 实例并校验输入参数。
+     * 校验参数源指针与目标 HTTP 位置的映射约束。
+      *
+      * @param sourcePointer 参数映射源 JSON Pointer
+      * @param location 参数写入的 HTTP 位置
+      * @param targetName 目标参数名称
+      * @param targetPointer 请求体目标 JSON Pointer
+      * @param required 参数是否必填
+      * @param defaultValueJson 默认值 JSON 文本
      */
     public HttpParameterMapping {
         sourcePointer = Objects.requireNonNull(sourcePointer, "sourcePointer 不能为空");
@@ -36,7 +43,9 @@ public record HttpParameterMapping(
     }
 
     /**
-     * 执行 hasDefaultValue 操作。
+     * 判断当前参数映射是否声明了可用的默认值。
+     *
+     * @return 默认值 JSON 非空时返回 {@code true}
      */
     public boolean hasDefaultValue() {
         return !defaultValueJson.isBlank();

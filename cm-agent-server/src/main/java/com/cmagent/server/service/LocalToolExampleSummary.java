@@ -16,6 +16,18 @@ public record LocalToolExampleSummary(
         boolean installed,
         boolean runtimeReady
 ) {
+    /**
+     * 校验并构造 {@code LocalToolExampleSummary} 实例。
+     *
+     * @param key 本地示例工具键
+     * @param toolId 目标工具标识
+     * @param name 目标对象名称。
+     * @param description 目标对象说明。
+     * @param inputSchema 工具输入 JSON Schema。
+     * @param sampleInput 推荐的示例工具输入。
+     * @param installed 示例工具是否已经安装。
+     * @param runtimeReady 本地工具执行器是否已注册。
+     */
     public LocalToolExampleSummary {
         key = Objects.requireNonNull(key, "key 不能为空");
         toolId = Objects.requireNonNull(toolId, "toolId 不能为空");
@@ -26,11 +38,17 @@ public record LocalToolExampleSummary(
     }
 
     @Override
+    /**
+     * 解析并返回示例工具的输入 Schema。
+     */
     public JsonNode inputSchema() {
         return inputSchema.deepCopy();
     }
 
     @Override
+    /**
+     * 解析并返回示例工具的推荐输入。
+     */
     public JsonNode sampleInput() {
         return sampleInput.deepCopy();
     }

@@ -31,13 +31,13 @@ public class ToolDebugService {
     private final ToolOutputSanitizer sanitizer;
     private final HttpToolProperties httpToolProperties;
     /**
-     * ToolDebugService：转换内部数据为目标表示。
+     * 创建 {@code ToolDebugService} 实例并保存其运行所需依赖。
      *
-     * @param toolRepository 参与 ToolDebugService 处理的 toolRepository 输入值。
-     * @param executionService 参与 ToolDebugService 处理的 executionService 输入值。
-     * @param auditAppender 参与 ToolDebugService 处理的 auditAppender 输入值。
-     * @param sanitizer 参与 ToolDebugService 处理的 sanitizer 输入值。
-     * @param httpToolProperties httpToolProperties 对应的配置数据，用于驱动本次处理。
+     * @param toolRepository 工具定义仓储。
+     * @param executionService 负责当前业务流程的服务。
+     * @param auditAppender 负责追加安全审计事件的组件。
+     * @param sanitizer 负责清理工具输出的安全组件。
+     * @param httpToolProperties HTTP 工具调试确认和超时限制配置
      */
     public ToolDebugService(
             ToolDefinitionRepository toolRepository,
@@ -103,7 +103,7 @@ public class ToolDebugService {
     }
 
     /**
-     * isVisible：判断当前条件是否成立。
+     * 判断方法名所描述的业务条件是否成立。
      *
      * @param principal 当前认证主体，提供租户、身份和权限上下文。
      * @param toolId 目标工具标识，用于定位关联的工具定义。
@@ -114,10 +114,10 @@ public class ToolDebugService {
     }
 
     /**
-     * validateDebugScope：校验输入、状态或前置条件。
+     * 校验调试请求的工具类型、风险确认和权限范围。
      *
      * @param tool 当前处理的工具定义。
-     * @param confirmedToolName 参与 validateDebugScope 处理的 confirmedToolName 输入值。
+     * @param confirmedToolName 用户二次确认的高风险工具名称
      */
     private void validateDebugScope(ToolDefinition tool, String confirmedToolName) {
         if (tool.type() != ToolType.HTTP && tool.type() != ToolType.LOCAL) {
@@ -129,7 +129,7 @@ public class ToolDebugService {
     }
 
     /**
-     * safeOutput：处理该类内部的业务逻辑或辅助计算。
+     * 对工具输出脱敏并限制可返回内容。
      *
      * @param output 本次处理产生或待处理的输出内容。
      */
@@ -141,9 +141,9 @@ public class ToolDebugService {
     }
 
     /**
-     * elapsedMillis：处理该类内部的业务逻辑或辅助计算。
+     * 计算从开始时刻到当前时刻的非负耗时毫秒数。
      *
-     * @param startedAt 参与 elapsedMillis 处理的 startedAt 输入值。
+     * @param startedAt 开始计算耗时的时间点
      */
     private long elapsedMillis(long startedAt) {
         return Math.max(0L, (System.nanoTime() - startedAt) / 1_000_000L);

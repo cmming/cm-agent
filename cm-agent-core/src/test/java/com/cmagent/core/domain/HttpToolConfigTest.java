@@ -17,6 +17,9 @@ class HttpToolConfigTest {
     private static final UUID TOOL = UUID.fromString("00000000-0000-0000-0000-000000000101");
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void GET拒绝BODY且集合防御性复制() {
         var mappings = new ArrayList<HttpParameterMapping>();
         mappings.add(new HttpParameterMapping("/order/no", HttpParameterLocation.PATH,
@@ -36,6 +39,9 @@ class HttpToolConfigTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 参数映射按位置校验目标且识别默认值() {
         var mapping = new HttpParameterMapping("/page", HttpParameterLocation.QUERY,
                 "page", "", false, "1");
@@ -52,6 +58,9 @@ class HttpToolConfigTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void 静态敏感请求头必须使用受限Secret引用() {
         assertThatThrownBy(() -> new HttpToolConfig(TENANT, TOOL, HttpToolMethod.POST,
                 "https://api.example.com", "{}", List.of(),

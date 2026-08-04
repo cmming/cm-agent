@@ -60,9 +60,9 @@ public class CmAgentPersistenceProperties {
     }
 
     /**
-     * hasStrictPersistenceProfile：判断当前条件是否成立。
+     * 判断是否存在方法名所描述的目标。
      *
-     * @param environment 参与 hasStrictPersistenceProfile 处理的 environment 输入值。
+     * @param environment Spring 环境及当前激活 profile。
      */
     private boolean hasStrictPersistenceProfile(Environment environment) {
         return Arrays.stream(environment.getActiveProfiles())
@@ -72,9 +72,9 @@ public class CmAgentPersistenceProperties {
     }
 
     /**
-     * hasSupabaseProfile：判断当前条件是否成立。
+     * 判断是否存在方法名所描述的目标。
      *
-     * @param environment 参与 hasSupabaseProfile 处理的 environment 输入值。
+     * @param environment Spring 环境及当前激活 profile。
      */
     private boolean hasSupabaseProfile(Environment environment) {
         return Arrays.stream(environment.getActiveProfiles())
@@ -82,16 +82,16 @@ public class CmAgentPersistenceProperties {
     }
 
     /**
-     * isBlank：判断当前条件是否成立。
+     * 判断方法名所描述的业务条件是否成立。
      *
-     * @param value 参与 isBlank 处理的 value 输入值。
+     * @param value 待检查、转换或规范化的值。
      */
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
 
     /**
-     * Mode：枚举本模块使用的有限状态或类型。
+     * 枚举 {@code Mode} 支持的有限状态。
      */
     public enum Mode {
         /** 使用仅供本地开发和测试的内存存储。 */
@@ -101,7 +101,7 @@ public class CmAgentPersistenceProperties {
     }
 
     /**
-     * Jdbc：封装本模块的相关实现逻辑。
+     * 创建 {@code Jdbc} 实例并保存其运行所需依赖。
      */
     public static class Jdbc {
         private String url;

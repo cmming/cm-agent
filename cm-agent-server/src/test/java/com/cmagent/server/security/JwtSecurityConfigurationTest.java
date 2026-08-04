@@ -27,6 +27,9 @@ class JwtSecurityConfigurationTest {
             .withPropertyValues("cm-agent.security.jwt-secret=" + STRONG_TEST_SECRET);
 
     @Test
+    /**
+     * 验证 {@code WhenSecretMissing} 场景按预期失败。
+     */
     void failsWhenSecretMissing() {
         contextRunner.run(context -> {
             assertThat(context).hasFailed();
@@ -37,6 +40,9 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证 {@code FormerFallbackFlagForLocalProfile} 异常场景会被正确拒绝。
+     */
     void rejectsFormerFallbackFlagForLocalProfile() {
         contextRunner
                 .withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
@@ -50,6 +56,9 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证 {@code FormerFallbackFlagForTestProfile} 异常场景会被正确拒绝。
+     */
     void rejectsFormerFallbackFlagForTestProfile() {
         contextRunner
                 .withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
@@ -63,6 +72,9 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code profileValidatorRejectsMixedProductionAndPostgresProfilesBeforeAcceptingConfiguredSecret} 所描述的测试场景。
+     */
     void profileValidatorRejectsMixedProductionAndPostgresProfilesBeforeAcceptingConfiguredSecret() {
         profileContextRunner()
                 .withPropertyValues("spring.profiles.active=production,postgres")
@@ -76,6 +88,9 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code profileValidatorRejectsMixedSupabaseAndMysqlProfilesBeforeAcceptingConfiguredSecret} 所描述的测试场景。
+     */
     void profileValidatorRejectsMixedSupabaseAndMysqlProfilesBeforeAcceptingConfiguredSecret() {
         profileContextRunner()
                 .withPropertyValues("spring.profiles.active=supabase,mysql")
@@ -89,6 +104,9 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证 {@code FormerFallbackFlagWhenProfileIsMissing} 异常场景会被正确拒绝。
+     */
     void rejectsFormerFallbackFlagWhenProfileIsMissing() {
         contextRunner.withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
                 .run(context -> {
@@ -100,6 +118,9 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证 {@code FormerFallbackFlagForProductionProfile} 异常场景会被正确拒绝。
+     */
     void rejectsFormerFallbackFlagForProductionProfile() {
         contextRunner
                 .withPropertyValues("cm-agent.security.allow-dev-jwt-fallback=true")
@@ -113,6 +134,9 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证 {@code MixedProductionAndTestProfilesCaseInsensitivelyAcrossDefaultLocales} 异常场景会被正确拒绝。
+     */
     void rejectsMixedProductionAndTestProfilesCaseInsensitivelyAcrossDefaultLocales() {
         Locale defaultLocale = Locale.getDefault();
         Locale.setDefault(Locale.forLanguageTag("tr"));
@@ -132,6 +156,9 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code requiresExternalSecretInProductionProfile} 所描述的测试场景。
+     */
     void requiresExternalSecretInProductionProfile() {
         contextRunner
                 .withPropertyValues("spring.profiles.active=production")
@@ -144,6 +171,9 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证 {@code WeakConfiguredSecret} 异常场景会被正确拒绝。
+     */
     void rejectsWeakConfiguredSecret() {
         contextRunner
                 .withPropertyValues("cm-agent.security.jwt-secret=short-secret")
@@ -156,6 +186,9 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证 {@code BootstrapAdminWhenEnabledWithoutPassword} 异常场景会被正确拒绝。
+     */
     void rejectsBootstrapAdminWhenEnabledWithoutPassword() {
         serverContextRunner
                 .withPropertyValues("spring.profiles.active=test")
@@ -168,6 +201,9 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证 {@code BootstrapAdminInProductionEvenWithPassword} 异常场景会被正确拒绝。
+     */
     void rejectsBootstrapAdminInProductionEvenWithPassword() {
         serverContextRunner
                 .withPropertyValues("spring.profiles.active=production")
@@ -181,6 +217,9 @@ class JwtSecurityConfigurationTest {
     }
 
     @Test
+    /**
+     * 验证 {@code BootstrapAdminForUppercaseProductionProfileAcrossDefaultLocales} 异常场景会被正确拒绝。
+     */
     void rejectsBootstrapAdminForUppercaseProductionProfileAcrossDefaultLocales() {
         Locale defaultLocale = Locale.getDefault();
         Locale.setDefault(Locale.forLanguageTag("tr"));
@@ -199,6 +238,9 @@ class JwtSecurityConfigurationTest {
         }
     }
 
+    /**
+     * 验证或支持 {@code profileContextRunner} 所描述的测试场景。
+     */
     private ApplicationContextRunner profileContextRunner() {
         return new ApplicationContextRunner()
                 .withUserConfiguration(JwtSecurityConfiguration.class, ProfileSafetyValidator.class);

@@ -46,6 +46,11 @@ class ConsoleSmokeTest {
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @DynamicPropertySource
+    /**
+     * 验证或支持 {@code jdbcProperties} 所描述的测试场景。
+     *
+     * @param registry 本地工具执行器注册表
+     */
     static void jdbcProperties(DynamicPropertyRegistry registry) {
         registry.add("cm-agent.persistence.mode", () -> "jdbc");
         registry.add("cm-agent.persistence.jdbc.url", postgres::getJdbcUrl);
@@ -58,6 +63,9 @@ class ConsoleSmokeTest {
     private MockMvc mockMvc;
 
     @Test
+    /**
+     * 验证或支持 {@code serveConsoleIndex} 所描述的测试场景。
+     */
     void serveConsoleIndex() throws Exception {
         mockMvc.perform(get("/"))
                 .andExpect(status().isOk())
@@ -65,6 +73,9 @@ class ConsoleSmokeTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code consoleLoginUsesUserEnteredCredentials} 所描述的测试场景。
+     */
     void consoleLoginUsesUserEnteredCredentials() throws Exception {
         mockMvc.perform(get("/"))
                 .andExpect(status().isOk())
@@ -85,6 +96,9 @@ class ConsoleSmokeTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code swaggerUiIsNotPublicInProductionProfile} 所描述的测试场景。
+     */
     void swaggerUiIsNotPublicInProductionProfile() throws Exception {
         mockMvc.perform(get("/swagger-ui/index.html"))
                 .andExpect(status().isUnauthorized());
@@ -93,6 +107,9 @@ class ConsoleSmokeTest {
     @TestConfiguration(proxyBeanMethods = false)
     static class ProductionRuntimeConfig {
         @Bean
+        /**
+         * 验证或支持 {@code agentRuntime} 所描述的测试场景。
+         */
         AgentRuntime agentRuntime() {
             return request -> new AgentRunResult(
                     null, RunStatus.SUCCEEDED, "", java.util.List.of(), null, null, ""
@@ -104,6 +121,9 @@ class ConsoleSmokeTest {
 class SupabaseConsoleSmokeTest {
 
     @Test
+    /**
+     * 验证或支持 {@code swaggerUiIsNotPublicInSupabaseProfile} 所描述的测试场景。
+     */
     void swaggerUiIsNotPublicInSupabaseProfile() {
         MockEnvironment environment = new MockEnvironment();
         environment.setActiveProfiles("supabase");

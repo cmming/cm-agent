@@ -55,6 +55,9 @@ class MysqlLocalExampleServiceJdbcPersistenceTest {
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void mysql首次安装持久化且重建Registry后仍通过治理调试链调用add() {
         DataSource dataSource = migratedAndSeededDataSource();
         TestFixture fixture = fixture(dataSource, false);
@@ -86,6 +89,9 @@ class MysqlLocalExampleServiceJdbcPersistenceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void mysql审计失败回滚工具定义() {
         DataSource dataSource = migratedAndSeededDataSource();
         TestFixture fixture = fixture(dataSource, true);
@@ -96,15 +102,26 @@ class MysqlLocalExampleServiceJdbcPersistenceTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void postgresql删除后重装原位恢复且失败审计回滚() {
         assertDeletedExampleCanBeRestored(postgresDataSource());
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void mysql删除后重装原位恢复且失败审计回滚() {
         assertDeletedExampleCanBeRestored(migratedAndSeededDataSource());
     }
 
+    /**
+     * 验证或支持 {@code assertDeletedExampleCanBeRestored} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     */
     private static void assertDeletedExampleCanBeRestored(DataSource dataSource) {
         TestFixture installed = fixture(dataSource, false);
         installed.service().install(PRINCIPAL, "echo");
@@ -158,6 +175,12 @@ class MysqlLocalExampleServiceJdbcPersistenceTest {
                 .containsExactly("LOCAL_EXAMPLE_INSTALL", "LOCAL_EXAMPLE_INSTALL");
     }
 
+    /**
+     * 验证或支持 {@code fixture} 所描述的测试场景。
+     *
+     * @param dataSource 测试数据源
+     * @param failAudit 测试辅助方法使用的 failAudit 参数
+     */
     private static TestFixture fixture(DataSource dataSource, boolean failAudit) {
         ObjectMapper objectMapper = new ObjectMapper();
         TransactionTemplate transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -180,9 +203,19 @@ class MysqlLocalExampleServiceJdbcPersistenceTest {
         return new TestFixture(service, toolDebugService, tools, auditEvents);
     }
 
+    /**
+     * 验证或支持 {@code failingAuditRepository} 所描述的测试场景。
+     *
+     * @param jdbcClient 测试 JDBC 客户端
+     */
     private static AuditEventRepository failingAuditRepository(JdbcClient jdbcClient) {
         return new AuditEventRepository() {
             @Override
+            /**
+             * 验证或支持 {@code append} 所描述的测试场景。
+             *
+             * @param event 测试审计事件
+             */
             public void append(AuditEvent event) {
                 jdbcClient.sql("INSERT INTO audit_events (id) VALUES (:id)")
                         .param("id", UUID.randomUUID().toString())
@@ -190,20 +223,39 @@ class MysqlLocalExampleServiceJdbcPersistenceTest {
             }
 
             @Override
+            /**
+             * 验证或支持 {@code listByTenant} 所描述的测试场景。
+             *
+             * @param tenantId 测试租户标识
+             * @param limit 测试辅助方法使用的 limit 参数
+             */
             public List<AuditEvent> listByTenant(UUID tenantId, int limit) {
                 return List.of();
             }
         };
     }
 
+    /**
+     * 验证或支持 {@code migratedAndSeededDataSource} 所描述的测试场景。
+     */
     private static DataSource migratedAndSeededDataSource() {
         return migratedAndSeededDataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
     }
 
+    /**
+     * 验证或支持 {@code postgresDataSource} 所描述的测试场景。
+     */
     private static DataSource postgresDataSource() {
         return migratedAndSeededDataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
     }
 
+    /**
+     * 验证或支持 {@code migratedAndSeededDataSource} 所描述的测试场景。
+     *
+     * @param url 测试辅助方法使用的 url 参数
+     * @param username 测试辅助方法使用的 username 参数
+     * @param password 测试辅助方法使用的 password 参数
+     */
     private static DataSource migratedAndSeededDataSource(String url, String username, String password) {
         DataSource dataSource = new DriverManagerDataSource(url, username, password);
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").cleanDisabled(false).load().clean();

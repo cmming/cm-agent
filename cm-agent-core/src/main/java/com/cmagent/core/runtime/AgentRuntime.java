@@ -4,12 +4,14 @@ import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
 
 /**
- * AgentRuntime 的核心领域类型。
+ * 定义执行一次 Agent 运行并返回结构化结果的运行时契约。
  */
 public interface AgentRuntime {
 
     /**
-     * 定义 run 操作。
+     * 执行一次 Agent 运行并返回结构化结果。
+      *
+      * @param request 当前运行或工具调用请求
      */
     AgentRunResult run(AgentRunRequest request);
 }

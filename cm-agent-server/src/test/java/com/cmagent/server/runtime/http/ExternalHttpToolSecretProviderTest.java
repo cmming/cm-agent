@@ -20,6 +20,9 @@ class ExternalHttpToolSecretProviderTest {
     private static final String SECRET_VALUE = "仅用于单元测试的敏感值";
 
     @Test
+    /**
+     * 验证或支持 {@code propertiesUseSecureDefaults} 所描述的测试场景。
+     */
     void propertiesUseSecureDefaults() {
         HttpToolProperties properties = new HttpToolProperties();
 
@@ -34,6 +37,9 @@ class ExternalHttpToolSecretProviderTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code propertiesRejectConfigurationThatWidensAbsoluteSafetyBounds} 所描述的测试场景。
+     */
     void propertiesRejectConfigurationThatWidensAbsoluteSafetyBounds() {
         HttpToolProperties properties = new HttpToolProperties();
 
@@ -48,6 +54,9 @@ class ExternalHttpToolSecretProviderTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code resolvesOnlyExactTenantAndSecretReferenceCompositeKey} 所描述的测试场景。
+     */
     void resolvesOnlyExactTenantAndSecretReferenceCompositeKey() {
         HttpToolProperties properties = new HttpToolProperties();
         properties.setSecrets(Map.of(
@@ -61,6 +70,9 @@ class ExternalHttpToolSecretProviderTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code propertiesAndProviderToStringNeverExposeSecretValue} 所描述的测试场景。
+     */
     void propertiesAndProviderToStringNeverExposeSecretValue() {
         HttpToolProperties properties = new HttpToolProperties();
         properties.setSecrets(Map.of(
@@ -73,6 +85,9 @@ class ExternalHttpToolSecretProviderTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code runtimeConfigurationBindsExternalPropertiesAndProvidesOverridableDefaultProvider} 所描述的测试场景。
+     */
     void runtimeConfigurationBindsExternalPropertiesAndProvidesOverridableDefaultProvider() {
         ApplicationContextRunner defaultRunner = new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(HttpToolRuntimeConfiguration.class))
@@ -103,6 +118,9 @@ class ExternalHttpToolSecretProviderTest {
     @Configuration(proxyBeanMethods = false)
     static class CustomSecretProviderConfiguration {
         @Bean
+        /**
+         * 验证或支持 {@code customHttpToolSecretProvider} 所描述的测试场景。
+         */
         HttpToolSecretProvider customHttpToolSecretProvider() {
             return (tenantId, secretRef) -> java.util.Optional.of("custom");
         }

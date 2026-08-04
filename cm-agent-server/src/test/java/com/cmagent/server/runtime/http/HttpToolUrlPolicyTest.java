@@ -21,6 +21,9 @@ class HttpToolUrlPolicyTest {
     private HostAddressResolver publicResolver;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() throws Exception {
         properties = new HttpToolProperties();
         properties.setAllowedHosts(Set.of("api.example.com", "*.trusted.example", "xn--bcher-kva.example"));
@@ -36,6 +39,11 @@ class HttpToolUrlPolicyTest {
             "https://deep.child.trusted.example/orders",
             "https://bücher.example/orders"
     })
+    /**
+     * 验证系统允许 {@code CanonicalExactAndControlledSubdomainHosts} 场景。
+     *
+     * @param value 测试输入值
+     */
     void allowsCanonicalExactAndControlledSubdomainHosts(String value) {
         HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, publicResolver);
 
@@ -43,6 +51,9 @@ class HttpToolUrlPolicyTest {
     }
 
     @Test
+    /**
+     * 验证系统会返回 {@code AsciiCanonicalUriForUnicodeIdnBeforeHttpClientUsesIt}。
+     */
     void returnsAsciiCanonicalUriForUnicodeIdnBeforeHttpClientUsesIt() {
         HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, publicResolver);
 
@@ -53,6 +64,9 @@ class HttpToolUrlPolicyTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code comparesCanonicalSchemeHostAndEffectivePortForRedirectOrigin} 所描述的测试场景。
+     */
     void comparesCanonicalSchemeHostAndEffectivePortForRedirectOrigin() {
         properties.setAllowHttp(true);
         HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, publicResolver);
@@ -85,6 +99,11 @@ class HttpToolUrlPolicyTest {
             "https://evil-trusted.example/orders",
             "https://api.example.com.evil.test/orders"
     })
+    /**
+     * 验证 {@code HostAllowlistSuffixConfusion} 异常场景会被正确拒绝。
+     *
+     * @param value 测试输入值
+     */
     void rejectsHostAllowlistSuffixConfusion(String value) {
         HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, publicResolver);
 
@@ -102,6 +121,11 @@ class HttpToolUrlPolicyTest {
             "https://api.example.com:65536/orders",
             "https://localhost/orders"
     })
+    /**
+     * 验证 {@code UnsafeUriComponents} 异常场景会被正确拒绝。
+     *
+     * @param value 测试输入值
+     */
     void rejectsUnsafeUriComponents(String value) {
         HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, publicResolver);
 
@@ -109,6 +133,9 @@ class HttpToolUrlPolicyTest {
     }
 
     @Test
+    /**
+     * 验证系统允许 {@code HttpOnlyWhenExplicitlyEnabledForControlledTestPort} 场景。
+     */
     void allowsHttpOnlyWhenExplicitlyEnabledForControlledTestPort() {
         properties.setAllowHttp(true);
         HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, publicResolver);
@@ -118,6 +145,9 @@ class HttpToolUrlPolicyTest {
     }
 
     @Test
+    /**
+     * 验证 {@code WhenAllowlistIsEmptyBeforeDnsResolution} 异常场景会被正确拒绝。
+     */
     void rejectsWhenAllowlistIsEmptyBeforeDnsResolution() {
         properties.setAllowedHosts(Set.of());
         int[] resolutions = {0};
@@ -137,6 +167,11 @@ class HttpToolUrlPolicyTest {
             "198.51.100.1", "203.0.113.1", "224.0.0.1", "240.0.0.1", "255.255.255.255",
             "::", "::1", "fc00::1", "fd00::1", "fe80::1", "ff02::1", "2001:db8::1"
     })
+    /**
+     * 验证 {@code NonPublicReservedAndMetadataAddresses} 异常场景会被正确拒绝。
+     *
+     * @param address 测试辅助方法使用的 address 参数
+     */
     void rejectsNonPublicReservedAndMetadataAddresses(String address) throws Exception {
         HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, ignored -> List.of(address(address)));
 
@@ -145,6 +180,11 @@ class HttpToolUrlPolicyTest {
 
     @ParameterizedTest
     @MethodSource("specialIpv6Bytes")
+    /**
+     * 验证 {@code SpecialUseIpv6UsingRawPrefixBytes} 异常场景会被正确拒绝。
+     *
+     * @param rawAddress 测试辅助方法使用的 rawAddress 参数
+     */
     void rejectsSpecialUseIpv6UsingRawPrefixBytes(byte[] rawAddress) throws Exception {
         HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, ignored -> List.of(
                 InetAddress.getByAddress(rawAddress)));
@@ -153,6 +193,9 @@ class HttpToolUrlPolicyTest {
     }
 
     @Test
+    /**
+     * 验证系统允许 {@code ExplicitGlobalUnicastIpv6OutsideSpecialRanges} 场景。
+     */
     void allowsExplicitGlobalUnicastIpv6OutsideSpecialRanges() throws Exception {
         HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, ignored -> List.of(
                 InetAddress.getByAddress(hex("26064700000000000000000000001111"))));
@@ -161,6 +204,9 @@ class HttpToolUrlPolicyTest {
     }
 
     @Test
+    /**
+     * 验证 {@code DnsAnswerWhenAnyAddressIsNotPublic} 异常场景会被正确拒绝。
+     */
     void rejectsDnsAnswerWhenAnyAddressIsNotPublic() throws Exception {
         HttpToolUrlPolicy policy = new HttpToolUrlPolicy(properties, ignored -> List.of(
                 address("93.184.216.34"), address("127.0.0.1")
@@ -170,6 +216,9 @@ class HttpToolUrlPolicyTest {
     }
 
     @Test
+    /**
+     * 验证 {@code MissingAndFailedDnsAnswersWithoutLeakingUrl} 异常场景会被正确拒绝。
+     */
     void rejectsMissingAndFailedDnsAnswersWithoutLeakingUrl() {
         HttpToolUrlPolicy emptyPolicy = new HttpToolUrlPolicy(properties, ignored -> List.of());
         HttpToolUrlPolicy failedPolicy = new HttpToolUrlPolicy(properties, ignored -> {
@@ -180,6 +229,12 @@ class HttpToolUrlPolicyTest {
         assertRejected(failedPolicy, "https://api.example.com/orders?token=不得泄露");
     }
 
+    /**
+     * 验证或支持 {@code assertRejected} 所描述的测试场景。
+     *
+     * @param policy 测试辅助方法使用的 policy 参数
+     * @param value 测试输入值
+     */
     private static void assertRejected(HttpToolUrlPolicy policy, String value) {
         assertThatThrownBy(() -> policy.validate(URI.create(value)))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -188,10 +243,18 @@ class HttpToolUrlPolicyTest {
                 .hasMessageNotContaining(value);
     }
 
+    /**
+     * 验证或支持 {@code address} 所描述的测试场景。
+     *
+     * @param value 测试输入值
+     */
     private static InetAddress address(String value) throws UnknownHostException {
         return InetAddress.getByName(value);
     }
 
+    /**
+     * 验证或支持 {@code specialIpv6Bytes} 所描述的测试场景。
+     */
     private static Stream<byte[]> specialIpv6Bytes() {
         return Stream.of(
                 hex("00000000000000000000ffffc0000201"),
@@ -211,6 +274,11 @@ class HttpToolUrlPolicyTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code hex} 所描述的测试场景。
+     *
+     * @param value 测试输入值
+     */
     private static byte[] hex(String value) {
         byte[] bytes = new byte[value.length() / 2];
         for (int index = 0; index < bytes.length; index++) {

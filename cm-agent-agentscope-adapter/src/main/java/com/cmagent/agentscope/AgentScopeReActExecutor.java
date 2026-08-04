@@ -41,16 +41,28 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
     /**
      * 使用默认 AgentScope 生命周期实现创建执行器。
+      *
+      * @param options AgentScope 运行选项
+      * @param modelFactory 根据领域配置创建 AgentScope 模型的工厂
      */
     AgentScopeReActExecutor(AgentScopeRuntimeOptions options, AgentScopeModelFactory modelFactory) {
         this(options, modelFactory, new AgentLifecycle() {
-            /** 使用 AgentScope 上下文中断当前 Agent。 */
+            /**
+             * 使用 AgentScope 上下文中断当前 Agent。
+             *
+             * @param agent 当前 AgentScope Agent
+             * @param context 本次运行的 AgentScope 上下文
+             */
             @Override
             public void interrupt(ReActAgent agent, RuntimeContext context) {
                 agent.interrupt(context);
             }
 
-            /** 关闭当前 Agent 并释放 AgentScope 资源。 */
+            /**
+             * 关闭当前 Agent 并释放 AgentScope 资源。
+             *
+             * @param agent 待关闭的 AgentScope Agent
+             */
             @Override
             public void close(ReActAgent agent) {
                 agent.close();
@@ -60,6 +72,10 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
     /**
      * 使用指定生命周期实现创建执行器，便于隔离和测试 AgentScope 生命周期操作。
+      *
+      * @param options AgentScope 运行选项
+      * @param modelFactory 根据领域配置创建 AgentScope 模型的工厂
+      * @param lifecycle Agent 创建、中断和关闭的生命周期协作者
      */
     AgentScopeReActExecutor(
             AgentScopeRuntimeOptions options,
@@ -73,6 +89,10 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
     /**
      * 执行 AgentScope ReAct 流程并归集模型、工具和中止状态。
+      *
+      * @param spec AgentScope 运行规格
+      * @param credential 调用模型所需的受控凭据
+      * @param toolGateway 受治理的工具调用网关
      */
     @Override
     public AgentScopeExecutionResult execute(
@@ -211,6 +231,11 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
     /**
      * 检查工具基础设施失败，并在必要时中断 Agent。
+      *
+      * @param runGate 协调运行中断与工具失败的门控对象
+      * @param agent 当前 Agent 定义
+      * @param context 本次运行或工具调用上下文
+      * @param lifecycle Agent 创建、中断和关闭的生命周期协作者
      */
     private static void throwIfInfrastructureFailure(
             AgentScopeRunGate runGate,
@@ -236,6 +261,11 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
     /**
      * 检查运行是否因工具超时或基础设施失败而应中止。
+      *
+      * @param runGate 协调运行中断与工具失败的门控对象
+      * @param agent 当前 Agent 定义
+      * @param context 本次运行或工具调用上下文
+      * @param lifecycle Agent 创建、中断和关闭的生命周期协作者
      */
     private static void throwIfRunAborted(
             AgentScopeRunGate runGate,
@@ -252,6 +282,11 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
     /**
      * 通过运行门控确保 Agent 只被中断一次。
+      *
+      * @param runGate 协调运行中断与工具失败的门控对象
+      * @param agent 当前 Agent 定义
+      * @param context 本次运行或工具调用上下文
+      * @param lifecycle Agent 创建、中断和关闭的生命周期协作者
      */
     private static void interruptOnce(
             AgentScopeRunGate runGate,
@@ -264,6 +299,8 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
     /**
      * 收集所有工具桥接器产生的调用记录。
+      *
+      * @param bridges 本次运行创建的工具桥接器集合
      */
     private static List<ToolCallRecord> collectRecords(List<AgentScopeToolBridge> bridges) {
         return bridges.stream()
@@ -273,6 +310,8 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
     /**
      * 查找首条被授权策略拒绝的工具调用记录。
+      *
+      * @param records 工具调用记录集合
      */
     private static ToolCallRecord findDenied(List<ToolCallRecord> records) {
         return records.stream()
@@ -283,6 +322,9 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
     /**
      * 将 AgentScope 最终消息和工具记录转换为领域执行结果。
+      *
+      * @param result AgentScope 执行结果
+      * @param records 工具调用记录集合
      */
     static AgentScopeExecutionResult completedResult(Msg result, List<ToolCallRecord> records) {
         ToolCallRecord denied = findDenied(records);
@@ -298,6 +340,8 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
     /**
      * 判断异常链是否表示模型或执行流程超时。
+      *
+      * @param failure 当前捕获的失败
      */
     private static boolean isTimeoutFailure(Throwable failure) {
         Throwable current = failure;
@@ -317,6 +361,8 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
     /**
      * 判断异常链是否来自模型 Provider 或其 HTTP 传输层。
+      *
+      * @param failure 当前捕获的失败
      */
     private static boolean isProviderFailure(Throwable failure) {
         Throwable current = failure;
@@ -338,17 +384,25 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
         /**
          * 在 Agent 创建完成后执行生命周期初始化钩子。
+          *
+          * @param agent 当前 Agent 定义
+          * @param context 本次运行或工具调用上下文
          */
         default void onCreated(ReActAgent agent, RuntimeContext context) {
         }
 
         /**
          * 中断指定 Agent 的当前运行。
+          *
+          * @param agent 当前 Agent 定义
+          * @param context 本次运行或工具调用上下文
          */
         void interrupt(ReActAgent agent, RuntimeContext context);
 
         /**
          * 释放指定 Agent 占用的资源。
+          *
+          * @param agent 当前 Agent 定义
          */
         void close(ReActAgent agent);
     }

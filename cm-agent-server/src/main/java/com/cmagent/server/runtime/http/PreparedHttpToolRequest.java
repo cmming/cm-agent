@@ -16,6 +16,14 @@ public record PreparedHttpToolRequest(
         Map<String, String> headers,
         JsonNode body
 ) {
+    /**
+     * 校验并构造 {@code PreparedHttpToolRequest} 实例。
+     *
+     * @param pathValues 已解析并等待替换到 URL 模板的路径参数
+     * @param queryValues 已解析并等待编码到查询串的参数
+     * @param headers 已解析并等待写入请求的 HTTP 请求头
+     * @param body 已按映射规则组装的请求体 JSON
+     */
     public PreparedHttpToolRequest {
         pathValues = Map.copyOf(pathValues);
         headers = Map.copyOf(headers);

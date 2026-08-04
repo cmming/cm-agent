@@ -7,17 +7,17 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * InMemoryToolRegistry 的核心领域类型。
+ * 基于并发内存索引保存工具定义与执行器，适用于本地运行和测试。
  */
 public class InMemoryToolRegistry implements ToolRegistry {
 
     private final ConcurrentHashMap<UUID, Registration> registrations = new ConcurrentHashMap<>();
 
     /**
-     * 执行 register 操作。
-     */
-    /**
-     * 定义 register 操作。
+     * 将工具定义及其执行器注册到内存索引，同一工具标识会覆盖旧注册。
+     *
+     * @param definition 待注册的工具定义
+     * @param executor 与工具绑定的执行器
      */
     @Override
     public void register(ToolDefinition definition, ToolExecutor executor) {
@@ -25,10 +25,10 @@ public class InMemoryToolRegistry implements ToolRegistry {
     }
 
     /**
-     * 执行 find 操作。
-     */
-    /**
-     * 定义 find 操作。
+     * 按工具标识查询已注册的工具定义。
+     *
+     * @param toolId 目标工具标识
+     * @return 工具定义；未注册时为空
      */
     @Override
     public Optional<ToolDefinition> find(UUID toolId) {
@@ -36,10 +36,10 @@ public class InMemoryToolRegistry implements ToolRegistry {
     }
 
     /**
-     * 执行 snapshot 操作。
-     */
-    /**
-     * 定义 snapshot 操作。
+     * 获取同时包含工具定义和执行器的一致注册快照。
+     *
+     * @param toolId 目标工具标识
+     * @return 注册快照；未注册时为空
      */
     @Override
     public Optional<ToolRegistrationSnapshot> snapshot(UUID toolId) {
@@ -50,10 +50,10 @@ public class InMemoryToolRegistry implements ToolRegistry {
     }
 
     /**
-     * 执行 execute 操作。
-     */
-    /**
-     * 定义 execute 操作。
+     * 查找请求对应的注册快照并执行工具，未注册时返回失败结果。
+     *
+     * @param request 当前工具执行请求
+     * @return 工具执行结果
      */
     @Override
     public ToolExecutionResult execute(ToolExecutionRequest request) {
@@ -63,7 +63,7 @@ public class InMemoryToolRegistry implements ToolRegistry {
     }
 
     /**
-     * Registration 的核心领域类型。
+     * 保存内存注册表中的工具定义与执行器绑定。
      */
     private record Registration(ToolDefinition definition, ToolExecutor executor) {
     }

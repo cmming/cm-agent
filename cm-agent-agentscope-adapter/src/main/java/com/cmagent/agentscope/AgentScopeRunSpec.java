@@ -12,6 +12,8 @@ public record AgentScopeRunSpec(AgentRunRequest request) {
 
     /**
      * 校验领域运行请求不为空。
+      *
+      * @param request 当前运行或工具调用请求
      */
     public AgentScopeRunSpec {
         Objects.requireNonNull(request, "request 不能为空");

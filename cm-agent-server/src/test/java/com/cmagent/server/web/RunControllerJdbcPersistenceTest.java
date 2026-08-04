@@ -58,6 +58,11 @@ class RunControllerJdbcPersistenceTest {
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @DynamicPropertySource
+    /**
+     * 验证或支持 {@code jdbcProperties} 所描述的测试场景。
+     *
+     * @param registry 本地工具执行器注册表
+     */
     static void jdbcProperties(DynamicPropertyRegistry registry) {
         registry.add("cm-agent.fake-runtime-enabled", () -> "false");
         registry.add("cm-agent.persistence.mode", () -> "jdbc");
@@ -92,17 +97,26 @@ class RunControllerJdbcPersistenceTest {
     private ModelConfigRepository modelConfigRepository;
 
     @BeforeEach
+    /**
+     * 验证或支持 {@code arrangeRuntime} 所描述的测试场景。
+     */
     void arrangeRuntime() {
         controlledExecutor.reset();
     }
 
     @Test
+    /**
+     * 验证或支持 {@code jdbcProfileProvidesModelConfigRepository} 所描述的测试场景。
+     */
     void jdbcProfileProvidesModelConfigRepository() {
         assertThat(modelConfigRepository).isInstanceOf(JdbcModelConfigRepository.class);
         assertThat(agentRuntime).isExactlyInstanceOf(AgentScopeRuntimeAdapter.class);
     }
 
     @Test
+    /**
+     * 验证或支持 {@code createToolGrantAndRunLoadsAuthorizedToolFromJdbc} 所描述的测试场景。
+     */
     void createToolGrantAndRunLoadsAuthorizedToolFromJdbc() throws Exception {
         String token = jwtService.createToken(TENANT_ID, "admin", "系统管理员", List.of(
                 "agent:run",
@@ -178,6 +192,9 @@ class RunControllerJdbcPersistenceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code persistsRedactedMappedToolCallsAndSkipsUnknownTools} 所描述的测试场景。
+     */
     void persistsRedactedMappedToolCallsAndSkipsUnknownTools() throws Exception {
         String token = jwtService.createToken(TENANT_ID, "admin", "系统管理员", List.of(
                 "agent:run", "agent:read", "agent:write", "tool:read", "tool:grant", "audit:read"
@@ -225,6 +242,9 @@ class RunControllerJdbcPersistenceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code auditFailureRollsBackRunningRunAndSkipsRuntime} 所描述的测试场景。
+     */
     void auditFailureRollsBackRunningRunAndSkipsRuntime() throws Exception {
         String token = jwtService.createToken(TENANT_ID, "admin", "系统管理员", List.of(
                 "agent:run", "agent:read", "agent:write", "tool:read", "tool:grant", "audit:read"
@@ -261,6 +281,9 @@ class RunControllerJdbcPersistenceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code completionAuditFailureClosesRolledBackRunAsFailedWithoutFailureAudit} 所描述的测试场景。
+     */
     void completionAuditFailureClosesRolledBackRunAsFailedWithoutFailureAudit() throws Exception {
         String token = jwtService.createToken(TENANT_ID, "admin", "系统管理员", List.of(
                 "agent:run", "agent:read", "agent:write", "tool:read", "tool:grant", "audit:read"
@@ -295,6 +318,9 @@ class RunControllerJdbcPersistenceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code runtimeAuditFailureClosesRunAsFailedBeforeReturningOriginalAuditError} 所描述的测试场景。
+     */
     void runtimeAuditFailureClosesRunAsFailedBeforeReturningOriginalAuditError() throws Exception {
         String token = jwtService.createToken(TENANT_ID, "admin", "系统管理员", List.of(
                 "agent:run", "agent:read", "agent:write", "tool:read", "tool:grant", "audit:read"
@@ -331,6 +357,9 @@ class RunControllerJdbcPersistenceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code managementAuditFailureRollsBackJdbcAgentWrite} 所描述的测试场景。
+     */
     void managementAuditFailureRollsBackJdbcAgentWrite() throws Exception {
         String token = jwtService.createToken(TENANT_ID, "admin", "系统管理员", List.of(
                 "agent:read", "agent:write", "audit:read"
@@ -350,6 +379,11 @@ class RunControllerJdbcPersistenceTest {
                 .noneMatch(agent -> agent.name().equals("事务助手"));
     }
 
+    /**
+     * 验证或支持 {@code createAgent} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     */
     private String createAgent(String token) throws Exception {
         String response = mockMvc.perform(post("/api/agents")
                         .header("Authorization", bearer(token))
@@ -362,6 +396,11 @@ class RunControllerJdbcPersistenceTest {
         return JsonPath.read(response, "$.id");
     }
 
+    /**
+     * 验证或支持 {@code createTool} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     */
     private String createTool(String token) throws Exception {
         String response = mockMvc.perform(post("/api/tools")
                         .header("Authorization", bearer(token))
@@ -374,6 +413,11 @@ class RunControllerJdbcPersistenceTest {
         return JsonPath.read(response, "$.id");
     }
 
+    /**
+     * 验证或支持 {@code bearer} 所描述的测试场景。
+     *
+     * @param token 测试辅助方法使用的 token 参数
+     */
     private static String bearer(String token) {
         return "Bearer " + token;
     }

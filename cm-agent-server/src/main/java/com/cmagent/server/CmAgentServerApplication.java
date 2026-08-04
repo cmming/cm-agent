@@ -12,9 +12,9 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerA
 /** CM Agent 服务端应用入口，负责装配 Starter、持久化和服务端 Web 能力。 */
 public class CmAgentServerApplication {
     /**
-     * main：处理该类内部的业务逻辑或辅助计算。
+     * 启动 Spring Boot 服务端应用。
      *
-     * @param args 参与 main 处理的 args 集合。
+     * @param args 应用启动命令行参数。
      */
     public static void main(String[] args) {
         SpringApplication.run(CmAgentServerApplication.class, args);

@@ -1,7 +1,7 @@
 package com.cmagent.core.domain;
 
 /**
- * ModelProviderType 的核心领域类型。
+ * 枚举运行时支持的模型提供商类型。
  */
 public enum ModelProviderType {
     DASHSCOPE_NATIVE,

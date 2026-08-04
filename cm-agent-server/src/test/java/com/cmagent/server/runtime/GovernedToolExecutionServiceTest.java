@@ -63,11 +63,17 @@ class GovernedToolExecutionServiceTest {
     private GovernedToolExecutionService service;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         service = new GovernedToolExecutionService(configs, http, registry);
     }
 
     @Test
+    /**
+     * 验证或支持 {@code httpExecutionReloadsMatchingTenantConfigurationForEveryInvocation} 所描述的测试场景。
+     */
     void httpExecutionReloadsMatchingTenantConfigurationForEveryInvocation() {
         ToolDefinition tool = tool(ToolType.HTTP, TENANT_ID, TOOL_ID, "http-tool", true, "https://example.invalid/items");
         HttpToolConfig config = config(TENANT_ID, TOOL_ID, "https://example.invalid/items");
@@ -87,6 +93,9 @@ class GovernedToolExecutionServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code httpExecutionRejectsConfigurationWhoseUrlTemplateDiffersFromDefinitionEndpoint} 所描述的测试场景。
+     */
     void httpExecutionRejectsConfigurationWhoseUrlTemplateDiffersFromDefinitionEndpoint() {
         ToolDefinition tool = tool(ToolType.HTTP, TENANT_ID, TOOL_ID, "http-tool", true, "https://example.invalid/items");
         when(configs.findByTenantAndToolId(TENANT_ID, TOOL_ID)).thenReturn(
@@ -100,6 +109,9 @@ class GovernedToolExecutionServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code localExecutionRequiresSameTenantIdAndNameInRegistryBeforeExecution} 所描述的测试场景。
+     */
     void localExecutionRequiresSameTenantIdAndNameInRegistryBeforeExecution() {
         ToolDefinition tool = tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "echo", true, "");
         when(registry.snapshot(TOOL_ID)).thenReturn(Optional.of(registrationSnapshot));
@@ -116,6 +128,11 @@ class GovernedToolExecutionServiceTest {
 
     @ParameterizedTest
     @MethodSource("unavailableTools")
+    /**
+     * 验证或支持 {@code disabledCrossTenantAndUnsupportedToolsReturnOneFixedUnavailableResult} 所描述的测试场景。
+     *
+     * @param tool 测试工具定义
+     */
     void disabledCrossTenantAndUnsupportedToolsReturnOneFixedUnavailableResult(ToolDefinition tool) {
         ToolExecutionResult result = service.execute(tool, request(ToolInvocationSource.DEBUG));
 
@@ -124,6 +141,9 @@ class GovernedToolExecutionServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code localExecutionRejectsMissingOrInconsistentRegistryDefinitions} 所描述的测试场景。
+     */
     void localExecutionRejectsMissingOrInconsistentRegistryDefinitions() {
         ToolDefinition tool = tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "echo", true, "");
         when(registry.snapshot(TOOL_ID)).thenReturn(
@@ -142,6 +162,9 @@ class GovernedToolExecutionServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code localPreparedExecutionUsesCapturedSnapshotAfterRegistrationReplacement} 所描述的测试场景。
+     */
     void localPreparedExecutionUsesCapturedSnapshotAfterRegistrationReplacement() throws Exception {
         InMemoryToolRegistry localRegistry = new InMemoryToolRegistry();
         GovernedToolExecutionService localService = new GovernedToolExecutionService(configs, http, localRegistry);
@@ -179,6 +202,9 @@ class GovernedToolExecutionServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code unavailableExecutionNeverRunsBeforeExecutionHook} 所描述的测试场景。
+     */
     void unavailableExecutionNeverRunsBeforeExecutionHook() {
         ToolDefinition tool = tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "echo", true, "");
         AtomicInteger hooks = new AtomicInteger();
@@ -190,6 +216,9 @@ class GovernedToolExecutionServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code httpPreparationPersistenceFailurePropagatesWithoutHookOrExecutor} 所描述的测试场景。
+     */
     void httpPreparationPersistenceFailurePropagatesWithoutHookOrExecutor() {
         ToolDefinition tool = tool(ToolType.HTTP, TENANT_ID, TOOL_ID, "http-tool", true, "https://example.invalid/items");
         DataAccessResourceFailureException failure = new DataAccessResourceFailureException("数据库连接失败");
@@ -205,6 +234,9 @@ class GovernedToolExecutionServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code publicExecuteKeepsPreparationDataAccessExceptionUnwrapped} 所描述的测试场景。
+     */
     void publicExecuteKeepsPreparationDataAccessExceptionUnwrapped() {
         ToolDefinition tool = tool(ToolType.HTTP, TENANT_ID, TOOL_ID, "http-tool", true, "https://example.invalid/items");
         DataAccessResourceFailureException failure = new DataAccessResourceFailureException("数据库连接失败");
@@ -216,6 +248,9 @@ class GovernedToolExecutionServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code localExecutionDataAccessFailureAfterHookIsNotPreparationWrapper} 所描述的测试场景。
+     */
     void localExecutionDataAccessFailureAfterHookIsNotPreparationWrapper() {
         ToolDefinition tool = tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "echo", true, "");
         DataAccessResourceFailureException failure = new DataAccessResourceFailureException("本地执行器连接失败");
@@ -232,6 +267,9 @@ class GovernedToolExecutionServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code failedBeforeExecutionHookDoesNotConsumePreparedExecution} 所描述的测试场景。
+     */
     void failedBeforeExecutionHookDoesNotConsumePreparedExecution() {
         ToolDefinition tool = tool(ToolType.LOCAL, TENANT_ID, TOOL_ID, "echo", true, "");
         AtomicInteger executions = new AtomicInteger();
@@ -249,6 +287,9 @@ class GovernedToolExecutionServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code executeWhenReadyUsesTheLocalSnapshotCapturedBeforeHook} 所描述的测试场景。
+     */
     void executeWhenReadyUsesTheLocalSnapshotCapturedBeforeHook() {
         InMemoryToolRegistry localRegistry = new InMemoryToolRegistry();
         GovernedToolExecutionService localService = new GovernedToolExecutionService(configs, http, localRegistry);
@@ -274,6 +315,9 @@ class GovernedToolExecutionServiceTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code preparedExecutionConsumesReadyTokenOnlyOnceAcrossConcurrentCalls} 所描述的测试场景。
+     */
     void preparedExecutionConsumesReadyTokenOnlyOnceAcrossConcurrentCalls() throws Exception {
         AtomicInteger executions = new AtomicInteger();
         GovernedToolExecutionService.PreparedToolExecution token =
@@ -304,6 +348,9 @@ class GovernedToolExecutionServiceTest {
         assertThat(executions).hasValue(1);
     }
 
+    /**
+     * 验证或支持 {@code unavailableTools} 所描述的测试场景。
+     */
     private static Stream<ToolDefinition> unavailableTools() {
         return Stream.of(
                 tool(ToolType.HTTP, TENANT_ID, TOOL_ID, "http-tool", false, "https://example.invalid/items"),
@@ -314,6 +361,16 @@ class GovernedToolExecutionServiceTest {
         );
     }
 
+    /**
+     * 构造测试工具定义。
+     *
+     * @param type 测试辅助方法使用的 type 参数
+     * @param tenantId 测试租户标识
+     * @param toolId 测试工具标识
+     * @param name 测试对象名称
+     * @param enabled 测试辅助方法使用的 enabled 参数
+     * @param endpoint 测试辅助方法使用的 endpoint 参数
+     */
     private static ToolDefinition tool(
             ToolType type, UUID tenantId, UUID toolId, String name, boolean enabled, String endpoint
     ) {
@@ -323,18 +380,35 @@ class GovernedToolExecutionServiceTest {
         );
     }
 
+    /**
+     * 构造测试配置。
+     *
+     * @param tenantId 测试租户标识
+     * @param toolId 测试工具标识
+     * @param urlTemplate 测试辅助方法使用的 urlTemplate 参数
+     */
     private static HttpToolConfig config(UUID tenantId, UUID toolId, String urlTemplate) {
         return new HttpToolConfig(
                 tenantId, toolId, HttpToolMethod.GET, urlTemplate, "{}", List.of(), java.util.Map.of(), Duration.ofSeconds(1)
         );
     }
 
+    /**
+     * 验证或支持 {@code snapshot} 所描述的测试场景。
+     *
+     * @param definition 测试辅助方法使用的 definition 参数
+     */
     private static ToolRegistry.ToolRegistrationSnapshot snapshot(ToolDefinition definition) {
         return new ToolRegistry.ToolRegistrationSnapshot(
                 definition, ignored -> ToolExecutionResult.succeeded("不应执行", null)
         );
     }
 
+    /**
+     * 构造测试使用的运行或 HTTP 请求。
+     *
+     * @param source 测试辅助方法使用的 source 参数
+     */
     private static ToolExecutionRequest request(ToolInvocationSource source) {
         return new ToolExecutionRequest(
                 TENANT_ID,
@@ -348,6 +422,11 @@ class GovernedToolExecutionServiceTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code assertUnavailable} 所描述的测试场景。
+     *
+     * @param result 待断言的处理结果
+     */
     private static void assertUnavailable(ToolExecutionResult result) {
         assertThat(result).isEqualTo(ToolExecutionResult.failed("工具不可用", null));
     }

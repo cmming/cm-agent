@@ -15,6 +15,9 @@ class HttpToolExampleRunnerTest {
     private HttpToolExampleRunner runner;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         properties = new HttpToolExampleProperties();
         properties.setBaseUrl("http://localhost:8080");
@@ -25,6 +28,9 @@ class HttpToolExampleRunnerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code shouldNotSendRequestWhenDisabled} 所描述的测试场景。
+     */
     void shouldNotSendRequestWhenDisabled() throws Exception {
         properties.setEnabled(false);
 
@@ -34,6 +40,9 @@ class HttpToolExampleRunnerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code shouldRejectMissingJwtBeforeSendingRequest} 所描述的测试场景。
+     */
     void shouldRejectMissingJwtBeforeSendingRequest() {
         properties.setEnabled(true);
         properties.setTargetUrl("https://api.example.test/messages");
@@ -45,6 +54,9 @@ class HttpToolExampleRunnerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code shouldRejectMissingTargetUrlBeforeSendingRequest} 所描述的测试场景。
+     */
     void shouldRejectMissingTargetUrlBeforeSendingRequest() {
         properties.setEnabled(true);
         properties.setJwt("test-jwt");
@@ -56,6 +68,9 @@ class HttpToolExampleRunnerTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code shouldRejectIncompleteSecretConfiguration} 所描述的测试场景。
+     */
     void shouldRejectIncompleteSecretConfiguration() {
         properties.setEnabled(true);
         properties.setJwt("test-jwt");

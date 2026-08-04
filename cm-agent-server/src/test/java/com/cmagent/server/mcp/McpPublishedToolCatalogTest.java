@@ -77,6 +77,9 @@ class McpPublishedToolCatalogTest {
     private PrincipalRef principal;
 
     @BeforeEach
+    /**
+     * 准备每个测试用例共享的前置数据。
+     */
     void setUp() {
         objectMapper = new ObjectMapper();
         httpToolProperties = new HttpToolProperties();
@@ -88,6 +91,9 @@ class McpPublishedToolCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void list只返回当前租户已发布启用且配置一致的Http和Local并按名称排序() {
         ToolDefinition http = tool(HTTP_ID, TENANT, "z_http", ToolType.HTTP, true, "https://api.example.test/run");
         ToolDefinition local = tool(LOCAL_ID, TENANT, "a_local", ToolType.LOCAL, true, "");
@@ -115,6 +121,9 @@ class McpPublishedToolCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void list拒绝同一租户重复发布名称而不是静默覆盖() {
         ToolDefinition first = tool(HTTP_ID, TENANT, "duplicate", ToolType.HTTP, true, "https://one.example.test");
         ToolDefinition second = tool(LOCAL_ID, TENANT, "duplicate", ToolType.LOCAL, true, "");
@@ -132,6 +141,9 @@ class McpPublishedToolCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void call每次重读发布和工具并使用CanonicalJson与Mcp执行来源() {
         ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
         publishableLocal(local);
@@ -168,6 +180,9 @@ class McpPublishedToolCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void call取消发布后即时不可用且不会执行() {
         ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
         publishableLocal(local);
@@ -190,6 +205,9 @@ class McpPublishedToolCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void call工具禁用后即时不可用并记录失败审计() {
         ToolDefinition enabled = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
         ToolDefinition disabled = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, false, "");
@@ -203,6 +221,9 @@ class McpPublishedToolCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void callHttp端点漂移后即时不可用并记录失败审计() {
         ToolDefinition http = tool(HTTP_ID, TENANT, "http_echo", ToolType.HTTP, true, "https://api.example.test/run");
         publishableHttp(http);
@@ -217,6 +238,9 @@ class McpPublishedToolCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void callLocal快照漂移后即时不可用并记录失败审计() {
         ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
         publishableLocal(local);
@@ -232,6 +256,9 @@ class McpPublishedToolCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void call不可用审计失败时返回受控协议错误且不会执行() {
         ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
         publishableLocal(local);
@@ -249,6 +276,9 @@ class McpPublishedToolCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void call缺少权限写拒绝审计且不返回敏感错误() {
         ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
         publishableLocal(local);
@@ -266,6 +296,9 @@ class McpPublishedToolCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void call拒绝审计失败时返回受控协议错误且不泄露原因() {
         ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
         publishableLocal(local);
@@ -282,6 +315,9 @@ class McpPublishedToolCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void call运行时失败审计失败时返回受控协议错误且不泄露原因() {
         ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
         publishableLocal(local);
@@ -299,6 +335,9 @@ class McpPublishedToolCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void call失败固定错误且成功输出移除SecretUrl和堆栈() {
         ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
         publishableLocal(local);
@@ -321,6 +360,9 @@ class McpPublishedToolCatalogTest {
     }
 
     @Test
+    /**
+     * 验证方法名称所描述的业务行为。
+     */
     void callLocal输出脱敏后超过上限时返回固定失败并记录失败审计() {
         ToolDefinition local = tool(LOCAL_ID, TENANT, "echo", ToolType.LOCAL, true, "");
         publishableLocal(local);
@@ -348,6 +390,11 @@ class McpPublishedToolCatalogTest {
                 LOCAL_ID.toString(), "SUCCEEDED", "MCP 工具调用完成");
     }
 
+    /**
+     * 验证或支持 {@code publishableLocal} 所描述的测试场景。
+     *
+     * @param local 测试辅助方法使用的 local 参数
+     */
     private void publishableLocal(ToolDefinition local) {
         when(publications.listEnabledByTenant(TENANT)).thenReturn(List.of(publication(LOCAL_ID, TENANT)));
         when(tools.findByTenantAndId(TENANT, LOCAL_ID)).thenReturn(Optional.of(local));
@@ -356,12 +403,22 @@ class McpPublishedToolCatalogTest {
         ));
     }
 
+    /**
+     * 验证或支持 {@code publishableHttp} 所描述的测试场景。
+     *
+     * @param http 测试辅助方法使用的 http 参数
+     */
     private void publishableHttp(ToolDefinition http) {
         when(publications.listEnabledByTenant(TENANT)).thenReturn(List.of(publication(HTTP_ID, TENANT)));
         when(tools.findByTenantAndId(TENANT, HTTP_ID)).thenReturn(Optional.of(http));
         when(httpConfigs.findByTenantAndToolId(TENANT, HTTP_ID)).thenReturn(Optional.of(httpConfig(http)));
     }
 
+    /**
+     * 验证或支持 {@code assertUnavailableAndAudited} 所描述的测试场景。
+     *
+     * @param specification 测试辅助方法使用的 specification 参数
+     */
     private void assertUnavailableAndAudited(McpStatelessServerFeatures.SyncToolSpecification specification) {
         McpSchema.CallToolResult result = specification.callHandler().apply(
                 McpTransportContext.EMPTY, new McpSchema.CallToolRequest(specification.tool().name(), Map.of())
@@ -378,6 +435,11 @@ class McpPublishedToolCatalogTest {
         verify(executions, never()).executeWhenReady(any(), any(), any());
     }
 
+    /**
+     * 验证或支持 {@code assertProtocolPersistenceError} 所描述的测试场景。
+     *
+     * @param action 待执行并断言的测试动作
+     */
     private void assertProtocolPersistenceError(org.assertj.core.api.ThrowableAssert.ThrowingCallable action) {
         assertThatThrownBy(action)
                 .isInstanceOfSatisfying(McpError.class, error -> {
@@ -386,10 +448,25 @@ class McpPublishedToolCatalogTest {
                 });
     }
 
+    /**
+     * 验证或支持 {@code auditFailure} 所描述的测试场景。
+     *
+     * @param sensitiveReason 测试辅助方法使用的 sensitiveReason 参数
+     */
     private AuditPersistenceException auditFailure(String sensitiveReason) {
         return new AuditPersistenceException("审计写入失败：" + sensitiveReason, new IllegalStateException(sensitiveReason));
     }
 
+    /**
+     * 构造测试工具定义。
+     *
+     * @param id 测试辅助方法使用的 id 参数
+     * @param tenantId 测试租户标识
+     * @param name 测试对象名称
+     * @param type 测试辅助方法使用的 type 参数
+     * @param enabled 测试辅助方法使用的 enabled 参数
+     * @param endpoint 测试辅助方法使用的 endpoint 参数
+     */
     private static ToolDefinition tool(UUID id, UUID tenantId, String name, ToolType type, boolean enabled, String endpoint) {
         return new ToolDefinition(
                 id, tenantId, name, "测试工具", type,
@@ -398,10 +475,21 @@ class McpPublishedToolCatalogTest {
         );
     }
 
+    /**
+     * 验证或支持 {@code publication} 所描述的测试场景。
+     *
+     * @param toolId 测试工具标识
+     * @param tenantId 测试租户标识
+     */
     private static McpToolPublication publication(UUID toolId, UUID tenantId) {
         return new McpToolPublication(tenantId, toolId, true, "admin");
     }
 
+    /**
+     * 验证或支持 {@code httpConfig} 所描述的测试场景。
+     *
+     * @param tool 测试工具定义
+     */
     private static HttpToolConfig httpConfig(ToolDefinition tool) {
         return new HttpToolConfig(
                 tool.tenantId(), tool.id(), HttpToolMethod.POST, tool.endpoint(), tool.inputSchema(),

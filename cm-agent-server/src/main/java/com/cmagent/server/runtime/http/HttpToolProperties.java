@@ -158,7 +158,7 @@ public class HttpToolProperties {
     }
 
     /**
-     * validateTimeoutBound：校验输入、状态或前置条件。
+     * 校验超时配置位于允许的上下界内。
      *
      * @param timeout 本次操作使用的超时限制。
      */
@@ -171,7 +171,7 @@ public class HttpToolProperties {
 
     @Override
     /**
-     * toString：转换内部数据为目标表示。
+     * 返回不暴露 Secret 值的安全文本摘要。
      */
     public String toString() {
         return "HttpToolProperties{" +

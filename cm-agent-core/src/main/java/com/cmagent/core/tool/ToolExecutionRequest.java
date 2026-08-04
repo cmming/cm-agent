@@ -6,7 +6,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * ToolExecutionRequest 的核心领域类型。
+ * 封装工具执行所需的租户、主体、运行上下文和输入数据。
  */
 public record ToolExecutionRequest(
         UUID tenantId,
@@ -20,7 +20,16 @@ public record ToolExecutionRequest(
 ) {
 
     /**
-     * 构造 ToolExecutionRequest 实例并校验输入参数。
+     * 校验工具调用来源与租户、主体、Agent 和运行上下文是否一致。
+      *
+      * @param tenantId 当前租户标识
+      * @param agentId 目标 Agent 标识
+      * @param principal 当前认证主体
+      * @param runId 目标运行标识
+      * @param toolCallId 工具调用标识
+      * @param toolId 目标工具标识
+      * @param inputJson 序列化后的工具输入 JSON
+      * @param source 待转换的源对象
      */
     public ToolExecutionRequest {
         Objects.requireNonNull(toolId, "toolId 不能为空");
@@ -47,7 +56,15 @@ public record ToolExecutionRequest(
     }
 
     /**
-     * 构造 ToolExecutionRequest 实例并校验输入参数。
+     * 创建默认来源为 Agent 运行的完整工具执行请求。
+      *
+      * @param tenantId 当前租户标识
+      * @param agentId 目标 Agent 标识
+      * @param principal 当前认证主体
+      * @param runId 目标运行标识
+      * @param toolCallId 工具调用标识
+      * @param toolId 目标工具标识
+      * @param inputJson 序列化后的工具输入 JSON
      */
     public ToolExecutionRequest(UUID tenantId, UUID agentId, PrincipalRef principal, UUID runId,
                                 String toolCallId, UUID toolId, String inputJson) {
@@ -56,14 +73,19 @@ public record ToolExecutionRequest(
     }
 
     /**
-     * 构造 ToolExecutionRequest 实例并校验输入参数。
+     * 创建不带运行上下文的兼容工具执行请求。
+      *
+      * @param toolId 目标工具标识
+      * @param inputJson 序列化后的工具输入 JSON
      */
     public ToolExecutionRequest(UUID toolId, String inputJson) {
         this(null, null, null, null, null, toolId, inputJson, ToolInvocationSource.LEGACY);
     }
 
     /**
-     * 执行 hasRuntimeContext 操作。
+     * 判断请求是否包含 Agent 工具调用所需的完整运行上下文。
+     *
+     * @return 租户、Agent、主体、运行和工具调用标识均有效时返回 {@code true}
      */
     public boolean hasRuntimeContext() {
         return source == ToolInvocationSource.AGENT && tenantId != null && agentId != null

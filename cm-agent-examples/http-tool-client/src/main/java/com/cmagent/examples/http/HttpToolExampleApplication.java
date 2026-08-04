@@ -10,6 +10,11 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @SpringBootApplication
 @EnableConfigurationProperties(HttpToolExampleProperties.class)
 public class HttpToolExampleApplication {
+    /**
+     * 启动示例 Spring Boot 应用。
+     *
+     * @param args 应用启动命令行参数
+     */
     public static void main(String[] args) {
         SpringApplication.run(HttpToolExampleApplication.class, args);
     }

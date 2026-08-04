@@ -30,6 +30,11 @@ public final class MysqlLocalExampleCatalog {
     private final List<LocalExample> examples;
     private final Map<String, LocalExample> examplesByKey;
 
+    /**
+     * 校验并构造 {@code MysqlLocalExampleCatalog} 实例。
+     *
+     * @param objectMapper 用于 JSON 解析和序列化的组件
+     */
     public MysqlLocalExampleCatalog(ObjectMapper objectMapper) {
         Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
         LocalExample echo = new LocalExample(
@@ -78,10 +83,18 @@ public final class MysqlLocalExampleCatalog {
         examplesByKey = Map.copyOf(byKey);
     }
 
+    /**
+     * 列出当前范围内可见的本地示例工具。
+     */
     public List<LocalExample> list() {
         return examples;
     }
 
+    /**
+     * 按示例键查询本地工具模板。
+     *
+     * @param key 本地示例工具键
+     */
     public Optional<LocalExample> find(String key) {
         return Optional.ofNullable(examplesByKey.get(key));
     }
@@ -95,6 +108,14 @@ public final class MysqlLocalExampleCatalog {
             JsonNode sampleInput,
             ToolExecutor executor
     ) {
+        /**
+         * 校验并构造 {@code LocalExample} 实例。
+         *
+         * @param key 本地示例工具键
+     * @param definition 当前工具定义
+         * @param sampleInput 推荐的示例工具输入。
+     * @param executor 与工具定义绑定的本地执行器
+         */
         public LocalExample {
             key = Objects.requireNonNull(key, "key 不能为空");
             definition = Objects.requireNonNull(definition, "definition 不能为空");
@@ -103,12 +124,18 @@ public final class MysqlLocalExampleCatalog {
         }
 
         @Override
+        /**
+         * 解析并返回示例工具的推荐输入。
+         */
         public JsonNode sampleInput() {
             return sampleInput.deepCopy();
         }
 
         /**
          * 复制固定定义，仅替换持久化审计主体。
+         *
+         * @param actor 安装本地示例工具的主体标识
+         * @return 可写入 Repository 的 LOCAL 工具定义
          */
         public ToolDefinition persistentDefinition(String actor) {
             return new ToolDefinition(

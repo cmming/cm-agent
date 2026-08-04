@@ -17,6 +17,9 @@ class ToolInvocationRequestTest {
     private static final UUID TOOL_ID = UUID.fromString("00000000-0000-0000-0000-000000000101");
 
     @Test
+    /**
+     * 验证 {@code CrossTenantPrincipal} 异常场景会被正确拒绝。
+     */
     void rejectsCrossTenantPrincipal() {
         UUID anotherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
         PrincipalRef principal = new PrincipalRef(
@@ -29,6 +32,9 @@ class ToolInvocationRequestTest {
     }
 
     @Test
+    /**
+     * 验证 {@code BlankToolCallId} 异常场景会被正确拒绝。
+     */
     void rejectsBlankToolCallId() {
         PrincipalRef principal = new PrincipalRef(
                 TENANT_ID, "principal", "测试主体", Set.of("agent:run"));
@@ -40,6 +46,9 @@ class ToolInvocationRequestTest {
     }
 
     @Test
+    /**
+     * 验证 {@code BlankToolName} 异常场景会被正确拒绝。
+     */
     void rejectsBlankToolName() {
         PrincipalRef principal = new PrincipalRef(
                 TENANT_ID, "principal", "测试主体", Set.of("agent:run"));
@@ -51,6 +60,9 @@ class ToolInvocationRequestTest {
     }
 
     @Test
+    /**
+     * 验证或支持 {@code retainsCompleteInvocationContext} 所描述的测试场景。
+     */
     void retainsCompleteInvocationContext() {
         PrincipalRef principal = new PrincipalRef(
                 TENANT_ID, "principal", "测试主体", Set.of("agent:run"));

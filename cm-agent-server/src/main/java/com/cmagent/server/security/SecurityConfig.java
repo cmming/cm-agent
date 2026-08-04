@@ -31,11 +31,11 @@ public class SecurityConfig {
     private final boolean publicApiDocsEnabled;
     private final ObjectMapper objectMapper;
     /**
-     * SecurityConfig：处理该类内部的业务逻辑或辅助计算。
+     * 创建 {@code SecurityConfig} 实例并保存其运行所需依赖。
      *
-     * @param jwtAuthenticationFilter 参与 SecurityConfig 处理的 jwtAuthenticationFilter 输入值。
-     * @param environment 参与 SecurityConfig 处理的 environment 输入值。
-     * @param publicApiDocsEnabled 参与 SecurityConfig 处理的 publicApiDocsEnabled 输入值。
+     * @param jwtAuthenticationFilter 解析并校验 Bearer JWT 的认证过滤器
+     * @param environment Spring 环境及当前激活 profile。
+     * @param publicApiDocsEnabled 是否公开访问 OpenAPI 文档端点
      * @param objectMapper JSON 映射器，用于序列化或解析 JSON。
      */
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
@@ -92,7 +92,7 @@ public class SecurityConfig {
     }
 
     /**
-     * authenticationEntryPoint：处理该类内部的业务逻辑或辅助计算。
+     * 构建未认证请求的统一 JSON 错误响应处理器。
      */
     private AuthenticationEntryPoint authenticationEntryPoint() {
         return (request, response, exception) -> writeError(
@@ -104,7 +104,7 @@ public class SecurityConfig {
     }
 
     /**
-     * accessDeniedHandler：处理该类内部的业务逻辑或辅助计算。
+     * 构建权限拒绝请求的统一 JSON 错误响应处理器。
      */
     private AccessDeniedHandler accessDeniedHandler() {
         return (request, response, exception) -> writeError(
@@ -116,11 +116,11 @@ public class SecurityConfig {
     }
 
     /**
-     * writeError：转换并生成规范化输出。
+     * 写出规范化结果。
      *
-     * @param response 参与 writeError 处理的 response 输入值。
+     * @param response 当前 HTTP 响应。
      * @param status 当前处理状态，用于驱动状态分支或记录结果。
-     * @param code 参与 writeError 处理的 code 输入值。
+     * @param code 稳定的业务错误码。
      * @param message 处理结果或审计消息。
      */
     private void writeError(HttpServletResponse response,
@@ -134,7 +134,7 @@ public class SecurityConfig {
     }
 
     /**
-     * isPublicApiDocsAllowed：判断当前条件是否成立。
+     * 判断方法名所描述的业务条件是否成立。
      */
     private boolean isPublicApiDocsAllowed() {
         if (!publicApiDocsEnabled) {

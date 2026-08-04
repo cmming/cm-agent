@@ -13,11 +13,20 @@ import org.springframework.context.annotation.Configuration;
 public class LocalToolRegistration {
 
     @Bean
+    /**
+     * 创建本地示例执行器共享的 JSON 映射器。
+     */
     ObjectMapper localToolObjectMapper() {
         return new ObjectMapper();
     }
 
     @Bean
+    /**
+     * 将示例执行器注册到进程内工具注册表。
+     *
+     * @param registry 本地工具执行器注册表
+     * @param objectMapper JSON 映射器
+     */
     InitializingBean registerLocalTools(ToolRegistry registry, ObjectMapper objectMapper) {
         return () -> {
             registry.register(LocalToolDefinitions.echo(), new EchoToolExecutor(objectMapper));
