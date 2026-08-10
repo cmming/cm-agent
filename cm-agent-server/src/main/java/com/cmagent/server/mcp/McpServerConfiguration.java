@@ -6,6 +6,7 @@ import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.core.tool.ToolRegistry;
 import com.cmagent.server.audit.AuditAppender;
+import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import com.cmagent.server.runtime.GovernedToolExecutionService;
 import com.cmagent.server.runtime.http.HttpToolProperties;
 import com.cmagent.server.security.ToolOutputSanitizer;
@@ -48,11 +49,12 @@ public class McpServerConfiguration {
             AuditAppender audits,
             ObjectMapper objectMapper,
             ToolOutputSanitizer sanitizer,
-            HttpToolProperties httpToolProperties
+            HttpToolProperties httpToolProperties,
+            ErrorDiagnosticLogger diagnosticLogger
     ) {
         return new McpPublishedToolCatalog(
                 tools, httpConfigs, publications, registry, executions, permissions, audits, objectMapper, sanitizer,
-                httpToolProperties
+                httpToolProperties, diagnosticLogger
         );
     }
 

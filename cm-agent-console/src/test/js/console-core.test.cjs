@@ -7,6 +7,10 @@ const core = require("../../main/resources/META-INF/resources/assets/console-cor
 test("优先显示结构化接口错误", () => {
     assert.equal(core.formatError(403, {message: "没有权限"}, ""), "请求失败(403)：没有权限执行此操作。");
     assert.equal(core.formatError(404, {detail: "不存在"}, ""), "请求失败(404)：请求的资源不存在或已不可用。");
+    assert.equal(
+        core.formatError(503, {code: "PERSISTENCE_UNAVAILABLE", message: "数据服务暂不可用", errorId: "req-20260810"}, ""),
+        "请求失败(503)：数据服务暂不可用（错误码：PERSISTENCE_UNAVAILABLE，错误编号：req-20260810）"
+    );
 });
 
 test("追加游标页并保留下一游标", () => {

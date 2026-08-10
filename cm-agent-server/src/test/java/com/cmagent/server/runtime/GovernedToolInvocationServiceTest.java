@@ -16,7 +16,7 @@ import com.cmagent.core.tool.ToolExecutionResult;
 import com.cmagent.core.tool.ToolInvocationSource;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
-import com.cmagent.server.security.SensitiveDataRedactor;
+import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -66,7 +66,7 @@ class GovernedToolInvocationServiceTest {
     @Mock
     private AuditAppender auditAppender;
     @Mock
-    private SensitiveDataRedactor redactor;
+    private ErrorDiagnosticLogger diagnosticLogger;
 
     private GovernedToolInvocationService service;
     private PrincipalRef principal;
@@ -79,7 +79,7 @@ class GovernedToolInvocationServiceTest {
      */
     void setUp() {
         service = new GovernedToolInvocationService(
-                toolRepository, grantRepository, policy, executionService, auditAppender, redactor
+                toolRepository, grantRepository, policy, executionService, auditAppender, diagnosticLogger
         );
         principal = new PrincipalRef(TENANT_ID, "principal", "管理员", Set.of("tool:invoke"));
         tool = tool(TENANT_ID, "echo");
@@ -284,7 +284,7 @@ class GovernedToolInvocationServiceTest {
     void executorReturnedFailureWritesFixedFailureAuditAndReturnsControlledError() {
         arrangeAllowedTool();
         when(executionService.prepare(eq(tool), any())).thenReturn(
-                prepared(new ToolExecutionResult("password=tool-secret", false))
+                prepared(ToolExecutionResult.failed("HTTP 请求超时", 504))
         );
 
         ToolInvocationResult result = service.invoke(request());
@@ -292,6 +292,7 @@ class GovernedToolInvocationServiceTest {
         assertThat(result).isEqualTo(ToolInvocationResult.failed("工具执行失败"));
         verify(auditAppender).append(TENANT_ID, "principal", "TOOL_CALL_FAILED",
                 "TOOL", TOOL_ID.toString(), "FAILED", "工具调用失败");
+        verify(diagnosticLogger).error(any(ErrorDiagnosticLogger.DiagnosticContext.class), eq("HTTP 请求超时"));
     }
 
     @Test
@@ -304,12 +305,10 @@ class GovernedToolInvocationServiceTest {
         when(executionService.prepare(eq(tool), any())).thenReturn(
                 preparedFailure(failure)
         );
-        when(redactor.redact(failure.getMessage())).thenReturn("password=<已脱敏>");
-
         ToolInvocationResult result = service.invoke(request());
 
         assertThat(result).isEqualTo(ToolInvocationResult.failed("工具执行失败"));
-        verify(redactor).redact(failure.getMessage());
+        verify(diagnosticLogger).error(any(ErrorDiagnosticLogger.DiagnosticContext.class), eq(failure));
         verify(auditAppender).append(TENANT_ID, "principal", "TOOL_CALL_FAILED",
                 "TOOL", TOOL_ID.toString(), "FAILED", "工具调用失败");
     }

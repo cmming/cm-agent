@@ -14,17 +14,24 @@
         if (status === 404) {
             return "请求失败(404)：请求的资源不存在或已不可用。";
         }
-        if (status >= 500) {
-            return `请求失败(${status})：服务暂时不可用，请稍后重试。`;
-        }
         const structuredMessage = body && typeof body === "object"
             ? body.message || body.error || body.detail
             : "";
         const readableMessage = structuredMessage
             || (typeof body === "string" && body.trim())
             || (fallbackText && fallbackText.trim());
+        const diagnosticDetails = body && typeof body === "object"
+            ? [
+                body.code ? `错误码：${body.code}` : "",
+                body.errorId ? `错误编号：${body.errorId}` : ""
+            ].filter(Boolean)
+            : [];
+        if (status >= 500 && !readableMessage) {
+            return `请求失败(${status})：服务暂时不可用，请稍后重试。`;
+        }
+        const diagnosticSuffix = diagnosticDetails.length ? `（${diagnosticDetails.join("，")}）` : "";
         return readableMessage
-            ? `请求失败(${status})：${readableMessage}`
+            ? `请求失败(${status})：${readableMessage}${diagnosticSuffix}`
             : `请求失败(${status})：服务器未返回可读错误信息`;
     }
 

@@ -18,6 +18,7 @@ import com.cmagent.core.tool.ToolInvocationSource;
 import com.cmagent.core.tool.ToolRegistry;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
+import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import com.cmagent.server.runtime.GovernedToolExecutionService;
 import com.cmagent.server.runtime.http.HttpToolProperties;
 import com.cmagent.server.security.ToolOutputSanitizer;
@@ -44,6 +45,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
@@ -70,6 +72,8 @@ class McpPublishedToolCatalogTest {
     private PermissionEvaluator permissions;
     @Mock
     private AuditAppender audits;
+    @Mock
+    private ErrorDiagnosticLogger diagnosticLogger;
 
     private ObjectMapper objectMapper;
     private HttpToolProperties httpToolProperties;
@@ -85,7 +89,7 @@ class McpPublishedToolCatalogTest {
         httpToolProperties = new HttpToolProperties();
         catalog = new McpPublishedToolCatalog(
                 tools, httpConfigs, publications, registry, executions, permissions, audits,
-                objectMapper, new ToolOutputSanitizer(objectMapper), httpToolProperties
+                objectMapper, new ToolOutputSanitizer(objectMapper), httpToolProperties, diagnosticLogger
         );
         principal = new PrincipalRef(TENANT, "mcp-user", "MCP 用户", Set.of("tool:mcp:invoke"));
     }
@@ -412,6 +416,7 @@ class McpPublishedToolCatalogTest {
                 LOCAL_ID.toString(), "FAILED", "MCP 工具调用失败");
         verify(audits, never()).append(TENANT, "mcp-user", "MCP_TOOL_CALL_COMPLETED", "TOOL",
                 LOCAL_ID.toString(), "SUCCEEDED", "MCP 工具调用完成");
+        verify(diagnosticLogger).error(any(ErrorDiagnosticLogger.DiagnosticContext.class), eq("工具输出超过安全长度限制"));
     }
 
     /**

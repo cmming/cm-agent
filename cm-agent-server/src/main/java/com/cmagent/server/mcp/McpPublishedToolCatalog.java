@@ -16,6 +16,7 @@ import com.cmagent.core.tool.ToolInvocationSource;
 import com.cmagent.core.tool.ToolRegistry;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
+import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import com.cmagent.server.runtime.GovernedToolExecutionService;
 import com.cmagent.server.runtime.ToolPreparationDataAccessException;
 import com.cmagent.server.runtime.http.HttpToolProperties;
@@ -59,6 +60,7 @@ public class McpPublishedToolCatalog {
     private final ObjectMapper objectMapper;
     private final ToolOutputSanitizer sanitizer;
     private final HttpToolProperties httpToolProperties;
+    private final ErrorDiagnosticLogger diagnosticLogger;
     /**
      * 创建 {@code McpPublishedToolCatalog} 实例并保存其运行所需依赖。
      *
@@ -83,7 +85,8 @@ public class McpPublishedToolCatalog {
             AuditAppender audits,
             ObjectMapper objectMapper,
             ToolOutputSanitizer sanitizer,
-            HttpToolProperties httpToolProperties
+            HttpToolProperties httpToolProperties,
+            ErrorDiagnosticLogger diagnosticLogger
     ) {
         this.tools = Objects.requireNonNull(tools, "tools 不能为空");
         this.httpConfigs = Objects.requireNonNull(httpConfigs, "httpConfigs 不能为空");
@@ -95,6 +98,7 @@ public class McpPublishedToolCatalog {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
         this.sanitizer = Objects.requireNonNull(sanitizer, "sanitizer 不能为空");
         this.httpToolProperties = Objects.requireNonNull(httpToolProperties, "httpToolProperties 不能为空");
+        this.diagnosticLogger = Objects.requireNonNull(diagnosticLogger, "diagnosticLogger 不能为空");
     }
 
     /**
@@ -176,6 +180,7 @@ public class McpPublishedToolCatalog {
             if (result.success()) {
                 String output = sanitizer.sanitize(result.outputSummary(), List.of());
                 if (sanitizer.exceedsByteLimit(output, httpToolProperties.getMaxResponseBytes())) {
+                    diagnosticLogger.error(diagnosticContext(principal, request), "工具输出超过安全长度限制");
                     audits.append(principal.tenantId(), principal.principalId(), "MCP_TOOL_CALL_FAILED", RESOURCE_TYPE,
                             current.id().toString(), "FAILED", "MCP 工具调用失败");
                     return failed(TOOL_EXECUTION_FAILED);
@@ -184,16 +189,28 @@ public class McpPublishedToolCatalog {
                         current.id().toString(), "SUCCEEDED", "MCP 工具调用完成");
                 return succeeded(output);
             }
+            diagnosticLogger.error(diagnosticContext(principal, request), result.errorMessage());
             audits.append(principal.tenantId(), principal.principalId(), "MCP_TOOL_CALL_FAILED", RESOURCE_TYPE,
                     current.id().toString(), "FAILED", "MCP 工具调用失败");
             return failed(TOOL_EXECUTION_FAILED);
         } catch (AuditPersistenceException exception) {
+            diagnosticLogger.error(diagnosticContext(principal, request), exception);
             throw protocolPersistenceError();
         } catch (ToolPreparationDataAccessException exception) {
+            diagnosticLogger.error(diagnosticContext(principal, request), exception);
             throw protocolPersistenceError();
         } catch (RuntimeException exception) {
+            diagnosticLogger.error(diagnosticContext(principal, request), exception);
             return executionFailed(principal, current.id());
         }
+    }
+
+    private ErrorDiagnosticLogger.DiagnosticContext diagnosticContext(PrincipalRef principal, ToolExecutionRequest request) {
+        return new ErrorDiagnosticLogger.DiagnosticContext(
+                request.toolCallId(), "MCP_TOOL", TOOL_EXECUTION_FAILED,
+                principal.tenantId().toString(), principal.principalId(), "-", "-",
+                request.toolId().toString(), request.toolCallId(), ToolInvocationSource.MCP.name()
+        );
     }
 
     /**

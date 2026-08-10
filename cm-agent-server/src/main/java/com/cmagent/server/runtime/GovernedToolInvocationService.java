@@ -13,9 +13,7 @@ import com.cmagent.core.tool.ToolExecutionRequest;
 import com.cmagent.core.tool.ToolExecutionResult;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
-import com.cmagent.server.security.SensitiveDataRedactor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -24,7 +22,6 @@ import java.util.Objects;
 @Service
 /** 面向 AgentScope 的工具调用网关，确保每次调用都重新经过治理链路。 */
 public class GovernedToolInvocationService implements ToolInvocationGateway {
-    private static final Logger log = LoggerFactory.getLogger(GovernedToolInvocationService.class);
     private static final String RESOURCE_TYPE = "TOOL";
     private static final String TOOL_UNAVAILABLE = "工具不可用";
     private static final String TOOL_EXECUTION_FAILED = "工具执行失败";
@@ -34,7 +31,7 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
     private final ToolAuthorizationPolicy policy;
     private final GovernedToolExecutionService executionService;
     private final AuditAppender auditAppender;
-    private final SensitiveDataRedactor redactor;
+    private final ErrorDiagnosticLogger diagnosticLogger;
     /**
      * 创建 {@code GovernedToolInvocationService} 实例并保存其运行所需依赖。
      *
@@ -43,7 +40,7 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
      * @param policy 工具调用授权策略
      * @param executionService 执行已准备工具的服务。
      * @param auditAppender 负责追加安全审计事件的组件。
-     * @param redactor 负责清理敏感文本的脱敏器。
+     * @param diagnosticLogger 负责记录脱敏诊断日志的组件
      */
     public GovernedToolInvocationService(
             ToolDefinitionRepository toolRepository,
@@ -51,14 +48,14 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
             ToolAuthorizationPolicy policy,
             GovernedToolExecutionService executionService,
             AuditAppender auditAppender,
-            SensitiveDataRedactor redactor
+            ErrorDiagnosticLogger diagnosticLogger
     ) {
         this.toolRepository = Objects.requireNonNull(toolRepository, "toolRepository 不能为空");
         this.grantRepository = Objects.requireNonNull(grantRepository, "grantRepository 不能为空");
         this.policy = Objects.requireNonNull(policy, "policy 不能为空");
         this.executionService = Objects.requireNonNull(executionService, "executionService 不能为空");
         this.auditAppender = Objects.requireNonNull(auditAppender, "auditAppender 不能为空");
-        this.redactor = Objects.requireNonNull(redactor, "redactor 不能为空");
+        this.diagnosticLogger = Objects.requireNonNull(diagnosticLogger, "diagnosticLogger 不能为空");
     }
 
     @Override
@@ -104,16 +101,24 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
                 appendAudit(request, "TOOL_CALL_COMPLETED", "SUCCEEDED", "工具调用完成");
                 return ToolInvocationResult.succeeded(executionResult.outputSummary());
             }
+            diagnosticLogger.error(diagnosticContext(request), executionResult.errorMessage());
             appendAudit(request, "TOOL_CALL_FAILED", "FAILED", "工具调用失败");
             return ToolInvocationResult.failed(TOOL_EXECUTION_FAILED);
         } catch (AuditPersistenceException auditFailure) {
             throw auditFailure;
         } catch (RuntimeException executionFailure) {
-            log.warn("工具执行失败。toolId={}, reason={}",
-                    request.toolId(), redactor.redact(executionFailure.getMessage()));
+            diagnosticLogger.error(diagnosticContext(request), executionFailure);
             appendAudit(request, "TOOL_CALL_FAILED", "FAILED", "工具调用失败");
             return ToolInvocationResult.failed(TOOL_EXECUTION_FAILED);
         }
+    }
+
+    private ErrorDiagnosticLogger.DiagnosticContext diagnosticContext(ToolInvocationRequest request) {
+        return new ErrorDiagnosticLogger.DiagnosticContext(
+                request.toolCallId(), "GOVERNED_TOOL", TOOL_EXECUTION_FAILED,
+                request.tenantId().toString(), request.principal().principalId(), request.agentId().toString(),
+                request.runId().toString(), request.toolId().toString(), request.toolCallId(), "AGENT"
+        );
     }
 
     /**
