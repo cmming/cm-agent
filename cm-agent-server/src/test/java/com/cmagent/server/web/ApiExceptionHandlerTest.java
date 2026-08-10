@@ -3,9 +3,12 @@ package com.cmagent.server.web;
 import com.cmagent.server.audit.AuditPersistenceException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,6 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+@ExtendWith(OutputCaptureExtension.class)
 class ApiExceptionHandlerTest {
     private MockMvc mockMvc;
 
@@ -30,6 +34,7 @@ class ApiExceptionHandlerTest {
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(new FailingController())
                 .setControllerAdvice(new ApiExceptionHandler())
+                .addFilters(new RequestCorrelationFilter())
                 .build();
     }
 
@@ -48,14 +53,20 @@ class ApiExceptionHandlerTest {
     /**
      * 验证或支持 {@code persistenceFailureDoesNotExposeJdbcCredentialsOrSql} 所描述的测试场景。
      */
-    void persistenceFailureDoesNotExposeJdbcCredentialsOrSql() throws Exception {
-        mockMvc.perform(get("/test/persistence"))
+    void persistenceFailureDoesNotExposeJdbcCredentialsOrSql(CapturedOutput output) throws Exception {
+        mockMvc.perform(get("/test/persistence").header(RequestCorrelationFilter.ERROR_ID_HEADER, "api-error-20260810"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("PERSISTENCE_UNAVAILABLE"))
                 .andExpect(jsonPath("$.message").value("数据服务暂不可用"))
+                .andExpect(jsonPath("$.errorId").value("api-error-20260810"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string(RequestCorrelationFilter.ERROR_ID_HEADER, "api-error-20260810"))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("unit-user:unit-password"))))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("select * from"))));
+        org.assertj.core.api.Assertions.assertThat(output.getOut())
+                .contains("errorId=api-error-20260810")
+                .doesNotContain("unit-user:unit-password", "select * from");
     }
 
     @Test

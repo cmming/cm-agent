@@ -2,7 +2,9 @@ package com.cmagent.server.security;
 
 import com.cmagent.api.ApiErrorCode;
 import com.cmagent.api.ApiErrorResponse;
+import com.cmagent.server.web.RequestCorrelationFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -96,6 +98,7 @@ public class SecurityConfig {
      */
     private AuthenticationEntryPoint authenticationEntryPoint() {
         return (request, response, exception) -> writeError(
+                request,
                 response,
                 HttpStatus.UNAUTHORIZED,
                 ApiErrorCode.UNAUTHORIZED,
@@ -108,6 +111,7 @@ public class SecurityConfig {
      */
     private AccessDeniedHandler accessDeniedHandler() {
         return (request, response, exception) -> writeError(
+                request,
                 response,
                 HttpStatus.FORBIDDEN,
                 ApiErrorCode.FORBIDDEN,
@@ -123,14 +127,17 @@ public class SecurityConfig {
      * @param code 稳定的业务错误码。
      * @param message 处理结果或审计消息。
      */
-    private void writeError(HttpServletResponse response,
+    private void writeError(HttpServletRequest request,
+                            HttpServletResponse response,
                             HttpStatus status,
                             ApiErrorCode code,
                             String message) throws IOException {
         response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
-        objectMapper.writeValue(response.getOutputStream(), new ApiErrorResponse(code, message, Instant.now()));
+        String errorId = RequestCorrelationFilter.errorIdOf(request);
+        response.setHeader(RequestCorrelationFilter.ERROR_ID_HEADER, errorId);
+        objectMapper.writeValue(response.getOutputStream(), new ApiErrorResponse(code, message, Instant.now(), errorId));
     }
 
     /**

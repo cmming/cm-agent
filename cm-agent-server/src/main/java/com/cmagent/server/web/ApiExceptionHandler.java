@@ -3,7 +3,11 @@ package com.cmagent.server.web;
 import com.cmagent.api.ApiErrorCode;
 import com.cmagent.api.ApiErrorResponse;
 import com.cmagent.server.audit.AuditPersistenceException;
+import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import com.cmagent.server.security.SensitiveDataRedactor;
+import com.cmagent.server.security.ToolOutputSanitizer;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
@@ -26,21 +30,27 @@ import java.time.Instant;
 /** 将常见业务异常转换为稳定、脱敏的 JSON 错误响应。 */
 public class ApiExceptionHandler {
     private final SensitiveDataRedactor redactor;
+    private final ErrorDiagnosticLogger diagnosticLogger;
     /**
      * 创建 {@code ApiExceptionHandler} 实例并保存其运行所需依赖。
      */
     public ApiExceptionHandler() {
-        this(new SensitiveDataRedactor());
+        this(new SensitiveDataRedactor(), new ErrorDiagnosticLogger(
+                new SensitiveDataRedactor(),
+                new ToolOutputSanitizer(new ObjectMapper())
+        ));
     }
 
     @Autowired
     /**
      * 创建 {@code ApiExceptionHandler} 实例并保存其运行所需依赖。
      *
-     * @param redactor 负责清理敏感文本的脱敏器。
+     * @param redactor 负责清理敏感文本的脱敏器
+     * @param diagnosticLogger 负责记录脱敏的失败诊断日志
      */
-    public ApiExceptionHandler(SensitiveDataRedactor redactor) {
+    public ApiExceptionHandler(SensitiveDataRedactor redactor, ErrorDiagnosticLogger diagnosticLogger) {
         this.redactor = redactor;
+        this.diagnosticLogger = diagnosticLogger;
     }
 
     @ExceptionHandler({
@@ -59,8 +69,8 @@ public class ApiExceptionHandler {
      *
      * @param ignored 仅用于满足回调签名、不参与业务判断的参数。
      */
-    public ResponseEntity<ApiErrorResponse> validationFailure(Exception ignored) {
-        return response(HttpStatus.BAD_REQUEST, ApiErrorCode.VALIDATION_FAILED, "请求参数不合法");
+    public ResponseEntity<ApiErrorResponse> validationFailure(Exception ignored, HttpServletRequest request) {
+        return response(HttpStatus.BAD_REQUEST, ApiErrorCode.VALIDATION_FAILED, "请求参数不合法", request);
     }
 
     @ExceptionHandler(DataAccessException.class)
@@ -69,8 +79,9 @@ public class ApiExceptionHandler {
      *
      * @param ignored 仅用于满足回调签名、不参与业务判断的参数。
      */
-    public ResponseEntity<ApiErrorResponse> persistenceFailure(DataAccessException ignored) {
-        return response(HttpStatus.SERVICE_UNAVAILABLE, ApiErrorCode.PERSISTENCE_UNAVAILABLE, "数据服务暂不可用");
+    public ResponseEntity<ApiErrorResponse> persistenceFailure(DataAccessException failure, HttpServletRequest request) {
+        return failedResponse(HttpStatus.SERVICE_UNAVAILABLE, ApiErrorCode.PERSISTENCE_UNAVAILABLE,
+                "数据服务暂不可用", failure, request);
     }
 
     @ExceptionHandler(AuditPersistenceException.class)
@@ -79,8 +90,9 @@ public class ApiExceptionHandler {
      *
      * @param ignored 仅用于满足回调签名、不参与业务判断的参数。
      */
-    public ResponseEntity<ApiErrorResponse> auditPersistenceFailure(AuditPersistenceException ignored) {
-        return response(HttpStatus.SERVICE_UNAVAILABLE, ApiErrorCode.AUDIT_UNAVAILABLE, "审计服务暂不可用");
+    public ResponseEntity<ApiErrorResponse> auditPersistenceFailure(AuditPersistenceException failure, HttpServletRequest request) {
+        return failedResponse(HttpStatus.SERVICE_UNAVAILABLE, ApiErrorCode.AUDIT_UNAVAILABLE,
+                "审计服务暂不可用", failure, request);
     }
 
     @ExceptionHandler(ResponseStatusException.class)
@@ -89,21 +101,23 @@ public class ApiExceptionHandler {
      *
      * @param exception 当前捕获的异常，用于转换或记录失败信息。
      */
-    public ResponseEntity<ApiErrorResponse> statusFailure(ResponseStatusException exception) {
+    public ResponseEntity<ApiErrorResponse> statusFailure(ResponseStatusException exception, HttpServletRequest request) {
         HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
         return switch (status) {
-            case BAD_REQUEST -> response(status, ApiErrorCode.VALIDATION_FAILED, "请求参数不合法");
-            case UNAUTHORIZED -> response(status, ApiErrorCode.UNAUTHORIZED, "未登录或令牌无效");
-            case FORBIDDEN -> response(status, ApiErrorCode.FORBIDDEN, "没有权限执行该操作");
+            case BAD_REQUEST -> response(status, ApiErrorCode.VALIDATION_FAILED, "请求参数不合法", request);
+            case UNAUTHORIZED -> response(status, ApiErrorCode.UNAUTHORIZED, "未登录或令牌无效", request);
+            case FORBIDDEN -> response(status, ApiErrorCode.FORBIDDEN, "没有权限执行该操作", request);
             case CONFLICT -> response(
                     status,
                     ApiErrorCode.VALIDATION_FAILED,
                     exception.getReason() == null || exception.getReason().isBlank()
                             ? "请求资源冲突"
-                            : exception.getReason()
+                            : exception.getReason(),
+                    request
             );
-            case NOT_FOUND -> response(status, ApiErrorCode.RUNTIME_ERROR, "请求资源不存在");
-            default -> response(HttpStatus.INTERNAL_SERVER_ERROR, ApiErrorCode.INTERNAL_ERROR, "服务内部错误");
+            case NOT_FOUND -> response(status, ApiErrorCode.RUNTIME_ERROR, "请求资源不存在", request);
+            default -> failedResponse(HttpStatus.INTERNAL_SERVER_ERROR, ApiErrorCode.INTERNAL_ERROR,
+                    "服务内部错误", exception, request);
         };
     }
 
@@ -113,8 +127,9 @@ public class ApiExceptionHandler {
      *
      * @param ignored 仅用于满足回调签名、不参与业务判断的参数。
      */
-    public ResponseEntity<ApiErrorResponse> runtimeFailure(RuntimeException ignored) {
-        return response(HttpStatus.INTERNAL_SERVER_ERROR, ApiErrorCode.INTERNAL_ERROR, "服务内部错误");
+    public ResponseEntity<ApiErrorResponse> runtimeFailure(RuntimeException failure, HttpServletRequest request) {
+        return failedResponse(HttpStatus.INTERNAL_SERVER_ERROR, ApiErrorCode.INTERNAL_ERROR,
+                "服务内部错误", failure, request);
     }
 
     /**
@@ -124,8 +139,28 @@ public class ApiExceptionHandler {
      * @param code 稳定的业务错误码。
      * @param message 处理结果或审计消息。
      */
-    private ResponseEntity<ApiErrorResponse> response(HttpStatus status, ApiErrorCode code, String message) {
+    private ResponseEntity<ApiErrorResponse> failedResponse(HttpStatus status,
+                                                            ApiErrorCode code,
+                                                            String message,
+                                                            Throwable failure,
+                                                            HttpServletRequest request) {
+        String errorId = RequestCorrelationFilter.errorIdOf(request);
+        diagnosticLogger.error(ErrorDiagnosticLogger.DiagnosticContext.api(errorId, code.name(), request.getRequestURI()), failure);
+        return response(status, code, message, errorId);
+    }
+
+    private ResponseEntity<ApiErrorResponse> response(HttpStatus status,
+                                                       ApiErrorCode code,
+                                                       String message,
+                                                       HttpServletRequest request) {
+        return response(status, code, message, RequestCorrelationFilter.errorIdOf(request));
+    }
+
+    private ResponseEntity<ApiErrorResponse> response(HttpStatus status,
+                                                       ApiErrorCode code,
+                                                       String message,
+                                                       String errorId) {
         return ResponseEntity.status(status)
-                .body(new ApiErrorResponse(code, redactor.redact(message), Instant.now()));
+                .body(new ApiErrorResponse(code, redactor.redact(message), Instant.now(), errorId));
     }
 }

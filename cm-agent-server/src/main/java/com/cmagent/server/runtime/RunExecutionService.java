@@ -17,6 +17,7 @@ import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.ToolAuthorizationPolicy;
 import com.cmagent.server.audit.AuditPersistenceException;
+import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import com.cmagent.server.security.SensitiveDataRedactor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -47,6 +48,7 @@ public class RunExecutionService {
     private final ToolAuthorizationPolicy toolAuthorizationPolicy;
     private final RunPersistenceService persistenceService;
     private final SensitiveDataRedactor redactor;
+    private final ErrorDiagnosticLogger diagnosticLogger;
 
     @Autowired
     /**
@@ -69,7 +71,8 @@ public class RunExecutionService {
             ToolGrantRepository grantRepository,
             ToolAuthorizationPolicy toolAuthorizationPolicy,
             RunPersistenceService persistenceService,
-            SensitiveDataRedactor redactor
+            SensitiveDataRedactor redactor,
+            ErrorDiagnosticLogger diagnosticLogger
     ) {
         this.runtime = Objects.requireNonNull(runtime, "runtime 不能为空");
         this.agentRepository = Objects.requireNonNull(agentRepository, "agentRepository 不能为空");
@@ -79,6 +82,7 @@ public class RunExecutionService {
         this.toolAuthorizationPolicy = Objects.requireNonNull(toolAuthorizationPolicy, "toolAuthorizationPolicy 不能为空");
         this.persistenceService = Objects.requireNonNull(persistenceService, "persistenceService 不能为空");
         this.redactor = Objects.requireNonNull(redactor, "redactor 不能为空");
+        this.diagnosticLogger = Objects.requireNonNull(diagnosticLogger, "diagnosticLogger 不能为空");
     }
 
     /**
@@ -116,6 +120,11 @@ public class RunExecutionService {
             bestEffortFailureClosure(principal, runningRun);
             throw dataFailure;
         } catch (RuntimeException runtimeFailure) {
+            diagnosticLogger.error(new ErrorDiagnosticLogger.DiagnosticContext(
+                    runningRun.id().toString(), "AGENT_RUNTIME", "RUNTIME_EXECUTION_FAILED",
+                    principal.tenantId().toString(), principal.principalId(), agent.id().toString(),
+                    runningRun.id().toString(), "-", "-", "AGENT"
+            ), runtimeFailure);
             try {
                 persistenceService.completeFailure(principal, runningRun);
             } catch (AuditPersistenceException | DataAccessException failureClosureFailure) {
