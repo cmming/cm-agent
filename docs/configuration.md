@@ -48,7 +48,7 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 ## 动态 HTTP 工具
 
-动态 HTTP 工具由 `POST /api/tools` 创建，`type` 为 `HTTP`，需要 `tool:grant` 权限。工具定义与 HTTP 配置在同一事务内保存；同一租户的工具名称唯一。HTTP 配置包含 `method`（`GET` 或 `POST`）、`urlTemplate`、输入 JSON Schema、参数映射、`secretHeaders` 与 `timeoutMillis`。示例仅展示结构，不含可用凭据：
+动态 HTTP 工具由 `POST /api/tools` 创建，`type` 为 `HTTP`，需要 `tool:grant` 权限。工具定义与 HTTP 配置在同一事务内保存；同一租户的工具名称唯一。新版 HTTP 配置包含 `method`（`GET` 或 `POST`）、`urlTemplate`、扁平 `parameters`、`secretHeaders` 与 `timeoutMillis`。输入 JSON Schema 由服务端生成，不需要调用方重复维护。示例仅展示结构，不含可用凭据：
 
 ```json
 {
@@ -59,16 +59,10 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
   "httpConfig": {
     "method": "POST",
     "urlTemplate": "https://api.example.test/orders/{orderId}",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "orderId": { "type": "string" },
-        "filter": { "type": "object", "properties": { "status": { "type": "string" } } }
-      }
-    },
-    "parameterMappings": [
-      { "sourcePointer": "/orderId", "location": "PATH", "targetName": "orderId", "required": true },
-      { "sourcePointer": "/filter/status", "location": "BODY", "targetPointer": "/filter/status", "defaultValue": "OPEN" }
+    "parameters": [
+      { "id": "orderId", "name": "orderId", "dataType": "STRING", "requestLocation": "PATH", "required": true },
+      { "id": "filter", "name": "filter", "dataType": "OBJECT", "requestLocation": "BODY", "required": false },
+      { "id": "status", "parentId": "filter", "name": "status", "dataType": "STRING", "required": false, "defaultValue": "OPEN" }
     ],
     "secretHeaders": { "X-Service-Token": "secret/integration/order-service" },
     "timeoutMillis": 3000
@@ -76,13 +70,17 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 }
 ```
 
-输入 JSON Schema 支持嵌套对象、数组、本地 `$ref` 和受限复杂度校验。`sourcePointer` 与 BODY `targetPointer` 使用 RFC 6901 JSON Pointer；PATH、QUERY、HEADER 映射使用 `targetName`。缺失输入和显式 `null` 都会尝试采用映射 `defaultValue`，仍未得到必填值时调用失败。PATH 映射必须必填，且与 URL 模板中的 `{placeholder}` 精确一一对应。GET 不允许 BODY 映射；复杂对象只能映射到 BODY，不能直接序列化进 PATH、QUERY 或 HEADER。
+每个参数以 `id` 唯一标识，嵌套参数只需用 `parentId` 指向父节点。只有顶层参数填写 `requestLocation`；字段 `name` 会直接作为 PATH、QUERY、HEADER 或 BODY 字段名，不再需要 `sourcePointer`、`targetPointer` 或 `nodeRole`。`dataType` 支持 `STRING`、`INTEGER`、`NUMBER`、`BOOLEAN`、`OBJECT` 和 `ARRAY`。ARRAY 必须有且只有一个直接匿名子节点（`name` 为空）来描述元素类型，子节点仍用 `parentId` 定位。
+
+顶层位置支持 `PATH`、`QUERY`、`HEADER`、`BODY` 和 `BODY_ROOT`。`BODY_ROOT` 会把该命名 Tool 输入字段的值直接作为整个请求体，因此可表达 `[{"p1":"v1"}]` 这类根数组请求；它不能与 `BODY` 并用。PATH 必须是必填标量且与 URL `{placeholder}` 完整同名；QUERY 允许标量或标量数组；HEADER 仅允许非敏感标量；GET 不允许 BODY/BODY_ROOT。缺失输入或显式 `null` 会尝试应用参数的 `defaultValue`。
+
+HTTP 工具配置只接受 `parameters`。`inputSchema` 由服务端根据参数定义生成，并保存在通用工具定义中供模型和 MCP 使用；客户端不能提交或编辑 HTTP 配置中的 Schema 和 JSON Pointer 映射。
 
 `secretHeaders` 只允许 `secret/...` 格式的引用，不保存密钥值，也不向创建响应、审计、日志、调试或 MCP 响应返回值。部署方必须提供受控 `SecretProvider`，并确保其自身 I/O 超时与中断响应；缺失、超时或失败的解析只产生固定受控错误。
 
 HTTP 工具默认不能出站。启用后，URL 必须匹配 `allowed-hosts`，并由服务端拒绝回环、链路本地、私有/保留地址及其他 SSRF 风险地址。重定向只允许同源，且每次跳转再次执行 DNS/地址校验；总超时覆盖 Secret 解析、请求和重定向。响应采用固定大小上限并经脱敏后才返回。JDK HTTP 客户端无法在域名解析后将已校验 IP 与 TLS SNI 原子绑定，生产网络仍必须配置 egress 防火墙、受控 DNS 或代理，作为 DNS TOCTOU 的纵深防御。
 
-控制台创建页面只接受 JSON 与 `secret/...` 引用。调试入口仅支持 HTTP/LOCAL 工具，需要 `tool:debug`；HIGH 风险工具必须提交完全一致的工具名称。调试不创建 Agent 或 Run，仍经过同一治理、审计和输出脱敏链路。
+控制台使用树形编辑器录入参数：顶层节点直接添加，OBJECT/ARRAY 在节点内添加子参数；页面保存时自动转换为扁平 `parameters[]`。Secret 配置仍只接受 JSON 对象和 `secret/...` 引用。调试入口仅支持 HTTP/LOCAL 工具，需要 `tool:debug`；HIGH 风险工具必须提交完全一致的工具名称。调试不创建 Agent 或 Run，仍经过同一治理、审计和输出脱敏链路。
 
 ## MCP Streamable HTTP
 

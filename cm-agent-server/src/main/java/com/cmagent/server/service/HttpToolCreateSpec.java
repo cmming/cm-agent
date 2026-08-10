@@ -1,6 +1,6 @@
 package com.cmagent.server.service;
 
-import com.cmagent.core.domain.HttpParameterMapping;
+import com.cmagent.core.domain.HttpParameterDefinition;
 import com.cmagent.core.domain.HttpToolMethod;
 
 import java.time.Duration;
@@ -13,8 +13,7 @@ import java.util.Map;
 public record HttpToolCreateSpec(
         HttpToolMethod method,
         String urlTemplate,
-        String inputSchema,
-        List<HttpParameterMapping> parameterMappings,
+        List<HttpParameterDefinition> parameters,
         Map<String, String> secretHeaders,
         Duration timeout
 ) {

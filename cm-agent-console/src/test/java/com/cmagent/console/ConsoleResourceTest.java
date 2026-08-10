@@ -35,6 +35,8 @@ class ConsoleResourceTest {
 
         assertThat(css)
                 .contains(".sidebar", ".page-view", ".empty-state", ":focus-visible")
+                .contains("#toolsPage .management-grid { grid-template-columns: minmax(0, 1fr); }")
+                .contains("#toolsPage .management-grid > * { width: 100%; grid-column: 1; }")
                 .contains("@media (max-width: 900px)");
     }
 
@@ -109,10 +111,11 @@ class ConsoleResourceTest {
         String script = resource("META-INF/resources/assets/app.js");
 
         assertThat(html).contains(
-                "id=\"httpConfigFields\"", "id=\"httpInputSchema\"", "id=\"httpParameterMappings\"",
+                "id=\"httpConfigFields\"", "id=\"httpParameterEditor\"", "id=\"httpParameterList\"",
                 "id=\"httpSecretHeaders\"", "Secret 引用", "id=\"toolMcpPublished\"",
                 "id=\"debugToolForm\"", "id=\"debugInput\"", "id=\"debugResult\""
-        ).contains("id=\"httpUrlTemplate\" type=\"text\"")
+        ).doesNotContain("httpInputSchema", "httpParameterMappings")
+                .contains("id=\"httpUrlTemplate\" type=\"text\"")
                 .doesNotContain("id=\"httpUrlTemplate\" type=\"url\"");
         assertThat(core).contains(
                 "parseJsonField", "canDebugTool", "buildHttpToolPayload",
@@ -124,6 +127,35 @@ class ConsoleResourceTest {
                 "publicationButton.disabled", "completeWrite()",
                 "tool.type === \"HTTP\" || tool.type === \"LOCAL\""
         ).doesNotContain(".innerHTML", "localStorage", "sessionStorage");
+    }
+
+    @Test
+    /**
+     * 验证 HTTP Tool 表单提供树形参数录入、扁平提交、根数组说明和安全提醒。
+     */
+    void HTTP工具表单提供分步样例和一键填入能力() throws IOException {
+        String html = resource("META-INF/resources/index.html");
+        String css = resource("META-INF/resources/assets/styles.css");
+        String script = resource("META-INF/resources/assets/app.js");
+
+        assertThat(html).contains(
+                "id=\"fillHttpExampleBtn\"", "HTTP 配置填写指南", "查看地址样例",
+                "id=\"httpParameterEditor\"", "id=\"httpParameterList\"", "id=\"addHttpParameterBtn\"",
+                "页面按树形结构录入参数", "接口没有输入参数时可以保持为空", "添加顶层参数",
+                "OBJECT 或 ARRAY 节点内添加子参数", "当前工具没有输入参数，可直接保存",
+                "根数组", "查看 Secret 引用样例",
+                "请勿填写、粘贴或展示 Token、API Key 等真实 Secret 值"
+        );
+        assertThat(css).contains(
+                ".http-config-guide", ".http-form-field", ".field-step", ".field-example",
+                ".parameter-card", ".parameter-grid", ".parameter-tree-node", ".parameter-children"
+        );
+        assertThat(script).contains(
+                "HTTP_TOOL_FORM_EXAMPLE", "fillHttpToolExample", "api.example.com/orders/{orderId}",
+                "secret/integration/orders-token", "addHttpParameter", "addHttpParameterChild",
+                "renderHttpParameterTree", "collectHttpParameters",
+                "BODY_ROOT", "填入示例会覆盖当前 HTTP 配置"
+        ).doesNotContain(".innerHTML");
     }
 
     @Test

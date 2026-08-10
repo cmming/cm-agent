@@ -2,7 +2,6 @@ package com.cmagent.examples.http;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -89,40 +88,26 @@ public class CmAgentToolClient {
         ObjectNode httpConfig = request.putObject("httpConfig");
         httpConfig.put("method", "POST");
         httpConfig.put("urlTemplate", properties.getTargetUrl());
-        httpConfig.set("inputSchema", inputSchema());
-        httpConfig.set("parameterMappings", parameterMappings());
+        httpConfig.set("parameters", parameters());
         httpConfig.set("secretHeaders", secretHeaders());
         httpConfig.put("timeoutMillis", 5000);
         return request;
     }
 
     /**
-     * 构造示例工具的输入 JSON Schema。
+     * 构造示例工具的扁平参数定义；输入 Schema 由服务端自动生成。
      */
-    private ObjectNode inputSchema() {
-        ObjectNode schema = objectMapper.createObjectNode();
-        schema.put("$schema", "https://json-schema.org/draft/2020-12/schema");
-        schema.put("type", "object");
-        schema.putObject("properties")
-                .putObject("message")
-                .put("type", "string")
-                .put("minLength", 1);
-        schema.putArray("required").add("message");
-        schema.put("additionalProperties", false);
-        return schema;
-    }
-
-    /**
-     * 构造示例工具的 PATH、QUERY 和 HEADER 参数映射。
-     */
-    private ArrayNode parameterMappings() {
-        ObjectNode mapping = objectMapper.createObjectNode();
-        mapping.put("sourcePointer", "/message");
-        mapping.put("location", "BODY");
-        mapping.put("targetName", "");
-        mapping.put("targetPointer", "/message");
-        mapping.put("required", true);
-        return objectMapper.createArrayNode().add(mapping);
+    private JsonNode parameters() {
+        ObjectNode message = objectMapper.createObjectNode();
+        message.put("id", "message");
+        message.put("name", "message");
+        message.put("dataType", "STRING");
+        message.put("requestLocation", "BODY");
+        message.put("description", "待发送的消息");
+        message.put("required", true);
+        message.put("minLength", 1);
+        message.put("exampleValue", "你好，CM Agent");
+        return objectMapper.createArrayNode().add(message);
     }
 
     /**

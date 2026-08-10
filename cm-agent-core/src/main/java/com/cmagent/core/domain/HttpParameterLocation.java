@@ -7,5 +7,7 @@ public enum HttpParameterLocation {
     PATH,
     QUERY,
     HEADER,
-    BODY
+    BODY,
+    /** 将命名 Tool 输入字段的值直接作为整个 HTTP 请求体。 */
+    BODY_ROOT
 }

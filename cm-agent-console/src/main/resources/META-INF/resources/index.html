@@ -123,14 +123,61 @@
                             <div><label for="toolType">类型</label><select id="toolType" name="type"><option value="LOCAL">LOCAL</option><option value="HTTP">HTTP</option><option value="MCP">MCP</option><option value="A2A">A2A</option></select></div>
                             <div><label for="toolRiskLevel">风险级别</label><select id="toolRiskLevel" name="riskLevel"><option value="LOW">LOW</option><option value="MEDIUM">MEDIUM</option><option value="HIGH">HIGH</option></select></div>
                         </div>
-                        <div id="httpConfigFields" hidden>
-                            <label for="httpMethod">HTTP 方法</label><select id="httpMethod"><option value="GET">GET</option><option value="POST">POST</option></select>
-                            <label for="httpUrlTemplate">请求地址模板</label><input id="httpUrlTemplate" type="text" inputmode="url">
-                            <label for="httpInputSchema">输入 Schema（JSON）</label><textarea id="httpInputSchema" rows="4">{}</textarea>
-                            <label for="httpParameterMappings">参数映射（JSON 数组）</label><textarea id="httpParameterMappings" rows="4">[]</textarea>
-                            <label for="httpSecretHeaders">Secret 引用（JSON 对象）</label><textarea id="httpSecretHeaders" rows="3">{}</textarea>
-                            <p class="field-help">仅填写 Secret 引用 JSON，例如引用路径；请勿填写、粘贴或展示真实 Secret 值。</p>
-                            <label for="httpTimeoutMillis">超时时间（毫秒）</label><input id="httpTimeoutMillis" type="number" min="100" max="30000" value="1000">
+                        <div id="httpConfigFields" class="http-config-fields" hidden>
+                            <div class="http-config-guide" role="note" aria-labelledby="httpConfigGuideTitle">
+                                <div>
+                                    <strong id="httpConfigGuideTitle">HTTP 配置填写指南</strong>
+                                    <p>页面按树形结构录入参数，字段名称直接作为 PATH、QUERY 或 HEADER 名称；保存时会自动转换为后端需要的扁平参数数组。</p>
+                                </div>
+                                <button id="fillHttpExampleBtn" class="button ghost compact" type="button">填入完整示例</button>
+                            </div>
+
+                            <div class="http-form-field">
+                                <label for="httpMethod"><span class="field-step">1</span>HTTP 方法</label>
+                                <select id="httpMethod" aria-describedby="httpMethodHelp"><option value="GET">GET</option><option value="POST">POST</option></select>
+                                <p id="httpMethodHelp" class="field-help">GET 适合查询，不能使用 BODY 或 BODY_ROOT；POST 可以提交对象或根数组请求体。完整示例使用 POST。</p>
+                            </div>
+
+                            <div class="http-form-field">
+                                <label for="httpUrlTemplate"><span class="field-step">2</span>请求地址模板</label>
+                                <input id="httpUrlTemplate" type="text" inputmode="url" autocomplete="off" spellcheck="false"
+                                       placeholder="https://api.example.com/orders/{orderId}" aria-describedby="httpUrlTemplateHelp">
+                                <p id="httpUrlTemplateHelp" class="field-help">填写已加入服务端白名单的完整地址。<code>{orderId}</code> 必须与 PATH 参数字段名完全一致；QUERY 参数由参数列表自动追加。</p>
+                                <details class="field-example"><summary>查看地址样例</summary><pre><code>https://api.example.com/orders/{orderId}</code></pre></details>
+                            </div>
+
+                            <div id="httpParameterEditor" class="http-form-field">
+                                <label><span class="field-step">3</span>输入参数</label>
+                                <p id="httpParametersHelp" class="field-help">接口没有输入参数时可以保持为空；需要参数时先添加顶层参数，再在 OBJECT 或 ARRAY 节点内添加子参数。子节点按层级缩进展示；ARRAY 只能有一个匿名元素节点。</p>
+                                <div class="parameter-toolbar">
+                                    <button id="addHttpParameterBtn" class="button ghost compact" type="button">＋ 添加顶层参数</button>
+                                    <span id="httpParameterCount" class="parameter-count">0 个参数</span>
+                                </div>
+                                <div id="httpParameterList" class="parameter-list" aria-describedby="httpParametersHelp">
+                                    <p id="httpParameterEmpty" class="empty-state compact-empty">当前工具没有输入参数，可直接保存；接口需要参数时再添加顶层参数。</p>
+                                </div>
+                                <details class="field-example"><summary>查看参数层级规则</summary><pre><code>orderId                  STRING · PATH
+payload                  ARRAY  · BODY_ROOT
+└─ 数组元素               OBJECT
+   ├─ p1                 STRING
+   └─ enabled            BOOLEAN</code></pre><p>BODY_ROOT 会把命名输入字段的值直接作为整个请求体，因此可以生成 <code>[{"p1":"v1"}]</code> 这样的根数组。</p></details>
+                            </div>
+
+                            <div class="http-form-field">
+                                <label for="httpSecretHeaders"><span class="field-step">4</span>Secret 请求头引用（JSON 对象）</label>
+                                <textarea id="httpSecretHeaders" rows="5" spellcheck="false" aria-describedby="httpSecretHeadersHelp">{}</textarea>
+                                <p id="httpSecretHeadersHelp" class="field-help field-help-warning">键是请求头名称，值只能是以 <code>secret/</code> 开头的引用。请勿填写、粘贴或展示 Token、API Key 等真实 Secret 值。</p>
+                                <details class="field-example"><summary>查看 Secret 引用样例</summary><pre><code>{
+  "Authorization": "secret/integration/orders-token"
+}</code></pre><p>真实值由服务端运行时解析，不会保存在 Tool 配置中。</p></details>
+                            </div>
+
+                            <div class="http-form-field">
+                                <label for="httpTimeoutMillis"><span class="field-step">5</span>超时时间（毫秒）</label>
+                                <input id="httpTimeoutMillis" type="number" min="100" max="30000" step="100" value="1000"
+                                       placeholder="3000" aria-describedby="httpTimeoutMillisHelp">
+                                <p id="httpTimeoutMillisHelp" class="field-help">允许范围为 100–30000 毫秒。示例：<code>3000</code> 表示最多等待 3 秒，包含 Secret 解析、请求和重定向耗时。</p>
+                            </div>
                         </div>
                         <label id="toolEnabledField" class="checkbox-label" for="toolEnabled" hidden><input id="toolEnabled" type="checkbox" checked> 启用 Tool</label>
                         <label id="mcpPublicationField" class="checkbox-label" for="toolMcpPublished" hidden><input id="toolMcpPublished" type="checkbox"> 发布为 MCP Tool</label>

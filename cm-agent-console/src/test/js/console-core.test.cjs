@@ -155,48 +155,18 @@ test("内置示例安装路径编码 key 且示例输入格式化", () => {
     );
 });
 
-test("构建 HTTP 工具请求体时保留 MCP 发布和 Secret 引用", () => {
-    const payload = core.buildHttpToolPayload({
-        name: "orders",
-        description: "订单查询",
-        riskLevel: "MEDIUM",
-        mcpPublished: true,
-        method: "POST",
-        urlTemplate: "https://api.example.test/orders/{id}",
-        inputSchemaText: '{"type":"object"}',
-        parameterMappingsText: '[{"sourcePointer":"/id","location":"PATH","targetName":"id","required":true}]',
-        secretHeadersText: '{"X-Api-Key":"secret/integration/api-key"}',
-        timeoutMillis: "1000"
-    });
-
-    assert.deepEqual(payload, {
-        name: "orders",
-        description: "订单查询",
-        type: "HTTP",
-        riskLevel: "MEDIUM",
-        mcpPublished: true,
-        httpConfig: {
-            method: "POST",
-            urlTemplate: "https://api.example.test/orders/{id}",
-            inputSchema: {type: "object"},
-            parameterMappings: [{sourcePointer: "/id", location: "PATH", targetName: "id", required: true}],
-            secretHeaders: {"X-Api-Key": "secret/integration/api-key"},
-            timeoutMillis: 1000
-        }
-    });
-});
-
 test("HTTP 工具请求拒绝 Secret 非引用和无效超时", () => {
     const base = {
         name: "orders", description: "订单查询", riskLevel: "LOW", mcpPublished: false,
-        method: "GET", urlTemplate: "https://api.example.test/orders", inputSchemaText: "{}",
-        parameterMappingsText: "[]", secretHeadersText: '{"Authorization":"actual secret value"}', timeoutMillis: "50"
+        method: "GET", urlTemplate: "https://api.example.test/orders",
+        parameters: [{id: "id", parentId: "", name: "id", dataType: "STRING", requestLocation: "QUERY"}],
+        secretHeadersText: '{"Authorization":"actual secret value"}', timeoutMillis: "50"
     };
     assert.throws(() => core.buildHttpToolPayload(base), /Secret 引用/);
     assert.throws(() => core.buildHttpToolPayload({...base, secretHeadersText: '{"Authorization":"secret/integration/api-key"}'}), /超时时间/);
 });
 
-test("构建 HTTP 工具更新载荷时保留 MCP 发布和 Secret 引用", () => {
+test("构建 HTTP 工具更新载荷时只提交最新参数定义", () => {
     const payload = core.buildToolUpdatePayload({id: "tool-1", type: "HTTP", name: "orders"}, {
         name: "orders-v2",
         description: "订单查询（新版）",
@@ -205,8 +175,7 @@ test("构建 HTTP 工具更新载荷时保留 MCP 发布和 Secret 引用", () =
         mcpPublished: true,
         method: "PUT",
         urlTemplate: "https://api.example.test/orders/{id}",
-        inputSchemaText: '{"type":"object"}',
-        parameterMappingsText: '[{"sourcePointer":"/id","location":"PATH","targetName":"id","required":true}]',
+        parameters: [{id: "id", parentId: "", name: "id", dataType: "STRING", requestLocation: "PATH", required: true}],
         secretHeadersText: '{"Authorization":"secret/integration/token"}',
         timeoutMillis: "2000"
     });
@@ -221,72 +190,14 @@ test("构建 HTTP 工具更新载荷时保留 MCP 发布和 Secret 引用", () =
         httpConfig: {
             method: "PUT",
             urlTemplate: "https://api.example.test/orders/{id}",
-            inputSchema: {type: "object"},
-            parameterMappings: [{sourcePointer: "/id", location: "PATH", targetName: "id", required: true}],
+            parameters: [{
+                id: "id", parentId: null, name: "id", dataType: "STRING", requestLocation: "PATH",
+                description: "", required: true
+            }],
             secretHeaders: {Authorization: "secret/integration/token"},
             timeoutMillis: 2000
         }
     });
-});
-
-test("HTTP 编辑表单原始字段只解析一次并直接生成更新请求", () => {
-    const rawFormFields = {
-        name: "orders-v3",
-        description: "订单查询（第三版）",
-        type: "HTTP",
-        riskLevel: "HIGH",
-        enabled: true,
-        mcpPublished: true,
-        method: "POST",
-        urlTemplate: "https://api.example.test/orders/{id}",
-        inputSchemaText: "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}}}",
-        parameterMappingsText: JSON.stringify(core.prepareHttpParameterMappingsForEdit([{
-            sourcePointer: "/id",
-            location: "PATH",
-            targetName: "id",
-            targetPointer: "",
-            required: false,
-            defaultValueJson: "\"fallback-id\""
-        }])),
-        secretHeadersText: "{\"Authorization\":\"secret/integration/orders-token\"}",
-        timeoutMillis: "2500"
-    };
-
-    const payload = core.buildToolFormPayload(
-        {id: "tool-http", type: "HTTP", name: "orders"},
-        rawFormFields
-    );
-
-    assert.deepEqual(payload, {
-        name: "orders-v3",
-        description: "订单查询（第三版）",
-        type: "HTTP",
-        riskLevel: "HIGH",
-        enabled: true,
-        mcpPublished: true,
-        httpConfig: {
-            method: "POST",
-            urlTemplate: "https://api.example.test/orders/{id}",
-            inputSchema: {type: "object", properties: {id: {type: "string"}}},
-            parameterMappings: [{
-                sourcePointer: "/id",
-                location: "PATH",
-                targetName: "id",
-                targetPointer: "",
-                required: false,
-                defaultValue: "fallback-id"
-            }],
-            secretHeaders: {Authorization: "secret/integration/orders-token"},
-            timeoutMillis: 2500
-        }
-    });
-
-    const script = fs.readFileSync(
-        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
-        "utf8"
-    );
-    assert.match(script, /payload = core\.buildToolFormPayload\(editingTool, rawFormFields\)/);
-    assert.doesNotMatch(script, /core\.buildToolUpdatePayload\(editingTool,\s*\{\s*\.\.\.editableFields/);
 });
 
 test("构建 LOCAL 工具更新载荷时拒绝改名", () => {
@@ -302,96 +213,6 @@ test("构建 LOCAL 工具更新载荷时拒绝改名", () => {
         enabled: true,
         mcpPublished: true
     });
-});
-
-test("HTTP 工具编辑会将摘要中的 defaultValueJson 还原为请求 defaultValue", () => {
-    const mappings = core.prepareHttpParameterMappingsForEdit([
-        {
-            sourcePointer: "/filter",
-            location: "QUERY",
-            targetName: "filter",
-            targetPointer: "",
-            required: false,
-            defaultValueJson: "{\"kind\":\"primary\"}"
-        },
-        {
-            sourcePointer: "/enabled",
-            location: "QUERY",
-            targetName: "enabled",
-            targetPointer: "",
-            required: false,
-            defaultValueJson: "false"
-        },
-        {
-            sourcePointer: "/limit",
-            location: "QUERY",
-            targetName: "limit",
-            targetPointer: "",
-            required: false,
-            defaultValueJson: "0"
-        },
-        {
-            sourcePointer: "/optional",
-            location: "BODY",
-            targetName: "",
-            targetPointer: "/optional",
-            required: false,
-            defaultValueJson: "null"
-        },
-        {
-            sourcePointer: "/without-default",
-            location: "QUERY",
-            targetName: "without-default",
-            targetPointer: "",
-            required: false,
-            defaultValueJson: ""
-        }
-    ]);
-
-    assert.deepEqual(mappings, [
-        {
-            sourcePointer: "/filter", location: "QUERY", targetName: "filter", targetPointer: "",
-            required: false, defaultValue: {kind: "primary"}
-        },
-        {
-            sourcePointer: "/enabled", location: "QUERY", targetName: "enabled", targetPointer: "",
-            required: false, defaultValue: false
-        },
-        {
-            sourcePointer: "/limit", location: "QUERY", targetName: "limit", targetPointer: "",
-            required: false, defaultValue: 0
-        },
-        {
-            sourcePointer: "/optional", location: "BODY", targetName: "", targetPointer: "/optional",
-            required: false, defaultValue: null
-        },
-        {
-            sourcePointer: "/without-default", location: "QUERY", targetName: "without-default",
-            targetPointer: "", required: false
-        }
-    ]);
-    const payload = core.buildHttpToolPayload({
-        name: "orders",
-        description: "订单查询",
-        riskLevel: "LOW",
-        mcpPublished: false,
-        method: "GET",
-        urlTemplate: "https://api.example.test/orders",
-        inputSchemaText: "{\"type\":\"object\"}",
-        parameterMappingsText: JSON.stringify(mappings),
-        secretHeadersText: "{}",
-        timeoutMillis: "1000"
-    });
-    assert.deepEqual(
-        payload.httpConfig.parameterMappings.map((mapping) => mapping.defaultValue),
-        [{kind: "primary"}, false, 0, null, undefined]
-    );
-
-    const script = fs.readFileSync(
-        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
-        "utf8"
-    );
-    assert.match(script, /core\.prepareHttpParameterMappingsForEdit\(mappings\)/);
 });
 
 test("工具更新、删除和解除关联路径会编码资源标识", () => {
@@ -441,6 +262,124 @@ test("HTTP 地址模板使用文本输入以支持路径参数占位符", () => 
 
     assert.match(html, /id="httpUrlTemplate" type="text"/);
     assert.doesNotMatch(html, /id="httpUrlTemplate" type="url"/);
+});
+
+test("工具调试失败会显示具体原因和可检索错误编号", () => {
+    assert.equal(core.formatToolDebugFailure({
+        errorMessage: "HTTP 服务返回非成功状态",
+        statusCode: 503,
+        errorId: "call-20260810"
+    }), "HTTP 服务返回非成功状态（HTTP 503，错误编号：call-20260810）");
+    assert.equal(core.formatToolDebugFailure({errorMessage: "HTTP 请求超时"}), "HTTP 请求超时");
+    assert.equal(core.formatToolDebugFailure({}), "工具执行失败");
+
+    const app = fs.readFileSync(
+        path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"),
+        "utf8"
+    );
+    assert.match(app, /core\.formatToolDebugFailure\(result\)/);
+    assert.match(app, /\["错误原因", result\?\.errorMessage\]/);
+    assert.match(app, /\["错误码", result\?\.errorCode\]/);
+    assert.match(app, /\["错误编号", result\?\.errorId\]/);
+});
+
+test("无参数 HTTP 工具允许提交空 parameters 数组", () => {
+    const payload = core.buildHttpToolPayload({
+        name: "tool-list",
+        description: "获取工具列表",
+        riskLevel: "LOW",
+        mcpPublished: false,
+        method: "GET",
+        urlTemplate: "https://api.example.test/tools",
+        parameters: [],
+        secretHeadersText: "{}",
+        timeoutMillis: "1000"
+    });
+
+    assert.deepEqual(payload.httpConfig.parameters, []);
+});
+
+test("HTTP Tool 表单提供树形录入、扁平提交和完整示例入口", () => {
+    const resources = path.join(__dirname, "../../main/resources/META-INF/resources");
+    const html = fs.readFileSync(path.join(resources, "index.html"), "utf8");
+    const app = fs.readFileSync(path.join(resources, "assets/app.js"), "utf8");
+
+    [
+        "httpMethodHelp", "httpUrlTemplateHelp", "httpParameterEditor",
+        "httpParameterList", "addHttpParameterBtn", "httpSecretHeadersHelp", "httpTimeoutMillisHelp"
+    ].forEach((id) => assert.match(html, new RegExp(`id="${id}"`)));
+    assert.match(html, /id="fillHttpExampleBtn"/);
+    assert.match(html, /页面按树形结构录入参数/);
+    assert.match(html, /添加顶层参数/);
+    assert.match(html, /OBJECT 或 ARRAY 节点内添加子参数/);
+    assert.match(html, /根数组/);
+    assert.match(html, /secret\/integration\/orders-token/);
+    assert.doesNotMatch(html, /httpLegacyConfigFields|httpInputSchema|httpParameterMappings/);
+    assert.doesNotMatch(app, /editingLegacyHttpConfig|prepareHttpParameterMappingsForEdit/);
+    assert.match(app, /function fillHttpToolExample\(\)/);
+    assert.match(app, /function addHttpParameter\(/);
+    assert.match(app, /function addHttpParameterChild\(/);
+    assert.match(app, /function renderHttpParameterTree\(/);
+    assert.match(app, /function collectHttpParameters\(/);
+    assert.match(app, /parameterChildNodes\(card\)\.forEach\(\(child\) => visit\(child, value\.id\)\)/);
+    assert.doesNotMatch(app, /data\.parameterField = "parentId"/);
+    assert.match(app, /\$\("fillHttpExampleBtn"\)\.addEventListener\("click", fillHttpToolExample\)/);
+    assert.match(app, /填入示例会覆盖当前 HTTP 配置/);
+});
+
+test("新 HTTP 参数定义直接生成请求载荷并支持根数组", () => {
+    const payload = core.buildHttpToolPayload({
+        name: "batch-create",
+        description: "批量创建",
+        riskLevel: "LOW",
+        mcpPublished: false,
+        method: "POST",
+        urlTemplate: "https://api.example.test/orders/{shopId}",
+        parameters: [
+            {
+                id: "shopId", parentId: null, name: "shopId", dataType: "STRING",
+                requestLocation: "PATH", description: "门店编号", required: true,
+                exampleValueText: "\"shop-1\""
+            },
+            {
+                id: "payload", parentId: null, name: "payload", dataType: "ARRAY",
+                requestLocation: "BODY_ROOT", description: "订单列表", required: true,
+                minItems: 1
+            },
+            {
+                id: "payloadItem", parentId: "payload", name: "", dataType: "OBJECT",
+                requestLocation: "", description: "单个订单", required: false
+            },
+            {
+                id: "p1", parentId: "payloadItem", name: "p1", dataType: "STRING",
+                requestLocation: "", description: "业务字段", required: true,
+                defaultValueText: "\"v1\""
+            }
+        ],
+        secretHeadersText: "{}",
+        timeoutMillis: "3000"
+    });
+
+    assert.equal(payload.httpConfig.inputSchema, undefined);
+    assert.equal(payload.httpConfig.parameterMappings, undefined);
+    assert.equal(payload.httpConfig.parameters.length, 4);
+    assert.equal(payload.httpConfig.parameters[1].requestLocation, "BODY_ROOT");
+    assert.equal(payload.httpConfig.parameters[2].name, null);
+    assert.equal(payload.httpConfig.parameters[3].defaultValue, "v1");
+});
+
+test("新 HTTP 参数定义在提交前拒绝无元素数组和重复字段", () => {
+    const fields = {
+        name: "invalid", description: "非法参数树", riskLevel: "LOW", method: "POST",
+        urlTemplate: "https://api.example.test/items", secretHeadersText: "{}", timeoutMillis: "1000"
+    };
+    assert.throws(() => core.buildHttpToolPayload({...fields, parameters: [
+        {id: "payload", name: "payload", dataType: "ARRAY", requestLocation: "BODY_ROOT", required: true}
+    ]}), /必须有且只有一个元素节点/);
+    assert.throws(() => core.buildHttpToolPayload({...fields, parameters: [
+        {id: "a", name: "same", dataType: "STRING", requestLocation: "BODY", required: false},
+        {id: "b", name: "same", dataType: "STRING", requestLocation: "BODY", required: false}
+    ]}), /字段名称不能重复/);
 });
 
 test("控制台和中文文档提供工具编辑、删除与 Agent 解除关联入口", () => {

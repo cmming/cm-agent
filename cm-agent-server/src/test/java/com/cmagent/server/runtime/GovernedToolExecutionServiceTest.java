@@ -389,7 +389,9 @@ class GovernedToolExecutionServiceTest {
      */
     private static HttpToolConfig config(UUID tenantId, UUID toolId, String urlTemplate) {
         return new HttpToolConfig(
-                tenantId, toolId, HttpToolMethod.GET, urlTemplate, "{}", List.of(), java.util.Map.of(), Duration.ofSeconds(1)
+                tenantId, toolId, HttpToolMethod.GET, urlTemplate,
+                com.cmagent.server.support.HttpToolTestData.singleOptionalQueryParameter(),
+                java.util.Map.of(), Duration.ofSeconds(1)
         );
     }
 

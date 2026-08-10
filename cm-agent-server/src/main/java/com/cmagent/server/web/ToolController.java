@@ -5,7 +5,8 @@ import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.domain.HttpParameterLocation;
-import com.cmagent.core.domain.HttpParameterMapping;
+import com.cmagent.core.domain.HttpParameterDataType;
+import com.cmagent.core.domain.HttpParameterDefinition;
 import com.cmagent.core.domain.HttpToolMethod;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
@@ -30,6 +31,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -45,6 +47,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
+import java.math.BigDecimal;
 import java.util.TreeMap;
 import java.util.Set;
 import java.util.UUID;
@@ -331,21 +334,31 @@ public class ToolController {
         if (request == null) {
             return null;
         }
-        List<HttpParameterMapping> mappings = request.parameterMappings() == null ? List.of() : request.parameterMappings().stream()
-                                                                                                .map(mapping -> new HttpParameterMapping(
-                                                                                                        mapping.sourcePointer(),
-                                                                                                        mapping.location(),
-                                                                                                        mapping.targetName(),
-                                                                                                        mapping.targetPointer(),
-                                                                                                        mapping.required(),
-                                                                                                        mapping.defaultValue() == null ? "" : canonicalJson(mapping.defaultValue())
-                                                                                                ))
-                                                                                                .toList();
+        List<HttpParameterDefinition> parameters = request.parameters() == null ? List.of() : request.parameters().stream()
+                .map(parameter -> new HttpParameterDefinition(
+                        parameter.id(),
+                        parameter.parentId(),
+                        parameter.name(),
+                        parameter.dataType(),
+                        parameter.requestLocation(),
+                        parameter.description(),
+                        parameter.required(),
+                        parameter.defaultValue() == null ? "" : canonicalJson(parameter.defaultValue()),
+                        parameter.exampleValue() == null ? "" : canonicalJson(parameter.exampleValue()),
+                        parameter.enumValues(),
+                        parameter.minLength(),
+                        parameter.maxLength(),
+                        parameter.minimum(),
+                        parameter.maximum(),
+                        parameter.minItems(),
+                        parameter.maxItems(),
+                        Boolean.TRUE.equals(parameter.uniqueItems())
+                ))
+                .toList();
         return new HttpToolCreateSpec(
                 request.method(),
                 request.urlTemplate(),
-                canonicalJson(request.inputSchema()),
-                mappings,
+                parameters,
                 request.secretHeaders() == null ? Map.of() : Map.copyOf(request.secretHeaders()),
                 java.time.Duration.ofMillis(request.timeoutMillis())
         );
@@ -358,9 +371,28 @@ public class ToolController {
      */
     private HttpToolConfigResponse toHttpConfigResponse(com.cmagent.core.domain.HttpToolConfig config) {
         return new HttpToolConfigResponse(
-                config.method(), config.urlTemplate(), config.inputSchema(), config.parameterMappings(),
-                config.secretHeaders(), config.timeout().toMillis()
+            config.method(), config.urlTemplate(),
+            config.parameters().stream().map(parameter -> new HttpParameterDefinitionResponse(
+                    parameter.id(), parameter.parentId(), parameter.name(), parameter.dataType(),
+                    parameter.requestLocation(), parameter.description(), parameter.required(),
+                    parseStoredJsonValue(parameter.defaultValueJson()),
+                    parseStoredJsonValue(parameter.exampleValueJson()),
+                    parameter.enumValues(), parameter.minLength(), parameter.maxLength(),
+                    parameter.minimum(), parameter.maximum(), parameter.minItems(), parameter.maxItems(),
+                    parameter.uniqueItems()
+            )).toList(), config.secretHeaders(), config.timeout().toMillis()
         );
+    }
+
+    private JsonNode parseStoredJsonValue(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(value);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("读取 HTTP 参数值失败", exception);
+        }
     }
 
     /**
@@ -430,23 +462,57 @@ public class ToolController {
     public record HttpConfigRequest(
             @NotNull HttpToolMethod method,
             @NotBlank String urlTemplate,
-            @NotNull JsonNode inputSchema,
-            List<@NotNull @Valid HttpParameterMappingRequest> parameterMappings,
+            @NotNull List<@NotNull @Valid HttpParameterDefinitionRequest> parameters,
             Map<@NotBlank String, @NotBlank String> secretHeaders,
             @NotNull @Min(100) @Max(30000) Long timeoutMillis
     ) {
     }
 
     /**
-     * 封装 {@code HttpParameterMappingRequest} 在当前流程中使用的不可变数据。
+     * 扁平 HTTP 参数定义请求。
      */
-    public record HttpParameterMappingRequest(
-            String sourcePointer,
-            @NotNull HttpParameterLocation location,
-            String targetName,
-            String targetPointer,
+    public record HttpParameterDefinitionRequest(
+            @NotBlank @Size(max = 64) String id,
+            @Size(max = 64) String parentId,
+            @Size(max = 160) String name,
+            @NotNull HttpParameterDataType dataType,
+            HttpParameterLocation requestLocation,
+            @Size(max = 500) String description,
             boolean required,
-            JsonNode defaultValue
+            JsonNode defaultValue,
+            JsonNode exampleValue,
+            List<@NotBlank @Size(max = 160) String> enumValues,
+            @Min(0) Integer minLength,
+            @Min(0) Integer maxLength,
+            BigDecimal minimum,
+            BigDecimal maximum,
+            @Min(0) Integer minItems,
+            @Min(0) Integer maxItems,
+            Boolean uniqueItems
+    ) {
+    }
+
+    /**
+     * 扁平 HTTP 参数定义响应；默认值和示例以 JSON 值返回。
+     */
+    public record HttpParameterDefinitionResponse(
+            String id,
+            String parentId,
+            String name,
+            HttpParameterDataType dataType,
+            HttpParameterLocation requestLocation,
+            String description,
+            boolean required,
+            JsonNode defaultValue,
+            JsonNode exampleValue,
+            List<String> enumValues,
+            Integer minLength,
+            Integer maxLength,
+            BigDecimal minimum,
+            BigDecimal maximum,
+            Integer minItems,
+            Integer maxItems,
+            boolean uniqueItems
     ) {
     }
 
@@ -456,8 +522,7 @@ public class ToolController {
     public record HttpToolConfigResponse(
             HttpToolMethod method,
             String urlTemplate,
-            String inputSchema,
-            List<HttpParameterMapping> parameterMappings,
+            List<HttpParameterDefinitionResponse> parameters,
             Map<String, String> secretHeaders,
             long timeoutMillis
     ) {

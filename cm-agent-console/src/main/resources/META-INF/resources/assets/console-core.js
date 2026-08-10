@@ -68,13 +68,8 @@
     }
 
     function buildHttpToolPayload(fields) {
-        const inputSchema = parseJsonField(fields.inputSchemaText, "输入 Schema");
-        const parameterMappings = parseJsonField(fields.parameterMappingsText, "参数映射");
         const secretHeaders = parseJsonField(fields.secretHeadersText, "Secret 引用");
         const timeoutMillis = Number(fields.timeoutMillis);
-        if (!Array.isArray(parameterMappings)) {
-            throw new Error("参数映射必须是 JSON 数组。");
-        }
         if (!secretHeaders || Array.isArray(secretHeaders) || typeof secretHeaders !== "object"
                 || Object.values(secretHeaders).some((reference) => typeof reference !== "string"
                 || !/^secret\/[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/.test(reference))) {
@@ -83,21 +78,138 @@
         if (!Number.isInteger(timeoutMillis) || timeoutMillis < 100 || timeoutMillis > 30000) {
             throw new Error("超时时间必须是 100 到 30000 毫秒之间的整数。");
         }
+        const httpConfig = {
+            method: fields.method,
+            urlTemplate: String(fields.urlTemplate || "").trim(),
+            parameters: normalizeHttpParameterDefinitions(fields.parameters),
+            secretHeaders,
+            timeoutMillis
+        };
         return {
             name: String(fields.name || "").trim(),
             description: String(fields.description || "").trim(),
             type: "HTTP",
             riskLevel: fields.riskLevel,
             mcpPublished: Boolean(fields.mcpPublished),
-            httpConfig: {
-                method: fields.method,
-                urlTemplate: String(fields.urlTemplate || "").trim(),
-                inputSchema,
-                parameterMappings,
-                secretHeaders,
-                timeoutMillis
-            }
+            httpConfig
         };
+    }
+
+    function formatToolDebugFailure(result) {
+        const reason = String(result?.errorMessage || "").trim() || "工具执行失败";
+        const statusCode = Number.isInteger(result?.statusCode) ? `HTTP ${result.statusCode}` : "";
+        const errorId = String(result?.errorId || "").trim();
+        const details = [statusCode, errorId ? `错误编号：${errorId}` : ""].filter(Boolean);
+        return details.length ? `${reason}（${details.join("，")}）` : reason;
+    }
+
+    function normalizeHttpParameterDefinitions(parameters) {
+        if (!Array.isArray(parameters)) {
+            throw new Error("HTTP 输入参数必须是数组。");
+        }
+        const allowedTypes = new Set(["STRING", "INTEGER", "NUMBER", "BOOLEAN", "OBJECT", "ARRAY"]);
+        const allowedLocations = new Set(["PATH", "QUERY", "HEADER", "BODY", "BODY_ROOT"]);
+        const normalized = parameters.map((parameter) => {
+            const id = String(parameter?.id || "").trim();
+            const parentId = String(parameter?.parentId || "").trim();
+            const name = String(parameter?.name || "").trim();
+            const dataType = String(parameter?.dataType || "").trim();
+            const requestLocation = String(parameter?.requestLocation || "").trim();
+            if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(id)) {
+                throw new Error("参数 ID 格式不正确，请删除后重新添加该参数。");
+            }
+            if (!allowedTypes.has(dataType)) {
+                throw new Error(`参数“${name || id}”的数据类型无效。`);
+            }
+            if (!parentId && !name) {
+                throw new Error("顶层参数名称不能为空。");
+            }
+            if (!parentId && !allowedLocations.has(requestLocation)) {
+                throw new Error(`顶层参数“${name || id}”必须选择请求位置。`);
+            }
+            if (parentId && requestLocation) {
+                throw new Error(`嵌套参数“${name || id}”不能重复选择请求位置。`);
+            }
+            const result = {
+                ...parameter,
+                id,
+                parentId: parentId || null,
+                name: name || null,
+                dataType,
+                requestLocation: requestLocation || null,
+                description: String(parameter?.description || "").trim(),
+                required: Boolean(parameter?.required)
+            };
+            delete result.defaultValueText;
+            delete result.exampleValueText;
+            const defaultValueText = String(parameter?.defaultValueText || "").trim();
+            const exampleValueText = String(parameter?.exampleValueText || "").trim();
+            if (defaultValueText) result.defaultValue = parseJsonField(defaultValueText, `参数“${name || id}”默认值`);
+            else delete result.defaultValue;
+            if (exampleValueText) result.exampleValue = parseJsonField(exampleValueText, `参数“${name || id}”示例值`);
+            else delete result.exampleValue;
+            return result;
+        });
+        const ids = new Set(normalized.map((parameter) => parameter.id));
+        if (ids.size !== normalized.length) {
+            throw new Error("参数 ID 不能重复。");
+        }
+        for (const parameter of normalized) {
+            if (parameter.parentId && !ids.has(parameter.parentId)) {
+                throw new Error(`参数“${parameter.name || parameter.id}”选择的父参数不存在。`);
+            }
+        }
+        validateHttpParameterTree(normalized);
+        return normalized;
+    }
+
+    function validateHttpParameterTree(parameters) {
+        const byId = new Map(parameters.map((parameter) => [parameter.id, parameter]));
+        const children = new Map();
+        for (const parameter of parameters) {
+            const key = parameter.parentId || "";
+            if (!children.has(key)) children.set(key, []);
+            children.get(key).push(parameter);
+        }
+        const roots = children.get("") || [];
+        validateNamedChildren(roots, "顶层参数");
+        const visited = new Set();
+        const visiting = new Set();
+
+        function visit(parameter) {
+            if (visiting.has(parameter.id)) throw new Error("参数父子关系不能形成循环。");
+            if (visited.has(parameter.id)) return;
+            visiting.add(parameter.id);
+            const directChildren = children.get(parameter.id) || [];
+            if (parameter.dataType === "OBJECT") {
+                validateNamedChildren(directChildren, `参数“${parameter.name || parameter.id}”`);
+            } else if (parameter.dataType === "ARRAY") {
+                if (directChildren.length !== 1) {
+                    throw new Error(`数组参数“${parameter.name || parameter.id}”必须有且只有一个元素节点。`);
+                }
+                const item = directChildren[0];
+                if (item.name || item.required || item.defaultValue !== undefined) {
+                    throw new Error(`数组参数“${parameter.name || parameter.id}”的直接元素节点必须匿名，且不能必填或配置默认值。`);
+                }
+            } else if (directChildren.length) {
+                throw new Error(`标量参数“${parameter.name || parameter.id}”不能包含子参数。`);
+            }
+            directChildren.forEach(visit);
+            visiting.delete(parameter.id);
+            visited.add(parameter.id);
+        }
+
+        roots.forEach(visit);
+        if (visited.size !== byId.size) throw new Error("参数树包含循环引用或无法到达的节点。");
+    }
+
+    function validateNamedChildren(parameters, ownerName) {
+        const names = new Set();
+        for (const parameter of parameters) {
+            if (!parameter.name) throw new Error(`${ownerName}的字段名称不能为空。`);
+            if (names.has(parameter.name)) throw new Error(`${ownerName}下的字段名称不能重复。`);
+            names.add(parameter.name);
+        }
     }
 
     function buildToolUpdatePayload(tool, fields) {
@@ -129,23 +241,6 @@
             type: fields?.type,
             riskLevel: fields?.riskLevel
         };
-    }
-
-    function prepareHttpParameterMappingsForEdit(mappings) {
-        return (Array.isArray(mappings) ? mappings : []).map((mapping) => {
-            const editable = {...mapping};
-            const defaultValueJson = editable.defaultValueJson;
-            delete editable.defaultValueJson;
-            if (typeof defaultValueJson !== "string" || !defaultValueJson.trim()) {
-                return editable;
-            }
-            try {
-                editable.defaultValue = JSON.parse(defaultValueJson);
-                return editable;
-            } catch {
-                throw new Error("参数映射默认值必须是有效 JSON。");
-            }
-        });
     }
 
     function buildToolUpdatePath(toolId) {
@@ -358,12 +453,13 @@
         buildCursorPath,
         parseJsonField,
         canDebugTool,
+        formatToolDebugFailure,
         buildLocalExampleInstallPath,
         formatJsonInput,
         buildHttpToolPayload,
+        normalizeHttpParameterDefinitions,
         buildToolUpdatePayload,
         buildToolFormPayload,
-        prepareHttpParameterMappingsForEdit,
         buildToolUpdatePath,
         buildToolDeletePath,
         buildToolGrantDeletePath,

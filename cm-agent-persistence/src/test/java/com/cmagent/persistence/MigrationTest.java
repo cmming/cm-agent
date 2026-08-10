@@ -88,7 +88,7 @@ class MigrationTest {
      * @param password 测试辅助方法使用的 password 参数
      */
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(5);
+        assertThat(migrationsExecuted).isEqualTo(7);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
@@ -116,6 +116,9 @@ class MigrationTest {
             assertThat(isNullable(connection, "tool_definitions", "deleted_at")).isTrue();
             assertThat(isNullable(connection, "tool_definitions", "deleted_name")).isTrue();
             assertThat(isNullable(connection, "tool_grants", "role_code")).isTrue();
+            assertThat(isNullable(connection, "tool_http_configs", "parameter_definitions")).isTrue();
+            assertThat(columnExists(connection, "tool_http_configs", "input_schema")).isFalse();
+            assertThat(columnExists(connection, "tool_http_configs", "parameter_mappings")).isFalse();
             assertThat(importedKeyTargets(connection, "tool_grants")).doesNotContain("roles");
             assertThat(uniqueIndexColumns(connection, "tool_grants")).contains(Set.of("tenant_id", "tool_id", "agent_id"));
             assertThat(uniqueIndexColumns(connection, "tool_definitions")).contains(Set.of("tenant_id", "name"));
@@ -202,6 +205,13 @@ class MigrationTest {
                 throw new AssertionError("找不到列 " + tableName + "." + columnName);
             }
             return resultSet.getInt("NULLABLE") == DatabaseMetaData.columnNullable;
+        }
+    }
+
+    private static boolean columnExists(Connection connection, String tableName, String columnName) throws SQLException {
+        DatabaseMetaData metadata = connection.getMetaData();
+        try (ResultSet resultSet = metadata.getColumns(null, null, tableName, columnName)) {
+            return resultSet.next();
         }
     }
 

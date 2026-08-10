@@ -61,10 +61,12 @@ class CmAgentToolClientTest {
                 .andExpect(jsonPath("$.mcpPublished").value(false))
                 .andExpect(jsonPath("$.httpConfig.method").value("POST"))
                 .andExpect(jsonPath("$.httpConfig.urlTemplate").value("https://api.example.test/messages"))
-                .andExpect(jsonPath("$.httpConfig.inputSchema.type").value("object"))
-                .andExpect(jsonPath("$.httpConfig.parameterMappings[0].sourcePointer").value("/message"))
-                .andExpect(jsonPath("$.httpConfig.parameterMappings[0].location").value("BODY"))
-                .andExpect(jsonPath("$.httpConfig.parameterMappings[0].targetPointer").value("/message"))
+                .andExpect(jsonPath("$.httpConfig.inputSchema").doesNotExist())
+                .andExpect(jsonPath("$.httpConfig.parameterMappings").doesNotExist())
+                .andExpect(jsonPath("$.httpConfig.parameters[0].id").value("message"))
+                .andExpect(jsonPath("$.httpConfig.parameters[0].dataType").value("STRING"))
+                .andExpect(jsonPath("$.httpConfig.parameters[0].requestLocation").value("BODY"))
+                .andExpect(jsonPath("$.httpConfig.parameters[0].minLength").value(1))
                 .andExpect(jsonPath("$.httpConfig.secretHeaders.X-Api-Key")
                         .value("secret/integration/example-api-key"))
                 .andRespond(withSuccess(createdToolResponse(), MediaType.APPLICATION_JSON));
@@ -124,8 +126,7 @@ class CmAgentToolClientTest {
                   "httpConfig":{
                     "method":"POST",
                     "urlTemplate":"https://api.example.test/messages",
-                    "inputSchema":"{\\"type\\":\\"object\\"}",
-                    "parameterMappings":[],
+                    "parameters":[{"id":"message","name":"message","dataType":"STRING","requestLocation":"BODY","required":true}],
                     "secretHeaders":{"X-Api-Key":"secret/integration/example-api-key"},
                     "timeoutMillis":5000
                   },

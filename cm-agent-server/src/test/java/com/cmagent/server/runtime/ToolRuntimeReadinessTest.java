@@ -107,7 +107,9 @@ class ToolRuntimeReadinessTest {
      */
     private static HttpToolConfig httpConfig(UUID toolId, UUID tenantId, String urlTemplate) {
         return new HttpToolConfig(
-                tenantId, toolId, HttpToolMethod.POST, urlTemplate, "{}", List.of(), Map.of(), Duration.ofSeconds(1)
+                tenantId, toolId, HttpToolMethod.POST, urlTemplate,
+                com.cmagent.server.support.HttpToolTestData.singleOptionalQueryParameter(),
+                Map.of(), Duration.ofSeconds(1)
         );
     }
 }

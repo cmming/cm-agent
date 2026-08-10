@@ -8,9 +8,12 @@
 
 - 新增面向开发者的 LOCAL 与 HTTP 工具开发指南；完善可运行的 LOCAL `echo`/`add` 多工具示例，并新增通过公开 REST API 创建和调试 HTTP 工具的客户端示例。本项不改变生产 API、数据库 Schema 或现有工具治理语义。
 - 新增动态 HTTP 工具：支持 GET/POST、嵌套 JSON Schema、本地引用、JSON Pointer 参数映射、缺失/null 默认值、PATH/QUERY/HEADER/BODY 目标及 `secret/...` Header 引用；创建与配置保存保持原子性和租户内工具名称唯一。
+- 动态 HTTP 工具统一使用扁平 `parameters` 定义：由 `id + parentId` 表达对象和数组关系，顶层 `requestLocation` 直接声明 PATH、QUERY、HEADER、BODY 或 BODY_ROOT，服务端自动生成输入 Schema；不再接收或执行 `inputSchema + parameterMappings`、`sourcePointer`、`targetPointer` 或 `nodeRole`，并通过 `BODY_ROOT` 支持 `[{"p1":"v1"}]` 一类根数组请求。
+- HTTP 工具允许提交空 `parameters: []`，用于没有 PATH、QUERY、HEADER 或 BODY 输入的接口；服务端为其生成禁止额外字段的空对象 Schema，调用输入固定为 `{}`。
 - 新增受治理 HTTP 执行器，默认关闭并要求主机白名单；执行时校验 SSRF 风险地址、同源重定向、总超时和响应上限，输出经过结构化脱敏。部署仍需以 egress 防火墙、受控 DNS 或代理防御 DNS TOCTOU。
 - 新增默认关闭的 MCP 2.0 Streamable HTTP 服务端点。启用时必须配置 Origin/Host 白名单，端点保持 JWT 认证、`tool:mcp:invoke` 授权、多租户目录隔离和严格 MCP 调用审计；每个请求无状态构建并在完成后关闭 transport/server。
 - 新增 MCP 发布/取消发布与 HTTP/LOCAL 单工具调试。调试需要 `tool:debug`，HIGH 风险工具要求完全匹配的名称确认；发布管理需要 `tool:grant`。取消发布、禁用或配置漂移会在下次 MCP 调用立即生效。
+- 工具调试失败响应不再统一隐藏为“工具调试失败”：控制台显示经过脱敏的具体原因、稳定错误码和错误编号；服务端使用同一错误编号记录租户、工具、状态及脱敏诊断信息，未分类异常只在后台保留脱敏堆栈。
 - 新增工具编辑、删除与 Agent 解除关联：编辑和解除关联需要 `tool:grant`，删除需要 `tool:delete`；仍被 Agent 引用的工具返回明确的 `409 Conflict` 且无副作用，必须先在 Agent 详情确认解除关联。已有调用历史的工具返回另一条明确的 `409 Conflict`，保留工具定义、运行历史、调用记录和审计链路，控制台不会将其误判为可解除的关联冲突。
 - 工具编辑保持工具 ID、租户、类型和创建人不变，LOCAL 工具不可改名。HTTP 工具编辑必须提交有效 HTTP 配置，其他类型拒绝 HTTP 配置；已发布 LOCAL 工具可保持或取消原 MCP 发布状态，未发布 LOCAL 工具仍通过独立发布操作管理。
 - 工具更新接口直接返回本次写命令提交的定义、HTTP 配置与发布状态快照，不再在成功审计后重新查询，因此同一工具的并发更新不会互相污染响应，也不会因随后删除而把已成功更新误报为 `500`。
@@ -19,6 +22,7 @@
 - Agent 工具关联的内存更新采用原子变更，JDBC 更新在同一事务内锁定 Agent 行；授权、撤销和审计共享事务边界，避免同一 Agent 的不同工具在多实例并发下发生丢失更新。工具更新与删除统一锁定工具行，更新命中零行时返回明确的不存在响应。
 - 轻量控制台升级为面向使用者的可操作管理控制台，采用独立登录页、左侧导航、能力总览和分模块管理布局。
 - 控制台覆盖当前用户、Agent 列表/详情/创建、Tool 列表/创建/编辑/删除/授权与解除关联、Agent 执行、运行历史/详情/工具调用和审计游标分页；健康检查与 OpenAPI 作为辅助入口。
+- HTTP Tool 注册与编辑表单改为树形参数编辑器，支持在 OBJECT/ARRAY 节点内直接添加子参数并按层级缩进展示；页面根据 `parentId` 还原树，提交时自动转为扁平参数数组。表单同时提供类型、请求位置、默认值、示例值及包含 PATH、QUERY、BODY_ROOT 根数组的完整示例，并已移除旧版 Schema 与映射入口。
 - 控制台使用内存令牌、统一 `401` 失效处理和纯文本 DOM 渲染，不持久化 JWT、用户名或密码；补充窄屏响应式布局和键盘焦点样式。
 - 控制台仍不提供手动取消、流式输出、多轮会话或 HITL。
 - `agentscope.version` 升级到 `2.0.0`，接入 OpenAI Compatible 与 DashScope Provider，提供同步单轮 ReAct 运行。
@@ -40,6 +44,7 @@
 - 不修改已经发布的 `V1__init_schema.sql`。
 - V2、V3 迁移只增加 `runs`、`tool_calls`、`audit_events` 的查询索引；V1 已建立对应表和基础租户约束。
 - 新增 `V5__soft_delete_tool_definitions.sql`，为 `tool_definitions` 增加 `deleted_at`、`deleted_name` 和租户删除状态索引。旧迁移不变；墓碑行保留原名称副本，活动名称改为内部唯一值以释放租户内名称约束。
+- 新增 V6 扁平 HTTP 参数定义列，并通过 `V7__remove_legacy_http_parameter_mapping.sql` 删除 HTTP 配置表中的旧 Schema 与 JSON Pointer 映射列；历史 HTTP 映射数据不再兼容。
 - JDBC 应用启动时由 Flyway 执行迁移。升级前应备份数据库、核对 `flyway_schema_history`，并准备迁移失败处理与恢复预案。
 - 生产可将迁移账号与运行账号分离；连接信息、密码和 JWT secret 只从受控外部 YAML 或 secret manager 注入。
 

@@ -129,9 +129,10 @@ class ServerRepositoryConfigurationTest {
                     assertThat(context).hasSingleBean(McpToolPublicationRepository.class);
                     HttpToolConfigRepository configurations = context.getBean(HttpToolConfigRepository.class);
                     McpToolPublicationRepository publications = context.getBean(McpToolPublicationRepository.class);
-                    com.cmagent.core.domain.HttpToolConfig configuration = new com.cmagent.core.domain.HttpToolConfig(
-                            TENANT_A, TOOL_A, com.cmagent.core.domain.HttpToolMethod.GET, "https://api.invalid/items",
-                            "{}", List.of(), java.util.Map.of("X-Api-Key", "secret/http/tenant-a"), java.time.Duration.ofSeconds(1));
+                     com.cmagent.core.domain.HttpToolConfig configuration = new com.cmagent.core.domain.HttpToolConfig(
+                             TENANT_A, TOOL_A, com.cmagent.core.domain.HttpToolMethod.GET, "https://api.invalid/items",
+                             com.cmagent.server.support.HttpToolTestData.singleOptionalQueryParameter(),
+                             java.util.Map.of("X-Api-Key", "secret/http/tenant-a"), java.time.Duration.ofSeconds(1));
                     com.cmagent.core.domain.McpToolPublication publication = new com.cmagent.core.domain.McpToolPublication(
                             TENANT_A, TOOL_A, true, "tester");
 

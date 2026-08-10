@@ -6,6 +6,21 @@
         throw new Error("控制台核心脚本未加载");
     }
 
+    const HTTP_TOOL_FORM_EXAMPLE = Object.freeze({
+        method: "POST",
+        urlTemplate: "https://api.example.com/orders/{orderId}",
+        parameters: [
+            {id: "orderId", parentId: null, name: "orderId", dataType: "STRING", requestLocation: "PATH", description: "订单编号", required: true, exampleValue: "A1001"},
+            {id: "status", parentId: null, name: "status", dataType: "STRING", requestLocation: "QUERY", description: "订单状态", required: false, defaultValue: "OPEN", enumValues: ["OPEN", "CLOSED"]},
+            {id: "payload", parentId: null, name: "payload", dataType: "ARRAY", requestLocation: "BODY_ROOT", description: "请求体数组", required: true, minItems: 1},
+            {id: "payloadItem", parentId: "payload", name: null, dataType: "OBJECT", requestLocation: null, description: "单条请求数据", required: false},
+            {id: "p1", parentId: "payloadItem", name: "p1", dataType: "STRING", requestLocation: null, description: "参数一", required: true, exampleValue: "v1"},
+            {id: "enabled", parentId: "payloadItem", name: "enabled", dataType: "BOOLEAN", requestLocation: null, description: "是否启用", required: false, defaultValue: false}
+        ],
+        secretHeaders: {Authorization: "secret/integration/orders-token"},
+        timeoutMillis: 3000
+    });
+
     const state = {
         token: "",
         currentUser: null,
@@ -563,6 +578,286 @@
         });
     }
 
+    function nextParameterId() {
+        const randomId = typeof window.crypto?.randomUUID === "function"
+            ? window.crypto.randomUUID().replaceAll("-", "")
+            : `${Date.now()}${Math.random().toString(16).slice(2)}`;
+        return `param_${randomId.slice(0, 24)}`;
+    }
+
+    function addLabeledParameterControl(grid, labelText, control, wide = false) {
+        const wrapper = element("div", {className: wide ? "parameter-wide" : ""});
+        const label = element("label", {text: labelText});
+        label.append(control);
+        wrapper.append(label);
+        grid.append(wrapper);
+        return wrapper;
+    }
+
+    function addHttpParameter(definition = {}, parentCard = null, refresh = true) {
+        const node = element("section", {className: "parameter-tree-node"});
+        const card = element("section", {className: "parameter-card"});
+        card.dataset.parameterId = definition.id || nextParameterId();
+        node.dataset.parentId = parentCard?.dataset.parameterId || "";
+        card._parameterMetadata = Object.fromEntries([
+            "enumValues", "minLength", "maxLength", "minimum", "maximum",
+            "minItems", "maxItems", "uniqueItems"
+        ].filter((key) => definition[key] !== undefined && definition[key] !== null)
+                .map((key) => [key, definition[key]]));
+
+        const header = element("div", {className: "parameter-card-header"});
+        const titleGroup = element("div", {className: "parameter-title-group"});
+        const title = element("strong", {text: definition.name || "新参数"});
+        const hierarchyBadge = element("span", {className: "parameter-hierarchy-badge", text: "顶层参数"});
+        titleGroup.append(title, hierarchyBadge);
+        const headerActions = element("div", {className: "parameter-card-actions"});
+        const addChildButton = element("button", {className: "text-button parameter-add-child", type: "button", text: "＋ 添加子参数"});
+        const removeButton = element("button", {className: "text-button", type: "button", text: "删除"});
+        headerActions.append(addChildButton, removeButton);
+        header.append(titleGroup, headerActions);
+
+        const grid = element("div", {className: "parameter-grid"});
+        const nameInput = element("input");
+        nameInput.type = "text";
+        nameInput.maxLength = 160;
+        nameInput.placeholder = "例如 orderId";
+        nameInput.value = definition.name || "";
+        nameInput.dataset.parameterField = "name";
+        const typeSelect = element("select");
+        typeSelect.dataset.parameterField = "dataType";
+        ["STRING", "INTEGER", "NUMBER", "BOOLEAN", "OBJECT", "ARRAY"]
+            .forEach((value) => typeSelect.append(option(value, value)));
+        typeSelect.value = definition.dataType || "STRING";
+        typeSelect.dataset.previousValue = typeSelect.value;
+        const locationSelect = element("select");
+        locationSelect.dataset.parameterField = "requestLocation";
+        locationSelect.append(option("", "继承父参数"));
+        ["PATH", "QUERY", "HEADER", "BODY", "BODY_ROOT"]
+            .forEach((value) => locationSelect.append(option(value, value)));
+        locationSelect.value = definition.requestLocation || "";
+        const descriptionInput = element("input");
+        descriptionInput.type = "text";
+        descriptionInput.maxLength = 500;
+        descriptionInput.placeholder = "说明该参数的业务含义";
+        descriptionInput.value = definition.description || "";
+        descriptionInput.dataset.parameterField = "description";
+        const defaultInput = element("input");
+        defaultInput.type = "text";
+        defaultInput.placeholder = "可选，填写 JSON 值，如 20、false 或 \"OPEN\"";
+        defaultInput.value = definition.defaultValue === undefined || definition.defaultValue === null
+            ? "" : JSON.stringify(definition.defaultValue);
+        defaultInput.dataset.parameterField = "defaultValueText";
+        const exampleInput = element("input");
+        exampleInput.type = "text";
+        exampleInput.placeholder = "可选，填写 JSON 示例值";
+        exampleInput.value = definition.exampleValue === undefined || definition.exampleValue === null
+            ? "" : JSON.stringify(definition.exampleValue);
+        exampleInput.dataset.parameterField = "exampleValueText";
+
+        addLabeledParameterControl(grid, "字段名称", nameInput);
+        addLabeledParameterControl(grid, "数据类型", typeSelect);
+        const locationWrapper = addLabeledParameterControl(grid, "请求位置", locationSelect);
+        locationWrapper.classList.add("parameter-location-field");
+        addLabeledParameterControl(grid, "参数说明", descriptionInput, true);
+        addLabeledParameterControl(grid, "默认值", defaultInput);
+        addLabeledParameterControl(grid, "示例值", exampleInput);
+
+        const requiredLabel = element("label", {className: "parameter-required"});
+        const requiredInput = element("input");
+        requiredInput.type = "checkbox";
+        requiredInput.checked = definition.required === true;
+        requiredInput.dataset.parameterField = "required";
+        requiredLabel.append(requiredInput, document.createTextNode("调用时必填"));
+        const idText = element("p", {className: "parameter-id", text: `ID：${card.dataset.parameterId}`});
+        card.append(header, grid, requiredLabel, idText);
+        const children = element("div", {className: "parameter-children"});
+        node.append(card, children);
+        if (parentCard) {
+            parameterChildrenContainer(parentCard).append(node);
+        } else {
+            $("httpParameterList").append(node);
+        }
+
+        removeButton.addEventListener("click", () => removeHttpParameter(card));
+        addChildButton.addEventListener("click", () => addHttpParameterChild(card));
+        typeSelect.addEventListener("change", () => {
+            if (parameterChildNodes(card).length && typeSelect.value !== typeSelect.dataset.previousValue) {
+                typeSelect.value = typeSelect.dataset.previousValue;
+                setStatus($("toolFormStatus"), "该参数已有子参数，请先删除子参数再修改数据类型。", "error");
+                return;
+            }
+            typeSelect.dataset.previousValue = typeSelect.value;
+            syncHttpParameterCards();
+        });
+        nameInput.addEventListener("input", () => {
+            title.textContent = nameInput.value.trim() || (nameInput.disabled ? "数组元素" : "新参数");
+        });
+        if (refresh) {
+            syncHttpParameterCards();
+            updateHttpParameterCount();
+        }
+        return card;
+    }
+
+    function addHttpParameterChild(parentCard) {
+        const parentType = parameterControl(parentCard, "dataType").value;
+        if (parentType !== "OBJECT" && parentType !== "ARRAY") return;
+        if (parentType === "ARRAY" && parameterChildNodes(parentCard).length) return;
+        addHttpParameter({
+            parentId: parentCard.dataset.parameterId,
+            name: parentType === "ARRAY" ? "" : "",
+            dataType: "STRING",
+            requestLocation: null,
+            required: false
+        }, parentCard);
+    }
+
+    function renderHttpParameterTree(definitions) {
+        clearHttpParameters();
+        const parameters = Array.isArray(definitions) ? definitions : [];
+        const childrenByParent = new Map();
+        for (const parameter of parameters) {
+            const parentId = parameter.parentId || "";
+            if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+            childrenByParent.get(parentId).push(parameter);
+        }
+        const visited = new Set();
+        function appendBranch(definition, parentCard) {
+            if (visited.has(definition.id)) return;
+            visited.add(definition.id);
+            const card = addHttpParameter(definition, parentCard, false);
+            (childrenByParent.get(definition.id) || []).forEach((child) => appendBranch(child, card));
+        }
+        (childrenByParent.get("") || []).forEach((root) => appendBranch(root, null));
+        syncHttpParameterCards();
+        updateHttpParameterCount();
+    }
+
+    function parameterCards() {
+        return Array.from($("httpParameterList").querySelectorAll(".parameter-card"));
+    }
+
+    function parameterControl(card, field) {
+        return card.querySelector(`[data-parameter-field="${field}"]`);
+    }
+
+    function parameterNode(card) {
+        return card.closest(".parameter-tree-node");
+    }
+
+    function parameterChildrenContainer(card) {
+        return Array.from(parameterNode(card).children)
+            .find((child) => child.classList.contains("parameter-children"));
+    }
+
+    function parameterChildNodes(card) {
+        return Array.from(parameterChildrenContainer(card).children)
+            .filter((child) => child.classList.contains("parameter-tree-node"));
+    }
+
+    function parameterDepth(card) {
+        let depth = 0;
+        let node = parameterNode(card);
+        while (node?.dataset.parentId) {
+            depth += 1;
+            node = node.parentElement?.closest(".parameter-tree-node");
+        }
+        return depth;
+    }
+
+    function syncHttpParameterCards() {
+        const cards = parameterCards();
+        const byId = new Map(cards.map((card) => [card.dataset.parameterId, card]));
+        for (const card of cards) {
+            const parentId = parameterNode(card).dataset.parentId;
+            const parent = byId.get(parentId);
+            const name = parameterControl(card, "name");
+            const location = parameterControl(card, "requestLocation");
+            const required = parameterControl(card, "required");
+            const defaultValue = parameterControl(card, "defaultValueText");
+            const type = parameterControl(card, "dataType").value;
+            const addChildButton = card.querySelector(".parameter-add-child");
+            const locationField = card.querySelector(".parameter-location-field");
+            if (!parent) {
+                name.disabled = false;
+                locationField.hidden = false;
+                location.disabled = false;
+                if (!location.value) location.value = "QUERY";
+                required.disabled = false;
+            } else {
+                location.value = "";
+                location.disabled = true;
+                locationField.hidden = true;
+                if (parameterControl(parent, "dataType").value === "ARRAY") {
+                    name.value = "";
+                    name.disabled = true;
+                    required.checked = false;
+                    required.disabled = true;
+                    defaultValue.value = "";
+                    defaultValue.disabled = true;
+                } else {
+                    name.disabled = false;
+                    required.disabled = false;
+                    defaultValue.disabled = false;
+                }
+            }
+            if (!parent) defaultValue.disabled = false;
+            const childCount = parameterChildNodes(card).length;
+            addChildButton.hidden = type !== "OBJECT" && type !== "ARRAY";
+            addChildButton.disabled = type === "ARRAY" && childCount > 0;
+            addChildButton.textContent = type === "ARRAY"
+                ? childCount ? "已有数组元素" : "＋ 添加数组元素"
+                : "＋ 添加子参数";
+            const depth = parameterDepth(card);
+            parameterNode(card).style.setProperty("--parameter-depth", String(depth));
+            card.querySelector(".parameter-hierarchy-badge").textContent = !parent
+                ? "顶层参数"
+                : parameterControl(parent, "dataType").value === "ARRAY" ? "数组元素" : `第 ${depth + 1} 层`;
+            card.querySelector(".parameter-card-header strong").textContent = name.value.trim()
+                || (name.disabled ? "数组元素" : "新参数");
+        }
+    }
+
+    function removeHttpParameter(card) {
+        const node = parameterNode(card);
+        const descendants = node.querySelectorAll(".parameter-tree-node").length;
+        if (descendants && !window.confirm("删除父参数会同时删除全部子参数，是否继续？")) return;
+        node.remove();
+        syncHttpParameterCards();
+        updateHttpParameterCount();
+    }
+
+    function clearHttpParameters() {
+        $("httpParameterList").querySelectorAll(".parameter-tree-node").forEach((node) => node.remove());
+        updateHttpParameterCount();
+    }
+
+    function updateHttpParameterCount() {
+        const count = parameterCards().length;
+        $("httpParameterCount").textContent = `${count} 个参数`;
+        $("httpParameterEmpty").hidden = count > 0;
+    }
+
+    function collectHttpParameters() {
+        const parameters = [];
+        function visit(node, parentId) {
+            const card = Array.from(node.children)
+                .find((child) => child.classList.contains("parameter-card"));
+            const value = {...card._parameterMetadata};
+            ["name", "dataType", "requestLocation", "description", "defaultValueText", "exampleValueText"]
+                .forEach((field) => { value[field] = parameterControl(card, field).value; });
+            value.id = card.dataset.parameterId;
+            value.parentId = parentId;
+            value.required = parameterControl(card, "required").checked;
+            parameters.push(value);
+            parameterChildNodes(card).forEach((child) => visit(child, value.id));
+        }
+        Array.from($("httpParameterList").children)
+            .filter((child) => child.classList.contains("parameter-tree-node"))
+            .forEach((root) => visit(root, ""));
+        return parameters;
+    }
+
     function beginToolEdit(tool) {
         state.editingToolId = tool.id;
         state.selectedToolId = tool.id;
@@ -578,10 +873,10 @@
             const config = tool.httpConfig || {};
             $("httpMethod").value = config.method || "GET";
             $("httpUrlTemplate").value = config.urlTemplate || "";
-            $("httpInputSchema").value = formatStoredJson(config.inputSchema, "{}");
-            $("httpParameterMappings").value = formatStoredMappings(config.parameterMappings);
             $("httpSecretHeaders").value = formatStoredJson(config.secretHeaders, "{}");
             $("httpTimeoutMillis").value = String(config.timeoutMillis || 1000);
+            clearHttpParameters();
+            renderHttpParameterTree(config.parameters);
         }
         $("toolFormEyebrow").textContent = "编辑";
         $("toolFormTitle").textContent = `编辑 Tool“${tool.name || tool.id}”`;
@@ -597,6 +892,8 @@
     function resetToolForm(clearStatus = true) {
         state.editingToolId = "";
         $("toolForm").reset();
+        clearHttpParameters();
+        $("httpParameterEditor").hidden = false;
         $("toolType").disabled = false;
         $("toolName").disabled = false;
         $("toolFormEyebrow").textContent = "新建";
@@ -605,6 +902,26 @@
         $("cancelToolEditBtn").hidden = true;
         toggleHttpConfigFields();
         if (clearStatus) setStatus($("toolFormStatus"));
+    }
+
+    function fillHttpToolExample() {
+        const hasUserConfig = $("httpUrlTemplate").value.trim()
+            || parameterCards().length > 0
+            || $("httpSecretHeaders").value.trim() !== "{}"
+            || $("httpTimeoutMillis").value !== "1000";
+        if (hasUserConfig && !window.confirm("填入示例会覆盖当前 HTTP 配置，是否继续？")) return;
+
+        $("httpMethod").value = HTTP_TOOL_FORM_EXAMPLE.method;
+        $("httpUrlTemplate").value = HTTP_TOOL_FORM_EXAMPLE.urlTemplate;
+        $("httpParameterEditor").hidden = false;
+        renderHttpParameterTree(HTTP_TOOL_FORM_EXAMPLE.parameters);
+        $("httpSecretHeaders").value = core.formatJsonInput(HTTP_TOOL_FORM_EXAMPLE.secretHeaders);
+        $("httpTimeoutMillis").value = String(HTTP_TOOL_FORM_EXAMPLE.timeoutMillis);
+        setStatus(
+            $("toolFormStatus"),
+            "示例已填入表单，提交前请替换为已加入白名单的业务域名和已配置的 Secret 引用。"
+        );
+        $("httpUrlTemplate").focus();
     }
 
     function formatStoredJson(value, fallback) {
@@ -617,11 +934,6 @@
         }
     }
 
-    function formatStoredMappings(mappings) {
-        const editable = core.prepareHttpParameterMappingsForEdit(mappings);
-        return core.formatJsonInput(editable);
-    }
-
     async function submitTool() {
         const rawFormFields = {
             name: $("toolName").value.trim(),
@@ -632,8 +944,7 @@
             mcpPublished: $("toolMcpPublished").checked,
             method: $("httpMethod").value,
             urlTemplate: $("httpUrlTemplate").value,
-            inputSchemaText: $("httpInputSchema").value,
-            parameterMappingsText: $("httpParameterMappings").value,
+            parameters: collectHttpParameters(),
             secretHeadersText: $("httpSecretHeaders").value,
             timeoutMillis: $("httpTimeoutMillis").value
         };
@@ -785,7 +1096,7 @@
         $("mcpPublicationField").hidden = !supportsMcp;
         $("toolMcpPublished").disabled = !supportsMcp;
         if (!supportsMcp) $("toolMcpPublished").checked = false;
-        ["httpUrlTemplate", "httpInputSchema", "httpParameterMappings", "httpSecretHeaders", "httpTimeoutMillis"].forEach((id) => {
+        ["httpUrlTemplate", "httpSecretHeaders", "httpTimeoutMillis"].forEach((id) => {
             $(id).required = isHttp;
         });
     }
@@ -859,7 +1170,11 @@
                     body: JSON.stringify({input, confirmedToolName: tool.riskLevel === "HIGH" ? confirmedToolName : null})
                 });
                 renderDebugResult(result);
-                setStatus($("debugFormStatus"), result?.success ? "调试完成。" : "调试未成功完成。", result?.success ? "success" : "error");
+                setStatus(
+                    $("debugFormStatus"),
+                    result?.success ? "调试完成。" : core.formatToolDebugFailure(result),
+                    result?.success ? "success" : "error"
+                );
             });
         } catch (error) {
             setStatus($("debugFormStatus"), error.message, "error");
@@ -874,7 +1189,9 @@
             ["HTTP 状态", result?.statusCode],
             ["耗时", result?.durationMillis === null || result?.durationMillis === undefined ? "—" : `${result.durationMillis} ms`],
             ["输出", result?.output],
-            ["错误", result?.errorMessage]
+            ["错误原因", result?.errorMessage],
+            ["错误码", result?.errorCode],
+            ["错误编号", result?.errorId]
         ]));
     }
 
@@ -1110,6 +1427,8 @@
     $("agentForm").addEventListener("submit", (event) => { event.preventDefault(); createAgent(); });
     $("toolForm").addEventListener("submit", (event) => { event.preventDefault(); submitTool(); });
     $("cancelToolEditBtn").addEventListener("click", () => resetToolForm());
+    $("fillHttpExampleBtn").addEventListener("click", fillHttpToolExample);
+    $("addHttpParameterBtn").addEventListener("click", () => addHttpParameter());
     $("grantForm").addEventListener("submit", (event) => { event.preventDefault(); grantTool(); });
     $("debugToolForm").addEventListener("submit", (event) => { event.preventDefault(); debugTool(); });
     $("runForm").addEventListener("submit", (event) => { event.preventDefault(); runAgent(); });

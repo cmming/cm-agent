@@ -1,6 +1,6 @@
 package com.cmagent.persistence;
 
-import com.cmagent.core.domain.HttpParameterMapping;
+import com.cmagent.core.domain.HttpParameterDefinition;
 import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.HttpToolMethod;
 import com.cmagent.core.repository.HttpToolConfigRepository;
@@ -22,9 +22,9 @@ import java.util.Optional;
 import java.util.Objects;
 import java.util.UUID;
 
-/** 使用 JDBC 持久化动态 HTTP 工具配置及其参数映射。 */
+/** 使用 JDBC 持久化动态 HTTP 工具配置及其扁平参数定义。 */
 public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
-    private static final TypeReference<List<HttpParameterMapping>> PARAMETER_MAPPINGS_TYPE = new TypeReference<>() { };
+    private static final TypeReference<List<HttpParameterDefinition>> PARAMETER_DEFINITIONS_TYPE = new TypeReference<>() { };
     private static final TypeReference<Map<String, String>> SECRET_HEADERS_TYPE = new TypeReference<>() { };
 
     private final JdbcClient jdbcClient;
@@ -72,8 +72,7 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
                         UPDATE tool_http_configs
                         SET method = :method,
                             url_template = :urlTemplate,
-                            input_schema = :inputSchema,
-                            parameter_mappings = :parameterMappings,
+                            parameter_definitions = :parameterDefinitions,
                             secret_headers = :secretHeaders,
                             timeout_ms = :timeoutMs,
                             updated_at = :updatedAt
@@ -81,8 +80,7 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
                         """)
                 .param("method", config.method().name())
                 .param("urlTemplate", config.urlTemplate())
-                .param("inputSchema", config.inputSchema())
-                .param("parameterMappings", writeJson(config.parameterMappings()))
+                .param("parameterDefinitions", writeJson(config.parameters()))
                 .param("secretHeaders", writeJson(config.secretHeaders()))
                 .param("timeoutMs", config.timeout().toMillis())
                 .param("updatedAt", now)
@@ -92,10 +90,10 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
         if (updated == 0) {
             jdbcClient.sql("""
                             INSERT INTO tool_http_configs (
-                                tenant_id, tool_id, method, url_template, input_schema, parameter_mappings,
+                                tenant_id, tool_id, method, url_template, parameter_definitions,
                                 secret_headers, timeout_ms, created_at, updated_at
                             ) VALUES (
-                                :tenantId, :toolId, :method, :urlTemplate, :inputSchema, :parameterMappings,
+                                :tenantId, :toolId, :method, :urlTemplate, :parameterDefinitions,
                                 :secretHeaders, :timeoutMs, :createdAt, :updatedAt
                             )
                             """)
@@ -103,8 +101,7 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
                     .param("toolId", config.toolId().toString())
                     .param("method", config.method().name())
                     .param("urlTemplate", config.urlTemplate())
-                    .param("inputSchema", config.inputSchema())
-                    .param("parameterMappings", writeJson(config.parameterMappings()))
+                    .param("parameterDefinitions", writeJson(config.parameters()))
                     .param("secretHeaders", writeJson(config.secretHeaders()))
                     .param("timeoutMs", config.timeout().toMillis())
                     .param("createdAt", now)
@@ -148,7 +145,8 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
     public Optional<HttpToolConfig> findByTenantAndToolId(UUID tenantId, UUID toolId) {
         return jdbcClient.sql("""
                         SELECT config.tenant_id, config.tool_id, config.method, config.url_template,
-                               config.input_schema, config.parameter_mappings, config.secret_headers, config.timeout_ms
+                               config.parameter_definitions,
+                               config.secret_headers, config.timeout_ms
                         FROM tool_http_configs config
                         INNER JOIN tool_definitions tool
                             ON tool.id = config.tool_id AND tool.tenant_id = config.tenant_id
@@ -176,7 +174,8 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
         }
         List<HttpToolConfig> configurations = jdbcClient.sql("""
                         SELECT config.tenant_id, config.tool_id, config.method, config.url_template,
-                               config.input_schema, config.parameter_mappings, config.secret_headers, config.timeout_ms
+                               config.parameter_definitions,
+                               config.secret_headers, config.timeout_ms
                         FROM tool_http_configs config
                         INNER JOIN tool_definitions tool
                             ON tool.id = config.tool_id AND tool.tenant_id = config.tenant_id
@@ -221,8 +220,7 @@ public class JdbcHttpToolConfigRepository implements HttpToolConfigRepository {
                 UUID.fromString(resultSet.getString("tool_id")),
                 HttpToolMethod.valueOf(resultSet.getString("method")),
                 resultSet.getString("url_template"),
-                resultSet.getString("input_schema"),
-                readJson(resultSet.getString("parameter_mappings"), PARAMETER_MAPPINGS_TYPE),
+                readJson(resultSet.getString("parameter_definitions"), PARAMETER_DEFINITIONS_TYPE),
                 readJson(resultSet.getString("secret_headers"), SECRET_HEADERS_TYPE),
                 Duration.ofMillis(resultSet.getLong("timeout_ms"))
         );
