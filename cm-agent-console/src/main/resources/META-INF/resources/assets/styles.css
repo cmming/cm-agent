@@ -116,6 +116,8 @@ textarea { resize: vertical; min-height: 90px; }
 .quick-actions .panel-heading { margin-bottom: 2px; }
 .management-grid { display: grid; grid-template-columns: minmax(260px, .8fr) minmax(320px, 1.2fr); gap: 16px; align-items: start; }
 .management-grid .form-panel:last-child:nth-child(3) { grid-column: 2; }
+#toolsPage .management-grid { grid-template-columns: minmax(0, 1fr); }
+#toolsPage .management-grid > * { width: 100%; grid-column: 1; }
 .split-grid { display: grid; grid-template-columns: minmax(300px, .9fr) minmax(360px, 1.1fr); gap: 16px; margin-top: 16px; }
 .run-toolbar { display: grid; grid-template-columns: minmax(220px, .45fr) minmax(360px, 1fr); gap: 18px; align-items: end; }
 .run-toolbar label { margin-top: 0; }
@@ -123,6 +125,47 @@ textarea { resize: vertical; min-height: 90px; }
 .inline-form textarea { min-height: 70px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .field-help { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+.field-help code, .field-example code { font-family: "Cascadia Code", Consolas, monospace; }
+.field-help code { padding: 1px 4px; border-radius: 4px; background: #edf2f8; color: #2d4c78; }
+.field-help-warning { color: #80540d; }
+.http-config-fields { display: grid; gap: 12px; margin-top: 18px; }
+.http-config-guide { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px; border: 1px solid #bfd0ee; border-radius: 10px; background: #f1f6ff; }
+.http-config-guide strong { display: block; color: #244b89; font-size: 14px; }
+.http-config-guide p { margin: 4px 0 0; color: #536987; font-size: 12px; }
+.button.compact { flex: 0 0 auto; min-height: 34px; padding: 6px 10px; font-size: 12px; }
+.http-form-field { padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-soft); }
+.http-form-field > label { display: flex; align-items: center; gap: 8px; margin-top: 0; color: #31445f; }
+.field-step { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #dfeaff; color: var(--accent-strong); font-size: 11px; font-weight: 800; }
+.http-form-field textarea { min-height: 0; font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; line-height: 1.55; tab-size: 2; }
+.field-example { margin-top: 10px; border-top: 1px dashed var(--border-strong); padding-top: 9px; color: var(--muted); font-size: 12px; }
+.field-example summary { width: fit-content; color: var(--accent); cursor: pointer; font-weight: 650; }
+.field-example pre { max-width: 100%; margin: 9px 0 0; padding: 11px; overflow-x: auto; border: 1px solid #d8e1ec; border-radius: 8px; background: #172238; color: #e8eef8; line-height: 1.55; white-space: pre; }
+.field-example p { margin: 8px 0 0; }
+.parameter-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; }
+.parameter-count { color: var(--muted); font-size: 12px; }
+.parameter-list { display: grid; gap: 10px; margin-top: 10px; }
+.compact-empty { padding: 16px 12px; }
+.parameter-tree-node { position: relative; min-width: 0; }
+.parameter-children { display: grid; gap: 10px; margin: 10px 0 0 22px; padding-left: 18px; border-left: 2px solid #c9d7ec; }
+.parameter-children:empty { display: none; }
+.parameter-children > .parameter-tree-node::before { content: ""; position: absolute; top: 25px; left: -18px; width: 16px; border-top: 2px solid #c9d7ec; }
+.parameter-children .parameter-card { background: #fbfcff; }
+.parameter-card { padding: 12px; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--surface); }
+.parameter-card-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.parameter-title-group { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; min-width: 0; }
+.parameter-card-header strong { color: #31445f; font-size: 13px; overflow-wrap: anywhere; }
+.parameter-hierarchy-badge { border-radius: 999px; padding: 2px 7px; background: #e8f0ff; color: #41628f; font-size: 10px; font-weight: 700; }
+.parameter-card-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.parameter-card-actions .text-button { font-size: 12px; }
+.parameter-card-actions > .text-button:last-child { color: var(--error); }
+.parameter-add-child { color: var(--accent) !important; }
+.parameter-add-child:disabled { color: var(--muted) !important; cursor: default; }
+.parameter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.parameter-grid label { margin-top: 10px; }
+.parameter-grid .parameter-wide { grid-column: 1 / -1; }
+.parameter-required { display: flex; align-items: center; gap: 7px; margin-top: 12px; color: #435169; font-size: 12px; }
+.parameter-required input { width: auto; }
+.parameter-id { margin-top: 8px; color: #8390a3; font-family: "Cascadia Code", Consolas, monospace; font-size: 10px; overflow-wrap: anywhere; }
 .checkbox-label { display: flex; align-items: center; gap: 8px; }
 .checkbox-label input { width: auto; }
 .tool-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
@@ -193,6 +236,13 @@ textarea { resize: vertical; min-height: 90px; }
     .workspace-header { align-items: flex-start; }
     .user-actions { flex-wrap: wrap; justify-content: flex-end; }
     .form-row, .inline-form { grid-template-columns: 1fr; }
+    .parameter-grid { grid-template-columns: 1fr; }
+    .parameter-grid .parameter-wide { grid-column: auto; }
+    .parameter-children { margin-left: 10px; padding-left: 12px; }
+    .parameter-children > .parameter-tree-node::before { left: -12px; width: 10px; }
+    .parameter-card-header { align-items: flex-start; }
+    .http-config-guide { align-items: stretch; flex-direction: column; }
+    .http-config-guide .button { width: 100%; }
     .detail-panel dl { grid-template-columns: 1fr; gap: 2px; }
     .detail-panel dd { margin-bottom: 9px; }
 }

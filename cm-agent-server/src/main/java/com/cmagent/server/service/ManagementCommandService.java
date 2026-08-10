@@ -188,7 +188,9 @@ public class ManagementCommandService {
             @Nullable HttpToolCreateSpec httpToolCreateSpec,
             boolean mcpPublished
     ) {
-        String inputSchema = httpToolCreateSpec == null ? "{\"type\":\"object\"}" : httpToolCreateSpec.inputSchema();
+        String inputSchema = httpToolCreateSpec == null
+                ? "{\"type\":\"object\"}"
+                : effectiveInputSchema(httpToolCreateSpec);
         String endpoint = httpToolCreateSpec == null ? "" : httpToolCreateSpec.urlTemplate();
         ToolDefinition tool = new ToolDefinition(
                 UUID.randomUUID(), principal.tenantId(), name, description, type, inputSchema,
@@ -199,8 +201,7 @@ public class ManagementCommandService {
         }
         HttpToolConfig configuration = new HttpToolConfig(
                 principal.tenantId(), tool.id(), httpToolCreateSpec.method(), httpToolCreateSpec.urlTemplate(),
-                httpToolCreateSpec.inputSchema(), httpToolCreateSpec.parameterMappings(), httpToolCreateSpec.secretHeaders(),
-                httpToolCreateSpec.timeout()
+                httpToolCreateSpec.parameters(), httpToolCreateSpec.secretHeaders(), httpToolCreateSpec.timeout()
         );
         httpToolConfigValidator.validate(configuration);
         if (mcpPublished) {
@@ -442,7 +443,7 @@ public class ManagementCommandService {
             ToolUpdateSpec spec
     ) {
         HttpToolCreateSpec httpSpec = spec.httpToolCreateSpec();
-        String inputSchema = httpSpec == null ? existing.inputSchema() : httpSpec.inputSchema();
+        String inputSchema = httpSpec == null ? existing.inputSchema() : effectiveInputSchema(httpSpec);
         String endpoint = httpSpec == null ? existing.endpoint() : httpSpec.urlTemplate();
         ToolDefinition updated = new ToolDefinition(
                 existing.id(),
@@ -469,8 +470,7 @@ public class ManagementCommandService {
                 existing.id(),
                 httpSpec.method(),
                 httpSpec.urlTemplate(),
-                httpSpec.inputSchema(),
-                httpSpec.parameterMappings(),
+                httpSpec.parameters(),
                 httpSpec.secretHeaders(),
                 httpSpec.timeout()
         );
@@ -488,6 +488,15 @@ public class ManagementCommandService {
                 publication,
                 publication == null ? PublicationMutation.DELETE : PublicationMutation.UPSERT,
                 spec.mcpPublished()
+        );
+    }
+
+    /**
+     * 根据当前参数定义生成工具输入 Schema。
+     */
+    private String effectiveInputSchema(HttpToolCreateSpec spec) {
+        return httpToolConfigValidator.compileParameterDefinitions(
+                spec.parameters(), spec.method(), spec.urlTemplate()
         );
     }
 

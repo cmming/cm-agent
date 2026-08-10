@@ -8,6 +8,8 @@ public record ToolDebugResponse(
         Integer statusCode,
         String output,
         String errorMessage,
-        long durationMillis
+        long durationMillis,
+        String errorCode,
+        String errorId
 ) {
 }

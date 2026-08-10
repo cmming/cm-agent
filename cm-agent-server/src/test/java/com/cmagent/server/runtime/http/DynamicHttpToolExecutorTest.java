@@ -1,8 +1,9 @@
 package com.cmagent.server.runtime.http;
 
 import com.cmagent.api.PrincipalRef;
+import com.cmagent.core.domain.HttpParameterDataType;
+import com.cmagent.core.domain.HttpParameterDefinition;
 import com.cmagent.core.domain.HttpParameterLocation;
-import com.cmagent.core.domain.HttpParameterMapping;
 import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.HttpToolMethod;
 import com.cmagent.core.domain.ToolDefinition;
@@ -277,7 +278,7 @@ class DynamicHttpToolExecutorTest {
             respond(exchange, 200, "application/json; charset=utf-8",
                     "{\"token\":\"" + SECRET_VALUE + "\",\"ok\":true}");
         });
-        List<HttpParameterMapping> mappings = List.of(
+        List<HttpParameterDefinition> mappings = List.of(
                 mapping("/id", HttpParameterLocation.PATH, "id", "", true),
                 mapping("/query", HttpParameterLocation.QUERY, "q", "", false)
         );
@@ -285,7 +286,7 @@ class DynamicHttpToolExecutorTest {
                 Map.of("Authorization", SECRET_REF), Duration.ofSeconds(1));
 
         ToolExecutionResult result = executor(secretProvider()).execute(
-                tool(config.urlTemplate()), config, request("{\"id\":\"a/b 空格\",\"query\":\"x&y=1\"}"));
+                tool(config.urlTemplate()), config, request("{\"id\":\"a/b 空格\",\"q\":\"x&y=1\"}"));
 
         assertThat(result.success()).isTrue();
         assertThat(result.statusCode()).isEqualTo(200);
@@ -312,7 +313,7 @@ class DynamicHttpToolExecutorTest {
             contentTypeCount.set(exchange.getRequestHeaders().get("Content-Type").size());
             respond(exchange, 201, "text/plain; charset=utf-8", "已创建");
         });
-        HttpParameterMapping bodyMapping = mapping(
+        HttpParameterDefinition bodyMapping = mapping(
                 "/name", HttpParameterLocation.BODY, "", "/customer/name", true);
         HttpToolConfig config = config(HttpToolMethod.POST, url("/orders"), List.of(bodyMapping),
                 Map.of(), Duration.ofSeconds(1));
@@ -323,7 +324,7 @@ class DynamicHttpToolExecutorTest {
         assertThat(result.success()).isTrue();
         assertThat(result.statusCode()).isEqualTo(201);
         assertThat(result.outputSummary()).isEqualTo("已创建");
-        assertThat(body.get()).isEqualTo("{\"customer\":{\"name\":\"张三\"}}");
+        assertThat(body.get()).isEqualTo("{\"name\":\"张三\"}");
         assertThat(contentType.get()).startsWith("application/json");
         assertThat(contentTypeCount.get()).isOne();
         assertThat(hits.get()).isOne();
@@ -432,7 +433,7 @@ class DynamicHttpToolExecutorTest {
      * 验证或支持 {@code contentTypeAndAcceptEncodingAreReservedRequestHeaders} 所描述的测试场景。
      */
     void contentTypeAndAcceptEncodingAreReservedRequestHeaders() {
-        HttpParameterMapping dynamicContentType = mapping(
+        HttpParameterDefinition dynamicContentType = mapping(
                 "/name", HttpParameterLocation.HEADER, "Content-Type", "", true);
         HttpToolConfig dynamicConfig = config(HttpToolMethod.POST, url("/reserved"),
                 List.of(dynamicContentType), Map.of(), Duration.ofSeconds(1));
@@ -440,7 +441,7 @@ class DynamicHttpToolExecutorTest {
                 Map.of("Accept-Encoding", SECRET_REF), Duration.ofSeconds(1));
 
         ToolExecutionResult dynamic = executor(secretProvider()).execute(
-                tool(dynamicConfig.urlTemplate()), dynamicConfig, request("{\"name\":\"text/plain\"}"));
+                tool(dynamicConfig.urlTemplate()), dynamicConfig, request("{\"Content-Type\":\"text/plain\"}"));
         ToolExecutionResult secret = executor(secretProvider()).execute(
                 tool(secretConfig.urlTemplate()), secretConfig, request("{}"));
 
@@ -458,7 +459,7 @@ class DynamicHttpToolExecutorTest {
             hits.incrementAndGet();
             respond(exchange, 200, "text/plain", "不应访问");
         });
-        HttpParameterMapping headerMapping = mapping(
+        HttpParameterDefinition headerMapping = mapping(
                 "/name", HttpParameterLocation.HEADER, "X-Request-Id", "", true);
         HttpToolConfig dynamicConfig = config(HttpToolMethod.GET, url("/header-injection"),
                 List.of(headerMapping), Map.of(), Duration.ofSeconds(1));
@@ -469,7 +470,7 @@ class DynamicHttpToolExecutorTest {
 
         ToolExecutionResult dynamic = executor(secretProvider()).execute(
                 tool(dynamicConfig.urlTemplate()), dynamicConfig,
-                request("{\"name\":\"安全值\\r\\nX-Evil: 注入\"}"));
+                request("{\"X-Request-Id\":\"安全值\\r\\nX-Evil: 注入\"}"));
         ToolExecutionResult secret = executor(unsafeSecretProvider).execute(
                 tool(secretConfig.urlTemplate()), secretConfig, request("{}"));
 
@@ -777,7 +778,7 @@ class DynamicHttpToolExecutorTest {
             finalAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
             respond(exchange, 200, "text/plain", "完成");
         });
-        HttpParameterMapping bodyMapping = mapping(
+        HttpParameterDefinition bodyMapping = mapping(
                 "/name", HttpParameterLocation.BODY, "", "/name", true);
         HttpToolConfig config = config(HttpToolMethod.POST, url("/post-redirect"), List.of(bodyMapping),
                 Map.of("Authorization", SECRET_REF), Duration.ofSeconds(1));
@@ -815,7 +816,7 @@ class DynamicHttpToolExecutorTest {
         try {
             String location = "http://127.0.0.1:" + other.getAddress().getPort() + "/target";
             server.createContext("/cross-origin", exchange -> redirect(exchange, 307, location));
-            HttpParameterMapping bodyMapping = mapping(
+            HttpParameterDefinition bodyMapping = mapping(
                     "/name", HttpParameterLocation.BODY, "", "/name", true);
             HttpToolConfig config = config(HttpToolMethod.POST, url("/cross-origin"), List.of(bodyMapping),
                     Map.of("Authorization", SECRET_REF), Duration.ofSeconds(1));
@@ -1007,13 +1008,13 @@ class DynamicHttpToolExecutorTest {
      *
      * @param method 测试辅助方法使用的 method 参数
      * @param url 测试辅助方法使用的 url 参数
-     * @param mappings 测试辅助方法使用的 mappings 参数
+     * @param parameters 测试辅助方法使用的 parameters 参数
      * @param secrets 测试辅助方法使用的 secrets 参数
      * @param timeout 测试超时
      */
-    private HttpToolConfig config(HttpToolMethod method, String url, List<HttpParameterMapping> mappings,
+    private HttpToolConfig config(HttpToolMethod method, String url, List<HttpParameterDefinition> parameters,
                                   Map<String, String> secrets, Duration timeout) {
-        return new HttpToolConfig(TENANT_ID, TOOL_ID, method, url, INPUT_SCHEMA, mappings, secrets, timeout);
+        return new HttpToolConfig(TENANT_ID, TOOL_ID, method, url, parameters, secrets, timeout);
     }
 
     /**
@@ -1046,9 +1047,23 @@ class DynamicHttpToolExecutorTest {
      * @param targetPointer 测试辅助方法使用的 targetPointer 参数
      * @param required 测试辅助方法使用的 required 参数
      */
-    private HttpParameterMapping mapping(String source, HttpParameterLocation location,
-                                         String targetName, String targetPointer, boolean required) {
-        return new HttpParameterMapping(source, location, targetName, targetPointer, required, "");
+    private HttpParameterDefinition mapping(String source, HttpParameterLocation location,
+                                            String targetName, String targetPointer, boolean required) {
+        String sourceName = source.substring(source.lastIndexOf('/') + 1);
+        String name = location == HttpParameterLocation.BODY ? sourceName : targetName;
+        return parameter(name, location, required);
+    }
+
+    private HttpParameterDefinition parameter(
+            String name,
+            HttpParameterLocation location,
+            boolean required
+    ) {
+        String id = "parameter" + Math.abs(name.hashCode());
+        return new HttpParameterDefinition(
+                id, "", name, HttpParameterDataType.STRING, location, "", required,
+                "", "", List.of(), null, null, null, null, null, null, false
+        );
     }
 
     /**

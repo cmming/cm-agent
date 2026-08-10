@@ -356,7 +356,7 @@ cm-agent:
 
 ### 4.2 完整创建请求
 
-以下请求创建一个 POST/BODY 工具：
+以下请求创建一个 POST/BODY 工具。调用方只定义参数，服务端自动生成并返回 `inputSchema`：
 
 ```http
 POST /api/tools
@@ -374,25 +374,16 @@ Content-Type: application/json
   "httpConfig": {
     "method": "POST",
     "urlTemplate": "https://api.example.test/messages",
-    "inputSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "message": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": ["message"],
-      "additionalProperties": false
-    },
-    "parameterMappings": [
+    "parameters": [
       {
-        "sourcePointer": "/message",
-        "location": "BODY",
-        "targetName": "",
-        "targetPointer": "/message",
-        "required": true
+        "id": "message",
+        "name": "message",
+        "dataType": "STRING",
+        "requestLocation": "BODY",
+        "description": "待发送的消息",
+        "required": true,
+        "minLength": 1,
+        "exampleValue": "你好，CM Agent"
       }
     ],
     "secretHeaders": {
@@ -405,98 +396,84 @@ Content-Type: application/json
 
 工具定义、HTTP 配置、可选 MCP 发布记录和创建审计在同一创建流程中完成。同一租户内工具名称必须唯一。
 
-### 4.3 参数映射
+### 4.3 扁平参数定义
 
-`sourcePointer` 从工具输入中读取值。它和 BODY 的 `targetPointer` 都使用 RFC 6901 JSON Pointer。
+参数定义使用一层 JSON 数组保存树结构。每个节点有独立 `id`，嵌套节点通过 `parentId` 指向父节点；只有顶层节点填写 `requestLocation`。字段名称直接作为请求中的参数名，因此不需要维护 JSON Pointer 映射。
 
-| `location` | 目标字段 | 支持类型 | 主要约束 |
-| --- | --- | --- | --- |
-| `PATH` | `targetName` | 标量 | 必填，必须与 URL `{placeholder}` 一一匹配 |
-| `QUERY` | `targetName` | 标量或标量数组 | object 不能直接映射 |
-| `HEADER` | `targetName` | 标量 | 不能覆盖 `Authorization`、`Cookie` 等受限 Header |
-| `BODY` | `targetPointer` | 标量、对象或数组 | GET 工具禁止 BODY |
+控制台展示为树形编辑器，用户通过“添加顶层参数”和节点内“添加子参数”建立层级；页面提交时再按树的先序遍历生成下述一层 JSON 数组。直接调用 REST API 的客户端仍按扁平数组提交。
 
-PATH 示例：
+| 字段 | 作用 | 主要约束 |
+| --- | --- | --- |
+| `id` | 节点唯一标识 | 字母开头，最多 64 个字母、数字、`_` 或 `-` |
+| `parentId` | 父节点 ID | 顶层不填；不能循环或指向不存在节点 |
+| `name` | Tool 输入字段名和请求字段名 | OBJECT 子字段必填；ARRAY 直接元素节点必须为空 |
+| `dataType` | 字段类型 | `STRING`、`INTEGER`、`NUMBER`、`BOOLEAN`、`OBJECT`、`ARRAY` |
+| `requestLocation` | 顶层字段的请求位置 | `PATH`、`QUERY`、`HEADER`、`BODY`、`BODY_ROOT` |
+| `required` | 字段是否必填 | PATH 必须为 `true`；ARRAY 元素节点不填写 |
+| `defaultValue` / `exampleValue` | JSON 默认值和示例值 | 必须与 `dataType` 一致 |
 
-```json
-{
-  "sourcePointer": "/orderId",
-  "location": "PATH",
-  "targetName": "orderId",
-  "targetPointer": "",
-  "required": true
-}
-```
+位置约束如下：
 
-对应 URL：
+| 位置 | 支持类型 | 主要约束 |
+| --- | --- | --- |
+| `PATH` | 标量 | 必填，`name` 必须与 URL `{placeholder}` 完整匹配 |
+| `QUERY` | 标量或标量数组 | 自动以 `name` 追加查询参数 |
+| `HEADER` | 标量 | 不能覆盖 `Authorization`、`Cookie` 等受限 Header |
+| `BODY` | 任意类型 | 多个顶层字段按名称组装成对象；GET 禁止 |
+| `BODY_ROOT` | 任意类型 | 字段值直接作为完整请求体，只能有一个，不能与 BODY 并用 |
 
-```text
-https://api.example.test/orders/{orderId}
-```
-
-QUERY 示例：
-
-```json
-{
-  "sourcePointer": "/status",
-  "location": "QUERY",
-  "targetName": "status",
-  "targetPointer": "",
-  "required": false,
-  "defaultValue": "OPEN"
-}
-```
-
-HEADER 示例只适合非敏感动态值：
-
-```json
-{
-  "sourcePointer": "/requestId",
-  "location": "HEADER",
-  "targetName": "X-Request-Id",
-  "targetPointer": "",
-  "required": true
-}
-```
-
-BODY 示例：
-
-```json
-{
-  "sourcePointer": "/filter/status",
-  "location": "BODY",
-  "targetName": "",
-  "targetPointer": "/filter/status",
-  "required": false,
-  "defaultValue": "OPEN"
-}
-```
-
-GET 工具只能使用 PATH、QUERY 或允许的 HEADER：
+PATH 与 QUERY 混合请求示例：
 
 ```json
 {
   "method": "GET",
   "urlTemplate": "https://api.example.test/orders/{orderId}",
-  "parameterMappings": [
-    {
-      "sourcePointer": "/orderId",
-      "location": "PATH",
-      "targetName": "orderId",
-      "required": true
-    },
-    {
-      "sourcePointer": "/details",
-      "location": "QUERY",
-      "targetName": "details",
-      "required": false,
-      "defaultValue": true
-    }
+  "parameters": [
+    { "id": "orderId", "name": "orderId", "dataType": "STRING", "requestLocation": "PATH", "required": true },
+    { "id": "details", "name": "details", "dataType": "BOOLEAN", "requestLocation": "QUERY", "required": false, "defaultValue": true }
   ]
 }
 ```
 
-缺失值和显式 `null` 都会尝试采用 `defaultValue`。默认值必须符合 `sourcePointer` 对应的 Schema。
+对应输入 `{"orderId":"o-100"}` 会调用 `https://api.example.test/orders/o-100?details=true`。
+
+嵌套 BODY 对象示例：
+
+```json
+[
+  { "id": "payload", "name": "payload", "dataType": "OBJECT", "requestLocation": "BODY", "required": true },
+  { "id": "customer", "parentId": "payload", "name": "customer", "dataType": "OBJECT", "required": true },
+  { "id": "customerName", "parentId": "customer", "name": "name", "dataType": "STRING", "required": true }
+]
+```
+
+根数组请求 `[{"p1":"v1"}]` 使用一个命名 Tool 入参承载数组，并以匿名子节点表示数组元素：
+
+```json
+[
+  { "id": "payload", "name": "payload", "dataType": "ARRAY", "requestLocation": "BODY_ROOT", "required": true, "minItems": 1 },
+  { "id": "payloadItem", "parentId": "payload", "name": "", "dataType": "OBJECT", "required": false },
+  { "id": "p1", "parentId": "payloadItem", "name": "p1", "dataType": "STRING", "required": true, "exampleValue": "v1" }
+]
+```
+
+调试输入为 `{"payload":[{"p1":"v1"}]}`，目标 HTTP 接口收到的请求体就是 `[{"p1":"v1"}]`。这样既支持根数组，也保持 Tool/MCP 输入 Schema 的根节点为 object。
+
+HTTP 工具只接受 `parameters`。服务端根据参数树自动生成 Tool/MCP 输入 Schema，不再接收 `inputSchema`、`parameterMappings`、`sourcePointer` 或 `targetPointer`。
+
+没有任何输入参数的接口直接提交空数组：
+
+```json
+{
+  "method": "GET",
+  "urlTemplate": "https://api.example.com/tools",
+  "parameters": [],
+  "secretHeaders": {},
+  "timeoutMillis": 1000
+}
+```
+
+服务端会生成 `properties` 为空且 `additionalProperties=false` 的对象 Schema。调用或调试时输入使用 `{}`，实际 HTTP 请求不包含 PATH、QUERY、动态 HEADER 或请求体。
 
 ### 4.4 Secret Header
 
@@ -542,6 +519,22 @@ LOW 和 MEDIUM 工具不需要额外确认。HIGH 工具还必须提交：
 ```
 
 调试不创建 Agent 或 Run，但仍会校验权限、tenant、工具状态、HTTP 配置和风险确认，并记录严格审计。
+
+执行成功时响应包含输出、HTTP 状态和耗时。执行器返回失败时，接口会返回经过脱敏的具体原因、稳定错误码和本次调用的错误编号：
+
+```json
+{
+  "success": false,
+  "statusCode": 503,
+  "output": "",
+  "errorMessage": "HTTP 服务返回非成功状态",
+  "durationMillis": 86,
+  "errorCode": "HTTP_UPSTREAM_ERROR",
+  "errorId": "5ff4ffec-bf80-4d77-b150-462256ee8082"
+}
+```
+
+控制台会直接展示 `errorMessage`，并同时展示 `errorCode` 和 `errorId`。后台日志使用同一个 `errorId`，运维人员可据此定位对应的 tenant、工具、调用来源、HTTP 状态和脱敏失败原因。执行器抛出未分类异常时，前端不会显示内部堆栈，只提示根据错误编号查看后台日志；后台记录脱敏后的异常说明和堆栈。日志不得包含调试输入、Secret 原值、JWT、完整内部 URL 或其他敏感信息。
 
 ### 4.6 运行 HTTP 客户端示例
 
@@ -631,6 +624,7 @@ MCP Server 默认关闭，且有独立的 Origin、Host、JWT 和 `tool:mcp:invo
 | HTTP 创建返回 `409` | 同一 tenant 已有同名工具 | 使用新名称，或复用已有工具 |
 | HTTP 调试提示目标地址不允许 | 开关未启用、Host 不在白名单，或地址属于私有/保留范围 | 检查 `cm-agent.http-tools` 和网络出口策略 |
 | HTTP 调试提示工具不可用 | 定义和 HTTP 配置漂移，或工具已禁用 | 查询工具摘要并核对 URL 模板与启用状态 |
+| HTTP 调试失败但需要进一步定位 | 目标服务、Secret、超时、响应格式或网络策略失败 | 先查看前端具体错误原因和 HTTP 状态，再使用错误编号检索后台日志 |
 | PATH 映射校验失败 | 占位符与必填 PATH 映射不一致 | 让 `{name}` 与 `targetName=name` 精确对应 |
 | GET 配置校验失败 | 配置了 BODY 映射 | 改用 QUERY/PATH/HEADER，或改为 POST |
 | Secret 解析失败 | 引用不存在，或 Provider 超时/失败 | 核对 tenant 范围内引用和 Provider 配置 |

@@ -2,8 +2,9 @@ package com.cmagent.server.service;
 
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
+import com.cmagent.core.domain.HttpParameterDataType;
+import com.cmagent.core.domain.HttpParameterDefinition;
 import com.cmagent.core.domain.HttpParameterLocation;
-import com.cmagent.core.domain.HttpParameterMapping;
 import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.HttpToolMethod;
 import com.cmagent.core.domain.McpToolPublication;
@@ -411,10 +412,8 @@ class ManagementCommandServiceTest {
         HttpToolCreateSpec replacement = new HttpToolCreateSpec(
                 HttpToolMethod.POST,
                 "https://api.example.test/v2/orders",
-                "{\"type\":\"object\",\"properties\":{\"orderId\":{\"type\":\"string\"}}}",
-                List.of(new HttpParameterMapping(
-                        "/orderId", HttpParameterLocation.QUERY, "orderId", "", true, ""
-                )),
+                List.of(httpParameter("orderId", HttpParameterDataType.STRING,
+                        HttpParameterLocation.QUERY, true)),
                 java.util.Map.of("X-Api-Key", "secret/tools/orders"),
                 Duration.ofSeconds(3)
         );
@@ -445,7 +444,7 @@ class ManagementCommandServiceTest {
         assertThat(updated.createdBy()).isEqualTo(existing.createdBy());
         assertThat(updated.name()).isEqualTo("orders_v2");
         assertThat(updated.description()).isEqualTo("新版订单工具");
-        assertThat(updated.inputSchema()).isEqualTo(replacement.inputSchema());
+        assertThat(updated.inputSchema()).contains("\"orderId\"");
         assertThat(updated.riskLevel()).isEqualTo(ToolRiskLevel.HIGH);
         assertThat(updated.enabled()).isFalse();
         assertThat(updated.endpoint()).isEqualTo(replacement.urlTemplate());
@@ -1004,8 +1003,8 @@ class ManagementCommandServiceTest {
         HttpToolCreateSpec invalidSpec = new HttpToolCreateSpec(
                 HttpToolMethod.POST,
                 "https://api.example.test/orders",
-                "{}",
-                List.of(new HttpParameterMapping("", HttpParameterLocation.BODY, "", "/payload", true, "")),
+                List.of(httpParameter("payload", HttpParameterDataType.STRING,
+                        HttpParameterLocation.BODY, true)),
                 java.util.Map.of("X-Api-Key", "not-a-secret-reference"),
                 Duration.ofSeconds(1)
         );
@@ -1030,8 +1029,8 @@ class ManagementCommandServiceTest {
         HttpToolCreateSpec invalidSpec = new HttpToolCreateSpec(
                 HttpToolMethod.POST,
                 "https://api.example.test/orders",
-                "{\"type\":\"array\"}",
-                List.of(),
+                List.of(httpParameter("items", HttpParameterDataType.ARRAY,
+                        HttpParameterLocation.BODY_ROOT, true)),
                 java.util.Map.of(),
                 Duration.ofSeconds(1)
         );
@@ -1039,7 +1038,7 @@ class ManagementCommandServiceTest {
         assertThatThrownBy(() -> service.createTool(
                 principal, "invalid-schema", "无效 Schema", ToolType.HTTP, ToolRiskLevel.LOW, invalidSpec, false
         )).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("object");
+                .hasMessage("ARRAY 参数必须有且只有一个匿名元素节点");
 
         assertThat(store.listTools(TENANT_ID)).isEmpty();
         assertThat(store.listAuditEvents(TENANT_ID)).isEmpty();
@@ -1414,8 +1413,7 @@ class ManagementCommandServiceTest {
         return new HttpToolCreateSpec(
                 HttpToolMethod.POST,
                 "https://api.example.test/orders",
-                "{\"type\":\"object\"}",
-                List.of(),
+                com.cmagent.server.support.HttpToolTestData.singleOptionalQueryParameter(),
                 java.util.Map.of(),
                 Duration.ofSeconds(1)
         );
@@ -1428,8 +1426,8 @@ class ManagementCommandServiceTest {
         return new HttpToolCreateSpec(
                 HttpToolMethod.POST,
                 "https://api.example.test/v2/orders",
-                "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}}}",
-                List.of(new HttpParameterMapping("/id", HttpParameterLocation.QUERY, "id", "", true, "")),
+                List.of(httpParameter("id", HttpParameterDataType.STRING,
+                        HttpParameterLocation.QUERY, true)),
                 java.util.Map.of("X-Api-Key", "secret/tools/orders-v2"),
                 Duration.ofSeconds(2)
         );
@@ -1447,10 +1445,21 @@ class ManagementCommandServiceTest {
                 tool.id(),
                 spec.method(),
                 spec.urlTemplate(),
-                spec.inputSchema(),
-                spec.parameterMappings(),
+                spec.parameters(),
                 spec.secretHeaders(),
                 spec.timeout()
+        );
+    }
+
+    private static HttpParameterDefinition httpParameter(
+            String name,
+            HttpParameterDataType dataType,
+            HttpParameterLocation location,
+            boolean required
+    ) {
+        return new HttpParameterDefinition(
+                name, "", name, dataType, location, "", required,
+                "", "", List.of(), null, null, null, null, null, null, false
         );
     }
 

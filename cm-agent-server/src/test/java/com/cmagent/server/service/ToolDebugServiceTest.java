@@ -22,6 +22,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -42,7 +44,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class ToolDebugServiceTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID OTHER_TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
@@ -115,7 +117,7 @@ class ToolDebugServiceTest {
     /**
      * 验证或支持 {@code unavailableLocalToolWritesFailureAuditWithoutStartedAudit} 所描述的测试场景。
      */
-    void unavailableLocalToolWritesFailureAuditWithoutStartedAudit() {
+    void unavailableLocalToolWritesFailureAuditWithoutStartedAudit(CapturedOutput output) {
         ToolDefinition tool = tool(TENANT_ID, ToolType.LOCAL, ToolRiskLevel.LOW, "local-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
         when(executionService.executeWhenReady(eq(tool), any(), any())).thenReturn(ToolExecutionResult.failed("工具不可用", null));
@@ -123,6 +125,13 @@ class ToolDebugServiceTest {
         ToolDebugResponse response = service.debug(principal, TOOL_ID, "{}", null);
 
         assertThat(response.success()).isFalse();
+        assertThat(response.errorMessage()).isEqualTo("工具不可用");
+        assertThat(response.errorCode()).isEqualTo("TOOL_UNAVAILABLE");
+        assertThat(response.errorId()).isNotBlank();
+        assertThat(output).contains("工具调试执行失败")
+                .contains("errorId=" + response.errorId())
+                .contains("errorCode=TOOL_UNAVAILABLE")
+                .contains("reason=工具不可用");
         verify(auditAppender, never()).append(TENANT_ID, "admin", "TOOL_DEBUG_STARTED", "TOOL",
                 TOOL_ID.toString(), "RUNNING", "工具调试已开始");
         verify(auditAppender).append(TENANT_ID, "admin", "TOOL_DEBUG_FAILED", "TOOL",
@@ -186,7 +195,7 @@ class ToolDebugServiceTest {
     /**
      * 验证或支持 {@code failedDebugNeverExposesToolErrorOrStackTrace} 所描述的测试场景。
      */
-    void failedDebugNeverExposesToolErrorOrStackTrace() {
+    void failedDebugNeverExposesToolErrorOrStackTrace(CapturedOutput output) {
         ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "http-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
         when(executionService.executeWhenReady(eq(tool), any(), any())).thenAnswer(invocation -> {
@@ -197,8 +206,36 @@ class ToolDebugServiceTest {
         ToolDebugResponse response = service.debug(principal, TOOL_ID, "{}", null);
 
         assertThat(response.success()).isFalse();
-        assertThat(response.errorMessage()).isEqualTo("工具调试失败");
+        assertThat(response.errorMessage()).isEqualTo("<已脱敏异常>");
+        assertThat(response.errorCode()).isEqualTo("TOOL_EXECUTION_FAILED");
+        assertThat(response.errorId()).isNotBlank();
         assertThat(response.errorMessage()).doesNotContain("https://", "Exception");
+        assertThat(output).contains("errorId=" + response.errorId())
+                .contains("reason=<已脱敏异常>")
+                .doesNotContain("internal.example.test", "/secret", "IllegalStateException");
+    }
+
+    @Test
+    /** 验证 HTTP 调试失败会把受控原因、状态码和同一错误编号同时返回并写入日志。 */
+    void httpDebugFailureReturnsSpecificReasonAndCorrelatedLog(CapturedOutput output) {
+        ToolDefinition tool = tool(TENANT_ID, ToolType.HTTP, ToolRiskLevel.LOW, "http-tool");
+        when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
+        when(executionService.executeWhenReady(eq(tool), any(), any())).thenAnswer(invocation -> {
+            invocation.getArgument(2, Runnable.class).run();
+            return ToolExecutionResult.failed("HTTP 服务返回非成功状态", 503);
+        });
+
+        ToolDebugResponse response = service.debug(principal, TOOL_ID, "{}", null);
+
+        assertThat(response.success()).isFalse();
+        assertThat(response.statusCode()).isEqualTo(503);
+        assertThat(response.errorMessage()).isEqualTo("HTTP 服务返回非成功状态");
+        assertThat(response.errorCode()).isEqualTo("HTTP_UPSTREAM_ERROR");
+        assertThat(response.errorId()).isNotBlank();
+        assertThat(output).contains("errorId=" + response.errorId())
+                .contains("errorCode=HTTP_UPSTREAM_ERROR")
+                .contains("statusCode=503")
+                .contains("reason=HTTP 服务返回非成功状态");
     }
 
     @Test
@@ -246,7 +283,7 @@ class ToolDebugServiceTest {
     /**
      * 验证或支持 {@code localExecutionDataAccessFailureAfterStartedAuditReturnsControlledFailure} 所描述的测试场景。
      */
-    void localExecutionDataAccessFailureAfterStartedAuditReturnsControlledFailure() {
+    void localExecutionDataAccessFailureAfterStartedAuditReturnsControlledFailure(CapturedOutput output) {
         ToolDefinition tool = tool(TENANT_ID, ToolType.LOCAL, ToolRiskLevel.LOW, "local-tool");
         when(toolRepository.findByTenantAndId(TENANT_ID, TOOL_ID)).thenReturn(Optional.of(tool));
         DataAccessResourceFailureException failure = new DataAccessResourceFailureException("本地执行器连接失败");
@@ -258,7 +295,13 @@ class ToolDebugServiceTest {
         ToolDebugResponse response = service.debug(principal, TOOL_ID, "{}", null);
 
         assertThat(response.success()).isFalse();
-        assertThat(response.errorMessage()).isEqualTo("工具调试失败");
+        assertThat(response.errorMessage()).isEqualTo("工具执行发生异常，请根据错误编号查看后台日志");
+        assertThat(response.errorCode()).isEqualTo("TOOL_EXECUTION_EXCEPTION");
+        assertThat(response.errorId()).isNotBlank();
+        assertThat(output).contains("工具调试执行异常")
+                .contains("errorId=" + response.errorId())
+                .contains("failureType=org.springframework.dao.DataAccessResourceFailureException")
+                .contains("本地执行器连接失败");
         verify(auditAppender).append(TENANT_ID, "admin", "TOOL_DEBUG_STARTED", "TOOL",
                 TOOL_ID.toString(), "RUNNING", "工具调试已开始");
         verify(auditAppender).append(TENANT_ID, "admin", "TOOL_DEBUG_FAILED", "TOOL",

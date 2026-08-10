@@ -1,7 +1,8 @@
 package com.cmagent.persistence;
 
 import com.cmagent.core.domain.HttpParameterLocation;
-import com.cmagent.core.domain.HttpParameterMapping;
+import com.cmagent.core.domain.HttpParameterDataType;
+import com.cmagent.core.domain.HttpParameterDefinition;
 import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.HttpToolMethod;
 import org.flywaydb.core.Flyway;
@@ -61,7 +62,7 @@ class JdbcHttpToolConfigRepositoryTest {
     /**
      * 验证持久化能够保存 {@code NestedMappingsDefaultsAndSecretReferencesWithinTenant}。
      */
-    void savesNestedMappingsDefaultsAndSecretReferencesWithinTenant() {
+    void 保存参数定义默认值和Secret引用时保持租户隔离() {
         HttpToolConfig configA = config(TENANT_A, TOOL_A, "https://api-a.invalid/v1/{customerId}", Duration.ofSeconds(3));
         HttpToolConfig configB = config(TENANT_B, TOOL_B, "https://api-b.invalid/v1/{customerId}", Duration.ofSeconds(5));
 
@@ -72,9 +73,66 @@ class JdbcHttpToolConfigRepositoryTest {
         assertThat(repository.findByTenantAndToolId(TENANT_B, TOOL_B)).contains(configB);
         assertThat(repository.findByTenantAndToolId(TENANT_B, TOOL_A)).isEmpty();
         HttpToolConfig stored = repository.findByTenantAndToolId(TENANT_A, TOOL_A).orElseThrow();
-        assertThat(stored.parameterMappings()).contains(new HttpParameterMapping(
-                "/request/options/limit", HttpParameterLocation.QUERY, "limit", "", false, "20"));
+        assertThat(stored.parameters()).anyMatch(parameter ->
+                parameter.name().equals("limit") && parameter.defaultValueJson().equals("20"));
         assertThat(stored.secretHeaders()).containsExactly(Map.entry("X-Api-Key", "secret/http/tenant-a"));
+    }
+
+    @Test
+    void 保存并读取新版扁平参数定义() {
+        List<HttpParameterDefinition> parameters = List.of(
+                definition("orderId", "", "orderId", HttpParameterDataType.STRING,
+                        HttpParameterLocation.PATH, true),
+                definition("payload", "", "payload", HttpParameterDataType.ARRAY,
+                        HttpParameterLocation.BODY_ROOT, true),
+                definition("payloadItem", "payload", "", HttpParameterDataType.STRING, null, false)
+        );
+        HttpToolConfig config = new HttpToolConfig(
+                TENANT_A,
+                TOOL_A,
+                HttpToolMethod.POST,
+                "https://api-a.invalid/v1/{orderId}",
+                parameters,
+                Map.of(),
+                Duration.ofSeconds(3)
+        );
+
+        repository.save(config);
+
+        assertThat(repository.findByTenantAndToolId(TENANT_A, TOOL_A)).contains(config);
+        assertThat(JdbcClient.create(dataSource).sql("""
+                        SELECT parameter_definitions FROM tool_http_configs
+                        WHERE tenant_id = :tenantId AND tool_id = :toolId
+                        """)
+                .param("tenantId", TENANT_A.toString())
+                .param("toolId", TOOL_A.toString())
+                .query(String.class)
+                .single()).contains("BODY_ROOT", "payloadItem");
+    }
+
+    @Test
+    void 保存并读取空参数定义() {
+        HttpToolConfig config = new HttpToolConfig(
+                TENANT_A,
+                TOOL_A,
+                HttpToolMethod.GET,
+                "https://api-a.invalid/v1/tools",
+                List.of(),
+                Map.of(),
+                Duration.ofSeconds(3)
+        );
+
+        repository.save(config);
+
+        assertThat(repository.findByTenantAndToolId(TENANT_A, TOOL_A)).contains(config);
+        assertThat(JdbcClient.create(dataSource).sql("""
+                        SELECT parameter_definitions FROM tool_http_configs
+                        WHERE tenant_id = :tenantId AND tool_id = :toolId
+                        """)
+                .param("tenantId", TENANT_A.toString())
+                .param("toolId", TOOL_A.toString())
+                .query(String.class)
+                .single()).isEqualTo("[]");
     }
 
     @Test
@@ -120,7 +178,9 @@ class JdbcHttpToolConfigRepositoryTest {
      */
     void rejectsSecretHeaderValuesThatAreNotReferencesBeforePersistence() {
         assertThatThrownBy(() -> repository.save(new HttpToolConfig(
-                TENANT_A, TOOL_A, HttpToolMethod.POST, "https://api-a.invalid", "{}", List.of(),
+                TENANT_A, TOOL_A, HttpToolMethod.POST, "https://api-a.invalid",
+                List.of(definition("payload", "", "payload", HttpParameterDataType.STRING,
+                        HttpParameterLocation.BODY, true)),
                 Map.of("Authorization", "实际密钥值"), Duration.ofSeconds(1))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("secretHeaders 必须使用 secret/ 开头的引用");
@@ -213,17 +273,33 @@ class JdbcHttpToolConfigRepositoryTest {
                 toolId,
                 HttpToolMethod.POST,
                 urlTemplate,
-                "{\"type\":\"object\",\"properties\":{\"request\":{\"type\":\"object\"}}}",
                 List.of(
-                        new HttpParameterMapping("/request/customer/id", HttpParameterLocation.PATH,
-                                "customerId", "", true, ""),
-                        new HttpParameterMapping("/request/options/limit", HttpParameterLocation.QUERY,
-                                "limit", "", false, "20"),
-                        new HttpParameterMapping("/request/payload", HttpParameterLocation.BODY,
-                                "", "/payload", true, "")
+                        definition("customerId", "", "customerId", HttpParameterDataType.STRING,
+                                HttpParameterLocation.PATH, true),
+                        new HttpParameterDefinition(
+                                "limit", "", "limit", HttpParameterDataType.INTEGER,
+                                HttpParameterLocation.QUERY, "分页数量", false, "20", "", List.of(),
+                                null, null, null, null, null, null, false
+                        ),
+                        definition("payload", "", "payload", HttpParameterDataType.STRING,
+                                HttpParameterLocation.BODY, true)
                 ),
                 Map.of("X-Api-Key", "secret/http/tenant-a"),
                 timeout
+        );
+    }
+
+    private static HttpParameterDefinition definition(
+            String id,
+            String parentId,
+            String name,
+            HttpParameterDataType dataType,
+            HttpParameterLocation location,
+            boolean required
+    ) {
+        return new HttpParameterDefinition(
+                id, parentId, name, dataType, location, id, required, "", "", List.of(),
+                null, null, null, null, null, null, false
         );
     }
 

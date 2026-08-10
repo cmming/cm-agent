@@ -106,6 +106,8 @@ cm-agent:
 
 `secret/...` Header 引用必须由部署平台注册的 `SecretProvider` 解析，真实值不能出现在 YAML、数据库迁移、镜像、日志或 API 响应中。为 DNS TOCTOU 提供纵深防御，应在 egress 防火墙、受控 DNS 或代理中再次约束 `allowed-hosts` 对应的实际目标地址。
 
+Flyway `V6__add_http_parameter_definitions.sql` 为 HTTP 工具增加扁平参数定义列，`V7__remove_legacy_http_parameter_mapping.sql` 删除 HTTP 配置表中的 `input_schema` 和 `parameter_mappings`。HTTP 工具从 V7 起只使用 `parameters`，历史映射数据不会转换或继续执行。部署前必须备份并确认不再需要旧配置，再完成迁移和应用升级。
+
 发布 MCP 前需为调用主体授予 `tool:mcp:invoke`，为控制台发布/取消发布授予 `tool:grant`，为单工具调试授予 `tool:debug`。MCP 端点沿用 JWT 认证，不得设置为匿名路径；`GET` 返回 `405`，关闭开关时返回 `404`。反向代理不得将认证头、Cookie 或下游密钥写入访问日志。发布后无需重启：每个 MCP 请求都会重新加载租户目录，取消发布、禁用和配置漂移即时拒绝调用。
 
 外部配置目录示例为 `/etc/cm-agent/`，实际路径由部署平台控制。生产启动必须显式选择 `production`、`prod` 或 `supabase` profile：

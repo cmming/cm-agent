@@ -192,6 +192,10 @@ class McpPublicationServiceTest {
      * @param tool 测试工具定义
      */
     private static HttpToolConfig config(ToolDefinition tool) {
-        return new HttpToolConfig(TENANT_ID, tool.id(), HttpToolMethod.POST, tool.endpoint(), "{}", List.of(), java.util.Map.of(), Duration.ofSeconds(1));
+        return new HttpToolConfig(
+                TENANT_ID, tool.id(), HttpToolMethod.POST, tool.endpoint(),
+                com.cmagent.server.support.HttpToolTestData.singleOptionalQueryParameter(),
+                java.util.Map.of(), Duration.ofSeconds(1)
+        );
     }
 }

@@ -111,39 +111,101 @@ class ToolControllerTest {
     }
 
     @Test
-    /**
-     * 验证或支持 {@code httpCreateCanonicalizesNestedJsonAndExposesOnlySecretReferences} 所描述的测试场景。
-     */
-    void httpCreateCanonicalizesNestedJsonAndExposesOnlySecretReferences() throws Exception {
+    void 新版Http参数定义自动生成Schema并返回参数树() throws Exception {
         String token = token(TENANT_A, "admin");
+
         String response = mockMvc.perform(post("/api/tools")
                         .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(httpRequest("orders", true)))
+                        .content("""
+                                {
+                                  "name":"array-body-tool",
+                                  "description":"根数组请求体",
+                                  "type":"HTTP",
+                                  "riskLevel":"LOW",
+                                  "httpConfig":{
+                                    "method":"POST",
+                                    "urlTemplate":"https://api.example.test/orders/{orderId}",
+                                    "parameters":[
+                                      {"id":"orderId","name":"orderId","dataType":"STRING","requestLocation":"PATH","required":true},
+                                      {"id":"payload","name":"payload","dataType":"ARRAY","requestLocation":"BODY_ROOT","required":true,"minItems":1},
+                                      {"id":"payloadItem","parentId":"payload","dataType":"OBJECT"},
+                                      {"id":"p1","parentId":"payloadItem","name":"p1","dataType":"STRING","required":true,"exampleValue":"v1"}
+                                    ],
+                                    "secretHeaders":{},
+                                    "timeoutMillis":3000
+                                  }
+                                }
+                                """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.type").value("HTTP"))
-                .andExpect(jsonPath("$.endpoint").value("https://api.example.test/orders/{id}"))
-                .andExpect(jsonPath("$.inputSchema").value("{\"properties\":{\"id\":{\"type\":\"string\"},\"items\":{\"items\":{\"properties\":{\"name\":{\"type\":\"object\"}},\"type\":\"object\"},\"type\":\"array\"}},\"type\":\"object\"}"))
-                .andExpect(jsonPath("$.httpConfig.method").value("POST"))
-                .andExpect(jsonPath("$.httpConfig.urlTemplate").value("https://api.example.test/orders/{id}"))
-                .andExpect(jsonPath("$.httpConfig.inputSchema").value("{\"properties\":{\"id\":{\"type\":\"string\"},\"items\":{\"items\":{\"properties\":{\"name\":{\"type\":\"object\"}},\"type\":\"object\"},\"type\":\"array\"}},\"type\":\"object\"}"))
-                .andExpect(jsonPath("$.httpConfig.parameterMappings[0].defaultValueJson").value("{\"kind\":\"primary\"}"))
-                .andExpect(jsonPath("$.httpConfig.secretHeaders.X-Api-Key").value("secret/integration/api-key"))
-                .andExpect(jsonPath("$.httpConfig.timeoutMillis").value(1000))
-                .andExpect(jsonPath("$.mcpPublished").value(true))
-                // 默认 HTTP 执行开关关闭时，配置可保存但运行时不能标记为就绪。
-                .andExpect(jsonPath("$.runtimeReady").value(false))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        String toolId = JsonPath.read(response, "$.id");
+                .andExpect(jsonPath("$.httpConfig.inputSchema").doesNotExist())
+                .andExpect(jsonPath("$.httpConfig.parameters.length()").value(4))
+                .andExpect(jsonPath("$.httpConfig.parameters[1].requestLocation").value("BODY_ROOT"))
+                .andExpect(jsonPath("$.httpConfig.parameters[2].name").value(""))
+                .andReturn().getResponse().getContentAsString();
 
-        HttpToolConfig config = store.findHttpToolConfig(TENANT_A, UUID.fromString(toolId)).orElseThrow();
-        assertThat(config.inputSchema()).isEqualTo("{\"properties\":{\"id\":{\"type\":\"string\"},\"items\":{\"items\":{\"properties\":{\"name\":{\"type\":\"object\"}},\"type\":\"object\"},\"type\":\"array\"}},\"type\":\"object\"}");
-        assertThat(config.parameterMappings()).hasSize(2).first()
-                .extracting(mapping -> mapping.defaultValueJson())
-                .isEqualTo("{\"kind\":\"primary\"}");
-        assertThat(store.findMcpToolPublication(TENANT_A, UUID.fromString(toolId))).isPresent();
+        UUID toolId = UUID.fromString(JsonPath.read(response, "$.id"));
+        HttpToolConfig config = store.findHttpToolConfig(TENANT_A, toolId).orElseThrow();
+        assertThat(config.parameters()).hasSize(4);
+        assertThat(JsonPath.<String>read(response, "$.inputSchema"))
+                .contains("\"payload\"", "\"items\"", "\"p1\"");
+    }
+
+    @Test
+    void 无参数Http工具允许提交空数组并生成空对象Schema() throws Exception {
+        String token = token(TENANT_A, "admin");
+
+        String response = mockMvc.perform(post("/api/tools")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name":"tool-list",
+                                  "description":"获取工具列表",
+                                  "type":"HTTP",
+                                  "riskLevel":"LOW",
+                                  "httpConfig":{
+                                    "method":"GET",
+                                    "urlTemplate":"https://api.example.test/tools",
+                                    "parameters":[],
+                                    "secretHeaders":{},
+                                    "timeoutMillis":1000
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.httpConfig.parameters").isEmpty())
+                .andReturn().getResponse().getContentAsString();
+
+        UUID toolId = UUID.fromString(JsonPath.read(response, "$.id"));
+        HttpToolConfig config = store.findHttpToolConfig(TENANT_A, toolId).orElseThrow();
+        assertThat(config.parameters()).isEmpty();
+        assertThat(JsonPath.<String>read(response, "$.inputSchema"))
+                .contains("\"properties\":{}", "\"additionalProperties\":false");
+    }
+
+    @Test
+    void 旧版Schema不能替代Parameters() throws Exception {
+        String token = token(TENANT_A, "admin");
+
+        mockMvc.perform(post("/api/tools")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name":"mixed-http-config",
+                                  "description":"混用配置",
+                                  "type":"HTTP",
+                                  "riskLevel":"LOW",
+                                  "httpConfig":{
+                                    "method":"GET",
+                                    "urlTemplate":"https://api.example.test/items/{id}",
+                                    "inputSchema":{"type":"object"},
+                                    "timeoutMillis":1000
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -164,7 +226,7 @@ class ToolControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"name":"invalid-local","description":"本地工具","type":"LOCAL","riskLevel":"LOW",
-                                 "httpConfig":{"method":"POST","urlTemplate":"https://api.example.test","inputSchema":{},"timeoutMillis":1000}}
+                                 "httpConfig":{"method":"POST","urlTemplate":"https://api.example.test","parameters":[],"timeoutMillis":1000}}
                                 """))
                 .andExpect(status().isBadRequest());
     }
@@ -173,16 +235,16 @@ class ToolControllerTest {
     /**
      * 验证或支持 {@code httpCreateRejectsNullParameterMapping} 所描述的测试场景。
      */
-    void httpCreateRejectsNullParameterMapping() throws Exception {
+    void httpCreateRejectsNullParameterDefinition() throws Exception {
         String token = token(TENANT_A, "admin");
 
         mockMvc.perform(post("/api/tools")
                         .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"null-mapping","description":"空映射","type":"HTTP","riskLevel":"LOW",
-                                 "httpConfig":{"method":"POST","urlTemplate":"https://api.example.test","inputSchema":{},
-                                 "parameterMappings":[null],"timeoutMillis":1000}}
+                                {"name":"null-parameter","description":"空参数节点","type":"HTTP","riskLevel":"LOW",
+                                 "httpConfig":{"method":"POST","urlTemplate":"https://api.example.test",
+                                 "parameters":[null],"timeoutMillis":1000}}
                                 """))
                 .andExpect(status().isBadRequest());
     }
@@ -199,7 +261,8 @@ class ToolControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"name":"null-secret-value","description":"空值","type":"HTTP","riskLevel":"LOW",
-                                 "httpConfig":{"method":"POST","urlTemplate":"https://api.example.test","inputSchema":{},
+                                 "httpConfig":{"method":"POST","urlTemplate":"https://api.example.test",
+                                 "parameters":[{"id":"payload","name":"payload","dataType":"STRING","requestLocation":"BODY"}],
                                  "secretHeaders":{"Authorization":null},"timeoutMillis":1000}}
                                 """))
                 .andExpect(status().isBadRequest());
@@ -209,7 +272,8 @@ class ToolControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"name":"blank-secret-key","description":"空键","type":"HTTP","riskLevel":"LOW",
-                                 "httpConfig":{"method":"POST","urlTemplate":"https://api.example.test","inputSchema":{},
+                                 "httpConfig":{"method":"POST","urlTemplate":"https://api.example.test",
+                                 "parameters":[{"id":"payload","name":"payload","dataType":"STRING","requestLocation":"BODY"}],
                                  "secretHeaders":{"":"secret/integration/token"},"timeoutMillis":1000}}
                                 """))
                 .andExpect(status().isBadRequest());
@@ -219,8 +283,7 @@ class ToolControllerTest {
         ToolController.HttpConfigRequest request = new ToolController.HttpConfigRequest(
                 com.cmagent.core.domain.HttpToolMethod.POST,
                 "https://api.example.test",
-                new ObjectMapper().createObjectNode(),
-                List.of(),
+                List.of(parameterRequest()),
                 secretHeadersWithNullKey,
                 1000L
         );
@@ -328,7 +391,9 @@ class ToolControllerTest {
                 .andExpect(jsonPath("$.enabled").value(false))
                 .andExpect(jsonPath("$.endpoint").value("https://api.example.test/updated/{id}"))
                 .andExpect(jsonPath("$.inputSchema").value(
-                        "{\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"))
+                        "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\","
+                                + "\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"],"
+                                + "\"additionalProperties\":false}"))
                 .andExpect(jsonPath("$.httpConfig.method").value("GET"))
                 .andExpect(jsonPath("$.httpConfig.urlTemplate").value("https://api.example.test/updated/{id}"))
                 .andExpect(jsonPath("$.httpConfig.secretHeaders.Authorization").value("secret/integration/updated-token"))
@@ -722,20 +787,12 @@ class ToolControllerTest {
                   "httpConfig":{
                     "method":"POST",
                     "urlTemplate":"https://api.example.test/orders/{id}",
-                    "inputSchema":{"type":"object","properties":{"id":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"name":{"type":"object"}}}}}},
-                    "parameterMappings":[{
-                      "sourcePointer":"/items/0/name",
-                      "location":"BODY",
-                      "targetPointer":"/payload/items/0/name",
-                      "required":true,
-                      "defaultValue":{"kind":"primary"}
-                    },{
-                      "sourcePointer":"/id",
-                      "location":"PATH",
-                      "targetName":"id",
-                      "required":true,
-                      "defaultValue":"example"
-                    }],
+                    "parameters":[
+                      {"id":"id","name":"id","dataType":"STRING","requestLocation":"PATH","required":true,"defaultValue":"example"},
+                      {"id":"items","name":"items","dataType":"ARRAY","requestLocation":"BODY","required":true},
+                      {"id":"item","parentId":"items","dataType":"OBJECT"},
+                      {"id":"name","parentId":"item","name":"name","dataType":"OBJECT","required":true,"defaultValue":{"kind":"primary"}}
+                    ],
                     "secretHeaders":{"X-Api-Key":"secret/integration/api-key"},
                     "timeoutMillis":1000
                   }
@@ -760,13 +817,7 @@ class ToolControllerTest {
                   "httpConfig":{
                     "method":"GET",
                     "urlTemplate":"https://api.example.test/updated/{id}",
-                    "inputSchema":{"required":["id"],"type":"object","properties":{"id":{"type":"string"}}},
-                    "parameterMappings":[{
-                      "sourcePointer":"/id",
-                      "location":"PATH",
-                      "targetName":"id",
-                      "required":true
-                    }],
+                    "parameters":[{"id":"id","name":"id","dataType":"STRING","requestLocation":"PATH","required":true}],
                     "secretHeaders":{"Authorization":"secret/integration/updated-token"},
                     "timeoutMillis":2000
                   }
@@ -782,6 +833,14 @@ class ToolControllerTest {
      */
     private String token(UUID tenantId, String principalId) {
         return jwtService.createToken(tenantId, principalId, "测试管理员", List.of("tool:read", "tool:grant"));
+    }
+
+    private static ToolController.HttpParameterDefinitionRequest parameterRequest() {
+        return new ToolController.HttpParameterDefinitionRequest(
+                "payload", "", "payload", com.cmagent.core.domain.HttpParameterDataType.STRING,
+                com.cmagent.core.domain.HttpParameterLocation.BODY, "", false,
+                null, null, List.of(), null, null, null, null, null, null, false
+        );
     }
 
     /**

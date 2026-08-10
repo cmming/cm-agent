@@ -516,8 +516,9 @@ class McpPublishedToolCatalogTest {
      */
     private static HttpToolConfig httpConfig(ToolDefinition tool) {
         return new HttpToolConfig(
-                tool.tenantId(), tool.id(), HttpToolMethod.POST, tool.endpoint(), tool.inputSchema(),
-                List.of(), Map.of(), Duration.ofSeconds(1)
+                tool.tenantId(), tool.id(), HttpToolMethod.POST, tool.endpoint(),
+                com.cmagent.server.support.HttpToolTestData.singleOptionalQueryParameter(),
+                Map.of(), Duration.ofSeconds(1)
         );
     }
 }

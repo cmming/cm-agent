@@ -4,8 +4,9 @@ import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.core.audit.AuditEventRepository;
 import com.cmagent.core.domain.AgentDefinition;
+import com.cmagent.core.domain.HttpParameterDataType;
+import com.cmagent.core.domain.HttpParameterDefinition;
 import com.cmagent.core.domain.HttpParameterLocation;
-import com.cmagent.core.domain.HttpParameterMapping;
 import com.cmagent.core.domain.HttpToolMethod;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolGrant;
@@ -871,8 +872,7 @@ class ManagementCommandServiceJdbcPersistenceTest {
         return new HttpToolCreateSpec(
                 HttpToolMethod.POST,
                 "https://api.example.test/orders",
-                "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}}}",
-                List.of(new HttpParameterMapping("/id", HttpParameterLocation.QUERY, "id", "", true, "")),
+                List.of(httpParameter("id", HttpParameterLocation.QUERY)),
                 java.util.Map.of("X-Api-Key", "secret/integration/api-key"),
                 java.time.Duration.ofSeconds(1)
         );
@@ -885,10 +885,16 @@ class ManagementCommandServiceJdbcPersistenceTest {
         return new HttpToolCreateSpec(
                 HttpToolMethod.POST,
                 "https://api.example.test/v2/orders",
-                "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}}}",
-                List.of(new HttpParameterMapping("/id", HttpParameterLocation.QUERY, "orderId", "", true, "")),
+                List.of(httpParameter("orderId", HttpParameterLocation.QUERY)),
                 java.util.Map.of("X-Api-Key", "secret/integration/api-key-v2"),
                 java.time.Duration.ofSeconds(2)
+        );
+    }
+
+    private static HttpParameterDefinition httpParameter(String name, HttpParameterLocation location) {
+        return new HttpParameterDefinition(
+                name, "", name, HttpParameterDataType.STRING, location, "", true,
+                "", "", List.of(), null, null, null, null, null, null, false
         );
     }
 

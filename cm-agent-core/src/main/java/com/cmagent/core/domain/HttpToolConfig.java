@@ -8,15 +8,14 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
- * 描述动态 HTTP 工具的地址、方法、参数映射、认证和响应限制。
+ * 描述动态 HTTP 工具的地址、方法、参数定义、认证和响应限制。
  */
 public record HttpToolConfig(
         UUID tenantId,
         UUID toolId,
         HttpToolMethod method,
         String urlTemplate,
-        String inputSchema,
-        List<HttpParameterMapping> parameterMappings,
+        List<HttpParameterDefinition> parameters,
         Map<String, String> secretHeaders,
         Duration timeout
 ) {
@@ -25,14 +24,13 @@ public record HttpToolConfig(
     );
 
     /**
-     * 校验并规范化动态 HTTP 工具的地址、映射、认证与响应限制。
+     * 校验并规范化动态 HTTP 工具的地址、参数、认证与响应限制。
       *
       * @param tenantId 当前租户标识
       * @param toolId 目标工具标识
       * @param method HTTP 请求方法
       * @param urlTemplate HTTP 工具 URL 模板
-      * @param inputSchema 工具输入 JSON Schema
-      * @param parameterMappings HTTP 参数映射集合
+      * @param parameters 扁平参数定义集合
       * @param secretHeaders 请求头名称到 Secret 引用的映射
       * @param timeout HTTP 调用超时
      */
@@ -43,10 +41,7 @@ public record HttpToolConfig(
         if (urlTemplate == null || urlTemplate.isBlank()) {
             throw new IllegalArgumentException("urlTemplate 不能为空");
         }
-        if (inputSchema == null || inputSchema.isBlank()) {
-            throw new IllegalArgumentException("inputSchema 不能为空");
-        }
-        parameterMappings = List.copyOf(parameterMappings == null ? List.of() : parameterMappings);
+        parameters = List.copyOf(parameters == null ? List.of() : parameters);
         secretHeaders = Map.copyOf(secretHeaders == null ? Map.of() : secretHeaders);
         if (secretHeaders.values().stream().anyMatch(value -> !SECRET_REFERENCE.matcher(value).matches())) {
             throw new IllegalArgumentException("secretHeaders 必须使用 secret/ 开头的引用");
@@ -54,8 +49,9 @@ public record HttpToolConfig(
         if (timeout == null || timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException("timeout 必须为正数");
         }
-        if (method == HttpToolMethod.GET && parameterMappings.stream()
-                .anyMatch(mapping -> mapping.location() == HttpParameterLocation.BODY)) {
+        if (method == HttpToolMethod.GET && parameters.stream()
+                .anyMatch(parameter -> parameter.requestLocation() == HttpParameterLocation.BODY
+                        || parameter.requestLocation() == HttpParameterLocation.BODY_ROOT)) {
             throw new IllegalArgumentException("GET 工具不能配置 BODY 参数");
         }
     }

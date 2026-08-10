@@ -51,8 +51,9 @@ class ToolQueryServiceTest {
         ToolDefinition httpTool = tool(HTTP_TOOL_ID, "orders", ToolType.HTTP);
         ToolDefinition localTool = tool(LOCAL_TOOL_ID, "echo", ToolType.LOCAL);
         HttpToolConfig httpConfig = new HttpToolConfig(
-                TENANT_ID, HTTP_TOOL_ID, HttpToolMethod.POST, "https://api.example.test/orders", "{}",
-                List.of(), Map.of("X-Api-Key", "secret/orders/key"), Duration.ofSeconds(1)
+                TENANT_ID, HTTP_TOOL_ID, HttpToolMethod.POST, "https://api.example.test/orders",
+                com.cmagent.server.support.HttpToolTestData.singleOptionalQueryParameter(),
+                Map.of("X-Api-Key", "secret/orders/key"), Duration.ofSeconds(1)
         );
         McpToolPublication publication = new McpToolPublication(TENANT_ID, HTTP_TOOL_ID, true, "admin");
         List<UUID> toolIds = List.of(HTTP_TOOL_ID, LOCAL_TOOL_ID);
