@@ -97,3 +97,9 @@ V2/V3 索引顺序与查询前缀保持一致。新增过滤条件时需要重�
 | 分页重复/漏项 | 游标解析、排序与索引 | `JdbcRunRepositoryTest`、Controller 游标测试 |
 | 失败仍返回敏感信息 | redactor 与异常映射 | `SensitiveDataRedactorTest`、`ApiExceptionHandlerTest` |
 | 写入成功但无审计 | 事务边界或 memory 顺序 | `AuditAppenderTest`、JDBC 事务测试 |
+
+## 14. 2026-08-11 验收回归修复
+
+后续全局错误诊断改动使 `McpServerConfiguration` 的 `mcpPublishedToolCatalog` Bean 增加 `ErrorDiagnosticLogger` 依赖。`McpServerConfigurationTest` 使用 `ApplicationContextRunner` 显式提供配置依赖，并不执行组件扫描，因此该依赖不会自动出现，造成“启用但白名单为空时启动失败”和“启用后按同一配置注册自定义端点”两个测试在 MCP 行为断言前失败。
+
+本次仅在测试夹具中注册 `ErrorDiagnosticLogger` mock，与既有 repository、权限、审计和运行服务 mock 的装配方式一致。生产配置和阶段 2 的持久化、安全边界均未改动。完整验证结果和未处理项见 [阶段 2 进度账本](../progress/2026-07-14-phase-2-production-runtime-ledger.md)。

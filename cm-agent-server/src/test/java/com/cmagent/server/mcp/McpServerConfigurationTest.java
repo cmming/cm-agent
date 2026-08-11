@@ -6,6 +6,7 @@ import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.core.tool.ToolRegistry;
 import com.cmagent.server.audit.AuditAppender;
+import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import com.cmagent.server.runtime.GovernedToolExecutionService;
 import com.cmagent.server.security.ToolOutputSanitizer;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -80,6 +81,7 @@ class McpServerConfigurationTest {
                 .withBean(GovernedToolExecutionService.class, () -> mock(GovernedToolExecutionService.class))
                 .withBean(PermissionEvaluator.class, () -> mock(PermissionEvaluator.class))
                 .withBean(AuditAppender.class, () -> mock(AuditAppender.class))
+                .withBean(ErrorDiagnosticLogger.class, () -> mock(ErrorDiagnosticLogger.class))
                 .withBean(ObjectMapper.class, () -> objectMapper)
                 .withBean(ToolOutputSanitizer.class, () -> new ToolOutputSanitizer(objectMapper));
     }

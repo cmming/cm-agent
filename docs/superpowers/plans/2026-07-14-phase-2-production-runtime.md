@@ -522,3 +522,9 @@ git commit -m "docs: 更新阶段2生产运行说明"
 - 所有任务都有精确路径、失败测试、失败命令、最小实现、通过命令和中文提交命令。
 - 类型名称在任务间保持一致：`RunRecord`、`RunToolCall`、`RunRepository`、`ToolCallRepository`、`AuditPersistenceException`、`SensitiveDataRedactor`。
 - 执行顺序为任务 1、任务 2、任务 5、任务 3、任务 4、任务 6；任务 5 先提供任务 3 需要的 `SensitiveDataRedactor`。执行结束后必须在 Rocky VM 运行完整 `mvn -q test`、`mvn -q "-DskipTests" package`、`git diff --check`，再推送并创建面向 `master` 的非 Draft PR。
+
+## 2026-08-11 验收闭环补充
+
+- 原任务 1-6 的交付物已完成；历史清单中的未勾选项保留为当时的 TDD 执行脚本，最终状态以同主题进度账本为准。
+- 新增回归步骤：先在 Rocky VM 的干净 `5e8bae953c2841e16bd0a9c13513871406cca8b6` 提交上运行 `McpServerConfigurationTest`，确认两个用例因缺少 `ErrorDiagnosticLogger` Bean 失败；随后仅在该测试的 `ApplicationContextRunner` 中补齐 mock Bean。
+- 通过条件：`McpServerConfigurationTest` 通过，随后完整 `mvn -q test` 通过；不修改用户要求忽略的 `application.yml`、`application-mysql.yml` 和 `application-ok.yml`。
