@@ -88,6 +88,10 @@ public class RunExecutionService {
     /**
      * 执行 Agent 的单轮运行，并持久化运行状态和工具调用结果。
      *
+     * <p>调用方已完成运行权限校验；本方法负责在租户边界内校验运行资源、筛选授权工具，
+     * 创建运行记录后调用 Runtime。执行成功时持久化终态和工具调用并返回脱敏结果；执行失败时
+     * 根据异常类型完成失败状态与审计收口，并保留审计或数据库异常的原始语义。</p>
+     *
      * @param principal 当前认证主体
      * @param agentId   待运行的 Agent 标识
      * @param input     用户输入
@@ -96,6 +100,7 @@ public class RunExecutionService {
      * @throws RuntimeExecutionException 运行时或受治理工具调用失败时抛出
      */
     public AgentRunResult run(PrincipalRef principal, UUID agentId, String input) {
+        // 先在认证主体所属租户内校验 Agent 与模型配置，避免跨租户读取或使用已禁用资源。
         AgentDefinition agent = agentRepository.findByTenantAndId(principal.tenantId(), agentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
         if (!agent.enabled()) {
@@ -105,21 +110,29 @@ public class RunExecutionService {
                 .findByTenantAndId(principal.tenantId(), agent.modelProviderId())
                 .filter(ModelConfig::enabled)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "模型配置不可用"));
+
+        // 根据 Agent 的授权关系筛选本次可暴露给 Runtime 的工具集合。
         List<ToolDefinition> authorizedTools = authorizedTools(principal, agent);
+
+        // Runtime 调用前先持久化 RUNNING 记录，使后续结果、工具调用和错误诊断共享同一 runId。
         RunRecord runningRun = persistenceService.start(principal, agent.id(), input);
 
         AgentRunResult runtimeResult;
         try {
+            // 将完整运行上下文交给 Runtime；Runtime 内部可能继续发起受治理的工具调用。
             runtimeResult = runtime.run(new AgentRunRequest(
                     runningRun.id(), principal.tenantId(), agent, modelConfig, principal, input, authorizedTools
             ));
         } catch (AuditPersistenceException auditFailure) {
+            // 审计持久化失败时尽力关闭运行记录，并保留原异常交给上层严格处理。
             bestEffortFailureClosure(principal, runningRun);
             throw auditFailure;
         } catch (DataAccessException dataFailure) {
+            // 业务数据持久化失败同样尝试关闭运行记录，避免掩盖原始数据库异常。
             bestEffortFailureClosure(principal, runningRun);
             throw dataFailure;
         } catch (RuntimeException runtimeFailure) {
+            // 普通 Runtime 异常先记录可关联诊断，再依次尝试完成失败状态和失败审计。
             diagnosticLogger.error(new ErrorDiagnosticLogger.DiagnosticContext(
                     runningRun.id().toString(), "AGENT_RUNTIME", "RUNTIME_EXECUTION_FAILED",
                     principal.tenantId().toString(), principal.principalId(), agent.id().toString(),
@@ -143,6 +156,7 @@ public class RunExecutionService {
             throw new RuntimeExecutionException(runtimeFailure);
         }
 
+        // Runtime 成功返回后持久化运行终态与工具调用，再基于持久化记录构造脱敏响应。
         var completedRun = persistenceService.complete(
                 principal, runningRun, runtimeResult, authorizedTools
         );
