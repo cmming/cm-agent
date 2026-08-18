@@ -51,6 +51,15 @@ mvn -pl cm-agent-server -am test
 docker compose stop postgres mysql
 ```
 
+需要验证 AgentScope Redis 状态存储示例时，可额外启动 Redis：
+
+```bash
+docker compose up -d redis
+docker compose ps redis
+```
+
+该服务使用 `redis:7.0-alpine` 并监听宿主机 `6379` 端口。它只提供本项目本地联调用途；如通过 `REDIS_URL` 提供包含密码的连接串，禁止将完整连接串写入命令历史、日志或文档。
+
 不得在 Rocky VM 上执行全局容器、卷或镜像清理；也不得用本机 Docker Desktop 代替上述数据库和 Testcontainers 验证。
 
 ## 生产配置注入

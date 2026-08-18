@@ -17,5 +17,6 @@
     <modules>
         <module>starter-local-tool</module>
         <module>http-tool-client</module>
+        <module>dashscope-mcp-agent</module>
     </modules>
 </project>
