@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.cmagent</groupId>
+        <artifactId>cm-agent-examples</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>dashscope-mcp-agent</artifactId>
+    <name>CM Agent DashScope MCP Tool Example</name>
+    <description>
+        演示 AgentScope Java 智能体通过 MCP Streamable HTTP 协议调用外部工具（时间查询），
+        并由阿里云百炼（DashScope）通义千问模型自动决策工具调用的最小可运行示例。
+    </description>
+
+    <properties>
+        <exec.mainClass>com.cmagent.examples.mcpagent.DashScopeMcpToolExample</exec.mainClass>
+        <!--
+            agentscope-core:2.0.0 实际编译、字节码引用的是 io.modelcontextprotocol.sdk:mcp:0.17.0
+            这一构件（其自身 POM 声明 mcp-core/mcp-json-jackson2 均为 0.17.0）。
+            父 POM 的 dependencyManagement 为了配合 cm-agent-server 自身的 MCP Streamable HTTP
+            Server 实现，把 mcp-core/mcp-json-jackson2 统一管理到 2.0.0；但 2.0.0 版本的
+            McpSchema.Tool#inputSchema() 返回类型已从 McpSchema.JsonSchema 变更为
+            Map<String,Object>，与 agentscope-core 内部 McpClientManager 编译期引用的方法签名
+            不兼容，运行期会抛出 NoSuchMethodError。
+            本模块只使用 agentscope-core 内置的 MCP 客户端能力（McpClientBuilder/Toolkit），
+            不直接使用 mcp-core 2.0.0 的新 API，因此在本模块内显式锁定这两个构件为 0.17.0，
+            覆盖父 POM 的全局管理版本，且不影响 cm-agent-server 继续使用 2.0.0。
+        -->
+        <agentscope.mcp-sdk.version>0.17.0</agentscope.mcp-sdk.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-dashscope</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-redis</artifactId>
+            <version>${agentscope.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-core</artifactId>
+            <version>${agentscope.mcp-sdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-json-jackson2</artifactId>
+            <version>${agentscope.mcp-sdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.17</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <mainClass>${exec.mainClass}</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+
