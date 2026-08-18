@@ -94,8 +94,9 @@ JDBC 模式由 `JdbcPersistenceConfiguration` 创建数据源并在启动时执�
 - `V1__init_schema.sql` 建立租户、用户、角色、权限、模型、Agent、工具、运行、工具调用和审计表。
 - `V2__add_runtime_query_indexes.sql` 为 Run、ToolCall、Audit 的租户范围查询补充索引。
 - `V3__add_tool_calls_created_at_index.sql` 为工具调用明细的时间/ID 排序补充联合索引。
+- `V8__add_schema_comments.sql` 按 PostgreSQL/MySQL 方言为全部业务表和字段补充中文数据库原生注释；`CmAgentFlyway` 只加载公共迁移和当前数据库方言目录。
 
-已发布迁移不可修改；结构变化必须新增更高版本的迁移，并同步更新 JDBC 实现、迁移测试和部署文档。PostgreSQL/MySQL 集成测试以及 Docker/Compose/Testcontainers 验证需要在 Rocky Linux 虚拟机的容器环境中执行，不以本机 Docker Desktop 代替。
+已发布迁移不可修改；结构变化必须新增更高版本的迁移，并同步更新数据库原生表/字段注释、JDBC 实现、迁移测试和部署文档。PostgreSQL/MySQL 集成测试以及 Docker/Compose/Testcontainers 验证需要在 Rocky Linux 虚拟机的容器环境中执行，不以本机 Docker Desktop 代替。
 
 部署时应显式选择 profile。`local` 和 `test` 用于开发/自动化测试；`postgres`、`mysql` 用于 Rocky VM 集成验证；`production`、`prod` 与 `supabase` 是严格 profile。生产必须使用受控外部 YAML 或 Secret Manager 注入 JDBC、JWT 和模型凭据，并在切流前检查 Flyway 历史、数据库连通性、模型凭据和 `GET /actuator/health`。
 

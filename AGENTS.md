@@ -148,6 +148,9 @@
 - Flyway 迁移位于 `cm-agent-persistence/src/main/resources/db/migration`。
 - 已存在的迁移视为发布历史，不要修改 `V1__init_schema.sql` 等既有版本；新增变更使用新的 `Vn__description.sql`。
 - SQL 必须同时考虑 PostgreSQL 16 和 MySQL 8.4，避免只在单一数据库可用的语法。
+- 新增或修改数据库表、字段时，必须同时为表和每一个字段提供准确、非空的中文数据库注释；重命名、调整语义或删除结构时必须同步维护注释，禁止只用 SQL 行注释或文档代替数据库原生注释。
+- PostgreSQL 与 MySQL 的原生注释语法不兼容时，使用 `db/migration/postgresql` 和 `db/migration/mysql` 下语义一致、版本号相同的方言迁移，并通过 `CmAgentFlyway` 选择当前数据库脚本；禁止直接递归扫描迁移根目录而同时加载两个方言版本。
+- 迁移测试必须在 PostgreSQL 16 与 MySQL 8.4 上逐表、逐字段验证数据库注释非空，确保后续新增结构不会遗漏注释。
 - 变更 schema 时同步更新 JDBC Repository、迁移测试、部署/配置文档。
 - 新表默认包含 tenant 隔离、必要索引、创建/更新时间、外键或明确软引用说明。
 - Supabase 使用 PostgreSQL JDBC/Flyway 链路，不需要引入 Supabase Java SDK。

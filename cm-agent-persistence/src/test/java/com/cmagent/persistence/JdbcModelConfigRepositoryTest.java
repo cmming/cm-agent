@@ -2,7 +2,6 @@ package com.cmagent.persistence;
 
 import com.cmagent.core.domain.ModelConfig;
 import com.cmagent.core.domain.ModelProviderType;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -36,9 +35,9 @@ class JdbcModelConfigRepositoryTest {
     void setUp() {
         DataSource dataSource = new DriverManagerDataSource(
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
+        CmAgentFlyway.configure(dataSource)
                 .cleanDisabled(false).load().clean();
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        CmAgentFlyway.configure(dataSource).load().migrate();
         seedData(dataSource);
         repository = new JdbcModelConfigRepository(JdbcClient.create(dataSource));
     }

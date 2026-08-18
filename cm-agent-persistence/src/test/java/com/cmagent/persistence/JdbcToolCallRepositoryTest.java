@@ -3,7 +3,6 @@ package com.cmagent.persistence;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.RunToolCall;
 import com.cmagent.core.domain.RunToolCallBatch;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.postgresql.util.PSQLException;
@@ -55,8 +54,8 @@ class JdbcToolCallRepositoryTest {
                 postgres.getUsername(),
                 postgres.getPassword()
         );
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").cleanDisabled(false).load().clean();
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        CmAgentFlyway.configure(dataSource).cleanDisabled(false).load().clean();
+        CmAgentFlyway.configure(dataSource).load().migrate();
         seedData(dataSource);
         repository = new JdbcToolCallRepository(
                 JdbcClient.create(dataSource),

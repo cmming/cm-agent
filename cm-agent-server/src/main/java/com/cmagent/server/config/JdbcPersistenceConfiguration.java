@@ -11,6 +11,7 @@ import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.persistence.JdbcAuditEventRepository;
 import com.cmagent.persistence.JdbcAgentDefinitionRepository;
+import com.cmagent.persistence.CmAgentFlyway;
 import com.cmagent.persistence.JdbcRunRepository;
 import com.cmagent.persistence.JdbcModelConfigRepository;
 import com.cmagent.persistence.JdbcToolDefinitionRepository;
@@ -69,10 +70,7 @@ public class JdbcPersistenceConfiguration {
      */
     @Bean
     Flyway cmAgentFlyway(DataSource cmAgentDataSource) {
-        Flyway flyway = Flyway.configure()
-                .dataSource(cmAgentDataSource)
-                .locations("classpath:db/migration")
-                .load();
+        Flyway flyway = CmAgentFlyway.configure(cmAgentDataSource).load();
         flyway.migrate();
         return flyway;
     }

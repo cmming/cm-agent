@@ -6,6 +6,7 @@ import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -58,10 +59,8 @@ class MigrationTest {
      * 验证 {@code migratePostgreSQL} 所描述的业务行为。
      */
     void migratePostgreSQL() {
-        Flyway flyway = Flyway.configure()
-                .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
-                .locations("classpath:db/migration")
-                .load();
+        Flyway flyway = CmAgentFlyway.configure(new DriverManagerDataSource(
+                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())).load();
 
         assertSchemaContract(flyway.migrate().migrationsExecuted, postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
     }
@@ -71,10 +70,8 @@ class MigrationTest {
      * 验证 {@code migrateMySQL} 所描述的业务行为。
      */
     void migrateMySQL() {
-        Flyway flyway = Flyway.configure()
-                .dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
-                .locations("classpath:db/migration")
-                .load();
+        Flyway flyway = CmAgentFlyway.configure(new DriverManagerDataSource(
+                mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())).load();
 
         assertSchemaContract(flyway.migrate().migrationsExecuted, mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
     }
@@ -88,10 +85,21 @@ class MigrationTest {
      * @param password 测试辅助方法使用的 password 参数
      */
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(7);
+        assertThat(migrationsExecuted).isEqualTo(8);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
+            for (String tableName : REQUIRED_TABLES) {
+                assertThat(tableComment(connection, tableName))
+                        .as("表 %s 应具有数据库注释", tableName)
+                        .isNotBlank();
+                assertThat(columnComments(connection, tableName))
+                        .as("表 %s 应包含字段", tableName)
+                        .isNotEmpty()
+                        .allSatisfy((columnName, comment) -> assertThat(comment)
+                                .as("字段 %s.%s 应具有数据库注释", tableName, columnName)
+                                .isNotBlank());
+            }
             assertThat(indexNames(connection, "agent_definitions")).contains("idx_agent_definitions_tenant");
             assertThat(indexNames(connection, "tool_definitions")).contains("idx_tool_definitions_tenant");
             assertThat(indexNames(connection, "tool_definitions")).contains("ux_tool_definitions_tenant_name");
@@ -146,6 +154,44 @@ class MigrationTest {
             }
             return names;
         }
+    }
+
+    /**
+     * 读取指定业务表的数据库注释；直接使用 JDBC 元数据可同时覆盖 PostgreSQL 与 MySQL 驱动行为。
+     *
+     * @param connection 数据库连接
+     * @param tableName 业务表名称
+     * @return 表注释，找不到表时抛出断言错误
+     */
+    private static String tableComment(Connection connection, String tableName) throws SQLException {
+        DatabaseMetaData metadata = connection.getMetaData();
+        try (ResultSet resultSet = metadata.getTables(null, null, tableName, new String[]{"TABLE"})) {
+            if (!resultSet.next()) {
+                throw new AssertionError("找不到表 " + tableName);
+            }
+            return resultSet.getString("REMARKS");
+        }
+    }
+
+    /**
+     * 读取指定业务表的全部字段注释，用于防止后续新增字段遗漏数据库注释。
+     *
+     * @param connection 数据库连接
+     * @param tableName 业务表名称
+     * @return 按字段名称索引的注释
+     */
+    private static Map<String, String> columnComments(Connection connection, String tableName) throws SQLException {
+        DatabaseMetaData metadata = connection.getMetaData();
+        Map<String, String> comments = new TreeMap<>();
+        try (ResultSet resultSet = metadata.getColumns(null, null, tableName, "%")) {
+            while (resultSet.next()) {
+                comments.put(
+                        resultSet.getString("COLUMN_NAME").toLowerCase(Locale.ROOT),
+                        resultSet.getString("REMARKS")
+                );
+            }
+        }
+        return comments;
     }
 
     /**

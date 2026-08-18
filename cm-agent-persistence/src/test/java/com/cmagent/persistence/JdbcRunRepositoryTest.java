@@ -3,7 +3,6 @@ package com.cmagent.persistence;
 import com.cmagent.core.domain.RunPageRequest;
 import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.RunStatus;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -43,8 +42,8 @@ class JdbcRunRepositoryTest {
                 postgres.getUsername(),
                 postgres.getPassword()
         );
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").cleanDisabled(false).load().clean();
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        CmAgentFlyway.configure(dataSource).cleanDisabled(false).load().clean();
+        CmAgentFlyway.configure(dataSource).load().migrate();
         seedAgents(dataSource);
         repository = new JdbcRunRepository(JdbcClient.create(dataSource));
     }

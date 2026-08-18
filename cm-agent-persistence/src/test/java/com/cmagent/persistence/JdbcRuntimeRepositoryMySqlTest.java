@@ -9,7 +9,6 @@ import com.cmagent.core.domain.RunToolCall;
 import com.cmagent.core.domain.RunToolCallBatch;
 import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.McpToolPublication;
-import org.flywaydb.core.Flyway;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -64,8 +63,8 @@ class JdbcRuntimeRepositoryMySqlTest {
      */
     void setUp() {
         dataSource = new DriverManagerDataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").cleanDisabled(false).load().clean();
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        CmAgentFlyway.configure(dataSource).cleanDisabled(false).load().clean();
+        CmAgentFlyway.configure(dataSource).load().migrate();
         seedData(dataSource);
         JdbcClient jdbcClient = JdbcClient.create(dataSource);
         runRepository = new JdbcRunRepository(jdbcClient);
