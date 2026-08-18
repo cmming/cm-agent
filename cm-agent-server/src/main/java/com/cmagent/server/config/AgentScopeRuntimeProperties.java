@@ -3,18 +3,14 @@ package com.cmagent.server.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
-import java.util.List;
-import java.util.UUID;
-
 @ConfigurationProperties(prefix = "cm-agent.agentscope")
-/** AgentScope 运行时开关及外部模型凭据配置属性。 */
+/** AgentScope 运行时开关及调用控制配置属性。 */
 public class AgentScopeRuntimeProperties {
 
     private boolean enabled;
     private Duration modelTimeout = Duration.ofSeconds(60);
     private Duration toolTimeout = Duration.ofSeconds(30);
     private int modelMaxAttempts = 2;
-    private List<CredentialProperties> credentials = List.of();
 
     /**
      * @return 是否启用 AgentScope 真实运行时。
@@ -73,21 +69,7 @@ public class AgentScopeRuntimeProperties {
     }
 
     /**
-     * @return 外部模型凭据配置列表。
-     */
-    public List<CredentialProperties> getCredentials() {
-        return credentials;
-    }
-
-    /**
-     * @param credentials 外部模型凭据配置列表，将被复制为不可变列表。
-     */
-    public void setCredentials(List<CredentialProperties> credentials) {
-        this.credentials = List.copyOf(credentials);
-    }
-
-    /**
-     * 校验运行时开关、超时、重试次数以及外部凭据。
+     * 校验运行时开关、超时和重试次数。
      *
      * @param fakeRuntimeEnabled 是否同时启用了 fake runtime
      * @throws IllegalStateException 配置不合法或真实运行时与 fake runtime 同时启用时抛出
@@ -104,9 +86,6 @@ public class AgentScopeRuntimeProperties {
         }
         if (enabled && fakeRuntimeEnabled) {
             throw new IllegalStateException("AgentScope 真实运行时与 fake runtime 不能同时启用");
-        }
-        for (CredentialProperties credential : credentials) {
-            credential.validate();
         }
     }
 
@@ -127,84 +106,6 @@ public class AgentScopeRuntimeProperties {
         return "AgentScopeRuntimeProperties[enabled=" + enabled
                 + ", modelTimeout=" + modelTimeout
                 + ", toolTimeout=" + toolTimeout
-                + ", modelMaxAttempts=" + modelMaxAttempts
-                + ", credentialCount=" + credentials.size() + "]";
-    }
-
-    /**
-     * CredentialProperties：配置属性类，负责承载并校验运行参数。
-     */
-    public static class CredentialProperties {
-
-        private UUID tenantId;
-        private UUID modelConfigId;
-        private String apiKey;
-
-        /**
-         * @return 凭据所属租户标识。
-         */
-        public UUID getTenantId() {
-            return tenantId;
-        }
-
-        /**
-         * @param tenantId 凭据所属租户标识。
-         */
-        public void setTenantId(UUID tenantId) {
-            this.tenantId = tenantId;
-        }
-
-        /**
-         * @return 模型配置标识。
-         */
-        public UUID getModelConfigId() {
-            return modelConfigId;
-        }
-
-        /**
-         * @param modelConfigId 模型配置标识。
-         */
-        public void setModelConfigId(UUID modelConfigId) {
-            this.modelConfigId = modelConfigId;
-        }
-
-        /**
-         * @return 模型 API Key；调用方不得记录或返回该值。
-         */
-        public String getApiKey() {
-            return apiKey;
-        }
-
-        /**
-         * @param apiKey 模型 API Key，仅用于运行时认证，不得写入日志。
-         */
-        public void setApiKey(String apiKey) {
-            this.apiKey = apiKey;
-        }
-
-        /**
-         * 校验输入数据及相关业务约束。
-         */
-        private void validate() {
-            if (tenantId == null) {
-                throw new IllegalStateException("模型凭据 tenantId 不能为空");
-            }
-            if (modelConfigId == null) {
-                throw new IllegalStateException("模型凭据 modelConfigId 不能为空");
-            }
-            if (apiKey == null || apiKey.isBlank()) {
-                throw new IllegalStateException("模型凭据 API Key 不能为空");
-            }
-        }
-
-        @Override
-        /**
-         * 返回不暴露凭据等敏感字段的安全文本摘要。
-         */
-        public String toString() {
-            return "CredentialProperties[tenantId=" + tenantId
-                    + ", modelConfigId=" + modelConfigId
-                    + ", apiKey=<已脱敏>]";
-        }
+                + ", modelMaxAttempts=" + modelMaxAttempts + "]";
     }
 }

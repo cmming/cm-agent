@@ -34,6 +34,7 @@ class ConsoleResourceTest {
         String login = resource("META-INF/resources/console/v2/login.html");
         String overview = resource("META-INF/resources/console/v2/overview.html");
         String agents = resource("META-INF/resources/console/v2/agents.html");
+        String modelConfigs = resource("META-INF/resources/console/v2/model-configs.html");
         String tools = resource("META-INF/resources/console/v2/tools.html");
         String runs = resource("META-INF/resources/console/v2/runs.html");
         String audit = resource("META-INF/resources/console/v2/audit.html");
@@ -46,7 +47,11 @@ class ConsoleResourceTest {
                 .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
         assertThat(agents)
                 .contains("data-page=\"agentsPage\"", "id=\"agentsPage\"", "id=\"agentForm\"")
-                .doesNotContain("id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
+                .doesNotContain("id=\"modelConfigsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
+        assertThat(modelConfigs)
+                .contains("data-page=\"modelConfigsPage\"", "id=\"modelConfigsPage\"", "id=\"modelConfigForm\"")
+                .contains("创建时必填。平台仅加密保存，不会在详情、列表或编辑表单中回显")
+                .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
         assertThat(tools)
                 .contains("data-page=\"toolsPage\"", "id=\"toolsPage\"", "id=\"toolForm\"", "id=\"debugToolForm\"")
                 .doesNotContain("id=\"agentsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
@@ -65,7 +70,7 @@ class ConsoleResourceTest {
     void v2跨页会话不在浏览器脚本中存储令牌() throws IOException {
         String app = resource("META-INF/resources/assets/app.js");
         String[] pages = {
-                "login.html", "overview.html", "agents.html", "tools.html", "runs.html", "audit.html"
+                "login.html", "overview.html", "agents.html", "model-configs.html", "tools.html", "runs.html", "audit.html"
         };
 
         assertThat(app)
@@ -76,7 +81,7 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.7", "/assets/console-core.js?v=2.0.7")
+                    .contains("/assets/app.js?v=2.0.8", "/assets/console-core.js?v=2.0.8")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }
@@ -126,9 +131,27 @@ class ConsoleResourceTest {
                 "id=\"overviewAgentCount\"", "id=\"overviewToolCount\""
         );
         assertThat(script)
-                .contains("/api/auth/login", "/api/auth/me", "/api/agents", "/api/tools")
+                .contains("/api/auth/login", "/api/auth/me", "/api/agents", "/api/model-configs", "/api/tools")
                 .contains("loadInitialData", "logout", "resetSessionViews", "textContent")
                 .doesNotContain("localStorage", "sessionStorage", ".innerHTML");
+    }
+
+    @Test
+    void 模型配置页面支持安全的元数据增删改查() throws IOException {
+        String html = resource("META-INF/resources/console/v2/model-configs.html");
+        String script = resource("META-INF/resources/assets/app.js");
+
+        assertThat(html).contains(
+                "id=\"modelConfigList\"", "id=\"modelConfigDetail\"", "id=\"modelConfigForm\"",
+                "value=\"OPENAI_COMPATIBLE\"", "value=\"DASHSCOPE_NATIVE\"",
+                "id=\"cancelModelConfigEditBtn\"", "不要在地址中嵌入用户名、密码、Token 或 API Key",
+                "id=\"modelConfigApiKey\"", "type=\"password\"", "不会在详情、列表或编辑表单中回显"
+        ).doesNotContain("name=\"encryptedApiKey\"");
+        assertThat(script)
+                .contains("loadModelConfigs", "selectModelConfig", "submitModelConfig", "deleteModelConfig")
+                .contains("const method = editingId ? \"PUT\" : \"POST\"", "{method: \"DELETE\"}",
+                        "if (apiKey) payload.apiKey = apiKey", "现有密钥不会回显")
+                .doesNotContain(".innerHTML");
     }
 
     @Test

@@ -11,6 +11,7 @@
     const multiPagePaths = Object.freeze({
         overviewPage: "/console/v2/overview.html",
         agentsPage: "/console/v2/agents.html",
+        modelConfigsPage: "/console/v2/model-configs.html",
         toolsPage: "/console/v2/tools.html",
         runsPage: "/console/v2/runs.html",
         auditPage: "/console/v2/audit.html"
@@ -35,10 +36,14 @@
         token: "",
         currentUser: null,
         agents: [],
+        modelConfigs: [],
         tools: [],
         localExamples: [],
         selectedAgentId: "",
         selectedAgent: null,
+        selectedModelConfigId: "",
+        selectedModelConfig: null,
+        editingModelConfigId: "",
         selectedToolId: "",
         editingToolId: "",
         runs: [],
@@ -50,6 +55,8 @@
     const toolPublicationLock = core.createToolPublicationLock();
     const toolLoadRevision = core.createLoadRevisionGate();
     const agentDetailRevision = core.createLoadRevisionGate();
+    const modelConfigLoadRevision = core.createLoadRevisionGate();
+    const modelConfigDetailRevision = core.createLoadRevisionGate();
     const localExampleInstallLock = core.createToolPublicationLock();
     const localExampleLoadRevision = core.createLoadRevisionGate();
     const localExampleInstallRevision = core.createKeyedLoadRevisionGate();
@@ -60,6 +67,7 @@
     const pageInfo = {
         overviewPage: ["能力总览", "查看当前租户已交付的 Agent 能力与最近活动。"],
         agentsPage: ["Agent 管理", "创建 Agent，并查看模型、提示词与工具授权信息。"],
+        modelConfigsPage: ["模型配置", "管理 Provider、服务地址和默认模型名称。"],
         toolsPage: ["工具治理", "注册 Tool，并向指定 Agent 授予使用权限。"],
         runsPage: ["运行记录", "执行 Agent，并查看运行历史、结果与工具调用。"],
         auditPage: ["审计日志", "追踪当前租户的安全事件和资源操作。"]
@@ -182,6 +190,8 @@
         submitStateGuard.invalidateAll();
         toolLoadRevision.invalidate();
         agentDetailRevision.invalidate();
+        modelConfigLoadRevision.invalidate();
+        modelConfigDetailRevision.invalidate();
         localExampleLoadRevision.invalidate();
         localExampleInstallRevision.invalidateAll();
         const nextNodes = Array.from(nextDocument.body.children)
@@ -229,15 +239,21 @@
         submitStateGuard.invalidateAll();
         toolLoadRevision.invalidate();
         agentDetailRevision.invalidate();
+        modelConfigLoadRevision.invalidate();
+        modelConfigDetailRevision.invalidate();
         localExampleLoadRevision.invalidate();
         localExampleInstallRevision.invalidateAll();
         state.token = "";
         state.currentUser = null;
         state.agents = [];
+        state.modelConfigs = [];
         state.tools = [];
         state.localExamples = [];
         state.selectedAgentId = "";
         state.selectedAgent = null;
+        state.selectedModelConfigId = "";
+        state.selectedModelConfig = null;
+        state.editingModelConfigId = "";
         state.selectedToolId = "";
         if (isMultiPage) {
             state.editingToolId = "";
@@ -366,6 +382,9 @@
             case "agentsPage":
                 await loadTools(undefined, session);
                 if (sessionEpoch.isCurrent(session)) await loadAgents(session);
+                break;
+            case "modelConfigsPage":
+                await loadModelConfigs(undefined, session);
                 break;
             case "toolsPage":
                 await Promise.all([
@@ -541,6 +560,211 @@
         } catch (error) {
             setStatus($("agentFormStatus"), error.message, "error");
         }
+    }
+
+    async function loadModelConfigs(
+        revision = modelConfigLoadRevision.issue(),
+        session = sessionEpoch.capture()
+    ) {
+        const modelConfigs = await api.request("/api/model-configs");
+        if (!sessionEpoch.isCurrent(session) || !modelConfigLoadRevision.isCurrent(revision)) {
+            return false;
+        }
+        state.modelConfigs = Array.isArray(modelConfigs) ? modelConfigs : [];
+        if (!state.modelConfigs.some((config) => config.id === state.selectedModelConfigId)) {
+            state.selectedModelConfigId = state.modelConfigs[0]?.id || "";
+        }
+        if (state.editingModelConfigId
+                && !state.modelConfigs.some((config) => config.id === state.editingModelConfigId)) {
+            resetModelConfigForm();
+        }
+        renderModelConfigs();
+        if (state.selectedModelConfigId) {
+            await selectModelConfig(state.selectedModelConfigId, undefined, session);
+        } else {
+            state.selectedModelConfig = null;
+            renderMessage($("modelConfigDetail"), "选择模型配置查看详情。");
+        }
+        return true;
+    }
+
+    async function selectModelConfig(
+        modelConfigId,
+        revision = modelConfigDetailRevision.issue(),
+        session = sessionEpoch.capture()
+    ) {
+        state.selectedModelConfigId = modelConfigId;
+        renderModelConfigs();
+        try {
+            const config = await api.request(`/api/model-configs/${encodeURIComponent(modelConfigId)}`);
+            if (!sessionEpoch.isCurrent(session)
+                    || !modelConfigDetailRevision.isCurrent(revision)
+                    || state.selectedModelConfigId !== modelConfigId) {
+                return false;
+            }
+            state.selectedModelConfig = config;
+            renderModelConfigDetail(config);
+            return true;
+        } catch (error) {
+            if (!sessionEpoch.isCurrent(session)
+                    || !modelConfigDetailRevision.isCurrent(revision)
+                    || state.selectedModelConfigId !== modelConfigId) {
+                return false;
+            }
+            state.selectedModelConfig = null;
+            renderMessage($("modelConfigDetail"), error.message, true);
+            return false;
+        }
+    }
+
+    function renderModelConfigs() {
+        const container = $("modelConfigList");
+        if (!container) return;
+        container.replaceChildren();
+        if (!state.modelConfigs.length) {
+            container.append(emptyState("暂无模型配置，可在右侧创建。"));
+            return;
+        }
+        state.modelConfigs.forEach((config) => {
+            const button = element("button", {className: "resource-item", type: "button"});
+            button.classList.toggle("active", config.id === state.selectedModelConfigId);
+            button.append(element("strong", {text: config.displayName || "未命名模型配置"}));
+            button.append(element("span", {
+                text: `${providerLabel(config.providerType)} · ${config.modelName || "未配置模型"} · ${config.enabled ? "已启用" : "已停用"}`
+            }));
+            button.addEventListener("click", () => selectModelConfig(config.id));
+            container.append(button);
+        });
+    }
+
+    function renderModelConfigDetail(config) {
+        const container = $("modelConfigDetail");
+        if (!container) return;
+        const heading = element("div", {className: "panel-heading"});
+        const titleGroup = element("div");
+        titleGroup.append(element("p", {className: "eyebrow", text: "模型配置详情"}));
+        titleGroup.append(element("h2", {text: config.displayName || "未命名模型配置"}));
+        const enabledBadge = element("span", {
+            className: "status-badge",
+            text: config.enabled ? "已启用" : "已停用"
+        });
+        enabledBadge.dataset.tone = config.enabled ? "success" : "neutral";
+        heading.append(titleGroup, enabledBadge);
+        const details = definitionList([
+            ["ID", config.id],
+            ["Provider", providerLabel(config.providerType)],
+            ["基础地址", config.baseUrl],
+            ["默认模型", config.modelName],
+            ["状态", config.enabled ? "已启用" : "已停用"],
+            ["凭据管理", "已加密保存；仅支持轮换，不支持回显"]
+        ]);
+        const actions = element("div", {className: "tool-actions"});
+        const editButton = element("button", {className: "button", type: "button", text: "编辑"});
+        editButton.addEventListener("click", () => editModelConfig(config));
+        const deleteButton = element("button", {className: "button danger", type: "button", text: "删除"});
+        deleteButton.addEventListener("click", () => deleteModelConfig(config, deleteButton));
+        actions.append(editButton, deleteButton);
+        container.replaceChildren(heading, details, actions);
+    }
+
+    function editModelConfig(config) {
+        state.editingModelConfigId = config.id;
+        $("modelConfigDisplayName").value = config.displayName || "";
+        $("modelConfigProviderType").value = config.providerType || "OPENAI_COMPATIBLE";
+        $("modelConfigBaseUrl").value = config.baseUrl || "";
+        $("modelConfigModelName").value = config.modelName || "";
+        $("modelConfigApiKey").value = "";
+        $("modelConfigApiKey").required = false;
+        $("modelConfigApiKeyHelp").textContent = "留空保留当前 API Key；填写新值将轮换密钥，现有密钥不会回显。";
+        $("modelConfigEnabled").checked = config.enabled === true;
+        $("modelConfigFormEyebrow").textContent = "编辑";
+        $("modelConfigFormTitle").textContent = "更新模型配置";
+        $("saveModelConfigBtn").textContent = "保存修改";
+        $("cancelModelConfigEditBtn").hidden = false;
+        setStatus($("modelConfigFormStatus"), `正在编辑“${config.displayName || config.id}”。`, "neutral");
+        $("modelConfigDisplayName").focus();
+    }
+
+    function resetModelConfigForm() {
+        state.editingModelConfigId = "";
+        const form = $("modelConfigForm");
+        if (!form) return;
+        form.reset();
+        $("modelConfigProviderType").value = "OPENAI_COMPATIBLE";
+        $("modelConfigEnabled").checked = true;
+        $("modelConfigApiKey").value = "";
+        $("modelConfigApiKey").required = true;
+        $("modelConfigApiKeyHelp").textContent = "创建时必填。平台仅加密保存，不会在详情、列表或编辑表单中回显。";
+        $("modelConfigFormEyebrow").textContent = "新建";
+        $("modelConfigFormTitle").textContent = "创建模型配置";
+        $("saveModelConfigBtn").textContent = "创建模型配置";
+        $("cancelModelConfigEditBtn").hidden = true;
+        setStatus($("modelConfigFormStatus"));
+    }
+
+    async function submitModelConfig() {
+        const payload = {
+            providerType: $("modelConfigProviderType").value,
+            displayName: $("modelConfigDisplayName").value.trim(),
+            baseUrl: $("modelConfigBaseUrl").value.trim(),
+            modelName: $("modelConfigModelName").value.trim(),
+            enabled: $("modelConfigEnabled").checked
+        };
+        if (!payload.providerType || !payload.displayName || !payload.baseUrl || !payload.modelName) {
+            setStatus($("modelConfigFormStatus"), "请完整填写模型配置信息。", "error");
+            return;
+        }
+        const editingId = state.editingModelConfigId;
+        const apiKey = $("modelConfigApiKey").value;
+        if (!editingId && !apiKey.trim()) {
+            setStatus($("modelConfigFormStatus"), "创建模型配置时必须填写 API Key。", "error");
+            return;
+        }
+        if (apiKey) payload.apiKey = apiKey;
+        const path = editingId
+            ? `/api/model-configs/${encodeURIComponent(editingId)}`
+            : "/api/model-configs";
+        const method = editingId ? "PUT" : "POST";
+        try {
+            await withSubmitState($("saveModelConfigBtn"), async () => {
+                const saved = await api.request(path, {method, body: JSON.stringify(payload)});
+                const message = editingId
+                    ? `模型配置“${saved.displayName || payload.displayName}”已更新。`
+                    : `模型配置“${saved.displayName || payload.displayName}”已创建。`;
+                state.selectedModelConfigId = saved.id || editingId || "";
+                resetModelConfigForm();
+                const revision = modelConfigLoadRevision.completeWrite();
+                const reloaded = await loadModelConfigs(revision);
+                if (reloaded) setStatus($("modelConfigFormStatus"), message, "success");
+            });
+        } catch (error) {
+            setStatus($("modelConfigFormStatus"), error.message, "error");
+        }
+    }
+
+    async function deleteModelConfig(config, button) {
+        if (!window.confirm(`确认删除模型配置“${config.displayName || config.id}”吗？仍被 Agent 引用时服务端会拒绝删除。`)) {
+            return;
+        }
+        try {
+            await withSubmitState(button, async () => {
+                await api.request(`/api/model-configs/${encodeURIComponent(config.id)}`, {method: "DELETE"});
+                if (state.editingModelConfigId === config.id) resetModelConfigForm();
+                state.selectedModelConfigId = "";
+                state.selectedModelConfig = null;
+                const revision = modelConfigLoadRevision.completeWrite();
+                const reloaded = await loadModelConfigs(revision);
+                if (reloaded) setStatus($("globalStatus"), `模型配置“${config.displayName || config.id}”已删除。`, "success");
+            });
+        } catch (error) {
+            setStatus($("globalStatus"), error.message, "error");
+        }
+    }
+
+    function providerLabel(providerType) {
+        if (providerType === "DASHSCOPE_NATIVE") return "DashScope Native";
+        if (providerType === "OPENAI_COMPATIBLE") return "OpenAI Compatible";
+        return providerType || "未知 Provider";
     }
 
     async function loadTools(revision = toolLoadRevision.issue(), session = sessionEpoch.capture()) {
@@ -1595,6 +1819,8 @@
         bind("loginForm", "submit", (event) => { event.preventDefault(); login(); });
         bind("logoutBtn", "click", () => logout());
         bind("agentForm", "submit", (event) => { event.preventDefault(); createAgent(); });
+        bind("modelConfigForm", "submit", (event) => { event.preventDefault(); submitModelConfig(); });
+        bind("cancelModelConfigEditBtn", "click", resetModelConfigForm);
         bind("toolForm", "submit", (event) => { event.preventDefault(); submitTool(); });
         bind("cancelToolEditBtn", "click", () => resetToolForm());
         bind("fillHttpExampleBtn", "click", fillHttpToolExample);
@@ -1604,6 +1830,7 @@
         bind("runForm", "submit", (event) => { event.preventDefault(); runAgent(); });
         bind("toolType", "change", toggleHttpConfigFields);
         bind("refreshAgentsBtn", "click", () => loadAgents().catch((error) => setStatus($("globalStatus"), error.message, "error")));
+        bind("refreshModelConfigsBtn", "click", () => loadModelConfigs().catch((error) => setStatus($("globalStatus"), error.message, "error")));
         bind("refreshToolsBtn", "click", () => loadTools().catch((error) => setStatus($("globalStatus"), error.message, "error")));
         bind("refreshRunsBtn", "click", () => loadRuns({append: false}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
         bind("loadMoreRunsBtn", "click", () => loadRuns({append: true}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));

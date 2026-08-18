@@ -47,6 +47,9 @@ class AuthControllerTest {
             "agent:run",
             "agent:read",
             "agent:write",
+            "model:read",
+            "model:write",
+            "model:delete",
             "tool:read",
             "tool:grant",
             "tool:delete",
@@ -83,6 +86,9 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.permissions[7]").value(EXPECTED_PERMISSIONS[7]))
                 .andExpect(jsonPath("$.permissions[8]").value(EXPECTED_PERMISSIONS[8]))
                 .andExpect(jsonPath("$.permissions[9]").value(EXPECTED_PERMISSIONS[9]))
+                .andExpect(jsonPath("$.permissions[10]").value(EXPECTED_PERMISSIONS[10]))
+                .andExpect(jsonPath("$.permissions[11]").value(EXPECTED_PERMISSIONS[11]))
+                .andExpect(jsonPath("$.permissions[12]").value(EXPECTED_PERMISSIONS[12]))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
@@ -105,6 +111,9 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.permissions[7]").value(EXPECTED_PERMISSIONS[7]))
                 .andExpect(jsonPath("$.permissions[8]").value(EXPECTED_PERMISSIONS[8]))
                 .andExpect(jsonPath("$.permissions[9]").value(EXPECTED_PERMISSIONS[9]))
+                .andExpect(jsonPath("$.permissions[10]").value(EXPECTED_PERMISSIONS[10]))
+                .andExpect(jsonPath("$.permissions[11]").value(EXPECTED_PERMISSIONS[11]))
+                .andExpect(jsonPath("$.permissions[12]").value(EXPECTED_PERMISSIONS[12]))
                 .andExpect(jsonPath("$.accessToken").doesNotExist());
     }
 

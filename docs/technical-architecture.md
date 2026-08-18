@@ -38,7 +38,7 @@ CM Agent 是基于 AgentScope Java 的企业级智能体底座。当前路线不
 核心领域对象以 Java `record` 表达，构造器负责非空、范围和集合防御性复制等不变量。关键对象包括：
 
 - **AgentDefinition**：智能体提示词、模型配置引用、最大迭代数、启用状态等。
-- **ModelConfig**：Provider、Base URL、模型名和启用状态等非敏感模型元数据。模型 API Key 不应作为业务数据或 API 返回值保存。
+- **ModelConfig**：Provider、Base URL、模型名和启用状态等模型元数据。API Key 与领域对象分离，以数据库密文保存且不作为 API 返回值。
 - **ToolDefinition / ToolGrant**：工具 Schema、风险级别、启用状态，以及工具到 Agent 的授权关系。
 - **RunRecord / RunToolCall**：一次运行及其工具调用的持久化事实；状态包括运行中、成功、失败和拒绝等。
 - **AuditEvent**：不可变审计记录，保留主体、资源、结果与时间，用于追溯管理及运行行为。
@@ -69,7 +69,7 @@ Bearer JWT
 
 `AgentRuntime` 是核心运行时接口。Starter 在显式启用 Fake Runtime 时提供 `FakeAgentRuntime`，用于本地开发和测试；生产/类生产环境使用 `AgentScopeRuntimeAdapter`。真实 Adapter 的职责是：
 
-1. 按 `tenantId + modelConfigId` 向 `ModelCredentialProvider` 请求外部凭据；未找到凭据时返回受控的“模型凭据不可用”结果，不泄露密钥。
+1. 按 `tenantId + modelConfigId` 向 `ModelCredentialProvider` 请求凭据；默认实现从数据库读取 AES/GCM 密文并仅在本次模型调用期间解密。未找到或无法解密时返回受控的“模型凭据不可用”结果，不泄露密钥。
 2. 将核心 `AgentRunRequest` 转换为 AgentScope 单轮 ReAct 执行规格，并依据模型/工具 timeout 与最大尝试次数运行。
 3. 通过 `AgentScopeToolBridge` 将 AgentScope 的工具调用转换为 `ToolInvocationGateway` 请求，再把结果映射回 `ToolCallRecord`。
 
@@ -82,7 +82,7 @@ Bearer JWT
 - 资源查询、运行记录、工具调用和审计记录均以认证主体 tenant 过滤，禁止跨租户读取。
 - Controller 负责请求校验、认证主体解析、权限入口和响应状态；不直接连接数据源或拼接 SQL。
 - 拒绝访问和运行状态变化需要审计；审计不可用采用严格失败语义。
-- JWT 验证密钥、数据库密码和模型 API Key 只能由受控外部配置或 Secret Manager 注入，禁止写入 Git、镜像、日志、审计或 API 响应。
+- JWT 验证密钥、数据库密码和模型凭据加密主密钥只能由受控外部配置或 Secret Manager 注入。模型 API Key 仅通过受权限保护的接口以加密密文写入数据库，禁止写入 Git、镜像、日志、审计或 API 响应。
 - `local`/`test` 可以显式启用 bootstrap admin 与 Fake Runtime；`prod`、`production`、`supabase` 必须关闭 bootstrap admin 和开发 JWT fallback，使用 JDBC 与真实 AgentScope Runtime。
 
 生产认证由外部身份系统或受控认证服务签发 Bearer JWT。仅在本地/测试明确启用时才开放 bootstrap 登录入口；生产调用方必须携带外部签发的令牌。
@@ -94,7 +94,7 @@ JDBC 模式由 `JdbcPersistenceConfiguration` 创建数据源并在启动时执�
 - `V1__init_schema.sql` 建立租户、用户、角色、权限、模型、Agent、工具、运行、工具调用和审计表。
 - `V2__add_runtime_query_indexes.sql` 为 Run、ToolCall、Audit 的租户范围查询补充索引。
 - `V3__add_tool_calls_created_at_index.sql` 为工具调用明细的时间/ID 排序补充联合索引。
-- `V8__add_schema_comments.sql` 按 PostgreSQL/MySQL 方言为全部业务表和字段补充中文数据库原生注释；`CmAgentFlyway` 只加载公共迁移和当前数据库方言目录。
+- `V8__add_schema_comments.sql` 按 PostgreSQL/MySQL 方言为全部业务表和字段补充中文数据库原生注释；`V9__update_model_credential_comment.sql` 更新模型 API Key 加密密文字段说明；`CmAgentFlyway` 只加载公共迁移和当前数据库方言目录。
 
 已发布迁移不可修改；结构变化必须新增更高版本的迁移，并同步更新数据库原生表/字段注释、JDBC 实现、迁移测试和部署文档。PostgreSQL/MySQL 集成测试以及 Docker/Compose/Testcontainers 验证需要在 Rocky Linux 虚拟机的容器环境中执行，不以本机 Docker Desktop 代替。
 

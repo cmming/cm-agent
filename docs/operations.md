@@ -20,11 +20,11 @@ GET /actuator/health
 
 生产 profile 还必须设置 `fake-runtime-enabled=false`。本地和测试 profile 可按需启用 fake runtime，但不得把该开关带入生产配置或通过外部覆盖重新打开。
 
-生产还必须设置 `agentscope-enabled=true`，并提供 AgentScope Java 2.0.0 的 OpenAI Compatible 或 DashScope 模型配置。默认凭据按 `tenantId + modelConfigId` 从外部配置解析，也可由自定义 `ModelCredentialProvider` 对接 secret manager；默认凭据为空时启动会失败。`model_configs` 不保存明文 API Key。
+生产还必须设置 `agentscope-enabled=true`，并提供 AgentScope Java 2.0.0 的 OpenAI Compatible 或 DashScope 模型配置。默认凭据按 `tenantId + modelConfigId` 从数据库密文解析，也可由自定义 `ModelCredentialProvider` 对接 secret manager；必须由受控环境提供 Base64 编码的 256 位 AES 加密主密钥。`model_configs` 不保存明文 API Key，接口也不回显。
 
 ## 审计严格失败语义
 
-审计是关键动作的严格记录：登录、权限拒绝、Agent 变更、工具创建/授权和 Run 生命周期都会尝试写入审计。审计 repository 写入失败时：
+审计是关键动作的严格记录：登录、权限拒绝、Agent 变更、模型配置创建/更新/删除、工具创建/授权和 Run 生命周期都会尝试写入审计。审计 repository 写入失败时：
 
 - 应用保留异常，不吞掉或伪装成成功。
 - HTTP API 返回 `503 Service Unavailable`，调用方应按不可用处理并重试或告警。

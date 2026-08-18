@@ -38,6 +38,8 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
 
     private final ConcurrentHashMap<UUID, AgentDefinition> agents = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, ModelConfig> modelConfigs = new ConcurrentHashMap<>();
+    // 内存模式同样只保留密文，保证测试和本地行为不会弱化生产安全边界。
+    private final ConcurrentHashMap<UUID, String> encryptedModelApiKeys = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, ToolDefinition> tools = new ConcurrentHashMap<>();
     private final java.util.Set<UUID> deletedToolIds = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<TenantToolName, UUID> toolIdsByTenantAndName = new ConcurrentHashMap<>();
@@ -140,6 +142,49 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         modelConfigs.put(modelConfig.id(), modelConfig);
         return modelConfig;
     }
+
+    /** 保存模型配置及其 API Key 密文。 */
+    public ModelConfig saveModelConfig(ModelConfig modelConfig, String encryptedApiKey) {
+        ModelConfig saved = saveModelConfig(modelConfig);
+        encryptedModelApiKeys.put(modelConfig.id(), encryptedApiKey);
+        return saved;
+    }
+
+    /**
+     * 更新租户内已有模型配置，防止把同 ID 的跨租户对象覆盖进当前存储。
+     *
+     * @param modelConfig 待更新的模型配置
+     * @return 更新后的配置
+     */
+    public ModelConfig updateModelConfig(ModelConfig modelConfig) {
+        AtomicReference<ModelConfig> updated = new AtomicReference<>();
+        modelConfigs.computeIfPresent(modelConfig.id(), (id, existing) -> {
+            if (!existing.tenantId().equals(modelConfig.tenantId())) {
+                return existing;
+            }
+            updated.set(modelConfig);
+            return modelConfig;
+        });
+        if (updated.get() == null) {
+            throw new NoSuchElementException("模型配置不存在");
+        }
+        return updated.get();
+    }
+
+    /** 更新模型配置并在提供新密文时轮换 API Key。 */
+    public ModelConfig updateModelConfig(ModelConfig modelConfig, String encryptedApiKey) {
+        ModelConfig updated = updateModelConfig(modelConfig);
+        if (encryptedApiKey != null) {
+            encryptedModelApiKeys.put(modelConfig.id(), encryptedApiKey);
+        }
+        return updated;
+    }
+
+    /** 按租户读取模型 API Key 密文。 */
+    public Optional<String> findEncryptedModelApiKey(UUID tenantId, UUID modelConfigId) {
+        return findModelConfig(tenantId, modelConfigId)
+                .map(ignored -> encryptedModelApiKeys.get(modelConfigId));
+    }
     /**
      * 按租户和配置标识查询模型配置，防止返回跨租户数据。
      *
@@ -152,6 +197,42 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
             return Optional.empty();
         }
         return Optional.of(modelConfig);
+    }
+
+    /**
+     * 按名称和 ID 稳定列出当前租户模型配置。
+     *
+     * @param tenantId 当前租户标识
+     * @return 当前租户配置列表
+     */
+    public List<ModelConfig> listModelConfigs(UUID tenantId) {
+        return modelConfigs.values().stream()
+                .filter(modelConfig -> tenantId.equals(modelConfig.tenantId()))
+                .sorted(Comparator.comparing(ModelConfig::displayName)
+                        .thenComparing(modelConfig -> modelConfig.id().toString()))
+                .toList();
+    }
+
+    /**
+     * 判断同租户 Agent 是否仍引用目标模型配置。
+     */
+    public boolean isModelConfigReferenced(UUID tenantId, UUID modelConfigId) {
+        return agents.values().stream().anyMatch(agent -> tenantId.equals(agent.tenantId())
+                && modelConfigId.equals(agent.modelProviderId()));
+    }
+
+    /**
+     * 删除租户内目标模型配置。
+     *
+     * @return 实际删除记录时为 {@code true}
+     */
+    public boolean deleteModelConfig(UUID tenantId, UUID modelConfigId) {
+        Optional<ModelConfig> existing = findModelConfig(tenantId, modelConfigId);
+        boolean deleted = existing.isPresent() && modelConfigs.remove(modelConfigId, existing.get());
+        if (deleted) {
+            encryptedModelApiKeys.remove(modelConfigId);
+        }
+        return deleted;
     }
     /**
      * 保存传入的领域对象或配置，并返回当前存储快照。

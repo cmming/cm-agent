@@ -78,16 +78,13 @@ cm-agent:
     bootstrap-admin-enabled: false
     fake-runtime-enabled: false
     agentscope-enabled: true
-  agentscope:
-    credentials:
-      - tenant-id: <tenant-id>
-        model-config-id: <model-config-id>
-        api-key: ${MODEL_API_KEY}
+  model-credentials:
+    encryption-key: ${CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY}
 ```
 
-真实 Runtime 必须同时满足 `fake-runtime-enabled=false` 与 `agentscope-enabled=true`。上例的 `${MODEL_API_KEY}` 只能由部署平台从 Secret 注入；也可以用自定义 `ModelCredentialProvider` Bean 直接对接 secret manager。默认外部凭据列表为空时应用会 fail-fast，避免生产在无模型凭据的情况下接收流量。
+真实 Runtime 必须同时满足 `fake-runtime-enabled=false` 与 `agentscope-enabled=true`。`CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY` 是 Base64 编码的 256 位 AES 主密钥，仅用于加密数据库中的模型 API Key；它必须由部署平台或密钥管理系统注入。模型 API Key 通过受权限保护的模型配置 API 写入数据库密文，不从 YAML 凭据列表读取；也可以用自定义 `ModelCredentialProvider` Bean 直接对接 secret manager。
 
-`model_configs` 只部署 Provider、`baseUrl`、`modelName` 等模型元数据，不保存明文 API Key。AgentScope Java 2.0.0 当前支持 OpenAI Compatible 与 DashScope Provider；升级 AgentScope 或 Provider 扩展时必须重新核对依赖树和运行合同。
+`model_configs` 保存 Provider、`baseUrl`、`modelName` 等模型元数据和 API Key 密文，不保存明文 API Key，也不会通过 API 回显。AgentScope Java 2.0.0 当前支持 OpenAI Compatible 与 DashScope Provider；升级 AgentScope 或 Provider 扩展时必须重新核对依赖树和运行合同。
 
 ## 动态 HTTP 工具与 MCP 部署
 

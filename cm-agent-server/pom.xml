@@ -133,6 +133,7 @@
                     <systemPropertyVariables>
                         <CM_AGENT_TEST_JWT_SECRET>external-test-jwt-secret-with-at-least-32-bytes</CM_AGENT_TEST_JWT_SECRET>
                         <CM_AGENT_TEST_BOOTSTRAP_ADMIN_PASSWORD>cm-agent-test-password-only</CM_AGENT_TEST_BOOTSTRAP_ADMIN_PASSWORD>
+                        <CM_AGENT_TEST_MODEL_CREDENTIAL_ENCRYPTION_KEY>MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=</CM_AGENT_TEST_MODEL_CREDENTIAL_ENCRYPTION_KEY>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

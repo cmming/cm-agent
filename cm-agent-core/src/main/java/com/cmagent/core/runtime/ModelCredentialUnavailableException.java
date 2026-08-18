@@ -1,7 +1,7 @@
 package com.cmagent.core.runtime;
 
 /**
- * 表示无法为指定模型配置取得外部凭据。
+ * 表示无法为指定模型配置取得可用凭据。
  */
 public final class ModelCredentialUnavailableException extends RuntimeException {
 

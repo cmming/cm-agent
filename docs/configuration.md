@@ -46,6 +46,22 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 | `cm-agent.http-tools.max-response-bytes` | `262144` | 脱敏前后均受约束的响应上限，超过上限返回固定受控失败 |
 | `cm-agent.http-tools.max-redirects` | `3` | 同源重定向最大次数；每跳均重新校验协议、主机与地址安全性 |
 
+## 模型配置管理
+
+`/api/model-configs` 提供当前租户模型元数据的列表、详情、创建、更新和删除接口。读取需要 `model:read`，创建与更新需要 `model:write`，删除需要 `model:delete`。请求体只包含：
+
+```json
+{
+  "providerType": "OPENAI_COMPATIBLE",
+  "displayName": "业务模型",
+  "baseUrl": "https://models.example.com/v1",
+  "modelName": "qwen-plus",
+  "enabled": true
+}
+```
+
+`baseUrl` 必须是没有用户信息和 URL 片段的 HTTP(S) 绝对地址。创建请求必须包含 `apiKey`，更新请求省略该字段或传 `null` 时保留原值，提供非空值时轮换密钥。API Key 在进入仓储前以 AES/GCM 加密写入 `encrypted_api_key`，响应、列表、详情、审计和日志均不包含 API Key 或密文。仍被 Agent 引用的模型配置不能删除，接口会返回明确的 `409 Conflict`；启动初始化器维护的固定系统默认配置也不能删除，但可以停用或更新。
+
 ## 动态 HTTP 工具
 
 动态 HTTP 工具由 `POST /api/tools` 创建，`type` 为 `HTTP`，需要 `tool:grant` 权限。工具定义与 HTTP 配置在同一事务内保存；同一租户的工具名称唯一。新版 HTTP 配置包含 `method`（`GET` 或 `POST`）、`urlTemplate`、扁平 `parameters`、`secretHeaders` 与 `timeoutMillis`。输入 JSON Schema 由服务端生成，不需要调用方重复维护。示例仅展示结构，不含可用凭据：
@@ -114,6 +130,8 @@ cm-agent:
     jdbc-driver-class-name: org.postgresql.Driver
     fake-runtime-enabled: false
     agentscope-enabled: true
+  model-credentials:
+    encryption-key: ${CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY}
 ```
 
 不要把上面的占位符替换后的值提交到 Git、镜像层、日志、审计消息或 API 响应。敏感配置不应通过文档中的固定值传播。
@@ -130,15 +148,13 @@ cm-agent:
     model-timeout: 60s
     tool-timeout: 30s
     model-max-attempts: 2
-    credentials:
-      - tenant-id: <tenant-id>
-        model-config-id: <model-config-id>
-        api-key: ${MODEL_API_KEY}
+  model-credentials:
+    encryption-key: ${CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY}
 ```
 
-默认 `ExternalModelCredentialProvider` 以 `tenantId + modelConfigId` 复合键查找外部凭据。启用真实 Runtime 且未配置任何凭据时会 fail-fast，错误信息不会包含 API Key；若部署平台使用 secret manager，可提供自定义 `ModelCredentialProvider` Bean，此时不需要把凭据列表写入应用配置。
+默认 `DatabaseModelCredentialProvider` 以 `tenantId + modelConfigId` 复合键读取数据库密文，并仅在当前模型调用期间解密。`CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY` 必须是 Base64 编码的 256 位 AES 主密钥；缺失、格式错误或无法解密时，调用只得到受控的“模型凭据不可用”结果。若部署平台使用 secret manager，可提供自定义 `ModelCredentialProvider` Bean。
 
-`model_configs` 表保存模型 Provider、`baseUrl`、`modelName` 和启用状态。历史数据库兼容字段不能作为明文密钥使用，API Key 只能经外部 Secret 或自定义 `ModelCredentialProvider` 注入，也不得进入 DTO、日志、审计或异常。
+`model_configs` 表保存模型 Provider、`baseUrl`、`modelName`、启用状态与 API Key 密文。明文 API Key 不得进入 DTO、日志、审计或异常，也不支持接口回显。
 
 真实运行目前只提供同步单轮调用。多轮会话持久化、流式 REST、HITL 和手动取消均未在阶段3交付。
 

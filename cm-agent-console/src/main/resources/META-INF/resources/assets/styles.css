@@ -69,6 +69,8 @@ textarea { resize: vertical; min-height: 90px; }
 .button.primary { border-color: var(--accent); background: var(--accent); color: white; }
 .button.primary:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
 .button.ghost { background: transparent; }
+.button.danger { border-color: #e2aaa5; background: #fff7f6; color: var(--error); }
+.button.danger:hover:not(:disabled) { border-color: var(--error); background: #fdeceb; }
 .button.full-width { width: 100%; margin-top: 24px; }
 .button:disabled { cursor: wait; opacity: .58; }
 .text-button { border: 0; padding: 4px; background: transparent; color: var(--accent); cursor: pointer; }

@@ -6,6 +6,7 @@ import com.cmagent.core.runtime.ModelCredential;
 import com.cmagent.core.runtime.ModelCredentialProvider;
 import com.cmagent.core.runtime.ToolInvocationGateway;
 import com.cmagent.core.runtime.ToolInvocationResult;
+import com.cmagent.core.repository.ModelConfigRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -14,13 +15,20 @@ import org.springframework.context.annotation.Configuration;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class AgentScopeRuntimeConfigurationTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID MODEL_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withUserConfiguration(AgentScopeRuntimeConfiguration.class, ToolGatewayConfiguration.class);
+            .withUserConfiguration(
+                    AgentScopeRuntimeConfiguration.class,
+                    ModelCredentialEncryptionConfiguration.class,
+                    ToolGatewayConfiguration.class,
+                    RepositoryConfiguration.class)
+            .withPropertyValues(
+                    "cm-agent.model-credentials.encryption-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=");
 
     @Test
     /**
@@ -29,10 +37,7 @@ class AgentScopeRuntimeConfigurationTest {
     void enabledConfigurationProvidesRealRuntime() {
         contextRunner.withPropertyValues(
                         "cm-agent.fake-runtime-enabled=false",
-                        "cm-agent.agentscope.enabled=true",
-                        "cm-agent.agentscope.credentials[0].tenant-id=" + TENANT_ID,
-                        "cm-agent.agentscope.credentials[0].model-config-id=" + MODEL_ID,
-                        "cm-agent.agentscope.credentials[0].api-key=unit-test-key")
+                        "cm-agent.agentscope.enabled=true")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(AgentRuntime.class);
@@ -54,9 +59,9 @@ class AgentScopeRuntimeConfigurationTest {
 
     @Test
     /**
-     * 验证或支持 {@code customCredentialProviderReplacesExternalCredentialMapping} 所描述的测试场景。
+     * 验证自定义凭据提供者可以替代数据库默认实现。
      */
-    void customCredentialProviderReplacesExternalCredentialMapping() {
+    void customCredentialProviderReplacesDatabaseProvider() {
         contextRunner.withBean(ModelCredentialProvider.class,
                         () -> (tenantId, modelConfigId) -> new ModelCredential("unit-test-custom-key"))
                 .withPropertyValues("cm-agent.agentscope.enabled=true")
@@ -86,14 +91,14 @@ class AgentScopeRuntimeConfigurationTest {
 
     @Test
     /**
-     * 验证或支持 {@code defaultCredentialProviderRejectsMissingCredentialsAtStartup} 所描述的测试场景。
+     * 验证默认凭据提供者不再要求配置文件中的模型 API Key。
      */
-    void defaultCredentialProviderRejectsMissingCredentialsAtStartup() {
+    void defaultCredentialProviderDoesNotRequireYamlApiKey() {
         contextRunner.withPropertyValues("cm-agent.agentscope.enabled=true")
-                .run(context -> assertThat(context).hasFailed()
-                        .getFailure()
-                        .hasMessageContaining("启用 AgentScope runtime 时必须配置模型凭据或自定义 ModelCredentialProvider")
-                        .hasMessageNotContaining("api-key"));
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(ModelCredentialProvider.class);
+                });
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -104,6 +109,14 @@ class AgentScopeRuntimeConfigurationTest {
          */
         ToolInvocationGateway toolInvocationGateway() {
             return request -> ToolInvocationResult.succeeded("测试结果");
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class RepositoryConfiguration {
+        @Bean
+        ModelConfigRepository modelConfigRepository() {
+            return mock(ModelConfigRepository.class);
         }
     }
 

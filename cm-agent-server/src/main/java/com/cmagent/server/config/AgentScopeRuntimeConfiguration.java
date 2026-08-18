@@ -5,7 +5,9 @@ import com.cmagent.agentscope.AgentScopeRuntimeOptions;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.runtime.ModelCredentialProvider;
 import com.cmagent.core.runtime.ToolInvocationGateway;
-import com.cmagent.server.runtime.ExternalModelCredentialProvider;
+import com.cmagent.core.repository.ModelConfigRepository;
+import com.cmagent.server.runtime.DatabaseModelCredentialProvider;
+import com.cmagent.server.runtime.ModelCredentialCipher;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,20 +43,19 @@ public class AgentScopeRuntimeConfiguration {
     }
 
     /**
-     * 创建按租户和模型配置解析凭据的默认提供者。
+     * 创建从数据库按租户和模型配置解析凭据的默认提供者。
      *
-     * @param properties AgentScope 配置属性
-     * @return 外部模型凭据提供者
-     * @throws IllegalStateException 未配置任何模型凭据且未提供自定义提供者时抛出
+     * @param repository 模型配置仓储
+     * @param cipher     数据库模型凭据编解码器
+     * @return 数据库模型凭据提供者
      */
     @Bean
     @ConditionalOnMissingBean({AgentRuntime.class, ModelCredentialProvider.class})
-    ModelCredentialProvider externalModelCredentialProvider(AgentScopeRuntimeProperties properties) {
-        if (properties.getCredentials().isEmpty()) {
-            throw new IllegalStateException(
-                    "启用 AgentScope runtime 时必须配置模型凭据或自定义 ModelCredentialProvider");
-        }
-        return new ExternalModelCredentialProvider(properties);
+    ModelCredentialProvider databaseModelCredentialProvider(
+            ModelConfigRepository repository,
+            ModelCredentialCipher cipher
+    ) {
+        return new DatabaseModelCredentialProvider(repository, cipher);
     }
 
     /**

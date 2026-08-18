@@ -6,6 +6,7 @@
 
 ### 本次变更
 
+- 新增租户级模型配置管理 API 与 v2 控制台页面：`GET/POST /api/model-configs` 和 `GET/PUT/DELETE /api/model-configs/{id}` 分别使用 `model:read`、`model:write`、`model:delete` 权限，创建、更新、删除写入严格审计；删除仍被 Agent 引用的配置返回明确 `409 Conflict`，启动初始化器维护的系统默认配置不可删除但可停用或更新。创建请求必须写入 API Key，更新可轮换 API Key；服务以 AES/GCM 加密后写入数据库，所有响应均不回显密钥。新增 PostgreSQL/MySQL 方言 Flyway V9，仅更新密文字段的中文数据库注释。
 - 新增 Flyway V8 数据库注释迁移，为现有 18 张业务表和 135 个字段补齐中文原生注释；PostgreSQL 与 MySQL 使用同版本方言脚本，由统一 Flyway 配置按 JDBC 元数据选择，迁移测试逐表、逐字段阻止后续注释遗漏。
 - 新增示例模块 `cm-agent-examples/dashscope-mcp-agent`：演示 AgentScope Java 智能体使用内置 `McpClientBuilder` 以 Streamable HTTP 协议连接外部 MCP 服务（示例地址 `http://localhost:8088/api/mcp`）、注册其时间查询等工具，并由阿里云百炼 DashScope `qwen3.7-plus` 模型驱动 `ReActAgent` 自动决策调用。示例通过独立 `main` 方法运行,不依赖 CM Agent Server，也不经过其租户隔离、权限与审计链路；示例中的模型 API Key 为一次性本地联调值，生产场景应改为受控配置或密钥管理服务读取，本项不改变生产 API、数据库 Schema 或现有工具治理语义。该模块单独锁定 `io.modelcontextprotocol.sdk:mcp-core`/`mcp-json-jackson2` 为 `0.17.0`（与 `agentscope-core:2.0.0` 实际编译依赖的版本一致），避免与父 POM 为 `cm-agent-server` 自身 MCP Streamable HTTP Server 管理的 `2.0.0` 版本发生二进制不兼容（`McpSchema.Tool#inputSchema()` 返回类型不同导致的 `NoSuchMethodError`）；不修改父 POM 的 `mcp.version`，不影响 `cm-agent-server` 现有 MCP 端点。
 - 新增面向开发者的 LOCAL 与 HTTP 工具开发指南；完善可运行的 LOCAL `echo`/`add` 多工具示例，并新增通过公开 REST API 创建和调试 HTTP 工具的客户端示例。本项不改变生产 API、数据库 Schema 或现有工具治理语义。
@@ -24,13 +25,13 @@
 - 非生产 MySQL 固定目录的内置 LOCAL 示例删除后可按固定租户、固定 ID、原名称和类型受控原位恢复，安装与审计保持同一事务；普通工具保存不能复活墓碑，PostgreSQL、MySQL 与 memory 的主键语义保持一致。
 - Agent 工具关联的内存更新采用原子变更，JDBC 更新在同一事务内锁定 Agent 行；授权、撤销和审计共享事务边界，避免同一 Agent 的不同工具在多实例并发下发生丢失更新。工具更新与删除统一锁定工具行，更新命中零行时返回明确的不存在响应。
 - 轻量控制台升级为面向使用者的可操作管理控制台，采用独立登录页、左侧导航、能力总览和分模块管理布局。
-- 控制台新增版本化多页面入口：根路径默认跳转到 `/console/v2/login.html`，v2 将登录、总览、Agent、Tool、运行和审计拆为六个独立 HTML 页面；原始 `index.html` 不删除，并继续通过 `/console/v1/` 提供。v2 使用仅作用于 `/api` 的 `HttpOnly`、`SameSite=Strict` 会话 Cookie 恢复刷新认证，并在当前文档内加载独立 HTML 以兼容嵌入式浏览器；JWT 只短暂保留在当前页面内存，不写入浏览器存储或 URL。修复了 `body[data-page]` 被误绑定为导航按钮、点击登录时未认证概览请求与登录请求竞争并回跳的问题；退出接口会立即清除 Cookie，用户名和密码不落地。
+- 控制台新增版本化多页面入口：根路径默认跳转到 `/console/v2/login.html`，v2 将登录、总览、Agent、模型配置、Tool、运行和审计拆为七个独立 HTML 页面；原始 `index.html` 不删除，并继续通过 `/console/v1/` 提供。v2 使用仅作用于 `/api` 的 `HttpOnly`、`SameSite=Strict` 会话 Cookie 恢复刷新认证，并在当前文档内加载独立 HTML 以兼容嵌入式浏览器；JWT 只短暂保留在当前页面内存，不写入浏览器存储或 URL。修复了 `body[data-page]` 被误绑定为导航按钮、点击登录时未认证概览请求与登录请求竞争并回跳的问题；退出接口会立即清除 Cookie，用户名和密码不落地。
 - 控制台覆盖当前用户、Agent 列表/详情/创建、Tool 列表/创建/编辑/删除/授权与解除关联、Agent 执行、运行历史/详情/工具调用和审计游标分页；健康检查与 OpenAPI 作为辅助入口。
 - HTTP Tool 注册与编辑表单改为树形参数编辑器，支持在 OBJECT/ARRAY 节点内直接添加子参数并按层级缩进展示；页面根据 `parentId` 还原树，提交时自动转为扁平参数数组。表单同时提供类型、请求位置、默认值、示例值及包含 PATH、QUERY、BODY_ROOT 根数组的完整示例，并已移除旧版 Schema 与映射入口。
 - v1 控制台继续使用页面内存令牌；v2 使用前端不可读取的会话 Cookie 恢复刷新认证，并只在当前文档内存中保留登录令牌。两个版本复用统一 `401` 失效处理和纯文本 DOM 渲染，不使用 `localStorage` 或 `sessionStorage` 持久化 JWT、用户名或密码；补充窄屏响应式布局和键盘焦点样式。
 - 控制台仍不提供手动取消、流式输出、多轮会话或 HITL。
 - `agentscope.version` 升级到 `2.0.0`，接入 OpenAI Compatible 与 DashScope Provider，提供同步单轮 ReAct 运行。
-- 通过 `tenantId + modelConfigId` 调用外部 `ModelCredentialProvider` 获取模型凭据；默认凭据为空时启动 fail-fast，`model_configs` 不保存明文 API Key。
+- 通过 `tenantId + modelConfigId` 调用 `ModelCredentialProvider` 获取模型凭据；默认实现从数据库读取 AES/GCM 密文并在运行时解密，`model_configs` 不保存明文 API Key。
 - 生产 profile 使用 `fake-runtime-enabled=false` 与 `agentscope-enabled=true`；fake runtime 继续仅服务本地和测试。
 - 工具每次调用重新授权并记录严格审计，endpoint 元数据不自动执行；模型、工具 timeout 和 Provider 故障按固定结果语义收口。
 - 非生产 `mysql` profile 为固定 bootstrap 示例租户 `00000000-0000-0000-0000-000000000001` 新增固定 `echo`、`add` LOCAL 示例目录与控制台显式安装入口；其他 tenant 的目录为空且安装返回 `404`。启动只在当前 JVM 注册固定 Java 执行器，示例租户中具有 `tool:grant` 权限的主体操作后才写入 MySQL；工具摘要新增仅表示注册快照的 `runtimeReady`，实际调用仍重新执行治理校验。该入口不支持动态代码，正式业务 LOCAL 工具仍须在同一 Server JVM 中注册 `ToolExecutor`；不新增数据库 Schema 或 Flyway 迁移，`prod`、`production`、`supabase` 不启用此能力。
@@ -61,7 +62,7 @@
 - 生产 profile 不允许 bootstrap admin、开发 JWT fallback 或可用的固定凭据。文档和配置示例仅使用占位符。
 - 真实 Runtime 当前只支持同步单轮；不承诺多轮会话持久化、流式 REST、HITL 或手动取消。
 - AgentScope 2.0.0 工具层的通用取消信号不能证明外部副作用已停止；有副作用的工具必须使用 `runId`、`toolCallId` 或业务键保证幂等。
-- 模型凭据只能使用 `${MODEL_API_KEY}` 一类 Secret 占位符或自定义 `ModelCredentialProvider` 注入，不得进入数据库兼容字段、Git、日志、审计或 API。
+- 模型 API Key 通过受权限保护的模型配置接口加密写入数据库；加密主密钥只能使用受控环境变量或 Secret Manager 注入，密钥不得进入 Git、日志、审计或 API 响应。
 
 ### 未包含范围
 

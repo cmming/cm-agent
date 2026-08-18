@@ -36,9 +36,11 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 - 旧版控制台（v1）：`http://localhost:8080/console/v1/`
 - OpenAPI：`http://localhost:8080/swagger-ui/index.html`
 
-v2 控制台按版本化 URL 拆分为登录、能力总览、Agent 管理、工具治理、运行记录和审计日志六个独立 HTML 页面。页面之间使用真实链接和独立 URL，并在当前文档内加载目标 HTML，以兼容会隔离跨文档状态的嵌入式浏览器；直接刷新或访问页面时由仅作用于 `/api` 的 `HttpOnly`、`SameSite=Strict` 会话 Cookie 恢复认证。登录响应中的 JWT 只在当前页面内存中短暂使用，不会写入浏览器存储或 URL；退出时会立即清除 Cookie。用户名和密码不会保存。原始单页 `index.html` 继续作为 v1 从 `/console/v1/` 提供，v1 的 JWT 仍只保存在页面内存中，刷新后需要重新登录。
+v2 控制台按版本化 URL 拆分为登录、能力总览、Agent 管理、模型配置、工具治理、运行记录和审计日志七个独立 HTML 页面。页面之间使用真实链接和独立 URL，并在当前文档内加载目标 HTML，以兼容会隔离跨文档状态的嵌入式浏览器；直接刷新或访问页面时由仅作用于 `/api` 的 `HttpOnly`、`SameSite=Strict` 会话 Cookie 恢复认证。登录响应中的 JWT 只在当前页面内存中短暂使用，不会写入浏览器存储或 URL；退出时会立即清除 Cookie。用户名和密码不会保存。原始单页 `index.html` 继续作为 v1 从 `/console/v1/` 提供，v1 的 JWT 仍只保存在页面内存中，刷新后需要重新登录。
 
-两个版本复用相同的服务端 API、权限、多租户和审计边界。v2 面向平台使用者提供能力总览、Agent 列表/详情/创建、Tool 列表/创建/编辑/删除/授权、Agent 详情解除工具关联、Agent 运行调试、运行历史与工具调用详情，以及审计日志游标分页。页面不提供手动取消或流式运行。
+两个版本复用相同的服务端 API、权限、多租户和审计边界。v2 面向平台使用者提供能力总览、Agent 列表/详情/创建、模型配置列表/详情/创建/编辑/删除、Tool 列表/创建/编辑/删除/授权、Agent 详情解除工具关联、Agent 运行调试、运行历史与工具调用详情，以及审计日志游标分页。页面不提供手动取消或流式运行。
+
+模型配置 API 位于 `/api/model-configs`：读取需要 `model:read`，创建和更新需要 `model:write`，删除需要 `model:delete`。所有操作从认证主体取得 tenant，并记录权限拒绝或成功写操作审计；仍被 Agent 引用的配置删除时返回 `409 Conflict`。启动初始化器维护的系统默认配置不可删除，可通过更新接口停用或调整。接口和页面只管理 Provider、`baseUrl`、`modelName`、显示名称与启用状态，不接收、不保存、不返回 API Key。
 
 ## 动态 HTTP 工具与 MCP
 
@@ -62,20 +64,18 @@ v2 控制台按版本化 URL 拆分为登录、能力总览、Agent 管理、工
 mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.config.jwt-secret=<local-dev-only-jwt-secret> --cm-agent.config.bootstrap-admin-enabled=true --cm-agent.config.bootstrap-admin-password=<local-dev-only-password>"
 ```
 
-真实 Runtime 支持 AgentScope 2.0.0 的 OpenAI Compatible 与 DashScope Provider。启用时必须同时关闭 fake runtime，并按 `tenantId + modelConfigId` 从外部 Secret 映射模型凭据：
+真实 Runtime 支持 AgentScope 2.0.0 的 OpenAI Compatible 与 DashScope Provider。启用时必须同时关闭 fake runtime；模型 API Key 由模型配置管理接口加密写入数据库，运行时按 `tenantId + modelConfigId` 读取：
 
 ```yaml
 cm-agent:
   fake-runtime-enabled: false
   agentscope:
     enabled: true
-    credentials:
-      - tenant-id: <tenant-id>
-        model-config-id: <model-config-id>
-        api-key: ${MODEL_API_KEY}
+  model-credentials:
+    encryption-key: ${CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY}
 ```
 
-默认外部凭据列表为空时，真实 Runtime 会启动失败；生产也可以提供自定义 `ModelCredentialProvider` 对接 secret manager。`model_configs` 只保存 Provider、`baseUrl`、`modelName` 等非敏感元数据，不保存明文 API Key。
+`CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY` 是 Base64 编码的 256 位 AES 主密钥，不是模型 API Key，必须由部署环境或密钥管理系统提供。模型 API Key 只以 AES/GCM 密文写入 `model_configs`，创建时必填、更新时可轮换，所有读取接口均不会回显。生产也可以提供自定义 `ModelCredentialProvider` 对接外部密钥管理系统。
 
 ## 当前状态
 

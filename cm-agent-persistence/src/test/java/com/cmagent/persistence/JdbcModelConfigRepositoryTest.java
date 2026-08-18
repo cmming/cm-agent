@@ -54,6 +54,37 @@ class JdbcModelConfigRepositoryTest {
         assertThat(repository.findByTenantAndId(TENANT_B, MODEL_A)).isEmpty();
     }
 
+    @Test
+    void 创建更新列出和删除均保持租户边界且可保存加密凭据() {
+        UUID id = UUID.fromString("40000000-0000-0000-0000-000000000002");
+        ModelConfig created = repository.save(new ModelConfig(
+                id, TENANT_A, ModelProviderType.DASHSCOPE_NATIVE,
+                "新模型", "https://dashscope.example.test/api", "qwen-plus", true
+        ), "v1:test-iv:test-ciphertext");
+
+        assertThat(repository.listByTenant(TENANT_A)).extracting(ModelConfig::id)
+                .containsExactlyInAnyOrder(MODEL_A, id);
+        assertThat(repository.listByTenant(TENANT_B)).isEmpty();
+
+        ModelConfig updated = repository.update(new ModelConfig(
+                created.id(), created.tenantId(), ModelProviderType.OPENAI_COMPATIBLE,
+                "更新模型", "https://models.example.test/v1", "qwen-max", false
+        ), "v1:rotated-iv:rotated-ciphertext");
+        assertThat(updated.enabled()).isFalse();
+        assertThat(repository.findByTenantAndId(TENANT_A, id).orElseThrow().displayName()).isEqualTo("更新模型");
+        assertThat(repository.isReferencedByAgent(TENANT_A, id)).isFalse();
+
+        JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(
+                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword()));
+        assertThat(repository.findEncryptedApiKeyByTenantAndId(TENANT_A, id))
+                .contains("v1:rotated-iv:rotated-ciphertext");
+        assertThat(repository.findEncryptedApiKeyByTenantAndId(TENANT_B, id)).isEmpty();
+
+        assertThat(repository.delete(TENANT_B, id)).isFalse();
+        assertThat(repository.delete(TENANT_A, id)).isTrue();
+        assertThat(repository.findByTenantAndId(TENANT_A, id)).isEmpty();
+    }
+
     /**
      * 验证或支持 {@code seedData} 所描述的测试场景。
      *

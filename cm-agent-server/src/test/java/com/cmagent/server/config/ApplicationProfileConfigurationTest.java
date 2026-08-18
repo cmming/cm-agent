@@ -4,6 +4,7 @@ import com.cmagent.agentscope.AgentScopeRuntimeAdapter;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.runtime.ToolInvocationGateway;
 import com.cmagent.core.runtime.ToolInvocationResult;
+import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.server.security.BootstrapAdminConfiguration;
 import com.cmagent.server.security.BootstrapAdminProperties;
 import com.cmagent.server.security.JwtSecurityConfiguration;
@@ -23,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class ApplicationProfileConfigurationTest {
     private static final String EXTERNAL_LOCAL_JWT_SECRET = "external-local-jwt-secret-with-at-least-32-bytes";
@@ -44,7 +46,8 @@ class ApplicationProfileConfigurationTest {
                 "cm-agent.config.external-jwt-secret=" + EXTERNAL_JWT_SECRET,
                 "cm-agent.config.external-jdbc-url=" + EXTERNAL_JDBC_URL,
                 "cm-agent.config.external-jdbc-username=" + EXTERNAL_JDBC_USERNAME,
-                "cm-agent.config.external-jdbc-password=" + EXTERNAL_JDBC_PASSWORD
+                "cm-agent.config.external-jdbc-password=" + EXTERNAL_JDBC_PASSWORD,
+                "cm-agent.model-credentials.encryption-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
         };
     }
 
@@ -73,9 +76,13 @@ class ApplicationProfileConfigurationTest {
             .withInitializer(new ConfigDataApplicationContextInitializer());
 
     private final ApplicationContextRunner realRuntimeProfileContextRunner = new ApplicationContextRunner()
-            .withUserConfiguration(AgentScopeRuntimeConfiguration.class, ProfileSafetyValidator.class)
+            .withUserConfiguration(
+                    AgentScopeRuntimeConfiguration.class,
+                    ModelCredentialEncryptionConfiguration.class,
+                    ProfileSafetyValidator.class)
             .withBean(ToolInvocationGateway.class,
                     () -> request -> ToolInvocationResult.succeeded("测试结果"))
+            .withBean(ModelConfigRepository.class, () -> mock(ModelConfigRepository.class))
             .withInitializer(new ConfigDataApplicationContextInitializer());
 
     @Test
@@ -252,10 +259,6 @@ class ApplicationProfileConfigurationTest {
     void strictProfileProvidesRealAgentScopeRuntimeWithoutTestRuntime(String profile) {
         realRuntimeProfileContextRunner
                 .withPropertyValues(externalConfigProperties("spring.profiles.active=" + profile))
-                .withPropertyValues(
-                        "cm-agent.agentscope.credentials[0].tenant-id=00000000-0000-0000-0000-000000000001",
-                        "cm-agent.agentscope.credentials[0].model-config-id=00000000-0000-0000-0000-000000000301",
-                        "cm-agent.agentscope.credentials[0].api-key=unit-test-profile-key")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context.getEnvironment()

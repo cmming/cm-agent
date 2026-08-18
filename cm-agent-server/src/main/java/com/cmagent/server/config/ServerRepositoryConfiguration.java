@@ -67,7 +67,52 @@ public class ServerRepositoryConfiguration {
     @ConditionalOnMissingBean(ModelConfigRepository.class)
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
     public ModelConfigRepository memoryModelConfigRepository(InMemoryPlatformStore store) {
-        return store::findModelConfig;
+        return new ModelConfigRepository() {
+            @Override
+            public ModelConfig save(ModelConfig modelConfig) {
+                return store.saveModelConfig(modelConfig);
+            }
+
+            @Override
+            public ModelConfig save(ModelConfig modelConfig, String encryptedApiKey) {
+                return store.saveModelConfig(modelConfig, encryptedApiKey);
+            }
+
+            @Override
+            public ModelConfig update(ModelConfig modelConfig) {
+                return store.updateModelConfig(modelConfig);
+            }
+
+            @Override
+            public ModelConfig update(ModelConfig modelConfig, String encryptedApiKey) {
+                return store.updateModelConfig(modelConfig, encryptedApiKey);
+            }
+
+            @Override
+            public Optional<ModelConfig> findByTenantAndId(UUID tenantId, UUID modelConfigId) {
+                return store.findModelConfig(tenantId, modelConfigId);
+            }
+
+            @Override
+            public Optional<String> findEncryptedApiKeyByTenantAndId(UUID tenantId, UUID modelConfigId) {
+                return store.findEncryptedModelApiKey(tenantId, modelConfigId);
+            }
+
+            @Override
+            public List<ModelConfig> listByTenant(UUID tenantId) {
+                return store.listModelConfigs(tenantId);
+            }
+
+            @Override
+            public boolean isReferencedByAgent(UUID tenantId, UUID modelConfigId) {
+                return store.isModelConfigReferenced(tenantId, modelConfigId);
+            }
+
+            @Override
+            public boolean delete(UUID tenantId, UUID modelConfigId) {
+                return store.deleteModelConfig(tenantId, modelConfigId);
+            }
+        };
     }
 
     /**
