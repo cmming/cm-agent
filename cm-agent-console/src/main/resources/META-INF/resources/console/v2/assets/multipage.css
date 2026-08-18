@@ -54,6 +54,129 @@
 
 .page-view[aria-busy="true"] { opacity: .72; }
 
+/* v2 独立页面使用受控内容宽度，避免宽屏下表单和运行记录过度拉伸。 */
+body[data-console-version="v2"] { background: #eef3f8; }
+
+body[data-console-version="v2"] .console-layout {
+    grid-template-columns: 256px minmax(0, 1fr);
+}
+
+body[data-console-version="v2"] .workspace-header {
+    position: sticky;
+    z-index: 2;
+    top: 0;
+    min-height: 104px;
+    padding-top: 22px;
+    padding-bottom: 22px;
+    box-shadow: 0 1px 0 rgba(23, 34, 56, .025);
+}
+
+body[data-console-version="v2"] .page-view {
+    width: min(100%, 1480px);
+    margin: 0 auto;
+    padding-top: clamp(26px, 3vw, 44px);
+    padding-bottom: clamp(36px, 4vw, 64px);
+}
+
+body[data-console-version="v2"] .stats-grid { gap: 18px; }
+
+body[data-console-version="v2"] .stat-card {
+    position: relative;
+    display: grid;
+    min-height: 154px;
+    padding: 22px;
+    overflow: hidden;
+    transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+
+body[data-console-version="v2"] .stat-card::before {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), #79a6f5);
+    content: "";
+}
+
+body[data-console-version="v2"] .stat-card:nth-child(2)::before { background: linear-gradient(90deg, #27815c, #70c6a2); }
+body[data-console-version="v2"] .stat-card:nth-child(3)::before { background: linear-gradient(90deg, #8965d6, #b99df4); }
+
+body[data-console-version="v2"] .stat-card:hover {
+    border-color: #b8c8dc;
+    box-shadow: 0 12px 28px rgba(23, 34, 56, .08);
+    transform: translateY(-2px);
+}
+
+body[data-console-version="v2"] .stat-card > strong {
+    align-self: center;
+    margin: 8px 0;
+    font-size: clamp(30px, 2.2vw, 38px);
+}
+
+body[data-console-version="v2"] .overview-grid {
+    grid-template-columns: minmax(0, 1.55fr) minmax(292px, .85fr);
+    gap: 18px;
+    margin-top: 18px;
+    align-items: stretch;
+}
+
+body[data-console-version="v2"] .overview-grid > .panel { padding: 22px; }
+body[data-console-version="v2"] .overview-grid > .panel:first-child { min-height: 350px; }
+
+body[data-console-version="v2"] .quick-actions { gap: 10px; }
+body[data-console-version="v2"] .quick-actions .panel-heading { margin-bottom: 4px; }
+
+.quick-action {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 11px;
+    min-height: 68px;
+    padding: 11px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-soft);
+    color: var(--text);
+    text-decoration: none;
+    transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.quick-action:hover {
+    border-color: #a9bddb;
+    background: #f9fbff;
+    box-shadow: 0 8px 18px rgba(23, 34, 56, .07);
+    transform: translateY(-1px);
+}
+
+.quick-action.primary {
+    border-color: var(--accent);
+    background: linear-gradient(135deg, var(--accent), #3b78e5);
+    color: #fff;
+}
+
+.quick-action.primary:hover { border-color: var(--accent-strong); background: linear-gradient(135deg, var(--accent-strong), #2f69cc); }
+.quick-action-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: #e4edfc; color: var(--accent-strong); font-size: 17px; }
+.quick-action.primary .quick-action-icon { background: rgba(255, 255, 255, .18); color: #fff; }
+.quick-action strong, .quick-action small { display: block; }
+.quick-action strong { font-size: 13px; }
+.quick-action small { margin-top: 2px; color: var(--muted); font-size: 11px; }
+.quick-action.primary small { color: rgba(255, 255, 255, .78); }
+.quick-action > b { font-size: 18px; font-weight: 400; }
+
 @media (max-width: 900px) {
     .version-badge { margin-left: 0; }
+
+    body[data-console-version="v2"] .console-layout { grid-template-columns: 1fr; }
+    body[data-console-version="v2"] .workspace-header { position: static; min-height: 78px; padding-top: 14px; padding-bottom: 14px; }
+    body[data-console-version="v2"] .page-view { width: auto; padding-top: 20px; padding-bottom: 36px; }
+    body[data-console-version="v2"] .overview-grid { gap: 16px; }
+    body[data-console-version="v2"] .overview-grid > .panel { padding: 20px; }
+    body[data-console-version="v2"] .overview-grid > .panel:first-child { min-height: 0; }
+}
+
+@media (max-width: 600px) {
+    body[data-console-version="v2"] .stat-card { min-height: 132px; padding: 18px; }
+    body[data-console-version="v2"] .stat-card:hover { transform: none; }
+    .quick-action { min-height: 64px; }
 }

@@ -42,7 +42,7 @@ class ConsoleResourceTest {
                 .contains("data-console-version=\"v2\"", "id=\"loginForm\"", "/console/v1/")
                 .doesNotContain("id=\"overviewPage\"", "id=\"agentsPage\"");
         assertThat(overview)
-                .contains("data-page=\"overviewPage\"", "id=\"overviewPage\"")
+                .contains("data-page=\"overviewPage\"", "id=\"overviewPage\"", "class=\"quick-action primary\"", "配置模型、提示词与可用工具")
                 .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
         assertThat(agents)
                 .contains("data-page=\"agentsPage\"", "id=\"agentsPage\"", "id=\"agentForm\"")
@@ -93,6 +93,11 @@ class ConsoleResourceTest {
                 .contains("#toolsPage .management-grid { grid-template-columns: minmax(0, 1fr); }")
                 .contains("#toolsPage .management-grid > * { width: 100%; grid-column: 1; }")
                 .contains("@media (max-width: 900px)");
+
+        String v2Css = resource("META-INF/resources/console/v2/assets/multipage.css");
+        assertThat(v2Css)
+                .contains("body[data-console-version=\"v2\"] .page-view", ".quick-action", ".stat-card::before")
+                .contains("@media (max-width: 600px)");
     }
 
     @Test
