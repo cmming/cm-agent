@@ -1,0 +1,190 @@
+-- MySQL 没有独立的字段 COMMENT 语句，MODIFY COLUMN 必须完整重述类型与空值约束，
+-- 否则未写出的字段属性会被重置；下列定义与 V1、V4、V5、V6、V7 迁移后的最终结构保持一致。
+ALTER TABLE tenants
+    COMMENT = '租户基础信息',
+    MODIFY COLUMN id CHAR(36) NOT NULL COMMENT '租户唯一标识',
+    MODIFY COLUMN code VARCHAR(80) NOT NULL COMMENT '租户代码',
+    MODIFY COLUMN name VARCHAR(160) NOT NULL COMMENT '租户名称',
+    MODIFY COLUMN enabled BOOLEAN NOT NULL COMMENT '是否启用',
+    MODIFY COLUMN created_at TIMESTAMP NOT NULL COMMENT '创建时间';
+
+ALTER TABLE users
+    COMMENT = '租户用户账号',
+    MODIFY COLUMN id CHAR(36) NOT NULL COMMENT '用户唯一标识',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN username VARCHAR(120) NOT NULL COMMENT '登录用户名',
+    MODIFY COLUMN password_hash VARCHAR(255) NOT NULL COMMENT '密码哈希值',
+    MODIFY COLUMN display_name VARCHAR(120) NOT NULL COMMENT '用户显示名称',
+    MODIFY COLUMN enabled BOOLEAN NOT NULL COMMENT '是否启用',
+    MODIFY COLUMN created_at TIMESTAMP NOT NULL COMMENT '创建时间';
+
+ALTER TABLE roles
+    COMMENT = '租户角色定义',
+    MODIFY COLUMN id CHAR(36) NOT NULL COMMENT '角色唯一标识',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN code VARCHAR(120) NOT NULL COMMENT '角色代码',
+    MODIFY COLUMN name VARCHAR(120) NOT NULL COMMENT '角色名称';
+
+ALTER TABLE permissions
+    COMMENT = '系统权限定义',
+    MODIFY COLUMN code VARCHAR(120) NOT NULL COMMENT '权限代码',
+    MODIFY COLUMN description VARCHAR(255) NOT NULL COMMENT '权限说明';
+
+ALTER TABLE user_roles
+    COMMENT = '用户与角色关联',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN user_id CHAR(36) NOT NULL COMMENT '用户标识',
+    MODIFY COLUMN role_id CHAR(36) NOT NULL COMMENT '角色标识';
+
+ALTER TABLE role_permissions
+    COMMENT = '角色与权限关联',
+    MODIFY COLUMN role_id CHAR(36) NOT NULL COMMENT '角色标识',
+    MODIFY COLUMN permission_code VARCHAR(120) NOT NULL COMMENT '权限代码';
+
+ALTER TABLE api_keys
+    COMMENT = '租户 API Key 元数据',
+    MODIFY COLUMN id CHAR(36) NOT NULL COMMENT 'API Key 唯一标识',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN name VARCHAR(160) NOT NULL COMMENT 'API Key 名称',
+    MODIFY COLUMN key_hash VARCHAR(255) NOT NULL COMMENT 'API Key 哈希值',
+    MODIFY COLUMN permissions_json TEXT NOT NULL COMMENT '权限集合 JSON',
+    MODIFY COLUMN enabled BOOLEAN NOT NULL COMMENT '是否启用',
+    MODIFY COLUMN created_at TIMESTAMP NOT NULL COMMENT '创建时间',
+    MODIFY COLUMN rotated_at TIMESTAMP NULL COMMENT '最近轮换时间';
+
+ALTER TABLE model_configs
+    COMMENT = '租户模型配置',
+    MODIFY COLUMN id CHAR(36) NOT NULL COMMENT '模型配置唯一标识',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN provider_type VARCHAR(40) NOT NULL COMMENT '模型服务提供方类型',
+    MODIFY COLUMN display_name VARCHAR(160) NOT NULL COMMENT '模型配置显示名称',
+    MODIFY COLUMN base_url VARCHAR(500) NOT NULL COMMENT '模型服务基础地址',
+    MODIFY COLUMN model_name VARCHAR(160) NOT NULL COMMENT '模型名称',
+    MODIFY COLUMN encrypted_api_key TEXT NOT NULL COMMENT '历史兼容密钥占位字段，禁止存储明文 API Key',
+    MODIFY COLUMN enabled BOOLEAN NOT NULL COMMENT '是否启用',
+    MODIFY COLUMN created_at TIMESTAMP NOT NULL COMMENT '创建时间';
+
+ALTER TABLE agent_definitions
+    COMMENT = 'Agent 定义',
+    MODIFY COLUMN id CHAR(36) NOT NULL COMMENT 'Agent 唯一标识',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN name VARCHAR(160) NOT NULL COMMENT 'Agent 名称',
+    MODIFY COLUMN description VARCHAR(500) NOT NULL COMMENT 'Agent 说明',
+    MODIFY COLUMN system_prompt TEXT NOT NULL COMMENT '系统提示词',
+    MODIFY COLUMN model_provider_id CHAR(36) NOT NULL COMMENT '关联模型配置标识',
+    MODIFY COLUMN model_name VARCHAR(160) NOT NULL COMMENT '运行使用的模型名称',
+    MODIFY COLUMN temperature DOUBLE PRECISION NOT NULL COMMENT '模型采样温度',
+    MODIFY COLUMN max_iterations INTEGER NOT NULL COMMENT '最大迭代次数',
+    MODIFY COLUMN enabled BOOLEAN NOT NULL COMMENT '是否启用',
+    MODIFY COLUMN tool_ids_json TEXT NOT NULL COMMENT '关联工具标识集合 JSON',
+    MODIFY COLUMN created_by VARCHAR(120) NOT NULL COMMENT '创建主体标识',
+    MODIFY COLUMN updated_by VARCHAR(120) NOT NULL COMMENT '最后更新主体标识',
+    MODIFY COLUMN created_at TIMESTAMP NOT NULL COMMENT '创建时间',
+    MODIFY COLUMN updated_at TIMESTAMP NOT NULL COMMENT '最后更新时间';
+
+ALTER TABLE tool_definitions
+    COMMENT = '工具定义',
+    MODIFY COLUMN id CHAR(36) NOT NULL COMMENT '工具唯一标识',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN name VARCHAR(160) NOT NULL COMMENT '工具名称',
+    MODIFY COLUMN description VARCHAR(500) NOT NULL COMMENT '工具说明',
+    MODIFY COLUMN type VARCHAR(30) NOT NULL COMMENT '工具类型',
+    MODIFY COLUMN input_schema TEXT NOT NULL COMMENT '工具输入 JSON Schema',
+    MODIFY COLUMN risk_level VARCHAR(30) NOT NULL COMMENT '工具风险等级',
+    MODIFY COLUMN enabled BOOLEAN NOT NULL COMMENT '是否启用',
+    MODIFY COLUMN endpoint VARCHAR(500) NOT NULL COMMENT '工具端点元数据，不作为自动执行地址',
+    MODIFY COLUMN created_by VARCHAR(120) NOT NULL COMMENT '创建主体标识',
+    MODIFY COLUMN updated_by VARCHAR(120) NOT NULL COMMENT '最后更新主体标识',
+    MODIFY COLUMN created_at TIMESTAMP NOT NULL COMMENT '创建时间',
+    MODIFY COLUMN updated_at TIMESTAMP NOT NULL COMMENT '最后更新时间',
+    MODIFY COLUMN deleted_at TIMESTAMP NULL COMMENT '软删除时间，为空表示活动工具',
+    MODIFY COLUMN deleted_name VARCHAR(160) NULL COMMENT '软删除前的原始工具名称';
+
+ALTER TABLE tool_http_configs
+    COMMENT = 'HTTP 工具运行配置',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN tool_id CHAR(36) NOT NULL COMMENT '工具标识',
+    MODIFY COLUMN method VARCHAR(10) NOT NULL COMMENT 'HTTP 请求方法',
+    MODIFY COLUMN url_template VARCHAR(500) NOT NULL COMMENT 'HTTP 请求地址模板',
+    MODIFY COLUMN secret_headers TEXT NOT NULL COMMENT '仅包含 Secret 引用的请求头配置 JSON',
+    MODIFY COLUMN timeout_ms BIGINT NOT NULL COMMENT '请求超时时间，单位毫秒',
+    MODIFY COLUMN created_at TIMESTAMP NOT NULL COMMENT '创建时间',
+    MODIFY COLUMN updated_at TIMESTAMP NOT NULL COMMENT '最后更新时间',
+    MODIFY COLUMN parameter_definitions TEXT NULL COMMENT '扁平 HTTP 参数定义 JSON';
+
+ALTER TABLE tool_mcp_publications
+    COMMENT = '工具 MCP 发布状态',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN tool_id CHAR(36) NOT NULL COMMENT '工具标识',
+    MODIFY COLUMN enabled BOOLEAN NOT NULL COMMENT '是否发布到 MCP',
+    MODIFY COLUMN published_by VARCHAR(120) NOT NULL COMMENT '发布主体标识',
+    MODIFY COLUMN created_at TIMESTAMP NOT NULL COMMENT '创建时间',
+    MODIFY COLUMN updated_at TIMESTAMP NOT NULL COMMENT '最后更新时间';
+
+ALTER TABLE tool_grants
+    COMMENT = 'Agent 工具授权',
+    MODIFY COLUMN id CHAR(36) NOT NULL COMMENT '授权记录唯一标识',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN tool_id CHAR(36) NOT NULL COMMENT '工具标识',
+    MODIFY COLUMN agent_id CHAR(36) NOT NULL COMMENT 'Agent 标识',
+    MODIFY COLUMN role_code VARCHAR(120) NULL COMMENT '可选角色代码',
+    MODIFY COLUMN granted BOOLEAN NOT NULL COMMENT '是否授予调用权限',
+    MODIFY COLUMN created_at TIMESTAMP NOT NULL COMMENT '创建时间';
+
+ALTER TABLE conversations
+    COMMENT = 'Agent 会话',
+    MODIFY COLUMN id CHAR(36) NOT NULL COMMENT '会话唯一标识',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN agent_id CHAR(36) NOT NULL COMMENT 'Agent 标识',
+    MODIFY COLUMN title VARCHAR(200) NOT NULL COMMENT '会话标题',
+    MODIFY COLUMN created_by VARCHAR(120) NOT NULL COMMENT '创建主体标识',
+    MODIFY COLUMN created_at TIMESTAMP NOT NULL COMMENT '创建时间';
+
+ALTER TABLE messages
+    COMMENT = '会话消息',
+    MODIFY COLUMN id CHAR(36) NOT NULL COMMENT '消息唯一标识',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN conversation_id CHAR(36) NOT NULL COMMENT '会话标识',
+    MODIFY COLUMN role VARCHAR(30) NOT NULL COMMENT '消息角色',
+    MODIFY COLUMN content TEXT NOT NULL COMMENT '消息内容',
+    MODIFY COLUMN created_at TIMESTAMP NOT NULL COMMENT '创建时间';
+
+ALTER TABLE runs
+    COMMENT = 'Agent 运行记录',
+    MODIFY COLUMN id CHAR(36) NOT NULL COMMENT '运行唯一标识',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN agent_id CHAR(36) NOT NULL COMMENT 'Agent 标识',
+    MODIFY COLUMN principal_id VARCHAR(120) NOT NULL COMMENT '发起运行的主体标识',
+    MODIFY COLUMN status VARCHAR(30) NOT NULL COMMENT '运行状态',
+    MODIFY COLUMN input_text TEXT NOT NULL COMMENT '运行输入文本',
+    MODIFY COLUMN output_text TEXT NULL COMMENT '运行输出文本',
+    MODIFY COLUMN error_message TEXT NULL COMMENT '脱敏后的运行错误信息',
+    MODIFY COLUMN started_at TIMESTAMP NOT NULL COMMENT '开始时间',
+    MODIFY COLUMN finished_at TIMESTAMP NULL COMMENT '结束时间';
+
+ALTER TABLE tool_calls
+    COMMENT = '工具调用记录',
+    MODIFY COLUMN id CHAR(36) NOT NULL COMMENT '工具调用唯一标识',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN run_id CHAR(36) NOT NULL COMMENT '所属运行标识',
+    MODIFY COLUMN tool_id CHAR(36) NOT NULL COMMENT '工具标识',
+    MODIFY COLUMN tool_name VARCHAR(160) NOT NULL COMMENT '调用时的工具名称快照',
+    MODIFY COLUMN input_summary TEXT NOT NULL COMMENT '脱敏后的输入摘要',
+    MODIFY COLUMN output_summary TEXT NULL COMMENT '脱敏后的输出摘要',
+    MODIFY COLUMN status VARCHAR(30) NOT NULL COMMENT '调用状态',
+    MODIFY COLUMN authorized BOOLEAN NOT NULL COMMENT '调用时是否通过授权',
+    MODIFY COLUMN duration_ms BIGINT NULL COMMENT '调用耗时，单位毫秒',
+    MODIFY COLUMN error_message TEXT NULL COMMENT '脱敏后的调用错误信息',
+    MODIFY COLUMN created_at TIMESTAMP NOT NULL COMMENT '创建时间';
+
+ALTER TABLE audit_events
+    COMMENT = '安全审计事件',
+    MODIFY COLUMN id CHAR(36) NOT NULL COMMENT '审计事件唯一标识',
+    MODIFY COLUMN tenant_id CHAR(36) NOT NULL COMMENT '所属租户标识',
+    MODIFY COLUMN principal_id VARCHAR(120) NOT NULL COMMENT '操作主体标识，使用软引用',
+    MODIFY COLUMN event_type VARCHAR(120) NOT NULL COMMENT '审计事件类型',
+    MODIFY COLUMN resource_type VARCHAR(120) NOT NULL COMMENT '资源类型',
+    MODIFY COLUMN resource_id VARCHAR(120) NOT NULL COMMENT '资源标识，使用软引用',
+    MODIFY COLUMN status VARCHAR(30) NOT NULL COMMENT '操作结果状态',
+    MODIFY COLUMN message TEXT NOT NULL COMMENT '脱敏后的审计消息',
+    MODIFY COLUMN created_at TIMESTAMP NOT NULL COMMENT '创建时间';

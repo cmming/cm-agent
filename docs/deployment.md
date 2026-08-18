@@ -141,6 +141,8 @@ JWT 验证密钥、数据库凭据和模型 API Key 不得写入 Git、镜像层
 - Flyway 在 JDBC 应用启动时按版本执行；发布前应确认 `flyway_schema_history`，避免绕过迁移工具手工改表。
 - 生产可将 DDL 迁移账号与运行账号分离，由发布流程先应用迁移，再使用运行账号启动服务。
 
+V8 为当前 18 张业务表和 135 个字段补齐中文数据库原生注释。公共 V1–V7 继续位于迁移根目录；V8 因 PostgreSQL 使用 `COMMENT ON`、MySQL 使用 `ALTER TABLE ... COMMENT/MODIFY COLUMN`，分别位于 `db/migration/postgresql` 与 `db/migration/mysql`，由 `CmAgentFlyway` 根据 JDBC 元数据只选择当前方言。MySQL 脚本完整重述字段类型和空值约束，升级前仍应备份并在预发布环境核对表结构；迁移测试会同时验证索引、外键、空值约束及所有表/字段注释。
+
 升级前先备份数据库并记录当前迁移版本；迁移失败时停止发布、保留错误上下文并按回滚预案处理，不修改历史 V1 文件“修复”问题。
 
 V4 为 `tool_definitions` 增加同一租户内的名称唯一索引，并新增 HTTP 工具配置和 MCP 发布配置表。应用 V4 前必须先执行以下只读检查并处理结果中的重复记录，否则唯一索引会使迁移失败：

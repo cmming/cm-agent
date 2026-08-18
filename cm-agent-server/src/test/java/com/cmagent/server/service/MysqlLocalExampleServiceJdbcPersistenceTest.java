@@ -9,6 +9,7 @@ import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.tool.InMemoryToolRegistry;
 import com.cmagent.persistence.JdbcAuditEventRepository;
 import com.cmagent.persistence.JdbcToolDefinitionRepository;
+import com.cmagent.persistence.CmAgentFlyway;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.runtime.ToolRuntimeReadiness;
@@ -18,7 +19,6 @@ import com.cmagent.server.runtime.http.HttpToolProperties;
 import com.cmagent.server.runtime.local.MysqlLocalExampleCatalog;
 import com.cmagent.server.security.ToolOutputSanitizer;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -258,8 +258,8 @@ class MysqlLocalExampleServiceJdbcPersistenceTest {
      */
     private static DataSource migratedAndSeededDataSource(String url, String username, String password) {
         DataSource dataSource = new DriverManagerDataSource(url, username, password);
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").cleanDisabled(false).load().clean();
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        CmAgentFlyway.configure(dataSource).cleanDisabled(false).load().clean();
+        CmAgentFlyway.configure(dataSource).load().migrate();
         JdbcClient.create(dataSource).sql("""
                         INSERT INTO tenants (id, code, name, enabled, created_at)
                         VALUES (:id, :code, :name, true, :createdAt)

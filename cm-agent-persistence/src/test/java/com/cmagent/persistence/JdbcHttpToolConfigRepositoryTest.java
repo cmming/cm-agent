@@ -5,7 +5,6 @@ import com.cmagent.core.domain.HttpParameterDataType;
 import com.cmagent.core.domain.HttpParameterDefinition;
 import com.cmagent.core.domain.HttpToolConfig;
 import com.cmagent.core.domain.HttpToolMethod;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -51,9 +50,9 @@ class JdbcHttpToolConfigRepositoryTest {
     void setUp() {
         dataSource = new DriverManagerDataSource(
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
+        CmAgentFlyway.configure(dataSource)
                 .cleanDisabled(false).load().clean();
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        CmAgentFlyway.configure(dataSource).load().migrate();
         seedData(dataSource);
         repository = repository(dataSource);
     }

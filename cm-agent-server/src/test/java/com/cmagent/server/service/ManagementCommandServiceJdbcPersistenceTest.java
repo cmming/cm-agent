@@ -27,10 +27,10 @@ import com.cmagent.persistence.JdbcMcpToolPublicationRepository;
 import com.cmagent.persistence.JdbcToolDefinitionRepository;
 import com.cmagent.persistence.JdbcToolGrantRepository;
 import com.cmagent.persistence.JdbcToolCallRepository;
+import com.cmagent.persistence.CmAgentFlyway;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.runtime.http.HttpToolConfigValidator;
 import com.cmagent.server.audit.AuditPersistenceException;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -1530,9 +1530,9 @@ class ManagementCommandServiceJdbcPersistenceTest {
      * @param dataSource 测试数据源
      */
     private static void migrateAndSeedTenant(DataSource dataSource) {
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
+        CmAgentFlyway.configure(dataSource)
                 .cleanDisabled(false).load().clean();
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        CmAgentFlyway.configure(dataSource).load().migrate();
         JdbcClient.create(dataSource).sql("""
                         INSERT INTO tenants (id, code, name, enabled, created_at)
                         VALUES (:id, :code, :name, true, :createdAt)

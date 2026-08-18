@@ -1,7 +1,6 @@
 package com.cmagent.persistence;
 
 import com.cmagent.core.domain.McpToolPublication;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -44,9 +43,9 @@ class JdbcMcpToolPublicationRepositoryTest {
     void setUp() {
         dataSource = new DriverManagerDataSource(
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
+        CmAgentFlyway.configure(dataSource)
                 .cleanDisabled(false).load().clean();
-        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        CmAgentFlyway.configure(dataSource).load().migrate();
         JdbcHttpToolConfigRepositoryTest.seedData(dataSource);
         JdbcClient jdbc = JdbcClient.create(dataSource);
         JdbcHttpToolConfigRepositoryTest.insertTool(jdbc, TOOL_A_DISABLED, TENANT_A, "http-a-disabled",

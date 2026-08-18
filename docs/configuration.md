@@ -152,7 +152,7 @@ cm-agent:
 | `cm-agent.config.jdbc-password` | `cm-agent.persistence.jdbc.password` | 仅从受控外部 YAML 或 secret manager 注入 |
 | `cm-agent.config.jdbc-driver-class-name` | `cm-agent.persistence.jdbc.driver-class-name` | PostgreSQL 或 MySQL 驱动 |
 
-JDBC 模式创建 DataSource，并在启动时由 Flyway 执行 `classpath:db/migration`。已发布的 `V1__init_schema.sql` 不修改；阶段2新增 `V2__add_runtime_query_indexes.sql` 和 `V3__add_tool_calls_created_at_index.sql`，为 `runs`、`tool_calls` 和 `audit_events` 增加租户范围的查询索引。生产环境需先核对 Flyway 历史，再按发布流程应用新迁移。
+JDBC 模式创建 DataSource，并在启动时由 Flyway 执行迁移。`CmAgentFlyway` 只扫描 `classpath:db/migration/*.sql` 中的公共迁移，并依据 JDBC 元数据加载 `db/migration/postgresql` 或 `db/migration/mysql` 中的当前数据库方言迁移，避免同时解析两种不兼容的注释 DDL。已发布的 `V1__init_schema.sql` 不修改；V8 为全部 18 张业务表和 135 个字段写入中文数据库原生注释。生产环境需先核对 Flyway 历史，再按发布流程应用新迁移。
 
 ## 安全配置
 

@@ -2,7 +2,6 @@ package com.cmagent.persistence;
 
 import com.cmagent.core.domain.AgentDefinition;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -46,16 +45,12 @@ class JdbcAgentDefinitionRepositoryTest {
                 postgres.getPassword()
         );
 
-        Flyway.configure()
-                .dataSource(dataSource)
-                .locations("classpath:db/migration")
+        CmAgentFlyway.configure(dataSource)
                 .cleanDisabled(false)
                 .load()
                 .clean();
 
-        Flyway.configure()
-                .dataSource(dataSource)
-                .locations("classpath:db/migration")
+        CmAgentFlyway.configure(dataSource)
                 .load()
                 .migrate();
 

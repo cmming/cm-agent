@@ -2,7 +2,6 @@ package com.cmagent.persistence;
 
 import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.core.audit.AuditPageRequest;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -47,16 +46,12 @@ class JdbcAuditEventRepositoryTest {
                 postgres.getPassword()
         );
 
-        Flyway.configure()
-                .dataSource(dataSource)
-                .locations("classpath:db/migration")
+        CmAgentFlyway.configure(dataSource)
                 .cleanDisabled(false)
                 .load()
                 .clean();
 
-        Flyway.configure()
-                .dataSource(dataSource)
-                .locations("classpath:db/migration")
+        CmAgentFlyway.configure(dataSource)
                 .load()
                 .migrate();
 
@@ -280,15 +275,11 @@ class JdbcAuditEventRepositoryTest {
         DataSource dataSource = new DriverManagerDataSource(
                 mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword()
         );
-        Flyway.configure()
-                .dataSource(dataSource)
-                .locations("classpath:db/migration")
+        CmAgentFlyway.configure(dataSource)
                 .cleanDisabled(false)
                 .load()
                 .clean();
-        Flyway.configure()
-                .dataSource(dataSource)
-                .locations("classpath:db/migration")
+        CmAgentFlyway.configure(dataSource)
                 .load()
                 .migrate();
         seedTenants(dataSource);
