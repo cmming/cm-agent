@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="same-origin">
+    <title>能力总览 | CM Agent 控制台 v2</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <link rel="stylesheet" href="/console/v2/assets/multipage.css">
+</head>
+<body data-console-version="v2" data-page="overviewPage">
+<div class="console-layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand"><div class="brand-mark small" aria-hidden="true">CM</div><div><strong>CM Agent</strong><span>管理控制台</span></div><span class="version-badge">V2</span></div>
+        <nav id="sidebarNav" aria-label="控制台导航">
+            <a class="nav-item active" href="/console/v2/overview.html" aria-current="page"><span aria-hidden="true">▦</span>能力总览</a>
+            <a class="nav-item" href="/console/v2/agents.html"><span aria-hidden="true">◇</span>Agent 管理</a>
+            <a class="nav-item" href="/console/v2/tools.html"><span aria-hidden="true">⬡</span>工具治理</a>
+            <a class="nav-item" href="/console/v2/runs.html"><span aria-hidden="true">▷</span>运行记录</a>
+            <a class="nav-item" href="/console/v2/audit.html"><span aria-hidden="true">≡</span>审计日志</a>
+        </nav>
+        <div class="sidebar-links"><span>版本与系统</span><a href="/console/v1/">旧版 v1 <b aria-hidden="true">↗</b></a><a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI <b aria-hidden="true">↗</b></a><a href="/actuator/health" target="_blank" rel="noreferrer">健康检查 <b aria-hidden="true">↗</b></a></div>
+    </aside>
+    <main class="workspace">
+        <header class="workspace-header"><div><p class="eyebrow">当前工作区</p><h1 id="pageTitle">能力总览</h1><p class="muted">查看当前租户已交付的 Agent 能力与最近活动。</p></div><div class="user-actions"><span class="online-dot" aria-label="已登录"></span><span id="currentUser">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
+        <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
+        <section id="overviewPage" class="page-view" aria-labelledby="pageTitle">
+            <div class="stats-grid">
+                <article class="stat-card"><span>Agent 总数</span><strong id="overviewAgentCount">0</strong><a href="/console/v2/agents.html">管理 Agent →</a></article>
+                <article class="stat-card"><span>Tool 总数</span><strong id="overviewToolCount">0</strong><a href="/console/v2/tools.html">管理工具 →</a></article>
+                <article class="stat-card"><span>最近运行</span><strong id="overviewRunStatus">暂无</strong><small id="overviewRunTime">尚无运行记录</small></article>
+            </div>
+            <div class="overview-grid">
+                <article class="panel"><div class="panel-heading"><div><p class="eyebrow">活动</p><h2>最近运行</h2></div><a class="text-link" href="/console/v2/runs.html">查看全部 →</a></div><div id="overviewRuns" class="list-region"><p class="empty-state">正在加载最近运行。</p></div></article>
+                <article class="panel quick-actions"><div class="panel-heading"><div><p class="eyebrow">开始使用</p><h2>快捷操作</h2></div></div><a class="button primary" href="/console/v2/agents.html">＋ 创建 Agent</a><a class="button" href="/console/v2/tools.html">＋ 注册 Tool</a><a class="button" href="/console/v2/runs.html">▷ 执行 Agent</a></article>
+            </div>
+        </section>
+    </main>
+</div>
+<script src="/assets/console-core.js?v=2.0.7"></script>
+<script src="/assets/app.js?v=2.0.7"></script>
+</body>
+</html>

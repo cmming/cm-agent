@@ -6,6 +6,16 @@
         throw new Error("控制台核心脚本未加载");
     }
 
+    const isMultiPage = document.body.dataset.consoleVersion === "v2";
+    let currentPage = document.body.dataset.page || "";
+    const multiPagePaths = Object.freeze({
+        overviewPage: "/console/v2/overview.html",
+        agentsPage: "/console/v2/agents.html",
+        toolsPage: "/console/v2/tools.html",
+        runsPage: "/console/v2/runs.html",
+        auditPage: "/console/v2/audit.html"
+    });
+
     const HTTP_TOOL_FORM_EXAMPLE = Object.freeze({
         method: "POST",
         urlTemplate: "https://api.example.com/orders/{orderId}",
@@ -45,6 +55,7 @@
     const localExampleInstallRevision = core.createKeyedLoadRevisionGate();
     const sessionEpoch = core.createSessionEpochGate();
     const submitStateGuard = core.createSubmitStateGuard();
+    let pageNavigationRevision = 0;
 
     const pageInfo = {
         overviewPage: ["能力总览", "查看当前租户已交付的 Agent 能力与最近活动。"],
@@ -63,6 +74,7 @@
     });
 
     function setStatus(element, message = "", tone = "neutral") {
+        if (!element) return;
         element.textContent = message;
         element.dataset.tone = tone;
         if (element === $("globalStatus")) {
@@ -110,13 +122,19 @@
                     body: JSON.stringify({username, password})
                 });
                 if (!sessionEpoch.isCurrent(loginSession)) return;
-                state.token = result?.accessToken || "";
-                if (!state.token) throw new Error("登录响应未包含访问令牌。");
+                const accessToken = result?.accessToken || "";
+                if (!accessToken) throw new Error("登录响应未包含访问令牌。");
+                // v2 仍以 HttpOnly Cookie 为跨文档会话主链路；内存令牌只用于兼容会隔离跨文档 Cookie 的嵌入式浏览器。
+                state.token = accessToken;
                 state.currentUser = await api.request("/api/auth/me");
                 if (!sessionEpoch.isCurrent(loginSession)) return;
                 sessionEpoch.invalidate();
                 const activeSession = sessionEpoch.capture();
                 $("loginPassword").value = "";
+                if (isMultiPage) {
+                    await redirectAfterLogin();
+                    return;
+                }
                 showConsole();
                 await loadInitialData(activeSession);
             });
@@ -124,11 +142,89 @@
             if (!sessionEpoch.isCurrent(loginSession)) return;
             state.token = "";
             state.currentUser = null;
+            clearServerSession();
             setStatus($("loginStatus"), error.message, "error");
         }
     }
 
-    function logout(message = "已安全退出。") {
+    async function redirectAfterLogin() {
+        const returnTo = new URLSearchParams(window.location.search).get("returnTo");
+        const allowedPath = Object.values(multiPagePaths).includes(returnTo) ? returnTo : multiPagePaths.overviewPage;
+        await loadMultiPage(allowedPath, {replaceHistory: true});
+    }
+
+    function pageIdForPath(path) {
+        return Object.keys(multiPagePaths).find((pageId) => multiPagePaths[pageId] === path) || "";
+    }
+
+    async function loadMultiPage(targetPath, options = {}) {
+        const pageId = pageIdForPath(targetPath);
+        if (!pageId) throw new Error("目标控制台页面不受支持。");
+
+        const revision = ++pageNavigationRevision;
+        const response = await window.fetch(targetPath, {
+            headers: {Accept: "text/html"},
+            credentials: "same-origin"
+        });
+        if (!response.ok) {
+            throw new Error(`页面加载失败(${response.status})，请稍后重试。`);
+        }
+        const markup = await response.text();
+        if (revision !== pageNavigationRevision) return false;
+
+        const nextDocument = new DOMParser().parseFromString(markup, "text/html");
+        if (nextDocument.body.dataset.consoleVersion !== "v2"
+                || nextDocument.body.dataset.page !== pageId) {
+            throw new Error("页面内容与目标版本不匹配，请刷新后重试。");
+        }
+
+        sessionEpoch.invalidate();
+        submitStateGuard.invalidateAll();
+        toolLoadRevision.invalidate();
+        agentDetailRevision.invalidate();
+        localExampleLoadRevision.invalidate();
+        localExampleInstallRevision.invalidateAll();
+        const nextNodes = Array.from(nextDocument.body.children)
+            .filter((node) => node.tagName !== "SCRIPT")
+            .map((node) => document.importNode(node, true));
+        document.body.replaceChildren(...nextNodes);
+        document.body.dataset.consoleVersion = "v2";
+        document.body.dataset.page = pageId;
+        document.title = nextDocument.title;
+        currentPage = pageId;
+
+        if (options.updateHistory !== false) {
+            const method = options.replaceHistory ? "replaceState" : "pushState";
+            window.history[method]({consolePage: pageId}, "", targetPath);
+        }
+        window.scrollTo({top: 0, left: 0});
+        bindPageControls();
+        toggleHttpConfigFields();
+        await initializeMultiPage();
+        return true;
+    }
+
+    function reportPageNavigationError(error) {
+        const status = $("globalStatus") || $("loginStatus");
+        setStatus(status, error.message, "error");
+    }
+
+    function loginPath() {
+        const currentPath = multiPagePaths[currentPage];
+        return currentPath
+            ? `/console/v2/login.html?returnTo=${encodeURIComponent(currentPath)}`
+            : "/console/v2/login.html";
+    }
+
+    async function clearServerSession() {
+        try {
+            await window.fetch("/api/auth/logout", {method: "POST", credentials: "same-origin"});
+        } catch {
+            // 本地状态仍会立即清空；网络恢复后，服务端 JWT 也会按自身有效期失效。
+        }
+    }
+
+    async function logout(message = "已安全退出。", redirectTarget = "") {
         sessionEpoch.invalidate();
         submitStateGuard.invalidateAll();
         toolLoadRevision.invalidate();
@@ -143,6 +239,17 @@
         state.selectedAgentId = "";
         state.selectedAgent = null;
         state.selectedToolId = "";
+        if (isMultiPage) {
+            state.editingToolId = "";
+            state.runs = [];
+            state.runCursor = "";
+            state.selectedRunId = "";
+            state.auditEvents = [];
+            state.auditCursor = "";
+            await clearServerSession();
+            window.location.replace(redirectTarget || loginPath());
+            return;
+        }
         resetToolForm();
         state.runs = [];
         state.runCursor = "";
@@ -163,6 +270,7 @@
         resetSessionViews();
         setStatus($("globalStatus"));
         setStatus($("loginStatus"), message, "neutral");
+        await clearServerSession();
     }
 
     function resetSessionViews() {
@@ -189,6 +297,10 @@
     }
 
     function showConsole() {
+        if (isMultiPage) {
+            redirectAfterLogin();
+            return;
+        }
         $("loginView").hidden = true;
         $("consoleView").hidden = false;
         $("currentUser").textContent = state.currentUser?.displayName
@@ -198,6 +310,11 @@
     }
 
     function navigate(pageId) {
+        if (isMultiPage) {
+            const target = multiPagePaths[pageId] || multiPagePaths.overviewPage;
+            loadMultiPage(target).catch(reportPageNavigationError);
+            return;
+        }
         const info = pageInfo[pageId] || pageInfo.overviewPage;
         document.querySelectorAll(".page-view").forEach((page) => {
             page.hidden = page.id !== pageId;
@@ -221,6 +338,12 @@
     async function loadInitialData(session = sessionEpoch.capture()) {
         setStatus($("globalStatus"), "正在加载当前租户资源…");
         try {
+            if (isMultiPage) {
+                await loadCurrentPage(session);
+                if (!sessionEpoch.isCurrent(session)) return;
+                setStatus($("globalStatus"));
+                return;
+            }
             await Promise.all([loadAgents(session), loadTools(undefined, session), loadLocalExamples(undefined, false, session)]);
             if (!sessionEpoch.isCurrent(session)) return;
             if (state.selectedAgentId) await loadRuns({append: false});
@@ -229,6 +352,37 @@
         } catch (error) {
             if (!sessionEpoch.isCurrent(session)) return;
             setStatus($("globalStatus"), error.message, "error");
+        }
+    }
+
+    async function loadCurrentPage(session) {
+        switch (currentPage) {
+            case "overviewPage":
+                await Promise.all([loadAgents(session), loadTools(undefined, session)]);
+                if (sessionEpoch.isCurrent(session) && state.selectedAgentId) {
+                    await loadRuns({append: false});
+                }
+                break;
+            case "agentsPage":
+                await loadTools(undefined, session);
+                if (sessionEpoch.isCurrent(session)) await loadAgents(session);
+                break;
+            case "toolsPage":
+                await Promise.all([
+                    loadAgents(session),
+                    loadTools(undefined, session),
+                    loadLocalExamples(undefined, false, session)
+                ]);
+                break;
+            case "runsPage":
+                await loadAgents(session);
+                if (sessionEpoch.isCurrent(session)) await loadRuns({append: false});
+                break;
+            case "auditPage":
+                await loadAudit({append: false});
+                break;
+            default:
+                break;
         }
     }
 
@@ -242,7 +396,9 @@
         renderAgents();
         updateAgentOptions();
         updateOverview();
-        if (state.selectedAgentId) await selectAgent(state.selectedAgentId, undefined, session);
+        if (state.selectedAgentId && $("agentDetail")) {
+            await selectAgent(state.selectedAgentId, undefined, session);
+        }
         return true;
     }
 
@@ -278,6 +434,7 @@
 
     function renderAgents() {
         const container = $("agentList");
+        if (!container) return;
         container.replaceChildren();
         if (!state.agents.length) {
             container.append(emptyState("暂无 Agent，可在右侧创建。"));
@@ -296,6 +453,7 @@
 
     function renderAgentDetail(agent) {
         const container = $("agentDetail");
+        if (!container) return;
         const heading = element("div", {className: "panel-heading"});
         const titleGroup = element("div");
         titleGroup.append(element("p", {className: "eyebrow", text: "Agent 详情"}));
@@ -438,6 +596,7 @@
     function renderLocalExamples() {
         const section = $("localExampleSection");
         const container = $("localExampleList");
+        if (!section || !container) return;
         section.hidden = state.localExamples.length === 0;
         container.replaceChildren();
         state.localExamples.forEach((example) => {
@@ -506,6 +665,7 @@
 
     function renderTools() {
         const container = $("toolList");
+        if (!container) return;
         container.replaceChildren();
         if (!state.tools.length) {
             container.append(emptyState("暂无 Tool，可在右侧注册。"));
@@ -1046,7 +1206,7 @@
     }
 
     function updateAgentOptions() {
-        [$("grantAgentSelect"), $("runAgentSelect")].forEach((select) => {
+        [$("grantAgentSelect"), $("runAgentSelect")].filter(Boolean).forEach((select) => {
             select.replaceChildren();
             if (!state.agents.length) {
                 select.append(option("", "暂无 Agent"));
@@ -1061,6 +1221,7 @@
 
     function updateToolOptions() {
         const select = $("grantToolSelect");
+        if (!select) return;
         select.replaceChildren();
         if (!state.tools.length) {
             select.append(option("", "暂无 Tool"));
@@ -1074,6 +1235,7 @@
 
     function updateDebugToolOptions() {
         const select = $("debugToolSelect");
+        if (!select) return;
         const debugTools = state.tools.filter((tool) => tool.runtimeReady === true
             && (tool.type === "HTTP" || tool.type === "LOCAL"));
         select.replaceChildren();
@@ -1089,6 +1251,7 @@
     }
 
     function toggleHttpConfigFields() {
+        if (!$("toolType")) return;
         const isHttp = $("toolType").value === "HTTP";
         const supportsMcp = isHttp || (state.editingToolId && $("toolType").value === "LOCAL");
         $("httpConfigFields").hidden = !isHttp;
@@ -1196,6 +1359,7 @@
     }
 
     function updateOverview() {
+        if (!$("overviewAgentCount")) return;
         $("overviewAgentCount").textContent = String(state.agents.length);
         $("overviewToolCount").textContent = String(state.tools.length);
         const latestRun = state.runs[0];
@@ -1216,6 +1380,7 @@
             row.append(element("span", {text: core.formatDateTime(run.startedAt)}));
             row.addEventListener("click", () => {
                 navigate("runsPage");
+                if (isMultiPage) return;
                 loadRunDetail(run.id);
             });
             container.append(row);
@@ -1247,7 +1412,7 @@
     }
 
     async function loadRuns({append = false} = {}) {
-        const agentId = $("runAgentSelect").value || state.selectedAgentId;
+        const agentId = $("runAgentSelect")?.value || state.selectedAgentId;
         if (!agentId) {
             state.runs = [];
             state.runCursor = "";
@@ -1258,7 +1423,7 @@
         if (!append) {
             state.selectedAgentId = agentId;
             state.selectedRunId = "";
-            renderMessage($("runDetail"), "选择一条运行记录查看详情。");
+            if ($("runDetail")) renderMessage($("runDetail"), "选择一条运行记录查看详情。");
         }
         const basePath = `/api/agents/${encodeURIComponent(agentId)}/runs`;
         const path = core.buildCursorPath(basePath, 20, append ? state.runCursor : "");
@@ -1272,6 +1437,7 @@
 
     function renderRuns() {
         const container = $("runList");
+        if (!container) return;
         container.replaceChildren();
         if (!state.runs.length) {
             container.append(emptyState(state.selectedAgentId ? "当前 Agent 暂无运行记录。" : "请选择 Agent。"));
@@ -1293,7 +1459,7 @@
     }
 
     async function loadRunDetail(runId) {
-        const agentId = $("runAgentSelect").value || state.selectedAgentId;
+        const agentId = $("runAgentSelect")?.value || state.selectedAgentId;
         if (!agentId || !runId) return;
         state.selectedRunId = runId;
         renderRuns();
@@ -1359,6 +1525,7 @@
 
     function renderAudit() {
         const container = $("auditList");
+        if (!container) return;
         container.replaceChildren();
         state.auditEvents.forEach((event) => {
             const row = document.createElement("tr");
@@ -1419,30 +1586,92 @@
         return dl;
     }
 
-    $("loginForm").addEventListener("submit", (event) => {
-        event.preventDefault();
-        login();
-    });
-    $("logoutBtn").addEventListener("click", () => logout());
-    $("agentForm").addEventListener("submit", (event) => { event.preventDefault(); createAgent(); });
-    $("toolForm").addEventListener("submit", (event) => { event.preventDefault(); submitTool(); });
-    $("cancelToolEditBtn").addEventListener("click", () => resetToolForm());
-    $("fillHttpExampleBtn").addEventListener("click", fillHttpToolExample);
-    $("addHttpParameterBtn").addEventListener("click", () => addHttpParameter());
-    $("grantForm").addEventListener("submit", (event) => { event.preventDefault(); grantTool(); });
-    $("debugToolForm").addEventListener("submit", (event) => { event.preventDefault(); debugTool(); });
-    $("runForm").addEventListener("submit", (event) => { event.preventDefault(); runAgent(); });
-    $("toolType").addEventListener("change", toggleHttpConfigFields);
-    $("refreshAgentsBtn").addEventListener("click", () => loadAgents().catch((error) => setStatus($("globalStatus"), error.message, "error")));
-    $("refreshToolsBtn").addEventListener("click", () => loadTools().catch((error) => setStatus($("globalStatus"), error.message, "error")));
-    $("refreshRunsBtn").addEventListener("click", () => loadRuns({append: false}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
-    $("loadMoreRunsBtn").addEventListener("click", () => loadRuns({append: true}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
-    $("runAgentSelect").addEventListener("change", () => loadRuns({append: false}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
-    $("refreshAuditBtn").addEventListener("click", () => loadAudit({append: false}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
-    $("loadMoreAuditBtn").addEventListener("click", () => loadAudit({append: true}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
-    document.querySelectorAll("[data-page]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));
-    document.querySelectorAll("[data-navigate]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.navigate)));
+    function bind(id, eventName, listener) {
+        const target = $(id);
+        if (target) target.addEventListener(eventName, listener);
+    }
 
+    function bindPageControls() {
+        bind("loginForm", "submit", (event) => { event.preventDefault(); login(); });
+        bind("logoutBtn", "click", () => logout());
+        bind("agentForm", "submit", (event) => { event.preventDefault(); createAgent(); });
+        bind("toolForm", "submit", (event) => { event.preventDefault(); submitTool(); });
+        bind("cancelToolEditBtn", "click", () => resetToolForm());
+        bind("fillHttpExampleBtn", "click", fillHttpToolExample);
+        bind("addHttpParameterBtn", "click", () => addHttpParameter());
+        bind("grantForm", "submit", (event) => { event.preventDefault(); grantTool(); });
+        bind("debugToolForm", "submit", (event) => { event.preventDefault(); debugTool(); });
+        bind("runForm", "submit", (event) => { event.preventDefault(); runAgent(); });
+        bind("toolType", "change", toggleHttpConfigFields);
+        bind("refreshAgentsBtn", "click", () => loadAgents().catch((error) => setStatus($("globalStatus"), error.message, "error")));
+        bind("refreshToolsBtn", "click", () => loadTools().catch((error) => setStatus($("globalStatus"), error.message, "error")));
+        bind("refreshRunsBtn", "click", () => loadRuns({append: false}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
+        bind("loadMoreRunsBtn", "click", () => loadRuns({append: true}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
+        bind("runAgentSelect", "change", () => loadRuns({append: false}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
+        bind("refreshAuditBtn", "click", () => loadAudit({append: false}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
+        bind("loadMoreAuditBtn", "click", () => loadAudit({append: true}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
+        document.querySelectorAll("button[data-page]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));
+        document.querySelectorAll("button[data-navigate]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.navigate)));
+    }
+
+    function handleMultiPageLink(event) {
+        if (!isMultiPage || event.defaultPrevented || event.button !== 0
+                || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+            return;
+        }
+        const link = event.target.closest("a[href]");
+        if (!link || link.target || link.hasAttribute("download")) return;
+
+        const target = new URL(link.href, window.location.href);
+        if (target.origin !== window.location.origin) return;
+        if (target.pathname === "/console/v1/") {
+            event.preventDefault();
+            logout("已切换到旧版控制台。", "/console/v1/");
+            return;
+        }
+        if (!pageIdForPath(target.pathname)) return;
+        event.preventDefault();
+        loadMultiPage(target.pathname).catch(reportPageNavigationError);
+    }
+
+    function handleMultiPageHistory() {
+        if (!isMultiPage) return;
+        const targetPath = window.location.pathname;
+        if (!pageIdForPath(targetPath)) {
+            window.location.reload();
+            return;
+        }
+        loadMultiPage(targetPath, {updateHistory: false})
+            .catch(() => window.location.reload());
+    }
+
+    async function initializeMultiPage() {
+        if (currentPage === "login") {
+            return;
+        }
+        try {
+            if (!state.currentUser) {
+                state.currentUser = await api.request("/api/auth/me");
+            }
+            $("currentUser").textContent = state.currentUser?.displayName
+                || state.currentUser?.principalId
+                || "当前用户";
+            await loadInitialData();
+        } catch (error) {
+            if (state.token) setStatus($("globalStatus"), error.message, "error");
+        }
+    }
+
+    if (isMultiPage) {
+        // 监听器挂在不会被替换的 document 上，使各独立 HTML 切换后仍能复用当前内存会话。
+        document.addEventListener("click", handleMultiPageLink);
+        window.addEventListener("popstate", handleMultiPageHistory);
+    }
+    bindPageControls();
     toggleHttpConfigFields();
-    logout("请输入用户名和密码。");
+    if (isMultiPage) {
+        initializeMultiPage();
+    } else {
+        logout("请输入用户名和密码。");
+    }
 })();

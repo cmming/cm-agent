@@ -28,6 +28,61 @@ class ConsoleResourceTest {
 
     @Test
     /**
+     * 验证 v2 使用带版本号的独立页面，并且每个管理页面只携带自身业务区域。
+     */
+    void v2控制台按版本号拆分为独立页面() throws IOException {
+        String login = resource("META-INF/resources/console/v2/login.html");
+        String overview = resource("META-INF/resources/console/v2/overview.html");
+        String agents = resource("META-INF/resources/console/v2/agents.html");
+        String tools = resource("META-INF/resources/console/v2/tools.html");
+        String runs = resource("META-INF/resources/console/v2/runs.html");
+        String audit = resource("META-INF/resources/console/v2/audit.html");
+
+        assertThat(login)
+                .contains("data-console-version=\"v2\"", "id=\"loginForm\"", "/console/v1/")
+                .doesNotContain("id=\"overviewPage\"", "id=\"agentsPage\"");
+        assertThat(overview)
+                .contains("data-page=\"overviewPage\"", "id=\"overviewPage\"")
+                .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
+        assertThat(agents)
+                .contains("data-page=\"agentsPage\"", "id=\"agentsPage\"", "id=\"agentForm\"")
+                .doesNotContain("id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
+        assertThat(tools)
+                .contains("data-page=\"toolsPage\"", "id=\"toolsPage\"", "id=\"toolForm\"", "id=\"debugToolForm\"")
+                .doesNotContain("id=\"agentsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
+        assertThat(runs)
+                .contains("data-page=\"runsPage\"", "id=\"runsPage\"", "id=\"runForm\"")
+                .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"auditPage\"");
+        assertThat(audit)
+                .contains("data-page=\"auditPage\"", "id=\"auditPage\"", "id=\"auditList\"")
+                .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"");
+    }
+
+    @Test
+    /**
+     * 验证 v2 以服务端 HttpOnly Cookie 为主，并使用不持久化的内存令牌兼容受限浏览器。
+     */
+    void v2跨页会话不在浏览器脚本中存储令牌() throws IOException {
+        String app = resource("META-INF/resources/assets/app.js");
+        String[] pages = {
+                "login.html", "overview.html", "agents.html", "tools.html", "runs.html", "audit.html"
+        };
+
+        assertThat(app)
+                .contains("loadCurrentPage", "/console/v2/login.html", "/api/auth/logout", "clearServerSession")
+                .contains("state.token = accessToken", "loadMultiPage", "new DOMParser()", "pushState")
+                .contains("button[data-page]", "button[data-navigate]")
+                .doesNotContain("document.querySelectorAll(\"[data-page]\")")
+                .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
+        for (String page : pages) {
+            assertThat(resource("META-INF/resources/console/v2/" + page))
+                    .contains("/assets/app.js?v=2.0.7", "/assets/console-core.js?v=2.0.7")
+                    .doesNotContain("session.js", "sessionStorage", "localStorage");
+        }
+    }
+
+    @Test
+    /**
      * 验证方法名称所描述的业务行为。
      */
     void 控制台样式包含响应式和键盘焦点规则() throws IOException {

@@ -32,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(classes = CmAgentServerApplication.class)
@@ -68,8 +69,16 @@ class ConsoleSmokeTest {
      */
     void serveConsoleIndex() throws Exception {
         mockMvc.perform(get("/"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "/console/v2/login.html"));
+
+        mockMvc.perform(get("/console/v1/"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("CM Agent 控制台")));
+
+        mockMvc.perform(get("/console/v2/overview.html"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("data-page=\"overviewPage\"")));
     }
 
     @Test
@@ -77,7 +86,7 @@ class ConsoleSmokeTest {
      * 验证或支持 {@code consoleLoginUsesUserEnteredCredentials} 所描述的测试场景。
      */
     void consoleLoginUsesUserEnteredCredentials() throws Exception {
-        mockMvc.perform(get("/"))
+        mockMvc.perform(get("/console/v2/login.html"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(allOf(
                         containsString("id=\"loginUsername\""),

@@ -3,10 +3,15 @@ package com.cmagent.server.web;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.BootstrapAdminProperties;
+import com.cmagent.server.security.ConsoleSessionCookie;
 import com.cmagent.server.security.CurrentUserResponse;
 import com.cmagent.server.security.LoginRequest;
 import com.cmagent.server.security.LoginResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -57,11 +62,15 @@ public class AuthController {
      * 校验登录凭据并签发访问令牌。
      *
      * @param request 用户名和密码
-     * @return 访问令牌及当前主体信息
+     * @param httpRequest 当前 HTTP 请求，用于按实际协议设置 Cookie 安全属性
+     * @param httpResponse 当前 HTTP 响应，用于写入前端不可读取的会话 Cookie
+     * @return 访问令牌及当前主体信息；保留令牌字段以兼容既有 API 客户端和 v1 控制台
      * @throws ResponseStatusException 凭据无效或 bootstrap admin 未启用时抛出
      */
     @PostMapping("/login")
-    public LoginResponse login(@RequestBody LoginRequest request) {
+    public LoginResponse login(@RequestBody LoginRequest request,
+                               HttpServletRequest httpRequest,
+                               HttpServletResponse httpResponse) {
         String username = principalFrom(request);
         String password = request == null || request.password() == null ? "" : request.password();
         if (!bootstrapAdminProperties.isBootstrapAdminEnabled()) {
@@ -77,8 +86,25 @@ public class AuthController {
         String configuredUsername = bootstrapAdminProperties.getBootstrapAdminUsername();
         String displayName = bootstrapAdminProperties.getBootstrapAdminDisplayName();
         String token = jwtService.createToken(TENANT_ID, configuredUsername, displayName, PERMISSIONS);
+        httpResponse.addHeader(
+                HttpHeaders.SET_COOKIE,
+                ConsoleSessionCookie.active(token, httpRequest.isSecure()).toString()
+        );
         auditLogin(configuredUsername, "SUCCEEDED", "登录成功");
         return new LoginResponse(TENANT_ID.toString(), configuredUsername, displayName, PERMISSIONS, token);
+    }
+
+    /**
+     * 清除控制台浏览器会话。接口保持公开，使过期或损坏的 Cookie 也能被可靠删除。
+     *
+     * @param request 当前 HTTP 请求，用于按实际协议设置 Cookie 安全属性
+     * @return 不包含响应体的成功结果
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(HttpServletRequest request) {
+        return ResponseEntity.noContent()
+                .header(HttpHeaders.SET_COOKIE, ConsoleSessionCookie.expired(request.isSecure()).toString())
+                .build();
     }
 
     /**

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="same-origin">
+    <title>审计日志 | CM Agent 控制台 v2</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <link rel="stylesheet" href="/console/v2/assets/multipage.css">
+</head>
+<body data-console-version="v2" data-page="auditPage">
+<div class="console-layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand"><div class="brand-mark small" aria-hidden="true">CM</div><div><strong>CM Agent</strong><span>管理控制台</span></div><span class="version-badge">V2</span></div>
+        <nav id="sidebarNav" aria-label="控制台导航">
+            <a class="nav-item" href="/console/v2/overview.html"><span aria-hidden="true">▦</span>能力总览</a>
+            <a class="nav-item" href="/console/v2/agents.html"><span aria-hidden="true">◇</span>Agent 管理</a>
+            <a class="nav-item" href="/console/v2/tools.html"><span aria-hidden="true">⬡</span>工具治理</a>
+            <a class="nav-item" href="/console/v2/runs.html"><span aria-hidden="true">▷</span>运行记录</a>
+            <a class="nav-item active" href="/console/v2/audit.html" aria-current="page"><span aria-hidden="true">≡</span>审计日志</a>
+        </nav>
+        <div class="sidebar-links"><span>版本与系统</span><a href="/console/v1/">旧版 v1 <b aria-hidden="true">↗</b></a><a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI <b aria-hidden="true">↗</b></a><a href="/actuator/health" target="_blank" rel="noreferrer">健康检查 <b aria-hidden="true">↗</b></a></div>
+    </aside>
+    <main class="workspace">
+        <header class="workspace-header"><div><p class="eyebrow">当前工作区</p><h1>审计日志</h1><p class="muted">追踪当前租户的安全事件和资源操作。</p></div><div class="user-actions"><span class="online-dot" aria-label="已登录"></span><span id="currentUser">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
+        <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
+        <section id="auditPage" class="page-view">
+            <article class="panel"><div class="panel-heading"><div><p class="eyebrow">安全</p><h2>审计事件</h2></div><button id="refreshAuditBtn" class="button ghost" type="button">刷新</button></div><div class="table-scroll"><table class="data-table"><thead><tr><th>事件</th><th>资源</th><th>状态</th><th>主体</th><th>消息</th><th>时间</th></tr></thead><tbody id="auditList"></tbody></table></div><p id="auditEmpty" class="empty-state">暂无审计事件。</p><div class="load-more"><button id="loadMoreAuditBtn" class="button ghost" type="button" hidden>加载更多</button><span id="auditEndStatus"></span></div></article>
+        </section>
+    </main>
+</div>
+<script src="/assets/console-core.js?v=2.0.7"></script>
+<script src="/assets/app.js?v=2.0.7"></script>
+</body>
+</html>

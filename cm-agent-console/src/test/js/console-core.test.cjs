@@ -4,6 +4,21 @@ const fs = require("node:fs");
 const path = require("node:path");
 const core = require("../../main/resources/META-INF/resources/assets/console-core.js");
 
+test("v2 使用 Cookie 恢复刷新且只在当前页面内存保留令牌", () => {
+    const resources = path.join(__dirname, "../../main/resources/META-INF/resources");
+    const app = fs.readFileSync(path.join(resources, "assets/app.js"), "utf8");
+    const login = fs.readFileSync(path.join(resources, "console/v2/login.html"), "utf8");
+
+    assert.match(app, /window\.fetch\("\/api\/auth\/logout", \{method: "POST", credentials: "same-origin"\}\)/);
+    assert.match(app, /state\.currentUser = await api\.request\("\/api\/auth\/me"\)/);
+    assert.match(app, /state\.token = accessToken/);
+    assert.match(app, /loadMultiPage/);
+    assert.match(app, /button\[data-page\]/);
+    assert.doesNotMatch(app, /document\.querySelectorAll\("\[data-page\]"\)/);
+    assert.doesNotMatch(app, /sessionStorage|localStorage|CmAgentConsoleSession/);
+    assert.doesNotMatch(login, /session\.js|sessionStorage|localStorage/);
+});
+
 test("优先显示结构化接口错误", () => {
     assert.equal(core.formatError(403, {message: "没有权限"}, ""), "请求失败(403)：没有权限执行此操作。");
     assert.equal(core.formatError(404, {detail: "不存在"}, ""), "请求失败(404)：请求的资源不存在或已不可用。");
@@ -90,11 +105,13 @@ test("同一token但新会话代际的迟到401不得注销", async () => {
     assert.equal(unauthorizedCount, 0);
 });
 
-test("请求自动附加 Bearer 令牌", async () => {
+test("请求自动附加 Bearer 令牌并显式携带同源 Cookie", async () => {
     let authorization = "";
+    let credentials = "";
     const api = core.createApiClient({
         fetchImpl: async (_path, options) => {
             authorization = options.headers.get("Authorization");
+            credentials = options.credentials;
             return response(200, []);
         },
         getToken: () => "memory-only-token",
@@ -103,6 +120,7 @@ test("请求自动附加 Bearer 令牌", async () => {
 
     await api.request("/api/agents");
     assert.equal(authorization, "Bearer memory-only-token");
+    assert.equal(credentials, "same-origin");
 });
 
 test("日期和运行状态转换为可读中文", () => {
@@ -306,6 +324,7 @@ test("无参数 HTTP 工具允许提交空 parameters 数组", () => {
 test("HTTP Tool 表单提供树形录入、扁平提交和完整示例入口", () => {
     const resources = path.join(__dirname, "../../main/resources/META-INF/resources");
     const html = fs.readFileSync(path.join(resources, "index.html"), "utf8");
+    const v2Tools = fs.readFileSync(path.join(resources, "console/v2/tools.html"), "utf8");
     const app = fs.readFileSync(path.join(resources, "assets/app.js"), "utf8");
 
     [
@@ -318,6 +337,8 @@ test("HTTP Tool 表单提供树形录入、扁平提交和完整示例入口", (
     assert.match(html, /OBJECT 或 ARRAY 节点内添加子参数/);
     assert.match(html, /根数组/);
     assert.match(html, /secret\/integration\/orders-token/);
+    assert.match(v2Tools, /id="fillHttpExampleBtn"/);
+    assert.match(v2Tools, /id="httpParameterList"/);
     assert.doesNotMatch(html, /httpLegacyConfigFields|httpInputSchema|httpParameterMappings/);
     assert.doesNotMatch(app, /editingLegacyHttpConfig|prepareHttpParameterMappingsForEdit/);
     assert.match(app, /function fillHttpToolExample\(\)/);
@@ -327,7 +348,7 @@ test("HTTP Tool 表单提供树形录入、扁平提交和完整示例入口", (
     assert.match(app, /function collectHttpParameters\(/);
     assert.match(app, /parameterChildNodes\(card\)\.forEach\(\(child\) => visit\(child, value\.id\)\)/);
     assert.doesNotMatch(app, /data\.parameterField = "parentId"/);
-    assert.match(app, /\$\("fillHttpExampleBtn"\)\.addEventListener\("click", fillHttpToolExample\)/);
+    assert.match(app, /bind\("fillHttpExampleBtn", "click", fillHttpToolExample\)/);
     assert.match(app, /填入示例会覆盖当前 HTTP 配置/);
 });
 

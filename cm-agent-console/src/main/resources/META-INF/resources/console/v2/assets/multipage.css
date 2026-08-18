@@ -1,0 +1,59 @@
+.version-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    margin-left: auto;
+    padding: 3px 8px;
+    border: 1px solid rgba(255, 255, 255, .2);
+    border-radius: 999px;
+    color: #b8c9df;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+}
+
+.login-version {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.login-version .version-badge {
+    margin-left: 0;
+    border-color: #c8d7ed;
+    color: #41628f;
+}
+
+.legacy-link {
+    display: inline-flex;
+    margin-top: 14px;
+    color: var(--accent);
+    font-size: 13px;
+    text-decoration: none;
+}
+
+.legacy-link:hover { text-decoration: underline; }
+
+.nav-item { text-decoration: none; }
+.button { text-decoration: none; }
+
+.stat-card > a,
+.text-link {
+    display: inline-flex;
+    border: 0;
+    padding: 3px 0;
+    background: none;
+    color: var(--accent);
+    font-size: 12px;
+    text-decoration: none;
+}
+
+.stat-card > a:hover,
+.text-link:hover { text-decoration: underline; }
+
+.page-view[aria-busy="true"] { opacity: .72; }
+
+@media (max-width: 900px) {
+    .version-badge { margin-left: 0; }
+}

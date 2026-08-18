@@ -23,9 +23,10 @@
 - 非生产 MySQL 固定目录的内置 LOCAL 示例删除后可按固定租户、固定 ID、原名称和类型受控原位恢复，安装与审计保持同一事务；普通工具保存不能复活墓碑，PostgreSQL、MySQL 与 memory 的主键语义保持一致。
 - Agent 工具关联的内存更新采用原子变更，JDBC 更新在同一事务内锁定 Agent 行；授权、撤销和审计共享事务边界，避免同一 Agent 的不同工具在多实例并发下发生丢失更新。工具更新与删除统一锁定工具行，更新命中零行时返回明确的不存在响应。
 - 轻量控制台升级为面向使用者的可操作管理控制台，采用独立登录页、左侧导航、能力总览和分模块管理布局。
+- 控制台新增版本化多页面入口：根路径默认跳转到 `/console/v2/login.html`，v2 将登录、总览、Agent、Tool、运行和审计拆为六个独立 HTML 页面；原始 `index.html` 不删除，并继续通过 `/console/v1/` 提供。v2 使用仅作用于 `/api` 的 `HttpOnly`、`SameSite=Strict` 会话 Cookie 恢复刷新认证，并在当前文档内加载独立 HTML 以兼容嵌入式浏览器；JWT 只短暂保留在当前页面内存，不写入浏览器存储或 URL。修复了 `body[data-page]` 被误绑定为导航按钮、点击登录时未认证概览请求与登录请求竞争并回跳的问题；退出接口会立即清除 Cookie，用户名和密码不落地。
 - 控制台覆盖当前用户、Agent 列表/详情/创建、Tool 列表/创建/编辑/删除/授权与解除关联、Agent 执行、运行历史/详情/工具调用和审计游标分页；健康检查与 OpenAPI 作为辅助入口。
 - HTTP Tool 注册与编辑表单改为树形参数编辑器，支持在 OBJECT/ARRAY 节点内直接添加子参数并按层级缩进展示；页面根据 `parentId` 还原树，提交时自动转为扁平参数数组。表单同时提供类型、请求位置、默认值、示例值及包含 PATH、QUERY、BODY_ROOT 根数组的完整示例，并已移除旧版 Schema 与映射入口。
-- 控制台使用内存令牌、统一 `401` 失效处理和纯文本 DOM 渲染，不持久化 JWT、用户名或密码；补充窄屏响应式布局和键盘焦点样式。
+- v1 控制台继续使用页面内存令牌；v2 使用前端不可读取的会话 Cookie 恢复刷新认证，并只在当前文档内存中保留登录令牌。两个版本复用统一 `401` 失效处理和纯文本 DOM 渲染，不使用 `localStorage` 或 `sessionStorage` 持久化 JWT、用户名或密码；补充窄屏响应式布局和键盘焦点样式。
 - 控制台仍不提供手动取消、流式输出、多轮会话或 HITL。
 - `agentscope.version` 升级到 `2.0.0`，接入 OpenAI Compatible 与 DashScope Provider，提供同步单轮 ReAct 运行。
 - 通过 `tenantId + modelConfigId` 调用外部 `ModelCredentialProvider` 获取模型凭据；默认凭据为空时启动 fail-fast，`model_configs` 不保存明文 API Key。
