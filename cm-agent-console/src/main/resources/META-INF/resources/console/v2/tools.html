@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="same-origin">
+    <title>工具治理 | CM Agent 控制台 v2</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <link rel="stylesheet" href="/console/v2/assets/multipage.css">
+</head>
+<body data-console-version="v2" data-page="toolsPage">
+<div class="console-layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand"><div class="brand-mark small" aria-hidden="true">CM</div><div><strong>CM Agent</strong><span>管理控制台</span></div><span class="version-badge">V2</span></div>
+        <nav id="sidebarNav" aria-label="控制台导航">
+            <a class="nav-item" href="/console/v2/overview.html"><span aria-hidden="true">▦</span>能力总览</a>
+            <a class="nav-item" href="/console/v2/agents.html"><span aria-hidden="true">◇</span>Agent 管理</a>
+            <a class="nav-item active" href="/console/v2/tools.html" aria-current="page"><span aria-hidden="true">⬡</span>工具治理</a>
+            <a class="nav-item" href="/console/v2/runs.html"><span aria-hidden="true">▷</span>运行记录</a>
+            <a class="nav-item" href="/console/v2/audit.html"><span aria-hidden="true">≡</span>审计日志</a>
+        </nav>
+        <div class="sidebar-links"><span>版本与系统</span><a href="/console/v1/">旧版 v1 <b aria-hidden="true">↗</b></a><a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI <b aria-hidden="true">↗</b></a><a href="/actuator/health" target="_blank" rel="noreferrer">健康检查 <b aria-hidden="true">↗</b></a></div>
+    </aside>
+    <main class="workspace">
+        <header class="workspace-header"><div><p class="eyebrow">当前工作区</p><h1>工具治理</h1><p class="muted">注册 Tool，并向指定 Agent 授予使用权限。</p></div><div class="user-actions"><span class="online-dot" aria-label="已登录"></span><span id="currentUser">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
+        <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
+        <section id="toolsPage" class="page-view">
+            <div class="management-grid">
+                <article class="panel">
+                    <div class="panel-heading"><div><p class="eyebrow">资源</p><h2>Tool 列表</h2></div><button id="refreshToolsBtn" class="button ghost" type="button">刷新</button></div>
+                    <div id="toolList" class="resource-list"><p class="empty-state">正在加载 Tool。</p></div>
+                </article>
+                <article class="panel form-panel">
+                    <div class="panel-heading"><div><p id="toolFormEyebrow" class="eyebrow">新建</p><h2 id="toolFormTitle">注册 Tool</h2></div></div>
+                    <form id="toolForm">
+                        <label for="toolName">Tool 名称</label><input id="toolName" name="name" required>
+                        <label for="toolDescription">描述</label><textarea id="toolDescription" name="description" rows="3" required></textarea>
+                        <div class="form-row">
+                            <div><label for="toolType">类型</label><select id="toolType" name="type"><option value="LOCAL">LOCAL</option><option value="HTTP">HTTP</option><option value="MCP">MCP</option><option value="A2A">A2A</option></select></div>
+                            <div><label for="toolRiskLevel">风险级别</label><select id="toolRiskLevel" name="riskLevel"><option value="LOW">LOW</option><option value="MEDIUM">MEDIUM</option><option value="HIGH">HIGH</option></select></div>
+                        </div>
+                        <div id="httpConfigFields" class="http-config-fields" hidden>
+                            <div class="http-config-guide" role="note" aria-labelledby="httpConfigGuideTitle"><div><strong id="httpConfigGuideTitle">HTTP 配置填写指南</strong><p>页面按树形结构录入参数，字段名称直接作为 PATH、QUERY 或 HEADER 名称；保存时会自动转换为后端需要的扁平参数数组。</p></div><button id="fillHttpExampleBtn" class="button ghost compact" type="button">填入完整示例</button></div>
+                            <div class="http-form-field"><label for="httpMethod"><span class="field-step">1</span>HTTP 方法</label><select id="httpMethod" aria-describedby="httpMethodHelp"><option value="GET">GET</option><option value="POST">POST</option></select><p id="httpMethodHelp" class="field-help">GET 适合查询，不能使用 BODY 或 BODY_ROOT；POST 可以提交对象或根数组请求体。完整示例使用 POST。</p></div>
+                            <div class="http-form-field"><label for="httpUrlTemplate"><span class="field-step">2</span>请求地址模板</label><input id="httpUrlTemplate" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://api.example.com/orders/{orderId}" aria-describedby="httpUrlTemplateHelp"><p id="httpUrlTemplateHelp" class="field-help">填写已加入服务端白名单的完整地址。<code>{orderId}</code> 必须与 PATH 参数字段名完全一致；QUERY 参数由参数列表自动追加。</p><details class="field-example"><summary>查看地址样例</summary><pre><code>https://api.example.com/orders/{orderId}</code></pre></details></div>
+                            <div id="httpParameterEditor" class="http-form-field"><label><span class="field-step">3</span>输入参数</label><p id="httpParametersHelp" class="field-help">接口没有输入参数时可以保持为空；需要参数时先添加顶层参数，再在 OBJECT 或 ARRAY 节点内添加子参数。子节点按层级缩进展示；ARRAY 只能有一个匿名元素节点。</p><div class="parameter-toolbar"><button id="addHttpParameterBtn" class="button ghost compact" type="button">＋ 添加顶层参数</button><span id="httpParameterCount" class="parameter-count">0 个参数</span></div><div id="httpParameterList" class="parameter-list" aria-describedby="httpParametersHelp"><p id="httpParameterEmpty" class="empty-state compact-empty">当前工具没有输入参数，可直接保存；接口需要参数时再添加顶层参数。</p></div><details class="field-example"><summary>查看参数层级规则</summary><pre><code>orderId                  STRING · PATH
+payload                  ARRAY  · BODY_ROOT
+└─ 数组元素               OBJECT
+   ├─ p1                 STRING
+   └─ enabled            BOOLEAN</code></pre><p>BODY_ROOT 会把命名输入字段的值直接作为整个请求体，因此可以生成 <code>[{"p1":"v1"}]</code> 这样的根数组。</p></details></div>
+                            <div class="http-form-field"><label for="httpSecretHeaders"><span class="field-step">4</span>Secret 请求头引用（JSON 对象）</label><textarea id="httpSecretHeaders" rows="5" spellcheck="false" aria-describedby="httpSecretHeadersHelp">{}</textarea><p id="httpSecretHeadersHelp" class="field-help field-help-warning">键是请求头名称，值只能是以 <code>secret/</code> 开头的引用。请勿填写、粘贴或展示 Token、API Key 等真实 Secret 值。</p><details class="field-example"><summary>查看 Secret 引用样例</summary><pre><code>{
+  "Authorization": "secret/integration/orders-token"
+}</code></pre><p>真实值由服务端运行时解析，不会保存在 Tool 配置中。</p></details></div>
+                            <div class="http-form-field"><label for="httpTimeoutMillis"><span class="field-step">5</span>超时时间（毫秒）</label><input id="httpTimeoutMillis" type="number" min="100" max="30000" step="100" value="1000" placeholder="3000" aria-describedby="httpTimeoutMillisHelp"><p id="httpTimeoutMillisHelp" class="field-help">允许范围为 100–30000 毫秒。示例：<code>3000</code> 表示最多等待 3 秒，包含 Secret 解析、请求和重定向耗时。</p></div>
+                        </div>
+                        <label id="toolEnabledField" class="checkbox-label" for="toolEnabled" hidden><input id="toolEnabled" type="checkbox" checked> 启用 Tool</label>
+                        <label id="mcpPublicationField" class="checkbox-label" for="toolMcpPublished" hidden><input id="toolMcpPublished" type="checkbox"> 发布为 MCP Tool</label>
+                        <div class="tool-actions"><button id="createToolBtn" class="button primary" type="submit">注册 Tool</button><button id="cancelToolEditBtn" class="button ghost" type="button" hidden>取消编辑</button></div>
+                        <p id="toolFormStatus" class="form-status" aria-live="polite"></p>
+                    </form>
+                </article>
+                <section id="localExampleSection" class="panel" hidden><div class="section-heading"><div><p class="eyebrow">MySQL 调试能力</p><h3>内置 LOCAL 示例</h3></div></div><p class="field-help">这里只安装项目内置的 echo/add；普通 LOCAL 工具表单只保存治理元数据，执行器必须由 Server 中的 Java 代码注册。</p><div id="localExampleList" class="local-example-list"></div><p id="localExampleStatus" class="form-status" role="status"></p></section>
+                <article class="panel form-panel"><div class="panel-heading"><div><p class="eyebrow">授权</p><h2>授予 Agent 使用权</h2></div></div><form id="grantForm"><label for="grantToolSelect">Tool</label><select id="grantToolSelect" required></select><label for="grantAgentSelect">Agent</label><select id="grantAgentSelect" required></select><button id="grantToolBtn" class="button" type="submit">确认授权</button><p id="grantFormStatus" class="form-status" aria-live="polite"></p></form></article>
+                <article class="panel form-panel"><div class="panel-heading"><div><p class="eyebrow">调试</p><h2>调用 Tool</h2></div></div><form id="debugToolForm"><label for="debugToolSelect">Tool</label><select id="debugToolSelect" required></select><label for="debugInput">输入（JSON）</label><textarea id="debugInput" rows="4" required>{}</textarea><label for="debugConfirmedToolName">HIGH 风险确认</label><input id="debugConfirmedToolName" type="text"><p class="field-help">仅运行时已就绪的 HTTP 与 LOCAL Tool 可调试。HIGH 风险 Tool 必须逐字输入 Tool 名称确认。</p><button id="debugToolBtn" class="button" type="submit">执行调试</button><p id="debugFormStatus" class="form-status" aria-live="polite"></p></form><div id="debugResult" class="debug-result" aria-live="polite"><p class="empty-state">调试结果将显示在这里。</p></div></article>
+            </div>
+        </section>
+    </main>
+</div>
+<script src="/assets/console-core.js?v=2.0.7"></script>
+<script src="/assets/app.js?v=2.0.7"></script>
+</body>
+</html>

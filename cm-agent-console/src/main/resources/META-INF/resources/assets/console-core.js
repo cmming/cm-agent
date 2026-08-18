@@ -399,7 +399,8 @@
                 headers.set("Authorization", `Bearer ${token}`);
             }
 
-            const response = await fetchImpl(path, {...options, headers});
+            // 显式携带同源 Cookie，避免嵌入式浏览器对 fetch 默认凭据策略的实现差异破坏 v2 跨页会话。
+            const response = await fetchImpl(path, {...options, headers, credentials: "same-origin"});
             const rawBody = await response.text();
             let body = null;
             if (rawBody) {

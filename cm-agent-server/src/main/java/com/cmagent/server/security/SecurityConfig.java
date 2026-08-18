@@ -79,8 +79,11 @@ public class SecurityConfig {
                     authorize.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll();
                     authorize.requestMatchers(
                             "/",
+                            "/console",
+                            "/console/**",
                             "/assets/**",
                             "/api/auth/login",
+                            "/api/auth/logout",
                             "/actuator/health"
                     ).permitAll();
                     if (isPublicApiDocsAllowed()) {

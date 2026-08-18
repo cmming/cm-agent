@@ -15,7 +15,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 @Component
-/** 从 Bearer Token 构建 Spring Security 认证主体，失败时保持请求未认证。 */
+/** 从 Bearer Token 或控制台 HttpOnly Cookie 构建 Spring Security 认证主体，失败时保持请求未认证。 */
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     /**
@@ -29,7 +29,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     /**
-     * 解析 Bearer JWT，并把可信会话主体写入安全上下文。
+     * 解析 JWT，并把可信会话主体写入安全上下文。
+     *
+     * <p>显式 {@code Authorization} 头优先级最高。只要客户端发送了该头，过滤器就不会
+     * 回退到 Cookie，避免损坏或恶意 Bearer 值被浏览器旧会话静默掩盖。</p>
      *
      * @param request 当前 HTTP 请求，用于读取 Bearer 令牌
      * @param response 当前 HTTP 响应。
@@ -37,9 +40,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      */
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
-        if (authorization != null && authorization.startsWith("Bearer ")) {
-            String token = authorization.substring(7);
+        String token = authenticationToken(request);
+        if (token != null) {
             try {
                 JwtService.JwtSession session = jwtService.parseAndVerify(token);
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
@@ -59,5 +61,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         } finally {
             SecurityContextHolder.clearContext();
         }
+    }
+
+    /**
+     * 按显式 Bearer、控制台 Cookie 的顺序选择唯一认证来源。
+     */
+    private String authenticationToken(HttpServletRequest request) {
+        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (authorization != null && !authorization.isBlank()) {
+            return authorization.startsWith("Bearer ") ? authorization.substring(7) : null;
+        }
+        return ConsoleSessionCookie.tokenOf(request);
     }
 }

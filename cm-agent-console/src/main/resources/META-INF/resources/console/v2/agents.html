@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="same-origin">
+    <title>Agent 管理 | CM Agent 控制台 v2</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <link rel="stylesheet" href="/console/v2/assets/multipage.css">
+</head>
+<body data-console-version="v2" data-page="agentsPage">
+<div class="console-layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand"><div class="brand-mark small" aria-hidden="true">CM</div><div><strong>CM Agent</strong><span>管理控制台</span></div><span class="version-badge">V2</span></div>
+        <nav id="sidebarNav" aria-label="控制台导航">
+            <a class="nav-item" href="/console/v2/overview.html"><span aria-hidden="true">▦</span>能力总览</a>
+            <a class="nav-item active" href="/console/v2/agents.html" aria-current="page"><span aria-hidden="true">◇</span>Agent 管理</a>
+            <a class="nav-item" href="/console/v2/tools.html"><span aria-hidden="true">⬡</span>工具治理</a>
+            <a class="nav-item" href="/console/v2/runs.html"><span aria-hidden="true">▷</span>运行记录</a>
+            <a class="nav-item" href="/console/v2/audit.html"><span aria-hidden="true">≡</span>审计日志</a>
+        </nav>
+        <div class="sidebar-links"><span>版本与系统</span><a href="/console/v1/">旧版 v1 <b aria-hidden="true">↗</b></a><a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI <b aria-hidden="true">↗</b></a><a href="/actuator/health" target="_blank" rel="noreferrer">健康检查 <b aria-hidden="true">↗</b></a></div>
+    </aside>
+    <main class="workspace">
+        <header class="workspace-header"><div><p class="eyebrow">当前工作区</p><h1>Agent 管理</h1><p class="muted">创建 Agent，并查看模型、提示词与工具授权信息。</p></div><div class="user-actions"><span class="online-dot" aria-label="已登录"></span><span id="currentUser">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
+        <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
+        <section id="agentsPage" class="page-view">
+            <div class="management-grid">
+                <article class="panel"><div class="panel-heading"><div><p class="eyebrow">资源</p><h2>Agent 列表</h2></div><button id="refreshAgentsBtn" class="button ghost" type="button">刷新</button></div><div id="agentList" class="resource-list"><p class="empty-state">正在加载 Agent。</p></div></article>
+                <article id="agentDetail" class="panel detail-panel"><p class="empty-state">选择 Agent 查看详情。</p></article>
+                <article class="panel form-panel"><div class="panel-heading"><div><p class="eyebrow">新建</p><h2>创建 Agent</h2></div></div><form id="agentForm"><label for="agentName">Agent 名称</label><input id="agentName" name="name" required><label for="agentModelName">模型名称</label><input id="agentModelName" name="modelName" value="qwen-max" required><label for="systemPrompt">System Prompt</label><textarea id="systemPrompt" name="systemPrompt" rows="5" required>你是企业内部的 CM Agent 助手，负责回答问题、调用工具并产出简洁可靠的结果。</textarea><button id="createAgentBtn" class="button primary" type="submit">创建 Agent</button><p id="agentFormStatus" class="form-status" aria-live="polite"></p></form></article>
+            </div>
+        </section>
+    </main>
+</div>
+<script src="/assets/console-core.js?v=2.0.7"></script>
+<script src="/assets/app.js?v=2.0.7"></script>
+</body>
+</html>

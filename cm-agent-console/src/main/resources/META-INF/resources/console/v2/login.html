@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="same-origin">
+    <title>登录 | CM Agent 控制台 v2</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <link rel="stylesheet" href="/console/v2/assets/multipage.css">
+</head>
+<body data-console-version="v2" data-page="login">
+<section id="loginView" class="login-view" aria-labelledby="loginTitle">
+    <div class="login-intro">
+        <p class="eyebrow">CM AGENT</p>
+        <h2>让企业智能体能力<br>清晰、可控、可追溯</h2>
+        <p>集中管理 Agent、工具授权、运行记录与安全审计。</p>
+    </div>
+    <form id="loginForm" class="login-card">
+        <div class="login-version">
+            <div class="brand-mark" aria-hidden="true">CM</div>
+            <span class="version-badge">V2 多页面版</span>
+        </div>
+        <p class="eyebrow">企业智能体管理控制台</p>
+        <h1 id="loginTitle">欢迎登录</h1>
+        <p class="muted">登录状态通过安全会话维持，退出或关闭浏览器后失效。</p>
+
+        <label for="loginUsername">用户名</label>
+        <input id="loginUsername" name="username" type="text" autocomplete="username" required>
+
+        <label for="loginPassword">密码</label>
+        <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+
+        <button id="loginBtn" class="button primary full-width" type="submit">登录控制台</button>
+        <p id="loginStatus" class="form-status" aria-live="polite">请输入用户名和密码。</p>
+        <a class="legacy-link" href="/console/v1/">进入旧版 v1 单页控制台 →</a>
+    </form>
+</section>
+<script src="/assets/console-core.js?v=2.0.7"></script>
+<script src="/assets/app.js?v=2.0.7"></script>
+</body>
+</html>

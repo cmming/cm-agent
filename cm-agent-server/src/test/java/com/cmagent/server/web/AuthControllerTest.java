@@ -4,12 +4,15 @@ import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.server.CmAgentServerApplication;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.BootstrapAdminProperties;
+import com.cmagent.server.security.ConsoleSessionCookie;
 import com.cmagent.server.store.InMemoryPlatformStore;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpHeaders;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
@@ -24,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(classes = CmAgentServerApplication.class)
@@ -106,6 +110,83 @@ class AuthControllerTest {
 
     @Test
     /**
+     * 验证 v2 登录签发 HttpOnly 会话 Cookie，跨 HTML 页面后可在不暴露 JWT 给脚本的情况下继续访问 API。
+     */
+    void loginCookieCanReadCurrentUserAcrossPages() throws Exception {
+        String loginResponse = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginBody(TEST_PASSWORD)))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString(ConsoleSessionCookie.NAME + "="),
+                        org.hamcrest.Matchers.containsString("Path=/api"),
+                        org.hamcrest.Matchers.containsString("HttpOnly"),
+                        org.hamcrest.Matchers.containsString("SameSite=Strict"),
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("Secure"))
+                )))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String accessToken = com.jayway.jsonpath.JsonPath.read(loginResponse, "$.accessToken");
+        mockMvc.perform(get("/api/auth/me")
+                        .cookie(new Cookie(ConsoleSessionCookie.NAME, accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.principalId").value("admin"))
+                .andExpect(jsonPath("$.accessToken").doesNotExist());
+    }
+
+    @Test
+    /**
+     * 验证 HTTPS 部署会为控制台 Cookie 增加 Secure，避免令牌通过明文连接发送。
+     */
+    void loginCookieIsSecureOnHttps() throws Exception {
+        mockMvc.perform(post("/api/auth/login")
+                        .secure(true)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginBody(TEST_PASSWORD)))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, org.hamcrest.Matchers.containsString("Secure")));
+    }
+
+    @Test
+    /**
+     * 验证退出端点无需有效认证也能删除损坏或过期的控制台 Cookie。
+     */
+    void logoutExpiresConsoleSessionCookie() throws Exception {
+        mockMvc.perform(post("/api/auth/logout"))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString(ConsoleSessionCookie.NAME + "="),
+                        org.hamcrest.Matchers.containsString("Path=/api"),
+                        org.hamcrest.Matchers.containsString("Max-Age=0"),
+                        org.hamcrest.Matchers.containsString("HttpOnly"),
+                        org.hamcrest.Matchers.containsString("SameSite=Strict")
+                )));
+    }
+
+    @Test
+    /**
+     * 验证明示 Bearer 头不会被有效 Cookie 静默覆盖，防止认证来源降级。
+     */
+    void invalidBearerDoesNotFallBackToValidCookie() throws Exception {
+        String loginResponse = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginBody(TEST_PASSWORD)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String accessToken = com.jayway.jsonpath.JsonPath.read(loginResponse, "$.accessToken");
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer not-a-token")
+                        .cookie(new Cookie(ConsoleSessionCookie.NAME, accessToken)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    /**
      * 验证或支持 {@code loginRejectsInvalidCredentials} 所描述的测试场景。
      */
     void loginRejectsInvalidCredentials() throws Exception {
@@ -114,7 +195,8 @@ class AuthControllerTest {
                         .content("""
                                 {"username":"admin","password":"wrong"}
                                 """))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
     }
 
     @Test

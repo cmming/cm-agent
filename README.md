@@ -32,10 +32,13 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 服务启动后访问：
 
 - 健康检查：`http://localhost:8080/actuator/health`
-- 控制台：`http://localhost:8080/`
+- 控制台（默认 v2）：`http://localhost:8080/`，会重定向到 `/console/v2/login.html`
+- 旧版控制台（v1）：`http://localhost:8080/console/v1/`
 - OpenAPI：`http://localhost:8080/swagger-ui/index.html`
 
-控制台面向平台使用者提供独立登录、能力总览、Agent 列表/详情/创建、Tool 列表/创建/编辑/删除/授权、Agent 详情解除工具关联、Agent 运行调试、运行历史与工具调用详情，以及审计日志游标分页。页面不提供手动取消或流式运行。JWT 仅保存在当前页面内存中，刷新页面或关闭标签页后需要重新登录。
+v2 控制台按版本化 URL 拆分为登录、能力总览、Agent 管理、工具治理、运行记录和审计日志六个独立 HTML 页面。页面之间使用真实链接和独立 URL，并在当前文档内加载目标 HTML，以兼容会隔离跨文档状态的嵌入式浏览器；直接刷新或访问页面时由仅作用于 `/api` 的 `HttpOnly`、`SameSite=Strict` 会话 Cookie 恢复认证。登录响应中的 JWT 只在当前页面内存中短暂使用，不会写入浏览器存储或 URL；退出时会立即清除 Cookie。用户名和密码不会保存。原始单页 `index.html` 继续作为 v1 从 `/console/v1/` 提供，v1 的 JWT 仍只保存在页面内存中，刷新后需要重新登录。
+
+两个版本复用相同的服务端 API、权限、多租户和审计边界。v2 面向平台使用者提供能力总览、Agent 列表/详情/创建、Tool 列表/创建/编辑/删除/授权、Agent 详情解除工具关联、Agent 运行调试、运行历史与工具调用详情，以及审计日志游标分页。页面不提供手动取消或流式运行。
 
 ## 动态 HTTP 工具与 MCP
 
