@@ -50,6 +50,20 @@ public interface ToolGrantRepository {
     void delete(UUID tenantId, UUID agentId, UUID toolId);
 
     /**
+     * 删除指定 Agent 的全部工具授权。
+     *
+     * <p>默认实现逐条删除，以兼容尚未提供批量 SQL 的测试或扩展实现；
+     * 生产实现可按需覆盖为单条批量删除语句。</p>
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     */
+    default void deleteByTenantAndAgentId(UUID tenantId, UUID agentId) {
+        listByTenantAndAgent(tenantId, agentId)
+                .forEach(grant -> delete(tenantId, agentId, grant.toolId()));
+    }
+
+    /**
      * 删除指定租户中工具的全部授权。
       *
       * @param tenantId 当前租户标识

@@ -104,7 +104,16 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiErrorResponse> statusFailure(ResponseStatusException exception, HttpServletRequest request) {
         HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
         return switch (status) {
-            case BAD_REQUEST -> response(status, ApiErrorCode.VALIDATION_FAILED, "请求参数不合法", request);
+            // ResponseStatusException 的 BAD_REQUEST 仅由业务层受控文案构造；
+            // 保留其原因可让控制台区分停用模型、工具类型等可操作失败，同时仍经过脱敏。
+            case BAD_REQUEST -> response(
+                    status,
+                    ApiErrorCode.VALIDATION_FAILED,
+                    exception.getReason() == null || exception.getReason().isBlank()
+                            ? "请求参数不合法"
+                            : exception.getReason(),
+                    request
+            );
             case UNAUTHORIZED -> response(status, ApiErrorCode.UNAUTHORIZED, "未登录或令牌无效", request);
             case FORBIDDEN -> response(status, ApiErrorCode.FORBIDDEN, "没有权限执行该操作", request);
             case CONFLICT -> response(

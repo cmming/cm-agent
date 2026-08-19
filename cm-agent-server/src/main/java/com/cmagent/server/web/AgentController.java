@@ -7,13 +7,19 @@ import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.JwtService;
-import com.cmagent.server.service.ManagementCommandService;
+import com.cmagent.server.service.AgentDefinitionCommandService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,25 +36,25 @@ public class AgentController {
     private final AgentDefinitionRepository agentRepository;
     private final PermissionEvaluator permissionEvaluator;
     private final AuditAppender auditAppender;
-    private final ManagementCommandService managementCommandService;
+    private final AgentDefinitionCommandService commandService;
     /**
      * 创建 {@code AgentController} 实例并保存其运行所需依赖。
      *
      * @param agentRepository 负责访问相关领域数据的仓储。
      * @param permissionEvaluator 执行主体权限判断的组件。
      * @param auditAppender 负责追加安全审计事件的组件。
-     * @param managementCommandService 负责当前业务流程的服务。
+     * @param commandService Agent 写操作服务，负责模型配置校验、持久化和审计。
      */
     public AgentController(
             AgentDefinitionRepository agentRepository,
             PermissionEvaluator permissionEvaluator,
             AuditAppender auditAppender,
-            ManagementCommandService managementCommandService
+            AgentDefinitionCommandService commandService
     ) {
         this.agentRepository = agentRepository;
         this.permissionEvaluator = permissionEvaluator;
         this.auditAppender = auditAppender;
-        this.managementCommandService = managementCommandService;
+        this.commandService = commandService;
     }
 
     @GetMapping
@@ -87,9 +93,41 @@ public class AgentController {
     public AgentDefinition create(@Valid @RequestBody AgentCreateRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:write", "AGENT", "create");
-        return managementCommandService.createAgent(
-                principal, request.name(), request.systemPrompt(), request.modelName()
+        if (request.modelConfigId() != null) {
+            return commandService.create(
+                    principal, request.name(), request.systemPrompt(), request.modelConfigId(), isEnabled(request.enabled())
+            );
+        }
+        return commandService.createByLegacyModelName(
+                principal, request.name(), request.systemPrompt(), request.modelName(), isEnabled(request.enabled())
         );
+    }
+
+    /** 更新当前租户 Agent 的可编辑字段及模型配置绑定。 */
+    @PutMapping("/{id}")
+    public AgentDefinition update(
+            @PathVariable("id") UUID id,
+            @Valid @RequestBody AgentUpdateRequest request,
+            Authentication authentication
+    ) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "agent:write", "AGENT", id.toString());
+        return commandService.update(
+                principal, id, request.name(), request.systemPrompt(), request.modelConfigId(), request.enabled()
+        );
+    }
+
+    /**
+     * 删除当前租户中没有运行或会话历史的 Agent。
+     *
+     * @return 删除成功时的空响应
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable("id") UUID id, Authentication authentication) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "agent:delete", "AGENT", id.toString());
+        commandService.delete(principal, id);
+        return ResponseEntity.noContent().build();
     }
 
     /**
@@ -123,12 +161,33 @@ public class AgentController {
     }
 
     /**
+     * 保持历史创建请求未传 {@code enabled} 时的默认启用语义。
+     *
+     * @param enabled 请求中的可选启用标记
+     * @return 规范化后的启用状态
+     */
+    private static boolean isEnabled(Boolean enabled) {
+        return enabled == null || enabled;
+    }
+
+    /**
      * 封装 {@code AgentCreateRequest} 在当前流程中使用的不可变数据。
      */
     public record AgentCreateRequest(
-            @jakarta.validation.constraints.NotBlank String name,
-            @jakarta.validation.constraints.NotBlank String systemPrompt,
-            @jakarta.validation.constraints.NotBlank String modelName
+            @NotBlank String name,
+            @NotBlank String systemPrompt,
+            UUID modelConfigId,
+            @Size(max = 160) String modelName,
+            Boolean enabled
+    ) {
+    }
+
+    /** 更新 Agent 时提交的完整可编辑字段；模型名称始终由服务端所选配置确定。 */
+    public record AgentUpdateRequest(
+            @NotBlank String name,
+            @NotBlank String systemPrompt,
+            @NotNull UUID modelConfigId,
+            boolean enabled
     ) {
     }
 }

@@ -23,18 +23,18 @@
         <div class="sidebar-links"><span>版本与系统</span><a href="/console/v1/">旧版 v1 <b aria-hidden="true">↗</b></a><a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI <b aria-hidden="true">↗</b></a><a href="/actuator/health" target="_blank" rel="noreferrer">健康检查 <b aria-hidden="true">↗</b></a></div>
     </aside>
     <main class="workspace">
-        <header class="workspace-header"><div><p class="eyebrow">当前工作区</p><h1>Agent 管理</h1><p class="muted">创建 Agent，并查看模型、提示词与工具授权信息。</p></div><div class="user-actions"><span class="online-dot" aria-label="已登录"></span><span id="currentUser">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
+        <header class="workspace-header"><div><p class="eyebrow">当前工作区</p><h1>Agent 管理</h1><p class="muted">创建、编辑或删除 Agent；模型必须从当前租户的模型配置中选择。</p></div><div class="user-actions"><span class="online-dot" aria-label="已登录"></span><span id="currentUser">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
         <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
         <section id="agentsPage" class="page-view">
             <div class="management-grid">
                 <article class="panel"><div class="panel-heading"><div><p class="eyebrow">资源</p><h2>Agent 列表</h2></div><button id="refreshAgentsBtn" class="button ghost" type="button">刷新</button></div><div id="agentList" class="resource-list"><p class="empty-state">正在加载 Agent。</p></div></article>
                 <article id="agentDetail" class="panel detail-panel"><p class="empty-state">选择 Agent 查看详情。</p></article>
-                <article class="panel form-panel"><div class="panel-heading"><div><p class="eyebrow">新建</p><h2>创建 Agent</h2></div></div><form id="agentForm"><label for="agentName">Agent 名称</label><input id="agentName" name="name" required><label for="agentModelName">模型名称</label><input id="agentModelName" name="modelName" value="qwen-max" required><label for="systemPrompt">System Prompt</label><textarea id="systemPrompt" name="systemPrompt" rows="5" required>你是企业内部的 CM Agent 助手，负责回答问题、调用工具并产出简洁可靠的结果。</textarea><button id="createAgentBtn" class="button primary" type="submit">创建 Agent</button><p id="agentFormStatus" class="form-status" aria-live="polite"></p></form></article>
+                <article class="panel form-panel"><div class="panel-heading"><div><p id="agentFormEyebrow" class="eyebrow">新建</p><h2 id="agentFormTitle">创建 Agent</h2></div></div><form id="agentForm"><label for="agentName">Agent 名称</label><input id="agentName" name="name" required><label for="agentModelConfigId">模型配置</label><select id="agentModelConfigId" name="modelConfigId" required><option value="">正在加载可用模型配置…</option></select><p class="field-help">模型名称、Provider 和服务地址由所选配置统一管理。</p><label for="systemPrompt">System Prompt</label><textarea id="systemPrompt" name="systemPrompt" rows="5" required>你是企业内部的 CM Agent 助手，负责回答问题、调用工具并产出简洁可靠的结果。</textarea><label class="checkbox-row" for="agentEnabled"><input id="agentEnabled" name="enabled" type="checkbox" checked>启用 Agent</label><div class="form-actions"><button id="createAgentBtn" class="button primary" type="submit">创建 Agent</button><button id="cancelAgentEditBtn" class="button ghost" type="button" hidden>取消编辑</button></div><p id="agentFormStatus" class="form-status" aria-live="polite"></p></form></article>
             </div>
         </section>
     </main>
 </div>
 <script src="/assets/console-core.js?v=2.0.8"></script>
-<script src="/assets/app.js?v=2.0.8"></script>
+<script src="/assets/app.js?v=2.0.9"></script>
 </body>
 </html>

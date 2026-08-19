@@ -243,6 +243,21 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         agents.put(agent.id(), agent);
         return agent;
     }
+
+    /**
+     * 更新内存 Agent 定义，并保留与 JDBC 更新一致的租户边界。
+     *
+     * @param agent 包含最新可编辑字段的 Agent 定义
+     * @return 更新后的 Agent 定义
+     */
+    public AgentDefinition updateAgent(AgentDefinition agent) {
+        AgentDefinition existing = agents.get(agent.id());
+        if (existing == null || !existing.tenantId().equals(agent.tenantId())) {
+            throw new NoSuchElementException("Agent 不存在");
+        }
+        agents.put(agent.id(), agent);
+        return agent;
+    }
     /**
      * 按租户和 Agent 标识查询定义，防止返回跨租户数据。
      *
@@ -267,6 +282,31 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
                 .sorted(Comparator.comparing(AgentDefinition::name, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(agent -> agent.id().toString()))
                 .toList();
+    }
+
+    /**
+     * 内存模式只会产生运行记录，仍使用与生产相同的删除拒绝语义，避免本地
+     * 调试误以为已有运行历史的 Agent 可以安全删除。
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     * @return 存在运行历史时为 {@code true}
+     */
+    public boolean hasAgentUsageHistory(UUID tenantId, UUID agentId) {
+        return runs.values().stream().anyMatch(run -> tenantId.equals(run.tenantId()) && agentId.equals(run.agentId()));
+    }
+
+    /**
+     * 删除无历史依赖的内存 Agent。
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     * @return 实际删除记录时为 {@code true}
+     */
+    public boolean deleteAgent(UUID tenantId, UUID agentId) {
+        return findAgent(tenantId, agentId)
+                .map(agent -> agents.remove(agentId, agent))
+                .orElse(false);
     }
     /**
      * 增加指定目标或关联。

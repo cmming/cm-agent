@@ -316,6 +316,11 @@ public class ServerRepositoryConfiguration {
             }
 
             @Override
+            public AgentDefinition update(AgentDefinition agent) {
+                return store.updateAgent(agent);
+            }
+
+            @Override
             /**
              * 按租户及方法声明的标识查询匹配记录。
              *
@@ -334,6 +339,16 @@ public class ServerRepositoryConfiguration {
              */
             public List<AgentDefinition> listByTenant(UUID tenantId) {
                 return store.listAgents(tenantId);
+            }
+
+            @Override
+            public boolean hasUsageHistory(UUID tenantId, UUID agentId) {
+                return store.hasAgentUsageHistory(tenantId, agentId);
+            }
+
+            @Override
+            public boolean delete(UUID tenantId, UUID agentId) {
+                return store.deleteAgent(tenantId, agentId);
             }
 
             @Override

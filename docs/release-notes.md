@@ -6,6 +6,7 @@
 
 ### 本次变更
 
+- Agent 管理新增 `PUT /api/agents/{id}` 与 `DELETE /api/agents/{id}`：创建和编辑请求使用当前租户的 `modelConfigId`，服务端仅接受已启用配置并从配置读取实际模型名称；删除需要新增的 `agent:delete` 权限，会自动移除无历史 Agent 的工具授权并写入严格审计。已有会话或运行历史的 Agent 返回明确 `409 Conflict`，不可级联删除历史，应通过编辑接口停用。v2 控制台新增模型配置下拉选择、编辑、删除确认和冲突提示；v1 旧请求的 `modelName` 仅在当前租户唯一匹配一个已启用配置时暂时兼容。
 - 新增租户级模型配置管理 API 与 v2 控制台页面：`GET/POST /api/model-configs` 和 `GET/PUT/DELETE /api/model-configs/{id}` 分别使用 `model:read`、`model:write`、`model:delete` 权限，创建、更新、删除写入严格审计；删除仍被 Agent 引用的配置返回明确 `409 Conflict`，启动初始化器维护的系统默认配置不可删除但可停用或更新。创建请求必须写入 API Key，更新可轮换 API Key；服务以 AES/GCM 加密后写入数据库，所有响应均不回显密钥。新增 PostgreSQL/MySQL 方言 Flyway V9，仅更新密文字段的中文数据库注释。
 - 新增 Flyway V8 数据库注释迁移，为现有 18 张业务表和 135 个字段补齐中文原生注释；PostgreSQL 与 MySQL 使用同版本方言脚本，由统一 Flyway 配置按 JDBC 元数据选择，迁移测试逐表、逐字段阻止后续注释遗漏。
 - 新增示例模块 `cm-agent-examples/dashscope-mcp-agent`：演示 AgentScope Java 智能体使用内置 `McpClientBuilder` 以 Streamable HTTP 协议连接外部 MCP 服务（示例地址 `http://localhost:8088/api/mcp`）、注册其时间查询等工具，并由阿里云百炼 DashScope `qwen3.7-plus` 模型驱动 `ReActAgent` 自动决策调用。示例通过独立 `main` 方法运行,不依赖 CM Agent Server，也不经过其租户隔离、权限与审计链路；示例中的模型 API Key 为一次性本地联调值，生产场景应改为受控配置或密钥管理服务读取，本项不改变生产 API、数据库 Schema 或现有工具治理语义。该模块单独锁定 `io.modelcontextprotocol.sdk:mcp-core`/`mcp-json-jackson2` 为 `0.17.0`（与 `agentscope-core:2.0.0` 实际编译依赖的版本一致），避免与父 POM 为 `cm-agent-server` 自身 MCP Streamable HTTP Server 管理的 `2.0.0` 版本发生二进制不兼容（`McpSchema.Tool#inputSchema()` 返回类型不同导致的 `NoSuchMethodError`）；不修改父 POM 的 `mcp.version`，不影响 `cm-agent-server` 现有 MCP 端点。

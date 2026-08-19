@@ -41,6 +41,7 @@
         localExamples: [],
         selectedAgentId: "",
         selectedAgent: null,
+        editingAgentId: "",
         selectedModelConfigId: "",
         selectedModelConfig: null,
         editingModelConfigId: "",
@@ -66,7 +67,7 @@
 
     const pageInfo = {
         overviewPage: ["能力总览", "查看当前租户已交付的 Agent 能力与最近活动。"],
-        agentsPage: ["Agent 管理", "创建 Agent，并查看模型、提示词与工具授权信息。"],
+        agentsPage: ["Agent 管理", "创建、编辑或删除 Agent，并从模型配置中选择运行模型。"],
         modelConfigsPage: ["模型配置", "管理 Provider、服务地址和默认模型名称。"],
         toolsPage: ["工具治理", "注册 Tool，并向指定 Agent 授予使用权限。"],
         runsPage: ["运行记录", "执行 Agent，并查看运行历史、结果与工具调用。"],
@@ -380,7 +381,7 @@
                 }
                 break;
             case "agentsPage":
-                await loadTools(undefined, session);
+                await Promise.all([loadTools(undefined, session), loadModelConfigs(undefined, session)]);
                 if (sessionEpoch.isCurrent(session)) await loadAgents(session);
                 break;
             case "modelConfigsPage":
@@ -413,6 +414,7 @@
             state.selectedAgentId = state.agents[0]?.id || "";
         }
         renderAgents();
+        updateAgentModelOptions();
         updateAgentOptions();
         updateOverview();
         if (state.selectedAgentId && $("agentDetail")) {
@@ -480,6 +482,7 @@
         heading.append(titleGroup);
         const dl = definitionList([
             ["ID", agent.id],
+            ["模型配置", modelConfigDisplayName(agent.modelProviderId)],
             ["模型", agent.modelName],
             ["状态", agent.enabled ? "已启用" : "已停用"],
             ["温度", agent.temperature],
@@ -508,6 +511,16 @@
                 row.append(actions);
                 toolsSection.append(row);
             });
+        }
+        if ($("agentModelConfigId")) {
+            const actions = element("div", {className: "tool-actions"});
+            const editButton = element("button", {className: "button", type: "button", text: "编辑"});
+            editButton.addEventListener("click", () => editAgent(agent));
+            const deleteButton = element("button", {className: "button danger", type: "button", text: "删除"});
+            deleteButton.addEventListener("click", () => deleteAgent(agent, deleteButton));
+            actions.append(editButton, deleteButton);
+            container.replaceChildren(heading, dl, toolsSection, actions);
+            return;
         }
         container.replaceChildren(heading, dl, toolsSection);
     }
@@ -540,25 +553,112 @@
         }
     }
 
+    function modelConfigDisplayName(modelConfigId) {
+        const config = state.modelConfigs.find((item) => item.id === modelConfigId);
+        if (!config) return modelConfigId || "未配置";
+        return `${config.displayName || config.id} · ${config.modelName || "未配置模型"}`;
+    }
+
+    function updateAgentModelOptions(selectedId = $("agentModelConfigId")?.value || "") {
+        const select = $("agentModelConfigId");
+        if (!select) return;
+        select.replaceChildren();
+        const placeholder = element("option", {text: "请选择已启用的模型配置"});
+        placeholder.value = "";
+        select.append(placeholder);
+        state.modelConfigs.forEach((config) => {
+            const option = element("option", {
+                text: `${config.displayName || config.id} · ${config.modelName || "未配置模型"}${config.enabled ? "" : "（已停用）"}`
+            });
+            option.value = config.id;
+            option.disabled = !config.enabled;
+            select.append(option);
+        });
+        if (selectedId && state.modelConfigs.some((config) => config.id === selectedId)) {
+            select.value = selectedId;
+        } else if (state.modelConfigs.some((config) => config.enabled)) {
+            select.value = state.modelConfigs.find((config) => config.enabled).id;
+        }
+    }
+
+    function editAgent(agent) {
+        state.editingAgentId = agent.id;
+        $("agentName").value = agent.name || "";
+        $("systemPrompt").value = agent.systemPrompt || "";
+        $("agentEnabled").checked = agent.enabled === true;
+        updateAgentModelOptions(agent.modelProviderId || "");
+        $("agentFormEyebrow").textContent = "编辑";
+        $("agentFormTitle").textContent = "更新 Agent";
+        $("createAgentBtn").textContent = "保存修改";
+        $("cancelAgentEditBtn").hidden = false;
+        setStatus($("agentFormStatus"), `正在编辑“${agent.name || agent.id}”。`, "neutral");
+        $("agentName").focus();
+    }
+
+    function resetAgentForm() {
+        state.editingAgentId = "";
+        const form = $("agentForm");
+        if (!form) return;
+        form.reset();
+        $("agentEnabled").checked = true;
+        updateAgentModelOptions();
+        $("agentFormEyebrow").textContent = "新建";
+        $("agentFormTitle").textContent = "创建 Agent";
+        $("createAgentBtn").textContent = "创建 Agent";
+        $("cancelAgentEditBtn").hidden = true;
+        setStatus($("agentFormStatus"));
+    }
+
     async function createAgent() {
+        const modelConfigSelect = $("agentModelConfigId");
         const payload = {
             name: $("agentName").value.trim(),
-            systemPrompt: $("systemPrompt").value.trim(),
-            modelName: $("agentModelName").value.trim()
+            systemPrompt: $("systemPrompt").value.trim()
         };
-        if (!payload.name || !payload.systemPrompt || !payload.modelName) {
+        if (modelConfigSelect) {
+            payload.modelConfigId = modelConfigSelect.value;
+            payload.enabled = $("agentEnabled").checked;
+        } else {
+            // v1 仍允许输入名称；服务端只会在当前租户唯一匹配已启用配置时接受它。
+            payload.modelName = $("agentModelName").value.trim();
+        }
+        if (!payload.name || !payload.systemPrompt || !(payload.modelConfigId || payload.modelName)) {
             setStatus($("agentFormStatus"), "请完整填写 Agent 信息。", "error");
             return;
         }
+        const editingId = state.editingAgentId;
+        const path = editingId ? `/api/agents/${encodeURIComponent(editingId)}` : "/api/agents";
+        const method = editingId ? "PUT" : "POST";
         try {
             await withSubmitState($("createAgentBtn"), async () => {
-                const created = await api.request("/api/agents", {method: "POST", body: JSON.stringify(payload)});
-                state.selectedAgentId = created.id || "";
+                const saved = await api.request(path, {method, body: JSON.stringify(payload)});
+                state.selectedAgentId = saved.id || editingId || "";
                 await loadAgents();
-                setStatus($("agentFormStatus"), `Agent“${created.name || payload.name}”已创建。`, "success");
+                if (modelConfigSelect) resetAgentForm();
+                setStatus($("agentFormStatus"), editingId
+                    ? `Agent“${saved.name || payload.name}”已更新。`
+                    : `Agent“${saved.name || payload.name}”已创建。`, "success");
             });
         } catch (error) {
             setStatus($("agentFormStatus"), error.message, "error");
+        }
+    }
+
+    async function deleteAgent(agent, button) {
+        if (!window.confirm(`确认删除 Agent“${agent.name || agent.id}”吗？已有运行或会话历史时服务端会拒绝删除。`)) {
+            return;
+        }
+        try {
+            await withSubmitState(button, async () => {
+                await api.request(`/api/agents/${encodeURIComponent(agent.id)}`, {method: "DELETE"});
+                if (state.editingAgentId === agent.id) resetAgentForm();
+                state.selectedAgentId = "";
+                state.selectedAgent = null;
+                await loadAgents();
+                setStatus($("globalStatus"), `Agent“${agent.name || agent.id}”已删除。`, "success");
+            });
+        } catch (error) {
+            setStatus($("globalStatus"), error.message, "error");
         }
     }
 
@@ -1819,6 +1919,7 @@
         bind("loginForm", "submit", (event) => { event.preventDefault(); login(); });
         bind("logoutBtn", "click", () => logout());
         bind("agentForm", "submit", (event) => { event.preventDefault(); createAgent(); });
+        bind("cancelAgentEditBtn", "click", resetAgentForm);
         bind("modelConfigForm", "submit", (event) => { event.preventDefault(); submitModelConfig(); });
         bind("cancelModelConfigEditBtn", "click", resetModelConfigForm);
         bind("toolForm", "submit", (event) => { event.preventDefault(); submitTool(); });

@@ -107,6 +107,42 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
 
     @Override
     /**
+     * 更新 Agent 可编辑字段。工具关联由专用的增删关联方法维护，避免编辑表单
+     * 覆盖并发授权结果；创建人与创建时间同样不可由更新请求改写。
+     *
+     * @param agent 包含最新可编辑字段的 Agent 定义
+     * @return 更新后的 Agent 定义
+     */
+    public AgentDefinition update(AgentDefinition agent) {
+        int updated = jdbcClient.sql("""
+                        UPDATE agent_definitions
+                        SET name = :name,
+                            system_prompt = :systemPrompt,
+                            model_provider_id = :modelProviderId,
+                            model_name = :modelName,
+                            enabled = :enabled,
+                            updated_by = :updatedBy,
+                            updated_at = :updatedAt
+                        WHERE tenant_id = :tenantId AND id = :id
+                        """)
+                .param("name", agent.name())
+                .param("systemPrompt", agent.systemPrompt())
+                .param("modelProviderId", agent.modelProviderId().toString())
+                .param("modelName", agent.modelName())
+                .param("enabled", agent.enabled())
+                .param("updatedBy", agent.updatedBy())
+                .param("updatedAt", Timestamp.from(Instant.now()))
+                .param("tenantId", agent.tenantId().toString())
+                .param("id", agent.id().toString())
+                .update();
+        if (updated == 0) {
+            throw new NoSuchElementException("Agent 不存在");
+        }
+        return agent;
+    }
+
+    @Override
+    /**
      * 在租户边界内查询指定 Agent。
      *
      * @param tenantId 租户标识
@@ -168,6 +204,51 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
                 .param("tenantId", tenantId.toString())
                 .query(this::mapAgent)
                 .list();
+    }
+
+    @Override
+    /**
+     * 判断 Agent 是否已产生会话或运行记录。两类记录都保留外键和审计价值，
+     * 管理端删除时必须先显式拒绝，不能依赖数据库外键异常作为用户提示。
+     *
+     * @param tenantId 租户标识
+     * @param agentId Agent 标识
+     * @return 已有关联历史时为 {@code true}
+     */
+    public boolean hasUsageHistory(UUID tenantId, UUID agentId) {
+        Boolean exists = jdbcClient.sql("""
+                        SELECT CASE WHEN EXISTS (
+                            SELECT 1 FROM conversations
+                            WHERE tenant_id = :tenantId AND agent_id = :agentId
+                        ) OR EXISTS (
+                            SELECT 1 FROM runs
+                            WHERE tenant_id = :tenantId AND agent_id = :agentId
+                        ) THEN true ELSE false END
+                        """)
+                .param("tenantId", tenantId.toString())
+                .param("agentId", agentId.toString())
+                .query(Boolean.class)
+                .single();
+        return Boolean.TRUE.equals(exists);
+    }
+
+    @Override
+    /**
+     * 删除无历史依赖的 Agent 定义。工具授权需由调用方在同一事务内先行删除，
+     * 以满足 {@code tool_grants} 对 Agent 的复合外键约束。
+     *
+     * @param tenantId 租户标识
+     * @param agentId Agent 标识
+     * @return 实际删除记录时为 {@code true}
+     */
+    public boolean delete(UUID tenantId, UUID agentId) {
+        return jdbcClient.sql("""
+                        DELETE FROM agent_definitions
+                        WHERE tenant_id = :tenantId AND id = :id
+                        """)
+                .param("tenantId", tenantId.toString())
+                .param("id", agentId.toString())
+                .update() > 0;
     }
 
     @Override

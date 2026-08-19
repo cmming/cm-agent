@@ -33,6 +33,7 @@ public class AuthController {
             "agent:run",
             "agent:read",
             "agent:write",
+            "agent:delete",
             "model:read",
             "model:write",
             "model:delete",

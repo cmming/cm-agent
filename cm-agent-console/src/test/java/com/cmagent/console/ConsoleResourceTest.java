@@ -46,7 +46,10 @@ class ConsoleResourceTest {
                 .contains("data-page=\"overviewPage\"", "id=\"overviewPage\"", "class=\"quick-action primary\"", "配置模型、提示词与可用工具")
                 .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
         assertThat(agents)
-                .contains("data-page=\"agentsPage\"", "id=\"agentsPage\"", "id=\"agentForm\"")
+                .contains(
+                        "data-page=\"agentsPage\"", "id=\"agentsPage\"", "id=\"agentForm\"",
+                        "id=\"agentModelConfigId\"", "id=\"cancelAgentEditBtn\"", "模型必须从当前租户的模型配置中选择"
+                )
                 .doesNotContain("id=\"modelConfigsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
         assertThat(modelConfigs)
                 .contains("data-page=\"modelConfigsPage\"", "id=\"modelConfigsPage\"", "id=\"modelConfigForm\"")
@@ -81,7 +84,7 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.8", "/assets/console-core.js?v=2.0.8")
+                .contains("/assets/app.js?v=2.0.9", "/assets/console-core.js?v=2.0.8")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }
