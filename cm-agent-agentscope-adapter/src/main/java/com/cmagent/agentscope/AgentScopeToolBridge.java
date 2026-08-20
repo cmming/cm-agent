@@ -30,7 +30,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- * 将领域工具调用桥接为 AgentScope {@link AgentTool}。
+ * 将 CM Agent 工具定义桥接为 AgentScope {@link AgentTool}，同时保留企业治理边界。
+ *
+ * <p>AgentScope 只看到工具名称、描述和输入 Schema；模型实际发起调用时，本桥接器不会根据工具
+ * endpoint 自行联网，而是使用领域请求中已经校验的租户、Agent、主体和运行标识构造
+ * {@link ToolInvocationRequest}，交给 {@link ToolInvocationGateway} 再次执行授权、审计和受控调用。</p>
+ *
+ * <p>每个可见工具对应一个桥接器，同一次运行中的桥接器共享 {@link AgentScopeRunGate}。
+ * 工具记录与完成标识使用并发容器，是因为 AgentScope 的工具 Publisher 可能在异步执行链上回调；
+ * 对外只能取得不可变快照。</p>
  */
 public class AgentScopeToolBridge implements AgentTool {
 
@@ -46,12 +54,14 @@ public class AgentScopeToolBridge implements AgentTool {
     private final Set<String> completedToolCallIds = ConcurrentHashMap.newKeySet();
 
     /**
-     * 使用独立运行门控创建工具桥接器。
-      *
-      * @param request 当前运行或工具调用请求
-      * @param tool 当前工具定义
-      * @param gateway 受治理的工具调用网关
-      * @param objectMapper 用于 JSON 解析和序列化的组件
+     * 使用独立门控创建可单独使用的工具桥接器。
+     *
+     * <p>完整 ReAct 运行会通过包内构造器让所有工具共享同一门控；此构造器主要用于独立适配和测试。</p>
+     *
+     * @param request 已校验且携带可信租户与主体上下文的运行请求
+     * @param tool 本次运行允许暴露给模型的工具定义
+     * @param gateway 受治理的工具调用网关
+     * @param objectMapper 用于校验 Schema 及序列化模型输入的组件
      */
     public AgentScopeToolBridge(
             AgentRunRequest request,
@@ -63,13 +73,15 @@ public class AgentScopeToolBridge implements AgentTool {
     }
 
     /**
-     * 使用指定运行门控创建工具桥接器。
-      *
-      * @param request 当前运行或工具调用请求
-      * @param tool 当前工具定义
-      * @param gateway 受治理的工具调用网关
-      * @param objectMapper 用于 JSON 解析和序列化的组件
-      * @param runGate 协调运行中断与工具失败的门控对象
+     * 使用运行级共享门控创建工具桥接器，并在构造阶段校验输入 Schema。
+     *
+     * <p>Schema 采用快速失败策略：无效工具不会等到模型已经开始运行后才暴露不可调用状态。</p>
+     *
+     * @param request 已校验且携带可信租户与主体上下文的运行请求
+     * @param tool 本次运行允许暴露给模型的工具定义
+     * @param gateway 受治理的工具调用网关
+     * @param objectMapper 用于校验 Schema 及序列化模型输入的组件
+     * @param runGate 同一次运行中所有工具桥接器共享的门控
      */
     AgentScopeToolBridge(
             AgentRunRequest request,
@@ -87,7 +99,7 @@ public class AgentScopeToolBridge implements AgentTool {
     }
 
     /**
-     * 返回暴露给 AgentScope 的工具名称。
+     * @return 注册到本次 AgentScope Toolkit 的工具名称
      */
     @Override
     public String getName() {
@@ -95,7 +107,7 @@ public class AgentScopeToolBridge implements AgentTool {
     }
 
     /**
-     * 返回暴露给 AgentScope 的工具描述。
+     * @return 提供给模型选择工具时使用的描述
      */
     @Override
     public String getDescription() {
@@ -103,7 +115,7 @@ public class AgentScopeToolBridge implements AgentTool {
     }
 
     /**
-     * 返回解析后的工具输入 JSON Schema。
+     * @return 构造阶段已校验且不可修改的工具输入 JSON Schema
      */
     @Override
     public Map<String, Object> getParameters() {
@@ -111,9 +123,14 @@ public class AgentScopeToolBridge implements AgentTool {
     }
 
     /**
-     * 异步执行工具调用，并把取消信号传递给运行门控。
-      *
-      * @param param AgentScope 工具调用参数
+     * 创建延迟执行的工具调用 Publisher，并把取消信号传递给运行门控。
+     *
+     * <p>{@link Mono#fromCallable(java.util.concurrent.Callable)} 只把同步网关包装为响应式类型，不会自行切换
+     * 线程或把网关变成非阻塞调用；实际调度由 AgentScope 的工具执行链负责。订阅取消只关闭协作式门控，
+     * 已经发生的外部副作用不能由此自动回滚。</p>
+     *
+     * @param param AgentScope 提供的工具调用参数
+     * @return 延迟到订阅时执行的单结果 Publisher
      */
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
@@ -121,41 +138,58 @@ public class AgentScopeToolBridge implements AgentTool {
     }
 
     /**
-     * 为指定异步结果附加工具调用取消处理。
-      *
-      * @param source 待转换的源对象
+     * 在取消信号继续向上游传播前先关闭运行门控。
+     *
+     * <p>先标记再传播可避免上游取消处理与后续工具调用竞争时，新的调用短暂越过门控。</p>
+     *
+     * @param source 待附加取消治理的工具结果 Publisher
+     * @return 带运行门控取消回调的 Publisher
      */
     Mono<ToolResultBlock> withCancellationGate(Mono<ToolResultBlock> source) {
         return source.doOnCancel(runGate::markInvocationInterrupted);
     }
 
     /**
-     * 返回当前桥接器已产生的工具调用记录快照。
+     * 获取当前已经完成的工具调用记录。
+     *
+     * @return 当前桥接器已经完成的工具调用记录不可变快照
      */
     public List<ToolCallRecord> records() {
         return List.copyOf(records);
     }
 
     /**
-     * 检查并抛出运行门控记录的工具基础设施失败。
+     * 重新抛出运行门控记录的首次基础设施失败。
+     *
+     * <p>供响应式调用方即使消费了 Publisher 异常，也能在外层执行边界恢复严格失败语义。</p>
      */
     public void throwIfInfrastructureFailure() {
         runGate.throwIfInfrastructureFailure();
     }
 
     /**
-     * 判断指定工具调用是否已由桥接器完成。
-      *
-      * @param toolCallId 工具调用标识
+     * 判断指定调用是否已由治理网关产生受控终态。
+     *
+     * <p>执行器使用该信息区分桥接器返回的普通错误与 AgentScope 执行层生成的工具超时包装。</p>
+     *
+     * @param toolCallId AgentScope 工具调用标识
+     * @return 已创建成功、失败或拒绝记录时返回 {@code true}
      */
     boolean hasCompletedToolCall(String toolCallId) {
         return toolCallId != null && completedToolCallIds.contains(toolCallId);
     }
 
     /**
-     * 执行工具调用、记录结果，并转换为 AgentScope 工具结果块。
-      *
-      * @param param AgentScope 工具调用参数
+     * 调用治理网关，记录安全摘要，并将领域结果转换为 AgentScope 工具结果块。
+     *
+     * <p>租户、Agent、主体、Run 和工具 ID 均来自已校验领域对象；模型只能提供本次工具调用 ID、
+     * 工具名称和输入。普通失败与授权拒绝会作为工具错误块返回，让 AgentScope 完成当前推理步骤；
+     * 基础设施失败和运行中止必须继续抛出，由外层终止整个 Agent。</p>
+     *
+     * <p>未知异常只记录固定错误说明，不把序列化异常、工具实现异常或输入值写入领域记录。</p>
+     *
+     * @param param AgentScope 提供的工具调用参数
+     * @return 可返回给 AgentScope 推理循环的工具结果块
      */
     private ToolResultBlock invoke(ToolCallParam param) {
         long startedAt = System.nanoTime();
@@ -211,9 +245,14 @@ public class AgentScopeToolBridge implements AgentTool {
     }
 
     /**
-     * 解析并校验工具输入 Schema，生成不可变参数定义。
-      *
-      * @param inputSchema 工具输入 JSON Schema
+     * 解析工具输入 Schema，并要求根节点显式声明为 JSON object。
+     *
+     * <p>AgentScope 的工具参数契约使用键值映射；拒绝数组、标量或缺少 {@code type=object} 的 Schema，
+     * 可以在注册 Toolkit 前暴露配置错误。返回副本不可修改，防止运行期间改变模型可见契约。</p>
+     *
+     * @param inputSchema 工具定义保存的 JSON Schema
+     * @return 保持原字段顺序的不可变参数定义
+     * @throws IllegalArgumentException Schema 不是合法 JSON object 时抛出
      */
     private Map<String, Object> parseParameters(String inputSchema) {
         try {
@@ -234,27 +273,32 @@ public class AgentScopeToolBridge implements AgentTool {
     }
 
     /**
-     * 仅保留输入字段名，生成不暴露参数值的摘要。
-      *
-      * @param input 调用方输入
+     * 仅保留并排序输入字段名，避免工具参数值中的密钥或业务数据进入运行记录。
+     *
+     * @param input 模型生成的工具输入
+     * @return 不包含任何参数值的稳定摘要
      */
     private static String summarizeInput(Map<String, Object> input) {
         return "输入字段: " + input.keySet().stream().sorted().toList();
     }
 
     /**
-     * 计算从指定纳秒时间点开始经过的时长。
-      *
-      * @param startedAt 流程开始时间
+     * 使用单调时钟计算工具耗时，避免系统时间校准导致负时长。
+     *
+     * @param startedAt 调用开始时的 {@link System#nanoTime()} 值
+     * @return 非负调用时长
      */
     private static Duration elapsedSince(long startedAt) {
         return Duration.ofNanos(Math.max(0, System.nanoTime() - startedAt));
     }
 
     /**
-     * 判断异常链或当前线程状态是否表示中断。
-      *
-      * @param failure 当前捕获的失败
+     * 判断异常链或当前线程状态是否表示协作式中断。
+     *
+     * <p>部分网关会包装 {@link InterruptedException}，因此不能只检查最外层异常。</p>
+     *
+     * @param failure 当前捕获的异常
+     * @return 异常链包含线程中断，或当前线程已处于中断状态时返回 {@code true}
      */
     private static boolean isInterruption(Throwable failure) {
         Throwable current = failure;
