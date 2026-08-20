@@ -76,7 +76,9 @@ public class SecurityConfig {
                         .authenticationEntryPoint(authenticationEntryPoint())
                         .accessDeniedHandler(accessDeniedHandler()))
                 .authorizeHttpRequests(authorize -> {
-                    authorize.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll();
+                    // ASYNC 分派只会发生在同一请求已完成初始认证和授权之后；放行它可让 SSE 正常收尾，
+                    // 不会使任何新的 /api 请求绕过 JWT 认证。
+                    authorize.dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.ASYNC).permitAll();
                     authorize.requestMatchers(
                             "/",
                             "/console",

@@ -59,7 +59,10 @@ class ConsoleResourceTest {
                 .contains("data-page=\"toolsPage\"", "id=\"toolsPage\"", "id=\"toolForm\"", "id=\"debugToolForm\"")
                 .doesNotContain("id=\"agentsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
         assertThat(runs)
-                .contains("data-page=\"runsPage\"", "id=\"runsPage\"", "id=\"runForm\"")
+                .contains(
+                        "data-page=\"runsPage\"", "id=\"runsPage\"", "id=\"runForm\"",
+                        "runs-page", "实时调试工作台", "流式输出已就绪", "runs-output-panel"
+                )
                 .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"auditPage\"");
         assertThat(audit)
                 .contains("data-page=\"auditPage\"", "id=\"auditPage\"", "id=\"auditList\"")
@@ -84,7 +87,7 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                .contains("/assets/app.js?v=2.0.9", "/assets/console-core.js?v=2.0.8")
+                    .contains("/assets/app.js?v=2.0.10", "/assets/console-core.js?v=2.0.9")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }
@@ -172,7 +175,11 @@ class ConsoleResourceTest {
         );
         assertThat(script)
                 .contains("/runs", "/api/audit-events", "nextCursor")
-                .contains("loadRunDetail", "loadAudit")
+                .contains(
+                        "loadRunDetail", "loadAudit", "/runs/stream", "api.stream", "appendStreamingOutput",
+                        "renderMarkdown", "markdownFragment", "safeMarkdownLink", "markdown-output",
+                        "renderToolCallPayload", "formatToolCallPayload", "tool-call-payloads"
+                )
                 .doesNotContain(".innerHTML");
     }
 

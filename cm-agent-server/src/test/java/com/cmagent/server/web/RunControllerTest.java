@@ -15,6 +15,7 @@ import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.server.CmAgentServerApplication;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
+import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import com.jayway.jsonpath.JsonPath;
@@ -28,21 +29,26 @@ import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -71,6 +77,9 @@ class RunControllerTest {
 
     @SpyBean
     private AuditAppender auditAppender;
+
+    @SpyBean
+    private ErrorDiagnosticLogger diagnosticLogger;
 
     @BeforeEach
     /**
@@ -164,6 +173,63 @@ class RunControllerTest {
 
         assertThat(agentRuntime.lastRequest()).isNotNull();
         assertThat(agentRuntime.lastRequest().tools()).isEmpty();
+    }
+
+    @Test
+    /**
+     * 验证流式运行会在连接关闭前依次发送启动、脱敏输出和持久化终态事件。
+     */
+    void streamRunSendsOutputDeltaAndCompletedResult() throws Exception {
+        String accessToken = loginToken();
+        String agentId = createAgent(accessToken);
+
+        var streamedResponse = mockMvc.perform(post("/api/agents/{agentId}/runs/stream", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .content("{\"input\":\"你好\"}"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andReturn()
+                .getResponse();
+        String body = new String(streamedResponse.getContentAsByteArray(), StandardCharsets.UTF_8);
+
+        assertThat(body)
+                .contains("event:started", "运行已启动")
+                .contains("event:delta", "fake-runtime: 你好")
+                .contains("event:completed", "\"status\":\"SUCCEEDED\"");
+    }
+
+    @Test
+    /**
+     * 验证 SSE 已提交后发生的未预期运行失败会返回脱敏错误事件，并使用响应关联编号记录诊断日志。
+     */
+    void streamRunFailureReturnsCorrelatedSanitizedErrorEvent() throws Exception {
+        String accessToken = loginToken();
+        String agentId = createAgent(accessToken);
+        agentRuntime.failNextRun();
+
+        var response = mockMvc.perform(post("/api/agents/{agentId}/runs/stream", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .content("{\"input\":\"你好\"}"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse();
+        String errorId = response.getHeader("X-Request-Id");
+        String body = new String(response.getContentAsByteArray(), StandardCharsets.UTF_8);
+
+        assertThat(errorId).isNotBlank();
+        assertThat(body)
+                .contains("event:error", "\"code\":\"RUNTIME_ERROR\"", errorId)
+                .doesNotContain("runtime boom");
+        verify(diagnosticLogger).error(
+                argThat(context -> "RUN_STREAM".equals(context.boundary())
+                        && errorId.equals(context.errorId())
+                        && "RUNTIME_ERROR".equals(context.errorCode())),
+                any(RuntimeException.class));
     }
 
     @Test
@@ -832,6 +898,14 @@ class RunControllerTest {
     @TestConfiguration
     static class TestRuntimeConfig {
 
+        @Bean(name = "applicationTaskExecutor")
+        /**
+         * 使用当前测试线程完成 SSE 写入，避免 MockMvc 对无结果的流式异步分派产生竞态。
+         */
+        TaskExecutor streamTaskExecutor() {
+            return Runnable::run;
+        }
+
         @Bean
         @Primary
         /**
@@ -872,6 +946,20 @@ class RunControllerTest {
                     now,
                     ""
             );
+        }
+
+        @Override
+        /**
+         * 测试运行时发送单个确定性片段，以验证 Controller 的 SSE 事件顺序。
+         *
+         * @param request 当前运行请求
+         * @param outputDeltaConsumer 接收输出片段的消费者
+         * @return 最终运行结果
+         */
+        public AgentRunResult run(AgentRunRequest request, Consumer<String> outputDeltaConsumer) {
+            AgentRunResult result = run(request);
+            outputDeltaConsumer.accept(result.output());
+            return result;
         }
 
         /**

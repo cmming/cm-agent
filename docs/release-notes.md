@@ -6,6 +6,7 @@
 
 ### 本次变更
 
+- v2 运行记录页改为流式输出：新增 `POST /api/agents/{agentId}/runs/stream` 同源 SSE 接口，依次发送 `started`、已脱敏的 `delta`、`completed` 或包含稳定错误码和 `errorId` 的 `error` 事件。AgentScope Runtime 转发最终回答的文本块增量，不发送思考过程、工具参数或工具原始输出；连接断开不取消后端运行，运行记录、工具调用和审计仍按既有终态流程落库。原 `POST /api/agents/{agentId}/runs` 保持不变，以兼容现有 API 调用方。
 - Agent 管理新增 `PUT /api/agents/{id}` 与 `DELETE /api/agents/{id}`：创建和编辑请求使用当前租户的 `modelConfigId`，服务端仅接受已启用配置并从配置读取实际模型名称；删除需要新增的 `agent:delete` 权限，会自动移除无历史 Agent 的工具授权并写入严格审计。已有会话或运行历史的 Agent 返回明确 `409 Conflict`，不可级联删除历史，应通过编辑接口停用。v2 控制台新增模型配置下拉选择、编辑、删除确认和冲突提示；v1 旧请求的 `modelName` 仅在当前租户唯一匹配一个已启用配置时暂时兼容。
 - 新增租户级模型配置管理 API 与 v2 控制台页面：`GET/POST /api/model-configs` 和 `GET/PUT/DELETE /api/model-configs/{id}` 分别使用 `model:read`、`model:write`、`model:delete` 权限，创建、更新、删除写入严格审计；删除仍被 Agent 引用的配置返回明确 `409 Conflict`，启动初始化器维护的系统默认配置不可删除但可停用或更新。创建请求必须写入 API Key，更新可轮换 API Key；服务以 AES/GCM 加密后写入数据库，所有响应均不回显密钥。新增 PostgreSQL/MySQL 方言 Flyway V9，仅更新密文字段的中文数据库注释。
 - 新增 Flyway V8 数据库注释迁移，为现有 18 张业务表和 135 个字段补齐中文原生注释；PostgreSQL 与 MySQL 使用同版本方言脚本，由统一 Flyway 配置按 JDBC 元数据选择，迁移测试逐表、逐字段阻止后续注释遗漏。
@@ -30,7 +31,7 @@
 - 控制台覆盖当前用户、Agent 列表/详情/创建、Tool 列表/创建/编辑/删除/授权与解除关联、Agent 执行、运行历史/详情/工具调用和审计游标分页；健康检查与 OpenAPI 作为辅助入口。
 - HTTP Tool 注册与编辑表单改为树形参数编辑器，支持在 OBJECT/ARRAY 节点内直接添加子参数并按层级缩进展示；页面根据 `parentId` 还原树，提交时自动转为扁平参数数组。表单同时提供类型、请求位置、默认值、示例值及包含 PATH、QUERY、BODY_ROOT 根数组的完整示例，并已移除旧版 Schema 与映射入口。
 - v1 控制台继续使用页面内存令牌；v2 使用前端不可读取的会话 Cookie 恢复刷新认证，并只在当前文档内存中保留登录令牌。两个版本复用统一 `401` 失效处理和纯文本 DOM 渲染，不使用 `localStorage` 或 `sessionStorage` 持久化 JWT、用户名或密码；补充窄屏响应式布局和键盘焦点样式。
-- 控制台仍不提供手动取消、流式输出、多轮会话或 HITL。
+- 控制台仍不提供手动取消、多轮会话或 HITL。
 - `agentscope.version` 升级到 `2.0.0`，接入 OpenAI Compatible 与 DashScope Provider，提供同步单轮 ReAct 运行。
 - 通过 `tenantId + modelConfigId` 调用 `ModelCredentialProvider` 获取模型凭据；默认实现从数据库读取 AES/GCM 密文并在运行时解密，`model_configs` 不保存明文 API Key。
 - 生产 profile 使用 `fake-runtime-enabled=false` 与 `agentscope-enabled=true`；fake runtime 继续仅服务本地和测试。
@@ -61,7 +62,7 @@
 - 现有 API 的认证、权限、租户过滤和审计约束继续生效；新增的 cursor 由服务端生成，调用方不应自行构造。
 - 审计写入失败不再被忽略，会导致请求返回 `503`；部署和告警系统应将其视为依赖不可用。
 - 生产 profile 不允许 bootstrap admin、开发 JWT fallback 或可用的固定凭据。文档和配置示例仅使用占位符。
-- 真实 Runtime 当前只支持同步单轮；不承诺多轮会话持久化、流式 REST、HITL 或手动取消。
+- 真实 Runtime 当前支持单轮 SSE 文本输出；不承诺多轮会话持久化、手动取消或 HITL。
 - AgentScope 2.0.0 工具层的通用取消信号不能证明外部副作用已停止；有副作用的工具必须使用 `runId`、`toolCallId` 或业务键保证幂等。
 - 模型 API Key 通过受权限保护的模型配置接口加密写入数据库；加密主密钥只能使用受控环境变量或 Secret Manager 注入，密钥不得进入 Git、日志、审计或 API 响应。
 
@@ -69,7 +70,7 @@
 
 以下内容不属于本次阶段3发布：
 
-- 多轮会话持久化、流式 REST、HITL 和手动取消。
+- 多轮会话持久化、手动取消和 HITL。
 - 阶段4 metrics、集中式日志与追踪、备份恢复自动化、容量治理和应用自动归档。
 - 阶段5 CI/CD 交付流水线、发布自动化、稳定性工程和正式版本承诺。
 

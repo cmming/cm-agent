@@ -25,16 +25,35 @@
     <main class="workspace">
         <header class="workspace-header"><div><p class="eyebrow">当前工作区</p><h1>运行记录</h1><p class="muted">执行 Agent，并查看运行历史、结果与工具调用。</p></div><div class="user-actions"><span class="online-dot" aria-label="已登录"></span><span id="currentUser">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
         <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
-        <section id="runsPage" class="page-view">
-            <div class="run-toolbar panel"><div><label for="runAgentSelect">选择 Agent</label><select id="runAgentSelect"></select></div><form id="runForm"><label for="runInput">调试输入</label><div class="inline-form"><textarea id="runInput" rows="2" required></textarea><button id="runBtn" class="button primary" type="submit">执行运行</button></div><p id="runFormStatus" class="form-status" aria-live="polite"></p></form></div>
-            <div class="split-grid">
-                <article class="panel"><div class="panel-heading"><div><p class="eyebrow">历史</p><h2>运行记录</h2></div><button id="refreshRunsBtn" class="button ghost" type="button">刷新</button></div><div id="runList" class="resource-list"><p class="empty-state">请选择 Agent。</p></div><div class="load-more"><button id="loadMoreRunsBtn" class="button ghost" type="button" hidden>加载更多</button><span id="runsEndStatus"></span></div></article>
-                <article id="runDetail" class="panel detail-panel"><p class="empty-state">选择一条运行记录查看详情。</p><div id="runToolCalls"></div></article>
+        <section id="runsPage" class="page-view runs-page">
+            <section class="runs-hero" aria-labelledby="runsHeroTitle">
+                <div>
+                    <p class="eyebrow">实时调试工作台</p>
+                    <h2 id="runsHeroTitle">让每一次运行都清晰可见</h2>
+                    <p>选择 Agent 后输入任务，回答会在右侧逐段呈现，并自动归档到运行历史。</p>
+                </div>
+                <div class="runs-live-indicator"><span class="live-pulse" aria-hidden="true"></span>流式输出已就绪</div>
+            </section>
+            <div class="run-toolbar panel">
+                <div class="run-agent-picker">
+                    <label for="runAgentSelect">选择 Agent</label>
+                    <select id="runAgentSelect"></select>
+                    <p class="run-field-hint">运行记录会按当前 Agent 分组展示。</p>
+                </div>
+                <form id="runForm" class="run-composer">
+                    <div class="run-composer-heading"><label for="runInput">调试输入</label><span>支持实时查看回答进度</span></div>
+                    <div class="inline-form run-input-shell"><textarea id="runInput" rows="3" required placeholder="例如：请根据当前可用工具整理一份执行方案。"></textarea><button id="runBtn" class="button primary" type="submit">开始运行</button></div>
+                    <p id="runFormStatus" class="form-status" aria-live="polite"></p>
+                </form>
+            </div>
+            <div class="split-grid runs-grid">
+                <article class="panel runs-history-panel"><div class="panel-heading"><div><p class="eyebrow">历史与回看</p><h2>最近运行</h2></div><button id="refreshRunsBtn" class="button ghost" type="button">刷新</button></div><p class="runs-panel-note">选择一条记录，查看完整输出和工具调用。</p><div id="runList" class="resource-list"><p class="empty-state">请选择 Agent。</p></div><div class="load-more"><button id="loadMoreRunsBtn" class="button ghost" type="button" hidden>加载更多</button><span id="runsEndStatus"></span></div></article>
+                <article id="runDetail" class="panel detail-panel runs-output-panel"><div class="runs-detail-empty"><span class="runs-detail-mark" aria-hidden="true">▷</span><h2>等待一次运行</h2><p>提交任务后，这里会实时展示 Agent 的回答；也可以从左侧打开历史记录。</p></div><div id="runToolCalls"></div></article>
             </div>
         </section>
     </main>
 </div>
-<script src="/assets/console-core.js?v=2.0.8"></script>
-<script src="/assets/app.js?v=2.0.9"></script>
+<script src="/assets/console-core.js?v=2.0.9"></script>
+<script src="/assets/app.js?v=2.0.10"></script>
 </body>
 </html>

@@ -134,6 +134,20 @@ class AgentScopeRuntimeContractTest {
 
     @Test
     /**
+     * 验证 AgentScope 的最终回答文本块会在运行完成前按增量回调传递给上层。
+     */
+    void forwardsModelTextDeltasToStreamingConsumer() {
+        List<String> deltas = new CopyOnWriteArrayList<>();
+
+        AgentRunResult result = runtime(ignored -> ToolInvocationResult.succeeded("ok"), defaultOptions())
+                .run(request(List.of()), deltas::add);
+
+        assertThat(result.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(String.join("", deltas)).isEqualTo("真实运行成功");
+    }
+
+    @Test
+    /**
      * 验证 {@code localServerRejectsUnexpectedMethodAndSubpath} 所描述的业务行为。
      */
     void localServerRejectsUnexpectedMethodAndSubpath() throws Exception {

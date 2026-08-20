@@ -13,6 +13,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * 将 CM Agent 运行时请求适配为 AgentScope 执行流程。
@@ -81,13 +82,29 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
      */
     @Override
     public AgentRunResult run(AgentRunRequest request) {
+        return run(request, ignored -> {
+        });
+    }
+
+    @Override
+    /**
+     * 执行一次运行，并将 AgentScope 的模型文本增量传递给上层。
+     *
+     * <p>凭据不可用仍按普通运行路径转换为受控失败，避免流式连接暴露底层凭据或异常详情。</p>
+     *
+     * @param request 当前运行请求
+     * @param outputDeltaConsumer 接收模型输出片段的消费者
+     * @return 运行完成后的终态结果
+     */
+    public AgentRunResult run(AgentRunRequest request, Consumer<String> outputDeltaConsumer) {
         Objects.requireNonNull(request, "request 不能为空");
+        Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
         Instant startedAt = clock.instant();
         try {
             ModelCredential credential = credentialProvider.resolve(
                     request.tenantId(), request.modelConfig().id());
             AgentScopeExecutionResult execution =
-                    executor.execute(toRunSpec(request), credential, toolGateway);
+                    executor.execute(toRunSpec(request), credential, toolGateway, outputDeltaConsumer);
             return new AgentRunResult(
                     request.runId(),
                     execution.status(),

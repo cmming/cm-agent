@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 @Service
 /** 编排 Agent 单轮运行，连接运行时、工具治理、持久化和输出脱敏边界。 */
@@ -100,6 +101,29 @@ public class RunExecutionService {
      * @throws RuntimeExecutionException 运行时或受治理工具调用失败时抛出
      */
     public AgentRunResult run(PrincipalRef principal, UUID agentId, String input) {
+        return run(principal, agentId, input, ignored -> {
+        });
+    }
+
+    /**
+     * 执行 Agent 单轮运行，并在模型输出可用时向调用方发送已脱敏的文本片段。
+     *
+     * <p>运行记录仍只在最终结果产生后落库，避免把不完整输出写成已完成结果；流式消费者仅用于
+     * 当前连接的即时展示，且所有片段都先经过与最终输出相同的脱敏边界。</p>
+     *
+     * @param principal 当前认证主体
+     * @param agentId 待运行的 Agent 标识
+     * @param input 用户输入
+     * @param outputDeltaConsumer 接收脱敏文本增量的消费者
+     * @return Agent 运行结果
+     */
+    public AgentRunResult run(
+            PrincipalRef principal,
+            UUID agentId,
+            String input,
+            Consumer<String> outputDeltaConsumer
+    ) {
+        Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
         // 先在认证主体所属租户内校验 Agent 与模型配置，避免跨租户读取或使用已禁用资源。
         AgentDefinition agent = agentRepository.findByTenantAndId(principal.tenantId(), agentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
@@ -122,7 +146,7 @@ public class RunExecutionService {
             // 将完整运行上下文交给 Runtime；Runtime 内部可能继续发起受治理的工具调用。
             runtimeResult = runtime.run(new AgentRunRequest(
                     runningRun.id(), principal.tenantId(), agent, modelConfig, principal, input, authorizedTools
-            ));
+            ), delta -> outputDeltaConsumer.accept(redactor.redact(delta)));
         } catch (AuditPersistenceException auditFailure) {
             // 审计持久化失败时尽力关闭运行记录，并保留原异常交给上层严格处理。
             bestEffortFailureClosure(principal, runningRun);

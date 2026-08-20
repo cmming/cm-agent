@@ -1720,11 +1720,38 @@
         }
         try {
             await withSubmitState($("runBtn"), async () => {
-                const result = await api.request(`/api/agents/${encodeURIComponent(agentId)}/runs`, {
+                state.selectedAgentId = agentId;
+                state.selectedRunId = "";
+                let result = null;
+                let streamedOutput = "";
+                renderStreamingRunDetail(input);
+                setStatus($("runFormStatus"), "运行中，正在接收模型输出…", "neutral");
+                await api.stream(`/api/agents/${encodeURIComponent(agentId)}/runs/stream`, {
                     method: "POST",
                     body: JSON.stringify({input})
+                }, (event) => {
+                    if (event.type === "delta") {
+                        const delta = String(event.data?.delta || "");
+                        if (!delta) return;
+                        streamedOutput += delta;
+                        appendStreamingOutput(delta);
+                        return;
+                    }
+                    if (event.type === "completed") {
+                        result = event.data;
+                        return;
+                    }
+                    if (event.type === "error") {
+                        const code = event.data?.code ? `（错误码：${event.data.code}）` : "";
+                        const errorId = event.data?.errorId ? `（错误编号：${event.data.errorId}）` : "";
+                        throw new Error(`${event.data?.message || "运行失败"}${code}${errorId}`);
+                    }
                 });
-                state.selectedAgentId = agentId;
+                if (!result) throw new Error("运行未返回最终结果，请刷新运行记录确认状态。");
+                // 最终持久化结果是权威内容；用于兼容不支持增量的 Runtime，并校正可能被模型合并的文本块边界。
+                if (String(result.output || "") !== streamedOutput) {
+                    setStreamingOutput(String(result.output || ""));
+                }
                 await loadRuns({append: false});
                 if (result?.runId) await loadRunDetail(result.runId);
                 const meta = core.statusMeta(result?.status);
@@ -1732,6 +1759,256 @@
             });
         } catch (error) {
             setStatus($("runFormStatus"), error.message, "error");
+        }
+    }
+
+    let streamingMarkdownOutput = "";
+
+    function renderStreamingRunDetail(input) {
+        const container = $("runDetail");
+        if (!container) return;
+        streamingMarkdownOutput = "";
+        container.classList.add("is-streaming");
+        const heading = element("div", {className: "panel-heading run-streaming-heading"});
+        const titleGroup = element("div");
+        titleGroup.append(
+            element("p", {className: "eyebrow", text: "流式运行"}),
+            element("h2", {text: "正在生成回答"})
+        );
+        heading.append(titleGroup, statusBadge("RUNNING"));
+        const inputSection = element("section", {className: "detail-section run-input-section"});
+        inputSection.append(element("h3", {text: "本次输入"}), element("p", {className: "run-copy-block", text: input}));
+        const outputSection = element("section", {className: "detail-section stream-output-section"});
+        const outputHeading = element("div", {className: "stream-output-heading"});
+        outputHeading.append(element("h3", {text: "实时输出"}), element("span", {className: "stream-output-state", text: "正在接收 · Markdown"}));
+        const output = element("div", {className: "markdown-output"});
+        output.id = "streamOutput";
+        output.setAttribute("aria-live", "polite");
+        outputSection.append(outputHeading, output);
+        container.replaceChildren(heading, inputSection, outputSection);
+    }
+
+    function appendStreamingOutput(delta) {
+        const output = $("streamOutput");
+        if (!output) return;
+        streamingMarkdownOutput += delta;
+        renderMarkdown(output, streamingMarkdownOutput);
+        output.scrollTop = output.scrollHeight;
+    }
+
+    function setStreamingOutput(value) {
+        const output = $("streamOutput");
+        if (!output) return;
+        streamingMarkdownOutput = value;
+        renderMarkdown(output, streamingMarkdownOutput);
+        output.scrollTop = output.scrollHeight;
+    }
+
+    /**
+     * 将模型输出以受限 Markdown 转换为 DOM 节点。
+     *
+     * <p>模型文本始终通过 {@code textContent} 或文本节点写入，绝不将模型输出交给
+     * {@code innerHTML} 解析；链接协议也会白名单校验，以避免运行结果突破控制台安全边界。</p>
+     *
+     * @param container 接收渲染结果的容器
+     * @param source 模型返回的 Markdown 原文
+     */
+    function renderMarkdown(container, source) {
+        container.replaceChildren(markdownFragment(String(source || "")));
+    }
+
+    function markdownFragment(source) {
+        const fragment = document.createDocumentFragment();
+        const lines = source.replace(/\r\n?/g, "\n").split("\n");
+        let index = 0;
+        while (index < lines.length) {
+            const line = lines[index];
+            if (!line.trim()) {
+                index += 1;
+                continue;
+            }
+            const fence = line.match(/^\s*```([^`]*)$/);
+            if (fence) {
+                const codeLines = [];
+                index += 1;
+                while (index < lines.length && !/^\s*```\s*$/.test(lines[index])) {
+                    codeLines.push(lines[index]);
+                    index += 1;
+                }
+                if (index < lines.length) index += 1;
+                const pre = element("pre", {className: "markdown-code-block"});
+                const code = element("code", {text: codeLines.join("\n")});
+                const language = fence[1].trim().toLowerCase();
+                if (/^[a-z0-9+#.-]{1,32}$/.test(language)) code.className = `language-${language}`;
+                pre.append(code);
+                fragment.append(pre);
+                continue;
+            }
+            const heading = line.match(/^(#{1,6})\s+(.+)$/);
+            if (heading) {
+                const node = element(`h${heading[1].length}`);
+                appendInlineMarkdown(node, heading[2]);
+                fragment.append(node);
+                index += 1;
+                continue;
+            }
+            if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
+                fragment.append(element("hr"));
+                index += 1;
+                continue;
+            }
+            if (isMarkdownTable(lines, index)) {
+                const headers = markdownTableCells(lines[index]);
+                const wrapper = element("div", {className: "markdown-table-scroll"});
+                const table = element("table");
+                const head = element("thead");
+                const row = element("tr");
+                headers.forEach((value) => {
+                    const cell = element("th");
+                    appendInlineMarkdown(cell, value);
+                    row.append(cell);
+                });
+                head.append(row);
+                table.append(head);
+                const body = element("tbody");
+                index += 2;
+                while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
+                    const cells = markdownTableCells(lines[index]);
+                    const bodyRow = element("tr");
+                    headers.forEach((ignored, cellIndex) => {
+                        const cell = element("td");
+                        appendInlineMarkdown(cell, cells[cellIndex] || "");
+                        bodyRow.append(cell);
+                    });
+                    body.append(bodyRow);
+                    index += 1;
+                }
+                table.append(body);
+                wrapper.append(table);
+                fragment.append(wrapper);
+                continue;
+            }
+            const unordered = line.match(/^\s*[-+*]\s+(.+)$/);
+            const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+            if (unordered || ordered) {
+                const list = element(unordered ? "ul" : "ol");
+                const matcher = unordered ? /^\s*[-+*]\s+(.+)$/ : /^\s*\d+[.)]\s+(.+)$/;
+                while (index < lines.length) {
+                    const item = lines[index].match(matcher);
+                    if (!item) break;
+                    const listItem = element("li");
+                    appendInlineMarkdown(listItem, item[1]);
+                    list.append(listItem);
+                    index += 1;
+                }
+                fragment.append(list);
+                continue;
+            }
+            if (/^>\s?/.test(line)) {
+                const quoteLines = [];
+                while (index < lines.length && /^>\s?/.test(lines[index])) {
+                    quoteLines.push(lines[index].replace(/^>\s?/, ""));
+                    index += 1;
+                }
+                const quote = element("blockquote");
+                quote.append(markdownFragment(quoteLines.join("\n")));
+                fragment.append(quote);
+                continue;
+            }
+            const paragraphLines = [];
+            while (index < lines.length && lines[index].trim() && !isMarkdownBlockStart(lines, index)) {
+                paragraphLines.push(lines[index]);
+                index += 1;
+            }
+            if (!paragraphLines.length) {
+                paragraphLines.push(lines[index]);
+                index += 1;
+            }
+            const paragraph = element("p");
+            appendMarkdownParagraph(paragraph, paragraphLines);
+            fragment.append(paragraph);
+        }
+        return fragment;
+    }
+
+    function isMarkdownBlockStart(lines, index) {
+        const line = lines[index] || "";
+        return /^\s*```/.test(line)
+                || /^(#{1,6})\s+/.test(line)
+                || /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)
+                || /^\s*[-+*]\s+/.test(line)
+                || /^\s*\d+[.)]\s+/.test(line)
+                || /^>\s?/.test(line)
+                || isMarkdownTable(lines, index);
+    }
+
+    function isMarkdownTable(lines, index) {
+        if (!lines[index]?.includes("|") || !lines[index + 1]) return false;
+        const separators = markdownTableCells(lines[index + 1]);
+        return separators.length > 0 && separators.every((value) => /^:?-{3,}:?$/.test(value));
+    }
+
+    function markdownTableCells(line) {
+        return line.trim().replace(/^\||\|$/g, "").split("|").map((value) => value.trim());
+    }
+
+    function appendMarkdownParagraph(container, lines) {
+        lines.forEach((line, index) => {
+            const hardBreak = / {2}$/.test(line);
+            appendInlineMarkdown(container, hardBreak ? line.slice(0, -2) : line);
+            if (index < lines.length - 1) container.append(hardBreak ? element("br") : document.createTextNode(" "));
+        });
+    }
+
+    function appendInlineMarkdown(container, source) {
+        const tokenPattern = /(`[^`]+`|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|\*[^*\n]+\*|_[^_\n]+_)/g;
+        let cursor = 0;
+        for (const match of source.matchAll(tokenPattern)) {
+            if (match.index > cursor) container.append(document.createTextNode(source.slice(cursor, match.index)));
+            appendMarkdownToken(container, match[0]);
+            cursor = match.index + match[0].length;
+        }
+        if (cursor < source.length) container.append(document.createTextNode(source.slice(cursor)));
+    }
+
+    function appendMarkdownToken(container, token) {
+        if (token.startsWith("`")) {
+            container.append(element("code", {text: token.slice(1, -1)}));
+            return;
+        }
+        const link = token.match(/^\[([^\]]+)]\(([^)]+)\)$/);
+        if (link) {
+            const href = safeMarkdownLink(link[2]);
+            if (!href) {
+                container.append(document.createTextNode(token));
+                return;
+            }
+            const anchor = element("a");
+            anchor.href = href;
+            if (!href.startsWith("#")) {
+                anchor.target = "_blank";
+                anchor.rel = "noreferrer noopener";
+            }
+            appendInlineMarkdown(anchor, link[1]);
+            container.append(anchor);
+            return;
+        }
+        const marker = token.startsWith("**") || token.startsWith("__") ? 2 : token.startsWith("~~") ? 2 : 1;
+        const tagName = token.startsWith("**") || token.startsWith("__") ? "strong"
+                : token.startsWith("~~") ? "del" : "em";
+        const node = element(tagName);
+        appendInlineMarkdown(node, token.slice(marker, -marker));
+        container.append(node);
+    }
+
+    function safeMarkdownLink(value) {
+        const raw = String(value || "").trim();
+        if (raw.startsWith("#")) return raw;
+        try {
+            const url = new URL(raw, window.location.origin);
+            return ["http:", "https:", "mailto:"].includes(url.protocol) ? url.href : "";
+        } catch {
+            return "";
         }
     }
 
@@ -1798,20 +2075,28 @@
     function renderRunDetail(detail) {
         const run = detail?.run || {};
         const container = $("runDetail");
+        container.classList.remove("is-streaming");
         const heading = element("div", {className: "panel-heading"});
         const titleGroup = element("div");
         titleGroup.append(element("p", {className: "eyebrow", text: "运行详情"}));
         titleGroup.append(element("h2", {text: `运行 ${run.id || "—"}`}));
         heading.append(titleGroup, statusBadge(run.status));
+        const inputSection = element("section", {className: "detail-section run-input-section"});
+        inputSection.append(element("h3", {text: "本次输入"}), element("p", {className: "run-copy-block", text: run.input || "无输入"}));
+        const outputSection = element("section", {className: "detail-section stream-output-section"});
+        outputSection.append(element("h3", {text: "最终输出 · Markdown"}));
+        const output = element("div", {className: "markdown-output"});
+        renderMarkdown(output, run.output || "暂无输出");
+        outputSection.append(output);
         const dl = definitionList([
-            ["输入", run.input],
-            ["输出", run.output],
             ["错误", run.errorMessage],
             ["执行主体", run.principalId],
             ["开始时间", core.formatDateTime(run.startedAt)],
             ["结束时间", core.formatDateTime(run.finishedAt)]
         ]);
-        const callsSection = element("section", {className: "detail-section"});
+        const metadataSection = element("section", {className: "detail-section run-metadata-section"});
+        metadataSection.append(element("h3", {text: "运行信息"}), dl);
+        const callsSection = element("section", {className: "detail-section run-tool-calls-section"});
         callsSection.id = "runToolCalls";
         callsSection.append(element("h3", {text: "工具调用"}));
         const toolCalls = Array.isArray(detail?.toolCalls) ? detail.toolCalls : [];
@@ -1820,22 +2105,64 @@
         } else {
             toolCalls.forEach((call) => callsSection.append(renderToolCall(call)));
         }
-        container.replaceChildren(heading, dl, callsSection);
+        container.replaceChildren(heading, inputSection, outputSection, metadataSection, callsSection);
     }
 
     function renderToolCall(call) {
         const article = element("article", {className: "tool-call"});
-        const heading = element("div", {className: "resource-heading"});
-        heading.append(element("strong", {text: call.toolName || "未命名 Tool"}), statusBadge(call.status));
-        article.append(heading);
-        article.append(definitionList([
-            ["已授权", call.authorized ? "是" : "否"],
-            ["耗时", call.durationMillis === null || call.durationMillis === undefined ? "—" : `${call.durationMillis} ms`],
-            ["输入摘要", call.inputSummary],
-            ["输出摘要", call.outputSummary],
-            ["错误", call.errorMessage]
-        ]));
+        const heading = element("div", {className: "tool-call-heading"});
+        const titleGroup = element("div");
+        titleGroup.append(
+                element("p", {className: "eyebrow", text: "Tool 调用"}),
+                element("h4", {text: call.toolName || "未命名 Tool"})
+        );
+        heading.append(titleGroup, statusBadge(call.status));
+        const meta = element("div", {className: "tool-call-meta"});
+        meta.append(
+                toolCallMetaItem("授权状态", call.authorized ? "已授权" : "未授权"),
+                toolCallMetaItem(
+                        "执行耗时",
+                        call.durationMillis === null || call.durationMillis === undefined ? "—" : `${call.durationMillis} ms`
+                ),
+                toolCallMetaItem("内容范围", "已脱敏摘要")
+        );
+        const payloads = element("div", {className: "tool-call-payloads"});
+        payloads.append(
+                renderToolCallPayload("请求输入", call.inputSummary, "未记录输入摘要。"),
+                renderToolCallPayload("执行输出", call.outputSummary, "未返回输出摘要。")
+        );
+        if (String(call.errorMessage || "").trim()) {
+            const error = renderToolCallPayload("错误信息", call.errorMessage, "");
+            error.classList.add("tool-call-error-payload");
+            payloads.append(error);
+        }
+        article.append(heading, meta, payloads);
         return article;
+    }
+
+    function toolCallMetaItem(label, value) {
+        const item = element("div", {className: "tool-call-meta-item"});
+        item.append(element("span", {text: label}), element("strong", {text: value}));
+        return item;
+    }
+
+    function renderToolCallPayload(title, value, emptyMessage) {
+        const section = element("section", {className: "tool-call-payload"});
+        const formatted = formatToolCallPayload(value, emptyMessage);
+        const heading = element("div", {className: "tool-call-payload-heading"});
+        heading.append(element("h5", {text: title}), element("span", {text: formatted.format}));
+        section.append(heading, element("pre", {className: "tool-call-payload-content", text: formatted.content}));
+        return section;
+    }
+
+    function formatToolCallPayload(value, emptyMessage) {
+        const content = String(value || "").trim();
+        if (!content) return {content: emptyMessage, format: "无内容"};
+        try {
+            return {content: JSON.stringify(JSON.parse(content), null, 2), format: "JSON"};
+        } catch {
+            return {content, format: "文本"};
+        }
     }
 
     async function loadAudit({append = false} = {}) {

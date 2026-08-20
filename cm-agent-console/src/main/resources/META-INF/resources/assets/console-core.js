@@ -388,7 +388,7 @@
             throw new TypeError("请求客户端依赖不完整");
         }
 
-        return {request};
+        return {request, stream};
 
         async function request(path, options = {}) {
             const headers = new Headers(options.headers || {});
@@ -424,6 +424,88 @@
             }
             return body;
         }
+
+        /**
+         * 发起同源 SSE POST 请求，并将完整事件帧按顺序交给调用方。
+         *
+         * <p>运行接口使用 HttpOnly Cookie 和内存令牌的同源认证策略，因此这里与普通请求保持
+         * 相同的凭据和 401 收口逻辑。解析器按空行切分事件，能够正确处理网络层把一个事件拆分为
+         * 多个 {@code ReadableStream} 数据块的情况。</p>
+         */
+        async function stream(path, options = {}, onEvent) {
+            if (typeof onEvent !== "function") {
+                throw new Error("流式响应处理器必须是函数。");
+            }
+            const headers = new Headers(options.headers || {});
+            headers.set("Content-Type", "application/json");
+            headers.set("Accept", "text/event-stream");
+            const token = getToken();
+            const sessionEpoch = getSessionEpoch();
+            if (token) {
+                headers.set("Authorization", `Bearer ${token}`);
+            }
+            const response = await fetchImpl(path, {...options, headers, credentials: "same-origin"});
+            if (!response.ok) {
+                const rawBody = await response.text();
+                let body = null;
+                try {
+                    body = rawBody ? JSON.parse(rawBody) : null;
+                } catch {
+                    body = rawBody;
+                }
+                if (response.status === 401) {
+                    if (token === getToken() && sessionEpoch === getSessionEpoch()) {
+                        onUnauthorized();
+                    }
+                    throw new Error("未登录或令牌已失效，请重新登录。");
+                }
+                const error = new Error(formatError(response.status, body, rawBody));
+                error.status = response.status;
+                throw error;
+            }
+            if (!response.body) {
+                throw new Error("服务未返回可读取的流式响应。");
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffered = "";
+            while (true) {
+                const chunk = await reader.read();
+                if (chunk.done) break;
+                buffered += decoder.decode(chunk.value, {stream: true});
+                // \r\n 也可能刚好跨越网络分片边界，因此必须在合并后再统一规范化。
+                buffered = buffered.replace(/\r\n/g, "\n");
+                let boundary = buffered.indexOf("\n\n");
+                while (boundary >= 0) {
+                    const frame = buffered.slice(0, boundary);
+                    buffered = buffered.slice(boundary + 2);
+                    const event = parseSseFrame(frame);
+                    if (event) onEvent(event);
+                    boundary = buffered.indexOf("\n\n");
+                }
+            }
+            buffered += decoder.decode();
+            buffered = buffered.replace(/\r\n/g, "\n");
+            const trailingEvent = parseSseFrame(buffered);
+            if (trailingEvent) onEvent(trailingEvent);
+        }
+    }
+
+    function parseSseFrame(frame) {
+        if (!frame || frame.startsWith(":")) return null;
+        let type = "message";
+        const dataLines = [];
+        frame.split("\n").forEach((line) => {
+            if (line.startsWith("event:")) type = line.slice(6).trim() || "message";
+            if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+        });
+        if (!dataLines.length) return null;
+        const rawData = dataLines.join("\n");
+        try {
+            return {type, data: JSON.parse(rawData)};
+        } catch {
+            return {type, data: rawData};
+        }
     }
 
     function formatDateTime(value) {
@@ -457,6 +539,7 @@
     return {
         formatError,
         createApiClient,
+        parseSseFrame,
         appendCursorPage,
         buildCursorPath,
         parseJsonField,

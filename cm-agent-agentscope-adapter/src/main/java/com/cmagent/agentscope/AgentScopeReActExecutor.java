@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
@@ -25,6 +26,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
  * 基于 AgentScope ReActAgent 执行单轮运行并治理工具调用生命周期。
@@ -100,9 +102,33 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             ModelCredential credential,
             ToolInvocationGateway toolGateway
     ) {
+        return execute(spec, credential, toolGateway, ignored -> {
+        });
+    }
+
+    @Override
+    /**
+     * 执行 AgentScope ReAct 流程，并将最终回答的文本块增量暴露给调用方。
+     *
+     * <p>只转发 {@link TextBlockDeltaEvent}，不会把思考过程、工具参数或工具原始输出送往控制台，
+     * 从而保持模型输出流与既有工具治理边界一致。</p>
+     *
+     * @param spec AgentScope 运行规格
+     * @param credential 调用模型所需的受控凭据
+     * @param toolGateway 受治理的工具调用网关
+     * @param outputDeltaConsumer 接收最终回答文本片段的消费者
+     * @return AgentScope 执行结果
+     */
+    public AgentScopeExecutionResult execute(
+            AgentScopeRunSpec spec,
+            ModelCredential credential,
+            ToolInvocationGateway toolGateway,
+            Consumer<String> outputDeltaConsumer
+    ) {
         Objects.requireNonNull(spec, "spec 不能为空");
         Objects.requireNonNull(credential, "credential 不能为空");
         Objects.requireNonNull(toolGateway, "toolGateway 不能为空");
+        Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
 
         List<AgentScopeToolBridge> bridges = new ArrayList<>();
         AgentScopeRunGate runGate = new AgentScopeRunGate(options.toolTimeout());
@@ -166,6 +192,11 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                             runGate.observeToolResultEnd(
                                     toolResultEndEvent.getToolCallId(),
                                     bridgeCompleted);
+                        }
+                        if (event instanceof TextBlockDeltaEvent textDeltaEvent
+                                && textDeltaEvent.getDelta() != null
+                                && !textDeltaEvent.getDelta().isEmpty()) {
+                            outputDeltaConsumer.accept(textDeltaEvent.getDelta());
                         }
                         if (event instanceof AgentResultEvent resultEvent) {
                             finalMessage.set(resultEvent.getResult());
