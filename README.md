@@ -38,7 +38,7 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 v2 控制台按版本化 URL 拆分为登录、能力总览、Agent 管理、模型配置、工具治理、运行记录和审计日志七个独立 HTML 页面。页面之间使用真实链接和独立 URL，并在当前文档内加载目标 HTML，以兼容会隔离跨文档状态的嵌入式浏览器；直接刷新或访问页面时由仅作用于 `/api` 的 `HttpOnly`、`SameSite=Strict` 会话 Cookie 恢复认证。登录响应中的 JWT 只在当前页面内存中短暂使用，不会写入浏览器存储或 URL；退出时会立即清除 Cookie。用户名和密码不会保存。原始单页 `index.html` 继续作为 v1 从 `/console/v1/` 提供，v1 的 JWT 仍只保存在页面内存中，刷新后需要重新登录。
 
-两个版本复用相同的服务端 API、权限、多租户和审计边界。v2 面向平台使用者提供能力总览、Agent 列表/详情/创建/编辑/删除、模型配置列表/详情/创建/编辑/删除、Tool 列表/创建/编辑/删除/授权、Agent 详情解除工具关联、Agent 运行调试、运行历史与工具调用详情，以及审计日志游标分页。运行页使用 `POST /api/agents/{agentId}/runs/stream` 建立同源 SSE 连接，真实 AgentScope 模型的最终回答文本会逐段显示；连接断开不会取消已经启动的运行，最终结果仍按既有持久化和审计流程收口。Agent 创建和编辑必须从当前租户的已启用模型配置中选择，服务端使用该配置的 ID 与模型名称，不能由浏览器自由填写模型名称。Agent 删除需要 `agent:delete`；已有会话或运行历史时返回 `409 Conflict`，应改为停用 Agent，以保留运行与审计链路。页面不提供手动取消。
+两个版本复用相同的服务端 API、权限、多租户和审计边界。v2 面向平台使用者提供能力总览、Agent 列表/详情/创建/编辑/删除、模型配置列表/详情/创建/编辑/删除、Tool 列表/创建/编辑/删除/授权、Agent 详情解除工具关联、会话式运行调试、运行历史与工具调用详情，以及审计日志游标分页。运行页通过 `/api/agents/{agentId}/conversations` 创建并选择持久化会话，USER/ASSISTANT 消息按会话内序号保存；续聊时服务端注入最近 40 条且最多 60,000 字符的完整消息历史。流式发送接口依次返回 `started`、`message-started`、带 `replyId/blockId` 的 `delta`、`completed` 或带稳定错误码和 `errorId` 的 `error`。连接断开不会取消已经启动的运行，最终结果仍按既有持久化和审计流程收口。原 `/runs` 与 `/runs/stream` 继续作为兼容的单轮 API。Agent 创建和编辑必须从当前租户的已启用模型配置中选择，服务端使用该配置的 ID 与模型名称，不能由浏览器自由填写模型名称。Agent 删除需要 `agent:delete`；已有会话或运行历史时返回 `409 Conflict`，应改为停用 Agent，以保留运行与审计链路。页面不提供手动取消。
 
 模型配置 API 位于 `/api/model-configs`：读取需要 `model:read`，创建和更新需要 `model:write`，删除需要 `model:delete`。所有操作从认证主体取得 tenant，并记录权限拒绝或成功写操作审计；仍被 Agent 引用的配置删除时返回 `409 Conflict`。启动初始化器维护的系统默认配置不可删除，可通过更新接口停用或调整。接口和页面只管理 Provider、`baseUrl`、`modelName`、显示名称与启用状态，不接收、不保存、不返回 API Key。
 
@@ -91,11 +91,11 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 - 第一阶段：已交付工程骨架、核心领域接口、Starter、控制台、工具治理、多租户/RBAC 基线和 fake runtime。
 - 阶段2：已交付 Run、ToolCall、Audit 的 JDBC Repository 与 Flyway V2/V3 查询索引，租户隔离、严格审计、JWT/profile/bootstrap/error/redaction 安全收口，以及运行启动/完成两段事务和 cursor 查询。
-- 阶段3：已交付 AgentScope Java 2.0.0 真实同步单轮运行、OpenAI Compatible/DashScope 模型适配、外部模型凭据、受治理工具调用、超时中止与结果映射；并交付动态 HTTP 工具、控制台调试与可选 MCP 发布。工具每次调用都会重新授权，endpoint 元数据不会被自动执行。
+- 阶段3：已交付 AgentScope Java 2.0.0 真实运行、OpenAI Compatible/DashScope 模型适配、外部模型凭据、受治理工具调用、超时中止与结果映射；并交付消息一等公民的持久化会话、会话 SSE、动态 HTTP 工具、控制台调试与可选 MCP 发布。工具每次调用都会重新授权，endpoint 元数据不会被自动执行。
 - 阶段4：可观测性与运维增强尚未交付。
 - 阶段5：交付与稳定性工程尚未交付。
 
-阶段3不承诺多轮会话持久化、流式 REST、HITL 或手动取消。模型与工具调用失败、审计严格失败以及外部副作用的重试/幂等边界见[配置说明](docs/configuration.md)和[运维说明](docs/operations.md)。
+当前会话只持久化脱敏文本和受治理工具摘要，不提供消息编辑/删除、会话归档、附件、多模态、HITL、自动摘要、手动取消或写请求幂等重放。模型与工具调用失败、审计严格失败以及外部副作用的重试/幂等边界见[配置说明](docs/configuration.md)和[运维说明](docs/operations.md)。
 
 完整范围和后续依赖见[中文路线图](docs/roadmap.md)。
 

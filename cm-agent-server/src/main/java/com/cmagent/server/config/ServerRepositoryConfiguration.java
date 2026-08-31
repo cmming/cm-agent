@@ -8,12 +8,15 @@ import com.cmagent.core.domain.ToolGrant;
 import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.RunRepository;
+import com.cmagent.core.repository.ConversationRepository;
+import com.cmagent.core.repository.ConversationMessageRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolCallRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
+import com.cmagent.server.store.InMemoryConversationStore;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -31,6 +34,26 @@ import java.util.UUID;
 @EnableConfigurationProperties(CmAgentPersistenceProperties.class)
 /** 按持久化模式选择 memory 或 JDBC Repository 实现。 */
 public class ServerRepositoryConfiguration {
+
+    @Bean
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    public InMemoryConversationStore inMemoryConversationStore() {
+        return new InMemoryConversationStore();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(ConversationRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    public ConversationRepository memoryConversationRepository(InMemoryConversationStore store) {
+        return store;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(ConversationMessageRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    public ConversationMessageRepository memoryConversationMessageRepository(InMemoryConversationStore store) {
+        return store;
+    }
 
     private static final UUID DEFAULT_MODEL_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
     private static final UUID DEFAULT_TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");

@@ -234,6 +234,106 @@ class RunControllerTest {
 
     @Test
     /**
+     * 验证会话消息成为可查询的一等资源，并且运行时收到带会话上下文的安全提示词。
+     */
+    void conversationPersistsUserAndAssistantMessages() throws Exception {
+        String accessToken = loginToken();
+        String agentId = createAgent(accessToken);
+        String conversationResponse = mockMvc.perform(post("/api/agents/{agentId}/conversations", agentId)
+                        .header("Authorization", bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("新会话"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String conversationId = JsonPath.read(conversationResponse, "$.id");
+
+        mockMvc.perform(post("/api/agents/{agentId}/conversations/{conversationId}/messages",
+                        agentId, conversationId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"input\":\"第一轮问题\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.conversationId").value(conversationId))
+                .andExpect(jsonPath("$.run.status").value("SUCCEEDED"))
+                .andExpect(jsonPath("$.assistantMessage.contentBlocks[0].type").value("TEXT"));
+
+        mockMvc.perform(get("/api/agents/{agentId}/conversations/{conversationId}/messages",
+                        agentId, conversationId)
+                        .header("Authorization", bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].role").value("USER"))
+                .andExpect(jsonPath("$.items[0].contentBlocks[0].text").value("第一轮问题"))
+                .andExpect(jsonPath("$.items[1].role").value("ASSISTANT"));
+
+        mockMvc.perform(post("/api/agents/{agentId}/conversations/{conversationId}/messages",
+                        agentId, conversationId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"input\":\"第二轮问题\"}"))
+                .andExpect(status().isOk());
+        assertThat(agentRuntime.lastRequest().conversationId()).isEqualTo(UUID.fromString(conversationId));
+        assertThat(agentRuntime.lastRequest().input())
+                .contains("<conversation-history>", "<current-user-message>", "第一轮问题", "第二轮问题");
+    }
+
+    @Test
+    /**
+     * 验证会话流式协议提供消息关联键，并在 completed 事件中返回持久化消息终态。
+     */
+    void conversationStreamSendsMessageLifecycleEvents() throws Exception {
+        String accessToken = loginToken();
+        String agentId = createAgent(accessToken);
+        String created = mockMvc.perform(post("/api/agents/{agentId}/conversations", agentId)
+                        .header("Authorization", bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String conversationId = JsonPath.read(created, "$.id");
+
+        var response = mockMvc.perform(post(
+                                "/api/agents/{agentId}/conversations/{conversationId}/messages/stream",
+                                agentId, conversationId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .content("{\"input\":\"流式问题\"}"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse();
+        String body = new String(response.getContentAsByteArray(), StandardCharsets.UTF_8);
+
+        assertThat(body)
+                .contains("event:started", "event:message-started", "event:delta", "event:completed")
+                .contains("\"conversationId\":\"" + conversationId + "\"")
+                .contains("fake-runtime:");
+    }
+
+    @Test
+    /** 跨租户访问会话统一返回不存在，避免泄露资源归属。 */
+    void conversationCannotBeReadAcrossTenants() throws Exception {
+        String ownerToken = loginToken();
+        String agentId = createAgent(ownerToken);
+        String created = mockMvc.perform(post("/api/agents/{agentId}/conversations", agentId)
+                        .header("Authorization", bearer(ownerToken)))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String conversationId = JsonPath.read(created, "$.id");
+        String otherTenantToken = tokenWithPermissions(
+                UUID.randomUUID(), "other-tenant", List.of("agent:read", "agent:run"));
+
+        mockMvc.perform(get("/api/agents/{agentId}/conversations/{conversationId}", agentId, conversationId)
+                        .header("Authorization", bearer(otherTenantToken)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CONVERSATION_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("会话或 Agent 不存在"));
+    }
+
+    @Test
+    /**
      * 验证或支持 {@code disabledModelConfigIsRejectedBeforeRuntimeInvocation} 所描述的测试场景。
      */
     void disabledModelConfigIsRejectedBeforeRuntimeInvocation() throws Exception {
@@ -247,9 +347,9 @@ class RunControllerTest {
         mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
                         .header("Authorization", bearer(accessToken))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"input\":\"你好\"}"))
+                .content("{\"input\":\"你好\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("请求参数不合法"));
+                .andExpect(jsonPath("$.message").value("模型配置不可用"));
 
         assertThat(agentRuntime.lastRequest()).isNull();
     }
@@ -270,9 +370,9 @@ class RunControllerTest {
         mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
                         .header("Authorization", bearer(accessToken))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"input\":\"你好\"}"))
+                .content("{\"input\":\"你好\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("请求参数不合法"));
+                .andExpect(jsonPath("$.message").value("模型配置不可用"));
 
         assertThat(agentRuntime.lastRequest()).isNull();
     }

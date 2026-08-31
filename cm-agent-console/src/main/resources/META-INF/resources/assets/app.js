@@ -50,6 +50,9 @@
         runs: [],
         runCursor: "",
         selectedRunId: "",
+        conversations: [],
+        selectedConversationId: "",
+        conversationAgentId: "",
         auditEvents: [],
         auditCursor: ""
     };
@@ -96,6 +99,7 @@
         if (options.className) node.className = options.className;
         if (options.text !== undefined) node.textContent = String(options.text);
         if (options.type) node.type = options.type;
+        if (options.value !== undefined) node.value = String(options.value);
         return node;
     }
 
@@ -256,6 +260,9 @@
         state.selectedModelConfig = null;
         state.editingModelConfigId = "";
         state.selectedToolId = "";
+        state.conversations = [];
+        state.selectedConversationId = "";
+        state.conversationAgentId = "";
         if (isMultiPage) {
             state.editingToolId = "";
             state.runs = [];
@@ -345,7 +352,8 @@
         $("pageTitle").textContent = info[0];
         $("pageSubtitle").textContent = info[1];
         if (pageId === "runsPage" && state.selectedAgentId && !state.runs.length) {
-            loadRuns({append: false}).catch((error) => setStatus($("runFormStatus"), error.message, "error"));
+            Promise.all([loadRuns({append: false}), loadConversations(state.selectedAgentId)])
+                .catch((error) => setStatus($("runFormStatus"), error.message, "error"));
         }
         if (pageId === "auditPage" && !state.auditEvents.length) {
             loadAudit({append: false}).catch((error) => setStatus($("globalStatus"), error.message, "error"));
@@ -363,7 +371,9 @@
             }
             await Promise.all([loadAgents(session), loadTools(undefined, session), loadLocalExamples(undefined, false, session)]);
             if (!sessionEpoch.isCurrent(session)) return;
-            if (state.selectedAgentId) await loadRuns({append: false});
+            if (state.selectedAgentId) {
+                await Promise.all([loadRuns({append: false}), loadConversations(state.selectedAgentId)]);
+            }
             if (!sessionEpoch.isCurrent(session)) return;
             setStatus($("globalStatus"));
         } catch (error) {
@@ -396,7 +406,12 @@
                 break;
             case "runsPage":
                 await loadAgents(session);
-                if (sessionEpoch.isCurrent(session)) await loadRuns({append: false});
+                if (sessionEpoch.isCurrent(session) && state.selectedAgentId) {
+                    await Promise.all([
+                        loadRuns({append: false}),
+                        loadConversations(state.selectedAgentId)
+                    ]);
+                }
                 break;
             case "auditPage":
                 await loadAudit({append: false});
@@ -1722,11 +1737,12 @@
             await withSubmitState($("runBtn"), async () => {
                 state.selectedAgentId = agentId;
                 state.selectedRunId = "";
+                const conversationId = await ensureConversation(agentId);
                 let result = null;
                 let streamedOutput = "";
                 renderStreamingRunDetail(input);
                 setStatus($("runFormStatus"), "运行中，正在接收模型输出…", "neutral");
-                await api.stream(`/api/agents/${encodeURIComponent(agentId)}/runs/stream`, {
+                await api.stream(`/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/messages/stream`, {
                     method: "POST",
                     body: JSON.stringify({input})
                 }, (event) => {
@@ -1748,18 +1764,99 @@
                     }
                 });
                 if (!result) throw new Error("运行未返回最终结果，请刷新运行记录确认状态。");
+                const runResult = result.run || result;
                 // 最终持久化结果是权威内容；用于兼容不支持增量的 Runtime，并校正可能被模型合并的文本块边界。
-                if (String(result.output || "") !== streamedOutput) {
-                    setStreamingOutput(String(result.output || ""));
+                if (String(runResult.output || "") !== streamedOutput) {
+                    setStreamingOutput(String(runResult.output || ""));
                 }
+                await loadConversations(agentId);
                 await loadRuns({append: false});
-                if (result?.runId) await loadRunDetail(result.runId);
-                const meta = core.statusMeta(result?.status);
-                setStatus($("runFormStatus"), `运行已结束：${meta.label}。`, result?.status === "SUCCEEDED" ? "success" : "error");
+                if (runResult?.runId) await loadRunDetail(runResult.runId);
+                const meta = core.statusMeta(runResult?.status);
+                setStatus($("runFormStatus"), `运行已结束：${meta.label}。`, runResult?.status === "SUCCEEDED" ? "success" : "error");
             });
         } catch (error) {
             setStatus($("runFormStatus"), error.message, "error");
         }
+    }
+
+    async function ensureConversation(agentId) {
+        if (state.conversationAgentId !== agentId) {
+            state.selectedConversationId = "";
+            await loadConversations(agentId);
+        }
+        if (state.selectedConversationId) return state.selectedConversationId;
+        const created = await api.request(`/api/agents/${encodeURIComponent(agentId)}/conversations`, {
+            method: "POST"
+        });
+        state.selectedConversationId = created.id;
+        await loadConversations(agentId);
+        return created.id;
+    }
+
+    async function loadConversations(agentId) {
+        if (!agentId) return;
+        const page = await api.request(`/api/agents/${encodeURIComponent(agentId)}/conversations?limit=50`);
+        state.conversations = Array.isArray(page?.items) ? page.items : [];
+        state.conversationAgentId = agentId;
+        if (!state.conversations.some((item) => item.id === state.selectedConversationId)) {
+            state.selectedConversationId = state.conversations[0]?.id || "";
+        }
+        const select = $("runConversationSelect");
+        if (!select) return;
+        select.replaceChildren();
+        if (!state.conversations.length) {
+            select.append(element("option", {text: "发送时自动创建", value: ""}));
+        } else {
+            state.conversations.forEach((conversation) => select.append(element("option", {
+                text: conversation.title || "新会话",
+                value: conversation.id
+            })));
+        }
+        select.value = state.selectedConversationId;
+    }
+
+    async function createConversation() {
+        const agentId = $("runAgentSelect")?.value;
+        if (!agentId) return;
+        const created = await api.request(`/api/agents/${encodeURIComponent(agentId)}/conversations`, {
+            method: "POST"
+        });
+        state.selectedConversationId = created.id;
+        await loadConversations(agentId);
+        await loadConversationMessages(agentId, created.id);
+        setStatus($("runFormStatus"), "新会话已创建。", "success");
+    }
+
+    async function loadConversationMessages(agentId, conversationId) {
+        if (!conversationId || !$("runDetail")) return;
+        const page = await api.request(`/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/messages?limit=200`);
+        const container = $("runDetail");
+        const messages = Array.isArray(page?.items) ? page.items : [];
+        container.replaceChildren();
+        if (!messages.length) {
+            container.append(emptyState("当前会话还没有消息。"));
+            return;
+        }
+        messages.forEach((message) => {
+            const section = element("section", {className: "detail-section conversation-message"});
+            section.append(element("h3", {text: message.role === "USER" ? "用户" : "Agent"}));
+            (message.contentBlocks || []).forEach((block) => {
+                if (block.type === "TEXT") {
+                    const output = element("div", {className: "markdown-output"});
+                    renderMarkdown(output, String(block.text || ""));
+                    section.append(output);
+                } else {
+                    section.append(element("p", {
+                        className: "run-copy-block",
+                        text: block.type === "TOOL_USE"
+                            ? `工具调用：${block.toolName || "—"} · ${block.text || ""}`
+                            : `工具结果：${block.status || "—"} · ${block.text || ""}`
+                    }));
+                }
+            });
+            container.append(section);
+        });
     }
 
     let streamingMarkdownOutput = "";
@@ -2262,7 +2359,19 @@
         bind("refreshToolsBtn", "click", () => loadTools().catch((error) => setStatus($("globalStatus"), error.message, "error")));
         bind("refreshRunsBtn", "click", () => loadRuns({append: false}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
         bind("loadMoreRunsBtn", "click", () => loadRuns({append: true}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
-        bind("runAgentSelect", "change", () => loadRuns({append: false}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
+        bind("runAgentSelect", "change", () => {
+            const agentId = $("runAgentSelect").value;
+            state.selectedConversationId = "";
+            Promise.all([loadRuns({append: false}), loadConversations(agentId)])
+                .catch((error) => setStatus($("runFormStatus"), error.message, "error"));
+        });
+        bind("newConversationBtn", "click", () => createConversation()
+            .catch((error) => setStatus($("runFormStatus"), error.message, "error")));
+        bind("runConversationSelect", "change", () => {
+            state.selectedConversationId = $("runConversationSelect").value;
+            loadConversationMessages($("runAgentSelect").value, state.selectedConversationId)
+                .catch((error) => setStatus($("runFormStatus"), error.message, "error"));
+        });
         bind("refreshAuditBtn", "click", () => loadAudit({append: false}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
         bind("loadMoreAuditBtn", "click", () => loadAudit({append: true}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
         document.querySelectorAll("button[data-page]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));

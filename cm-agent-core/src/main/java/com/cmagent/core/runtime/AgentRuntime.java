@@ -2,7 +2,13 @@ package com.cmagent.core.runtime;
 
 import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
+import com.cmagent.core.domain.AgentMessageSnapshot;
+import com.cmagent.core.domain.AgentRuntimeResult;
+import com.cmagent.core.domain.AgentTextDelta;
+import com.cmagent.core.domain.MessageContentBlock;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -32,5 +38,49 @@ public interface AgentRuntime {
     default AgentRunResult run(AgentRunRequest request, Consumer<String> outputDeltaConsumer) {
         Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
         return run(request);
+    }
+
+    /**
+     * 执行并返回结构化 assistant 消息。旧 Runtime 无需修改，默认实现会从既有结果构造安全内容块。
+     *
+     * @param request 当前运行请求
+     * @param deltaConsumer 接收带消息关联键的文本增量
+     * @return 运行终态和可选 assistant 消息快照
+     */
+    default AgentRuntimeResult runStructured(
+            AgentRunRequest request,
+            Consumer<AgentTextDelta> deltaConsumer
+    ) {
+        Objects.requireNonNull(request, "request 不能为空");
+        Objects.requireNonNull(deltaConsumer, "deltaConsumer 不能为空");
+        AgentRunResult result = run(request, delta -> {
+            // 旧 Runtime 可能用 null 表示“本次没有可流式输出”，兼容层不把它伪造成消息事件。
+            if (delta != null && !delta.isBlank()) {
+                deltaConsumer.accept(new AgentTextDelta(request.runId().toString(), "text", delta));
+            }
+        });
+        List<MessageContentBlock> blocks = new ArrayList<>();
+        for (int index = 0; index < result.toolCalls().size(); index++) {
+            var toolCall = result.toolCalls().get(index);
+            String toolCallId = request.runId() + ":tool:" + index;
+            blocks.add(MessageContentBlock.toolUse(
+                    toolCallId, toolCall.toolName(), toolCall.inputSummary()));
+            String summary = toolCall.status() == com.cmagent.core.domain.RunStatus.SUCCEEDED
+                    ? toolCall.outputSummary()
+                    : toolCall.errorMessage();
+            blocks.add(MessageContentBlock.toolResult(toolCallId, toolCall.status(), summary));
+        }
+        if (result.output() != null && !result.output().isBlank()) {
+            blocks.add(MessageContentBlock.text(result.output()));
+        }
+        AgentMessageSnapshot message = blocks.isEmpty() ? null : new AgentMessageSnapshot(
+                request.runId().toString(), request.agent().name(), blocks);
+        return new AgentRuntimeResult(result, message);
+    }
+
+    /** 非流式结构化执行的便利入口。 */
+    default AgentRuntimeResult runStructured(AgentRunRequest request) {
+        return runStructured(request, ignored -> {
+        });
     }
 }

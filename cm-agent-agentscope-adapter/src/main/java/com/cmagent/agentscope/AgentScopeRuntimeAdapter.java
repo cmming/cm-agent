@@ -2,6 +2,8 @@ package com.cmagent.agentscope;
 
 import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
+import com.cmagent.core.domain.AgentRuntimeResult;
+import com.cmagent.core.domain.AgentTextDelta;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.runtime.ModelCredential;
@@ -143,6 +145,30 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
                     startedAt,
                     clock.instant(),
                     "模型凭据不可用");
+        }
+    }
+
+    @Override
+    public AgentRuntimeResult runStructured(
+            AgentRunRequest request,
+            Consumer<AgentTextDelta> outputDeltaConsumer
+    ) {
+        Objects.requireNonNull(request, "request 不能为空");
+        Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
+        Instant startedAt = clock.instant();
+        try {
+            ModelCredential credential = credentialProvider.resolve(
+                    request.tenantId(), request.modelConfig().id());
+            AgentScopeExecutionResult execution = executor.executeStructured(
+                    toRunSpec(request), credential, toolGateway, outputDeltaConsumer);
+            AgentRunResult run = new AgentRunResult(
+                    request.runId(), execution.status(), execution.output(), execution.toolCalls(),
+                    startedAt, clock.instant(), execution.errorMessage());
+            return new AgentRuntimeResult(run, execution.assistantMessage());
+        } catch (ModelCredentialUnavailableException exception) {
+            return new AgentRuntimeResult(new AgentRunResult(
+                    request.runId(), RunStatus.FAILED, "", List.of(), startedAt, clock.instant(),
+                    "模型凭据不可用"), null);
         }
     }
 }

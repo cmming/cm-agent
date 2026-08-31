@@ -2,6 +2,7 @@ package com.cmagent.agentscope;
 
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.ToolCallRecord;
+import com.cmagent.core.domain.AgentMessageSnapshot;
 
 import java.util.List;
 import java.util.Objects;
@@ -22,8 +23,18 @@ record AgentScopeExecutionResult(
         RunStatus status,
         String output,
         List<ToolCallRecord> toolCalls,
-        String errorMessage
+        String errorMessage,
+        AgentMessageSnapshot assistantMessage
 ) {
+
+    AgentScopeExecutionResult(
+            RunStatus status,
+            String output,
+            List<ToolCallRecord> toolCalls,
+            String errorMessage
+    ) {
+        this(status, output, toolCalls, errorMessage, null);
+    }
 
     /**
      * 维护执行结果的终态与不可变性约束。
@@ -50,7 +61,15 @@ record AgentScopeExecutionResult(
      * @return 成功终态快照
      */
     static AgentScopeExecutionResult succeeded(String output, List<ToolCallRecord> toolCalls) {
-        return new AgentScopeExecutionResult(RunStatus.SUCCEEDED, output, toolCalls, "");
+        return succeeded(output, toolCalls, null);
+    }
+
+    static AgentScopeExecutionResult succeeded(
+            String output,
+            List<ToolCallRecord> toolCalls,
+            AgentMessageSnapshot assistantMessage
+    ) {
+        return new AgentScopeExecutionResult(RunStatus.SUCCEEDED, output, toolCalls, "", assistantMessage);
     }
 
     /**
@@ -61,7 +80,7 @@ record AgentScopeExecutionResult(
      * @return 失败终态快照
      */
     static AgentScopeExecutionResult failed(String errorMessage, List<ToolCallRecord> toolCalls) {
-        return new AgentScopeExecutionResult(RunStatus.FAILED, "", toolCalls, errorMessage);
+        return new AgentScopeExecutionResult(RunStatus.FAILED, "", toolCalls, errorMessage, null);
     }
 
     /**
@@ -91,6 +110,6 @@ record AgentScopeExecutionResult(
             String errorMessage,
             List<ToolCallRecord> toolCalls
     ) {
-        return new AgentScopeExecutionResult(RunStatus.DENIED, output, toolCalls, errorMessage);
+        return new AgentScopeExecutionResult(RunStatus.DENIED, output, toolCalls, errorMessage, null);
     }
 }

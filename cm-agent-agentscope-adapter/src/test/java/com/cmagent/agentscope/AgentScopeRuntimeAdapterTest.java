@@ -2,8 +2,10 @@ package com.cmagent.agentscope;
 
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
+import com.cmagent.core.domain.AgentMessageSnapshot;
 import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
+import com.cmagent.core.domain.MessageContentType;
 import com.cmagent.core.domain.ModelConfig;
 import com.cmagent.core.domain.ModelProviderType;
 import com.cmagent.core.domain.RunStatus;
@@ -14,6 +16,11 @@ import com.cmagent.core.runtime.ModelCredentialProvider;
 import com.cmagent.core.runtime.ModelCredentialUnavailableException;
 import com.cmagent.core.runtime.ToolInvocationGateway;
 import com.cmagent.core.runtime.ToolInvocationResult;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -21,6 +28,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -166,6 +174,43 @@ class AgentScopeRuntimeAdapterTest {
         assertThat(result.status()).isEqualTo(RunStatus.DENIED);
         assertThat(result.output()).isEmpty();
         assertThat(result.errorMessage()).isEqualTo("没有工具权限");
+    }
+
+    @Test
+    void 最终消息按原顺序映射文本和受控工具摘要() {
+        ToolCallRecord toolRecord = new ToolCallRecord(
+                UUID.fromString("00000000-0000-0000-0000-000000000501"),
+                "echo", "输入字段: [value]", "执行成功", RunStatus.SUCCEEDED,
+                Duration.ZERO, false, "");
+        Msg message = Msg.builder()
+                .id("reply-1")
+                .name("企业助手")
+                .role(MsgRole.ASSISTANT)
+                .content(List.of(
+                        TextBlock.builder().text("开始处理").build(),
+                        ToolUseBlock.builder().id("tool-call-1").name("echo")
+                                .input(Map.of("value", "原始敏感输入")).build(),
+                        ToolResultBlock.builder().id("tool-call-1").name("echo")
+                                .output(TextBlock.builder().text("原始敏感输出").build()).build(),
+                        TextBlock.builder().text("处理完成").build()))
+                .build();
+
+        AgentScopeExecutionResult result =
+                AgentScopeReActExecutor.completedResult(message, List.of(toolRecord));
+
+        AgentMessageSnapshot snapshot = result.assistantMessage();
+        assertThat(snapshot.replyId()).isEqualTo("reply-1");
+        assertThat(snapshot.contentBlocks())
+                .extracting(block -> block.type())
+                .containsExactly(
+                        MessageContentType.TEXT,
+                        MessageContentType.TOOL_USE,
+                        MessageContentType.TOOL_RESULT,
+                        MessageContentType.TEXT);
+        assertThat(snapshot.contentBlocks().get(1).text()).isEqualTo("输入字段: [value]");
+        assertThat(snapshot.contentBlocks().get(2).text()).isEqualTo("执行成功");
+        assertThat(snapshot.contentBlocks().toString())
+                .doesNotContain("原始敏感输入", "原始敏感输出");
     }
 
     /**

@@ -4,6 +4,10 @@ import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
+import com.cmagent.core.domain.AgentRuntimeResult;
+import com.cmagent.core.domain.AgentMessageSnapshot;
+import com.cmagent.core.domain.AgentTextDelta;
+import com.cmagent.core.domain.MessageContentBlock;
 import com.cmagent.core.domain.ModelConfig;
 import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.ToolCallRecord;
@@ -124,29 +128,49 @@ public class RunExecutionService {
             Consumer<String> outputDeltaConsumer
     ) {
         Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
-        // 先在认证主体所属租户内校验 Agent 与模型配置，避免跨租户读取或使用已禁用资源。
-        AgentDefinition agent = agentRepository.findByTenantAndId(principal.tenantId(), agentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
-        if (!agent.enabled()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Agent 已禁用");
+        ResolvedRunContext context = resolve(principal, agentId);
+        RunRecord runningRun = persistenceService.start(principal, context.agent().id(), input);
+        return executePrepared(principal, context, runningRun, input, null,
+                delta -> outputDeltaConsumer.accept(delta.delta())).run();
+    }
+
+    /**
+     * 使用已经落库的 RUNNING 记录执行会话运行，避免重复创建 Run。
+     */
+    public AgentRuntimeResult runPrepared(
+            PrincipalRef principal,
+            UUID agentId,
+            RunRecord runningRun,
+            String runtimeInput,
+            UUID conversationId,
+            Consumer<AgentTextDelta> deltaConsumer
+    ) {
+        Objects.requireNonNull(runningRun, "runningRun 不能为空");
+        if (!principal.tenantId().equals(runningRun.tenantId()) || !agentId.equals(runningRun.agentId())) {
+            throw new IllegalArgumentException("预创建 Run 不属于当前租户或 Agent");
         }
-        ModelConfig modelConfig = modelConfigRepository
-                .findByTenantAndId(principal.tenantId(), agent.modelProviderId())
-                .filter(ModelConfig::enabled)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "模型配置不可用"));
+        return executePrepared(
+                principal, resolve(principal, agentId), runningRun, runtimeInput, conversationId, deltaConsumer);
+    }
 
-        // 根据 Agent 的授权关系筛选本次可暴露给 Runtime 的工具集合。
-        List<ToolDefinition> authorizedTools = authorizedTools(principal, agent);
+    private AgentRuntimeResult executePrepared(
+            PrincipalRef principal,
+            ResolvedRunContext context,
+            RunRecord runningRun,
+            String runtimeInput,
+            UUID conversationId,
+            Consumer<AgentTextDelta> deltaConsumer
+    ) {
+        Objects.requireNonNull(deltaConsumer, "deltaConsumer 不能为空");
 
-        // Runtime 调用前先持久化 RUNNING 记录，使后续结果、工具调用和错误诊断共享同一 runId。
-        RunRecord runningRun = persistenceService.start(principal, agent.id(), input);
-
-        AgentRunResult runtimeResult;
+        AgentRuntimeResult runtimeEnvelope;
         try {
             // 将完整运行上下文交给 Runtime；Runtime 内部可能继续发起受治理的工具调用。
-            runtimeResult = runtime.run(new AgentRunRequest(
-                    runningRun.id(), principal.tenantId(), agent, modelConfig, principal, input, authorizedTools
-            ), delta -> outputDeltaConsumer.accept(redactor.redact(delta)));
+            runtimeEnvelope = runtime.runStructured(new AgentRunRequest(
+                    runningRun.id(), principal.tenantId(), context.agent(), context.modelConfig(), principal,
+                    runtimeInput, context.authorizedTools(), conversationId
+            ), delta -> deltaConsumer.accept(new AgentTextDelta(
+                    delta.replyId(), delta.blockId(), redactor.redact(delta.delta()))));
         } catch (AuditPersistenceException auditFailure) {
             // 审计持久化失败时尽力关闭运行记录，并保留原异常交给上层严格处理。
             bestEffortFailureClosure(principal, runningRun);
@@ -159,7 +183,7 @@ public class RunExecutionService {
             // 普通 Runtime 异常先记录可关联诊断，再依次尝试完成失败状态和失败审计。
             diagnosticLogger.error(new ErrorDiagnosticLogger.DiagnosticContext(
                     runningRun.id().toString(), "AGENT_RUNTIME", "RUNTIME_EXECUTION_FAILED",
-                    principal.tenantId().toString(), principal.principalId(), agent.id().toString(),
+                    principal.tenantId().toString(), principal.principalId(), context.agent().id().toString(),
                     runningRun.id().toString(), "-", "-", "AGENT"
             ), runtimeFailure);
             try {
@@ -181,10 +205,48 @@ public class RunExecutionService {
         }
 
         // Runtime 成功返回后持久化运行终态与工具调用，再基于持久化记录构造脱敏响应。
+        AgentRunResult runtimeResult = runtimeEnvelope.run();
         var completedRun = persistenceService.complete(
-                principal, runningRun, runtimeResult, authorizedTools
+                principal, runningRun, runtimeResult, context.authorizedTools()
         );
-        return responseWithPersistentId(completedRun, runtimeResult);
+        return new AgentRuntimeResult(
+                responseWithPersistentId(completedRun, runtimeResult),
+                redactMessage(runtimeEnvelope.assistantMessage()));
+    }
+
+    private ResolvedRunContext resolve(PrincipalRef principal, UUID agentId) {
+        AgentDefinition agent = agentRepository.findByTenantAndId(principal.tenantId(), agentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
+        if (!agent.enabled()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Agent 已禁用");
+        }
+        ModelConfig modelConfig = modelConfigRepository
+                .findByTenantAndId(principal.tenantId(), agent.modelProviderId())
+                .filter(ModelConfig::enabled)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "模型配置不可用"));
+        return new ResolvedRunContext(agent, modelConfig, authorizedTools(principal, agent));
+    }
+
+    private AgentMessageSnapshot redactMessage(AgentMessageSnapshot message) {
+        if (message == null) {
+            return null;
+        }
+        List<MessageContentBlock> blocks = message.contentBlocks().stream()
+                .map(block -> new MessageContentBlock(
+                        block.type(), redactor.redact(block.text()), block.toolCallId(),
+                        block.toolName(), block.status()))
+                .toList();
+        return new AgentMessageSnapshot(message.replyId(), message.senderName(), blocks);
+    }
+
+    private record ResolvedRunContext(
+            AgentDefinition agent,
+            ModelConfig modelConfig,
+            List<ToolDefinition> authorizedTools
+    ) {
+        private ResolvedRunContext {
+            authorizedTools = List.copyOf(authorizedTools);
+        }
     }
 
     /**

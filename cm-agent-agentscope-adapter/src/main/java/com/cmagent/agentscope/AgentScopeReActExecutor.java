@@ -2,6 +2,9 @@ package com.cmagent.agentscope;
 
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.ToolCallRecord;
+import com.cmagent.core.domain.AgentMessageSnapshot;
+import com.cmagent.core.domain.AgentTextDelta;
+import com.cmagent.core.domain.MessageContentBlock;
 import com.cmagent.core.runtime.ModelCredential;
 import com.cmagent.core.runtime.ToolInvocationGateway;
 import com.cmagent.core.runtime.ToolInvocationInfrastructureException;
@@ -13,6 +16,10 @@ import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.Model;
@@ -22,7 +29,11 @@ import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.tool.Toolkit;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
@@ -133,6 +144,17 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             ToolInvocationGateway toolGateway,
             Consumer<String> outputDeltaConsumer
     ) {
+        return executeStructured(spec, credential, toolGateway,
+                delta -> outputDeltaConsumer.accept(delta.delta()));
+    }
+
+    @Override
+    public AgentScopeExecutionResult executeStructured(
+            AgentScopeRunSpec spec,
+            ModelCredential credential,
+            ToolInvocationGateway toolGateway,
+            Consumer<AgentTextDelta> outputDeltaConsumer
+    ) {
         Objects.requireNonNull(spec, "spec 不能为空");
         Objects.requireNonNull(credential, "credential 不能为空");
         Objects.requireNonNull(toolGateway, "toolGateway 不能为空");
@@ -171,7 +193,9 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             // 作为 sessionId，保持当前同步单轮语义，不引入跨运行会话状态。
             context = RuntimeContext.builder()
                     .userId(spec.tenantId() + ":" + spec.principalId())
-                    .sessionId(spec.runId().toString())
+                    .sessionId(spec.request().conversationId() == null
+                            ? spec.runId().toString()
+                            : spec.request().conversationId().toString())
                     .put("tenantId", spec.tenantId().toString())
                     .put("agentId", spec.agentId().toString())
                     .put("principalId", spec.principalId())
@@ -213,7 +237,9 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                         if (event instanceof TextBlockDeltaEvent textDeltaEvent
                                 && textDeltaEvent.getDelta() != null
                                 && !textDeltaEvent.getDelta().isEmpty()) {
-                            outputDeltaConsumer.accept(textDeltaEvent.getDelta());
+                            outputDeltaConsumer.accept(new AgentTextDelta(
+                                    textDeltaEvent.getReplyId(), textDeltaEvent.getBlockId(),
+                                    textDeltaEvent.getDelta()));
                         }
                         if (event instanceof AgentResultEvent resultEvent) {
                             finalMessage.set(resultEvent.getResult());
@@ -398,12 +424,56 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         ToolCallRecord denied = findDenied(records);
         if (denied != null) {
             String output = result == null ? "" : result.getTextContent();
-            return AgentScopeExecutionResult.denied(output, denied.errorMessage(), records);
+            return new AgentScopeExecutionResult(
+                    RunStatus.DENIED, output, records, denied.errorMessage(), safeMessage(result, records));
         }
         if (result == null) {
             return AgentScopeExecutionResult.failed(FAILURE_MESSAGE, records);
         }
-        return AgentScopeExecutionResult.succeeded(result.getTextContent(), records);
+        return AgentScopeExecutionResult.succeeded(
+                result.getTextContent(), records, safeMessage(result, records));
+    }
+
+    /**
+     * 将 AgentScope 最终消息映射为只含安全文本和受治理工具摘要的 Core 快照。
+     */
+    private static AgentMessageSnapshot safeMessage(Msg result, List<ToolCallRecord> records) {
+        if (result == null) {
+            return null;
+        }
+        Map<String, ArrayDeque<ToolCallRecord>> recordsByName = new LinkedHashMap<>();
+        records.forEach(record -> recordsByName
+                .computeIfAbsent(record.toolName(), ignored -> new ArrayDeque<>())
+                .add(record));
+        Map<String, ToolCallRecord> recordsByCallId = new HashMap<>();
+        List<MessageContentBlock> blocks = new ArrayList<>();
+        for (ContentBlock block : result.getContent()) {
+            if (block instanceof TextBlock textBlock && textBlock.getText() != null
+                    && !textBlock.getText().isBlank()) {
+                blocks.add(MessageContentBlock.text(textBlock.getText()));
+            } else if (block instanceof ToolUseBlock toolUse) {
+                ArrayDeque<ToolCallRecord> queue = recordsByName.get(toolUse.getName());
+                ToolCallRecord record = queue == null ? null : queue.pollFirst();
+                if (record != null) {
+                    recordsByCallId.put(toolUse.getId(), record);
+                    blocks.add(MessageContentBlock.toolUse(
+                            toolUse.getId(), record.toolName(), record.inputSummary()));
+                }
+            } else if (block instanceof ToolResultBlock toolResult) {
+                ToolCallRecord record = recordsByCallId.get(toolResult.getId());
+                if (record != null) {
+                    String summary = record.status() == RunStatus.SUCCEEDED
+                            ? record.outputSummary()
+                            : record.errorMessage();
+                    blocks.add(MessageContentBlock.toolResult(
+                            toolResult.getId(), record.status(), summary));
+                }
+            }
+        }
+        if (blocks.isEmpty() && result.getTextContent() != null && !result.getTextContent().isBlank()) {
+            blocks.add(MessageContentBlock.text(result.getTextContent()));
+        }
+        return blocks.isEmpty() ? null : new AgentMessageSnapshot(result.getId(), result.getName(), blocks);
     }
 
     /**

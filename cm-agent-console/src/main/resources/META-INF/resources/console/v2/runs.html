@@ -39,6 +39,12 @@
                     <label for="runAgentSelect">选择 Agent</label>
                     <select id="runAgentSelect"></select>
                     <p class="run-field-hint">运行记录会按当前 Agent 分组展示。</p>
+                    <label for="runConversationSelect">当前会话</label>
+                    <div class="inline-form">
+                        <select id="runConversationSelect" aria-label="当前会话"></select>
+                        <button id="newConversationBtn" class="button ghost" type="button">新会话</button>
+                    </div>
+                    <p class="run-field-hint">同一会话会自动携带最近的消息历史。</p>
                 </div>
                 <form id="runForm" class="run-composer">
                     <div class="run-composer-heading"><label for="runInput">调试输入</label><span>支持实时查看回答进度</span></div>
@@ -54,6 +60,6 @@
     </main>
 </div>
 <script src="/assets/console-core.js?v=2.0.9"></script>
-<script src="/assets/app.js?v=2.0.10"></script>
+<script src="/assets/app.js?v=2.0.11"></script>
 </body>
 </html>

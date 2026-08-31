@@ -87,7 +87,7 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.10", "/assets/console-core.js?v=2.0.9")
+                    .contains("/assets/app.js?v=2.0.11", "/assets/console-core.js?v=2.0.9")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }
@@ -169,14 +169,17 @@ class ConsoleResourceTest {
         String script = resource("META-INF/resources/assets/app.js");
 
         assertThat(html).contains(
-                "id=\"runAgentSelect\"", "id=\"runForm\"", "id=\"runList\"",
+                "id=\"runAgentSelect\"", "id=\"runConversationSelect\"", "id=\"newConversationBtn\"",
+                "id=\"runForm\"", "id=\"runList\"",
                 "id=\"runDetail\"", "id=\"runToolCalls\"", "id=\"loadMoreRunsBtn\"",
                 "id=\"auditList\"", "id=\"loadMoreAuditBtn\""
         );
         assertThat(script)
-                .contains("/runs", "/api/audit-events", "nextCursor")
+                .contains("/runs", "/conversations", "/messages/stream", "/api/audit-events", "nextCursor")
                 .contains(
-                        "loadRunDetail", "loadAudit", "/runs/stream", "api.stream", "appendStreamingOutput",
+                        "loadRunDetail", "loadAudit", "loadConversationMessages", "api.stream", "appendStreamingOutput",
+                        "if (options.value !== undefined) node.value = String(options.value)",
+                        "state.selectedConversationId = \"\"", "state.conversationAgentId = \"\"",
                         "renderMarkdown", "markdownFragment", "safeMarkdownLink", "markdown-output",
                         "renderToolCallPayload", "formatToolCallPayload", "tool-call-payloads"
                 )

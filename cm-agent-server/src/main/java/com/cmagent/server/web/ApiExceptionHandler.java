@@ -124,7 +124,9 @@ public class ApiExceptionHandler {
                             : exception.getReason(),
                     request
             );
-            case NOT_FOUND -> response(status, ApiErrorCode.RUNTIME_ERROR, "请求资源不存在", request);
+            case NOT_FOUND -> request.getRequestURI().contains("/conversations")
+                    ? response(status, ApiErrorCode.CONVERSATION_NOT_FOUND, "会话或 Agent 不存在", request)
+                    : response(status, ApiErrorCode.RUNTIME_ERROR, "请求资源不存在", request);
             default -> failedResponse(HttpStatus.INTERNAL_SERVER_ERROR, ApiErrorCode.INTERNAL_ERROR,
                     "服务内部错误", exception, request);
         };

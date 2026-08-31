@@ -4,6 +4,10 @@
 
 本快照在阶段2生产持久化与安全收口基础上，接入 AgentScope Java 2.0.0 真实 Runtime。第一阶段底座和阶段2的 JDBC/Flyway、安全、多租户、权限与严格审计边界继续保持。
 
+- 新增消息一等公民的持久化会话：Core 提供 Conversation、ConversationMessage 和有序内容块合同，文本、工具调用与工具结果以脱敏快照保存。新增 `/api/agents/{agentId}/conversations` 会话/消息分页、同步发送和 SSE 发送接口；续聊使用最近 40 条、最多 60,000 字符的完整消息窗口，原 Run API 与 `AgentRunResult` 保持兼容。
+- 新增 PostgreSQL/MySQL 方言 V10，扩展 `conversations.updated_at` 与消息 sequence、发送方、内容块 JSON、关联 runId，补齐中文数据库注释、租户索引、会话内 sequence 唯一约束和 Run 外键。memory 模式同步提供仅用于本地和测试的会话仓储。
+- AgentScope Adapter 从最终 `Msg` 映射安全的 TEXT/TOOL_USE/TOOL_RESULT 块，会话使用 conversationId 作为 sessionId；会话 SSE 使用 `started`、`message-started`、`delta`、`completed/error` 生命周期事件。控制台运行页新增会话选择、新建会话、历史回放和连续发送。
+
 ### 本次变更
 
 - 新增可选的 AgentScope Studio 开发期调试集成：`cm-agent.agentscope.studio.enabled=true` 时，服务通过 AgentScope 2.0.2 的进程级系统 Hook 将 Agent 消息转发至 Studio。Studio 地址、项目和服务实例 Run 名称均可配置；严格生产 profile 会拒绝启用，且不改变 CM Agent 的 Run、审计、权限或租户隔离语义。
@@ -33,7 +37,7 @@
 - 控制台覆盖当前用户、Agent 列表/详情/创建、Tool 列表/创建/编辑/删除/授权与解除关联、Agent 执行、运行历史/详情/工具调用和审计游标分页；健康检查与 OpenAPI 作为辅助入口。
 - HTTP Tool 注册与编辑表单改为树形参数编辑器，支持在 OBJECT/ARRAY 节点内直接添加子参数并按层级缩进展示；页面根据 `parentId` 还原树，提交时自动转为扁平参数数组。表单同时提供类型、请求位置、默认值、示例值及包含 PATH、QUERY、BODY_ROOT 根数组的完整示例，并已移除旧版 Schema 与映射入口。
 - v1 控制台继续使用页面内存令牌；v2 使用前端不可读取的会话 Cookie 恢复刷新认证，并只在当前文档内存中保留登录令牌。两个版本复用统一 `401` 失效处理和纯文本 DOM 渲染，不使用 `localStorage` 或 `sessionStorage` 持久化 JWT、用户名或密码；补充窄屏响应式布局和键盘焦点样式。
-- 控制台仍不提供手动取消、多轮会话或 HITL。
+- 控制台仍不提供手动取消、消息编辑/删除、会话归档、自动摘要或 HITL。
 - `agentscope.version` 升级到 `2.0.0`，接入 OpenAI Compatible 与 DashScope Provider，提供同步单轮 ReAct 运行。
 - 通过 `tenantId + modelConfigId` 调用 `ModelCredentialProvider` 获取模型凭据；默认实现从数据库读取 AES/GCM 密文并在运行时解密，`model_configs` 不保存明文 API Key。
 - 生产 profile 使用 `fake-runtime-enabled=false` 与 `agentscope-enabled=true`；fake runtime 继续仅服务本地和测试。
@@ -64,7 +68,7 @@
 - 现有 API 的认证、权限、租户过滤和审计约束继续生效；新增的 cursor 由服务端生成，调用方不应自行构造。
 - 审计写入失败不再被忽略，会导致请求返回 `503`；部署和告警系统应将其视为依赖不可用。
 - 生产 profile 不允许 bootstrap admin、开发 JWT fallback 或可用的固定凭据。文档和配置示例仅使用占位符。
-- 真实 Runtime 当前支持单轮 SSE 文本输出；不承诺多轮会话持久化、手动取消或 HITL。
+- 真实 Runtime 当前支持兼容单轮 SSE 与持久化会话 SSE；不承诺手动取消、会话归档、自动摘要、写请求幂等重放或 HITL。
 - AgentScope 2.0.0 工具层的通用取消信号不能证明外部副作用已停止；有副作用的工具必须使用 `runId`、`toolCallId` 或业务键保证幂等。
 - 模型 API Key 通过受权限保护的模型配置接口加密写入数据库；加密主密钥只能使用受控环境变量或 Secret Manager 注入，密钥不得进入 Git、日志、审计或 API 响应。
 
@@ -72,7 +76,7 @@
 
 以下内容不属于本次阶段3发布：
 
-- 多轮会话持久化、手动取消和 HITL。
+- 消息编辑/删除、会话归档、自动摘要、写请求幂等重放、手动取消和 HITL。
 - 阶段4 metrics、集中式日志与追踪、备份恢复自动化、容量治理和应用自动归档。
 - 阶段5 CI/CD 交付流水线、发布自动化、稳定性工程和正式版本承诺。
 

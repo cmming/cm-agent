@@ -16,8 +16,22 @@ public record AgentRunRequest(
         ModelConfig modelConfig,
         PrincipalRef principal,
         String input,
-        List<ToolDefinition> tools
+        List<ToolDefinition> tools,
+        UUID conversationId
 ) {
+
+    /** 保留既有单轮调用方式；未提供会话时 Runtime 继续使用 runId 作为 sessionId。 */
+    public AgentRunRequest(
+            UUID runId,
+            UUID tenantId,
+            AgentDefinition agent,
+            ModelConfig modelConfig,
+            PrincipalRef principal,
+            String input,
+            List<ToolDefinition> tools
+    ) {
+        this(runId, tenantId, agent, modelConfig, principal, input, tools, null);
+    }
 
     /**
      * 校验运行请求的租户、主体、模型绑定和工具集合是否一致。
@@ -29,6 +43,7 @@ public record AgentRunRequest(
       * @param principal 当前认证主体
       * @param input 调用方输入
       * @param tools 本次运行授权的工具集合
+      * @param conversationId 可选的持久化会话标识
      */
     public AgentRunRequest {
         Objects.requireNonNull(runId, "runId 不能为空");

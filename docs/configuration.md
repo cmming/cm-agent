@@ -160,7 +160,7 @@ cm-agent:
 
 `model_configs` 表保存模型 Provider、`baseUrl`、`modelName`、启用状态与 API Key 密文。明文 API Key 不得进入 DTO、日志、审计或异常，也不支持接口回显。
 
-真实运行目前只提供同步单轮调用。多轮会话持久化、流式 REST、HITL 和手动取消均未在阶段3交付。
+真实运行同时提供兼容的单轮 Run API 和持久化会话 API。会话接口位于 `/api/agents/{agentId}/conversations`；续聊时固定读取最近 40 条、最多 60,000 字符的完整消息历史，不做自动摘要。该限制当前不是外部配置项，避免不同实例产生不一致的上下文边界。会话流式接口只发送最终回答文本增量和受控终态，不发送思考过程、工具原始参数或工具原始输出。HITL、消息编辑/删除、会话归档、手动取消和写请求幂等重放仍未交付。
 
 ## AgentScope Studio 本地调试
 
@@ -213,12 +213,12 @@ JDBC 模式创建 DataSource，并在启动时由 Flyway 执行迁移。`CmAgent
 
 阶段2审计写入是严格路径。登录、权限拒绝、Agent 变更、工具治理和运行生命周期等关键动作写入失败时，不吞掉异常，不把请求伪装成成功；API 返回 HTTP `503 Service Unavailable`，日志只记录脱敏后的上下文。生产告警应区分审计失败、数据库连接失败和普通业务失败。
 
-Run 与 ToolCall 使用当前认证主体的 tenant 条件读写；Run 列表和 Audit 列表采用有界 cursor 分页，避免跨租户或无界扫描。返回内容和日志中的输入、输出、错误消息经过敏感信息脱敏。
+Run、ToolCall、Conversation 与 Message 使用当前认证主体的 tenant 条件读写；Conversation 还固定校验所属 Agent，消息使用会话内 sequence 正序分页。Run、Conversation 和 Audit 列表采用有界 cursor 分页，避免跨租户或无界扫描。消息数据库保存的是脱敏文本与受治理工具摘要，但仍属于敏感业务数据；生产数据库账号、备份、导出和保留策略必须按敏感数据管理。返回内容和日志中的输入、输出、错误消息经过敏感信息脱敏。
 
 ## 运行边界
 
 - `memory` 仅限开发和测试，进程重启会丢失运行、工具调用和审计状态。
-- JDBC 模式已接通 Run、ToolCall、Audit 的持久化与查询；`local`/`test` 的运行执行器可以由 fake runtime 提供结果。
+- JDBC 模式已接通 Run、ToolCall、Conversation、Message、Audit 的持久化与查询；`local`/`test` 的运行执行器可以由 fake runtime 提供结果。
 - 真实 Runtime 的每次工具调用都通过治理网关重新读取定义并授权；工具定义中的 endpoint 只是元数据，不会被 Adapter 自动联网执行。
 - 模型 timeout 或 Provider 故障会把运行收口为失败；授权拒绝优先映射为拒绝；审计失败保持严格语义并传播。AgentScope 2.0.0 的工具层只暴露通用取消信号，系统仅根据其明确生成的超时结果判定工具 timeout，不能把该信号视为通用手动取消能力。
 - 工具可能产生外部副作用。超时、中断或 Provider 重试不能证明外部系统已经回滚，工具实现与下游接口必须使用 `runId`、`toolCallId` 或业务幂等键实现去重。

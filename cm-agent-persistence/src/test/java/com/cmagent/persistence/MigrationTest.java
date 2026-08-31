@@ -85,7 +85,7 @@ class MigrationTest {
      * @param password 测试辅助方法使用的 password 参数
      */
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(8);
+        assertThat(migrationsExecuted).isEqualTo(10);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
@@ -111,6 +111,9 @@ class MigrationTest {
             assertThat(indexNames(connection, "tool_calls")).contains("idx_tool_calls_tenant_run_created_at");
             assertThat(indexNames(connection, "audit_events")).contains("idx_audit_events_tenant_time");
             assertThat(indexNames(connection, "audit_events")).contains("idx_audit_events_tenant_time_id");
+            assertThat(indexNames(connection, "conversations")).contains("idx_conversations_tenant_agent_updated");
+            assertThat(indexNames(connection, "messages")).contains(
+                    "ux_messages_tenant_conversation_sequence", "idx_messages_tenant_run");
             assertThat(indexColumns(connection, "runs", "idx_runs_tenant_agent_started"))
                     .containsExactly("tenant_id", "agent_id", "started_at", "id");
             assertThat(indexColumns(connection, "tool_calls", "idx_tool_calls_tenant_run"))
@@ -125,6 +128,9 @@ class MigrationTest {
             assertThat(isNullable(connection, "tool_definitions", "deleted_name")).isTrue();
             assertThat(isNullable(connection, "tool_grants", "role_code")).isTrue();
             assertThat(isNullable(connection, "tool_http_configs", "parameter_definitions")).isTrue();
+            assertThat(isNullable(connection, "conversations", "updated_at")).isFalse();
+            assertThat(isNullable(connection, "messages", "sequence_no")).isFalse();
+            assertThat(isNullable(connection, "messages", "content_blocks_json")).isFalse();
             assertThat(columnExists(connection, "tool_http_configs", "input_schema")).isFalse();
             assertThat(columnExists(connection, "tool_http_configs", "parameter_mappings")).isFalse();
             assertThat(importedKeyTargets(connection, "tool_grants")).doesNotContain("roles");
@@ -132,6 +138,7 @@ class MigrationTest {
             assertThat(uniqueIndexColumns(connection, "tool_definitions")).contains(Set.of("tenant_id", "name"));
             assertThat(importedKeyTargets(connection, "tool_http_configs")).contains("tool_definitions");
             assertThat(importedKeyTargets(connection, "tool_mcp_publications")).contains("tool_definitions");
+            assertThat(importedKeyTargets(connection, "messages")).contains("conversations", "runs");
         } catch (SQLException e) {
             throw new AssertionError("验证迁移后的 schema 失败", e);
         }

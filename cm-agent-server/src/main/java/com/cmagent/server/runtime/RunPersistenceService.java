@@ -78,10 +78,18 @@ public class RunPersistenceService {
      * @throws RuntimeException 持久化或审计失败时抛出
      */
     public RunRecord start(PrincipalRef principal, UUID agentId, String input) {
+        return start(principal, agentId, input, UUID.randomUUID());
+    }
+
+    /**
+     * 使用调用方预生成的 runId 创建运行，供会话消息在同一短事务内建立稳定关联。
+     */
+    public RunRecord start(PrincipalRef principal, UUID agentId, String input, UUID runId) {
         Objects.requireNonNull(principal, "principal 不能为空");
         Objects.requireNonNull(agentId, "agentId 不能为空");
+        Objects.requireNonNull(runId, "runId 不能为空");
         RunRecord pending = RunRecord.create(
-                UUID.randomUUID(), principal.tenantId(), agentId, principal.principalId(),
+                runId, principal.tenantId(), agentId, principal.principalId(),
                 redactor.redact(input), Instant.now()
         );
         if (transactionTemplate == null) {

@@ -3,6 +3,8 @@ package com.cmagent.server.config;
 import com.cmagent.core.audit.AuditEventRepository;
 import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.cmagent.core.repository.RunRepository;
+import com.cmagent.core.repository.ConversationRepository;
+import com.cmagent.core.repository.ConversationMessageRepository;
 import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolCallRepository;
@@ -13,6 +15,8 @@ import com.cmagent.persistence.JdbcAuditEventRepository;
 import com.cmagent.persistence.JdbcAgentDefinitionRepository;
 import com.cmagent.persistence.CmAgentFlyway;
 import com.cmagent.persistence.JdbcRunRepository;
+import com.cmagent.persistence.JdbcConversationRepository;
+import com.cmagent.persistence.JdbcConversationMessageRepository;
 import com.cmagent.persistence.JdbcModelConfigRepository;
 import com.cmagent.persistence.JdbcToolDefinitionRepository;
 import com.cmagent.persistence.JdbcToolCallRepository;
@@ -163,6 +167,23 @@ public class JdbcPersistenceConfiguration {
     @Bean
     RunRepository jdbcRunRepository(JdbcClient cmAgentJdbcClient) {
         return new JdbcRunRepository(cmAgentJdbcClient);
+    }
+
+    /** 创建会话元数据 Repository。 */
+    @Bean
+    ConversationRepository jdbcConversationRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcConversationRepository(cmAgentJdbcClient);
+    }
+
+    /** 创建使用事务和会话行锁的消息 Repository。 */
+    @Bean
+    ConversationMessageRepository jdbcConversationMessageRepository(
+            JdbcClient cmAgentJdbcClient,
+            ObjectMapper objectMapper,
+            TransactionTemplate cmAgentTransactionTemplate
+    ) {
+        return new JdbcConversationMessageRepository(
+                cmAgentJdbcClient, objectMapper, cmAgentTransactionTemplate);
     }
 
     /**

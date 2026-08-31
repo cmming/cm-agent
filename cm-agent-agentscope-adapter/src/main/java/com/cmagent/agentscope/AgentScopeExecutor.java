@@ -2,6 +2,7 @@ package com.cmagent.agentscope;
 
 import com.cmagent.core.runtime.ModelCredential;
 import com.cmagent.core.runtime.ToolInvocationGateway;
+import com.cmagent.core.domain.AgentTextDelta;
 
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -49,5 +50,17 @@ interface AgentScopeExecutor {
     ) {
         Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
         return execute(spec, credential, toolGateway);
+    }
+
+    /** 执行并保留 AgentScope 消息块关联键；旧执行器回退到文本增量。 */
+    default AgentScopeExecutionResult executeStructured(
+            AgentScopeRunSpec spec,
+            ModelCredential credential,
+            ToolInvocationGateway toolGateway,
+            Consumer<AgentTextDelta> outputDeltaConsumer
+    ) {
+        Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
+        return execute(spec, credential, toolGateway, delta -> outputDeltaConsumer.accept(
+                new AgentTextDelta(spec.runId().toString(), "text", delta)));
     }
 }
