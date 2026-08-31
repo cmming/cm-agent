@@ -55,6 +55,11 @@
             <artifactId>agentscope-extensions-model-dashscope</artifactId>
         </dependency>
         <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-studio</artifactId>
+            <version>${agentscope.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>

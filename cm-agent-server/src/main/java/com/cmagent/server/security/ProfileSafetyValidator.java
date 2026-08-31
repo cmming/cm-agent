@@ -24,6 +24,7 @@ public class ProfileSafetyValidator implements InitializingBean {
     private final boolean devJwtFallbackEnabled;
     private final boolean fakeRuntimeEnabled;
     private final boolean agentScopeRuntimeEnabled;
+    private final boolean agentScopeStudioEnabled;
     private final boolean httpAllowed;
     private final ObjectProvider<AgentRuntime> agentRuntimeProvider;
     /**
@@ -35,6 +36,7 @@ public class ProfileSafetyValidator implements InitializingBean {
      * @param devJwtFallbackEnabled 是否启用仅限开发环境的 JWT 密钥回退
      * @param fakeRuntimeEnabled 是否启用模拟 Agent 运行时
      * @param agentScopeRuntimeEnabled AgentScope 真实运行时是否启用
+     * @param agentScopeStudioEnabled AgentScope Studio 调试集成是否启用
      * @param httpAllowed 当前配置是否允许调用外部 HTTP 工具
      * @param agentRuntimeProvider 为当前流程提供外部数据的组件。
      */
@@ -45,6 +47,7 @@ public class ProfileSafetyValidator implements InitializingBean {
             @Value("${cm-agent.security.allow-dev-jwt-fallback:false}") boolean devJwtFallbackEnabled,
             @Value("${cm-agent.fake-runtime-enabled:false}") boolean fakeRuntimeEnabled,
             @Value("${cm-agent.agentscope.enabled:false}") boolean agentScopeRuntimeEnabled,
+            @Value("${cm-agent.agentscope.studio.enabled:false}") boolean agentScopeStudioEnabled,
             @Value("${cm-agent.http-tools.allow-http:false}") boolean httpAllowed,
             ObjectProvider<AgentRuntime> agentRuntimeProvider
     ) {
@@ -54,6 +57,7 @@ public class ProfileSafetyValidator implements InitializingBean {
         this.devJwtFallbackEnabled = devJwtFallbackEnabled;
         this.fakeRuntimeEnabled = fakeRuntimeEnabled;
         this.agentScopeRuntimeEnabled = agentScopeRuntimeEnabled;
+        this.agentScopeStudioEnabled = agentScopeStudioEnabled;
         this.httpAllowed = httpAllowed;
         this.agentRuntimeProvider = agentRuntimeProvider;
     }
@@ -93,6 +97,9 @@ public class ProfileSafetyValidator implements InitializingBean {
         }
         if (fakeRuntimeEnabled) {
             throw new IllegalStateException("production/prod/supabase profile 禁止启用 fake runtime");
+        }
+        if (agentScopeStudioEnabled) {
+            throw new IllegalStateException("production/prod/supabase profile 禁止启用 AgentScope Studio 调试集成");
         }
         AgentRuntime agentRuntime = agentRuntimeProvider.getIfAvailable();
         if (agentRuntime == null || agentRuntime instanceof FakeAgentRuntime) {

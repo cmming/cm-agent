@@ -288,6 +288,22 @@ class ApplicationProfileConfigurationTest {
                 });
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"production", "prod", "supabase"})
+    /** 验证严格 profile 会拒绝把 AgentScope Studio 调试消息转发到外部服务。 */
+    void strictProfileRejectsAgentScopeStudio(String profile) {
+        productionGuardContextRunner
+                .withPropertyValues(externalConfigProperties("spring.profiles.active=" + profile))
+                .withPropertyValues(
+                        "cm-agent.http-tools.allow-http=false",
+                        "cm-agent.agentscope.studio.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasMessageContaining("production/prod/supabase profile 禁止启用 AgentScope Studio 调试集成");
+                });
+    }
+
     @Test
     /**
      * 验证或支持 {@code postgresProfileLoadsJdbcConfigurationWithExternalPlaceholders} 所描述的测试场景。

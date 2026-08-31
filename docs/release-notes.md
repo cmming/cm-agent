@@ -6,6 +6,8 @@
 
 ### 本次变更
 
+- 新增可选的 AgentScope Studio 开发期调试集成：`cm-agent.agentscope.studio.enabled=true` 时，服务通过 AgentScope 2.0.2 的进程级系统 Hook 将 Agent 消息转发至 Studio。Studio 地址、项目和服务实例 Run 名称均可配置；严格生产 profile 会拒绝启用，且不改变 CM Agent 的 Run、审计、权限或租户隔离语义。
+
 - v2 运行记录页改为流式输出：新增 `POST /api/agents/{agentId}/runs/stream` 同源 SSE 接口，依次发送 `started`、已脱敏的 `delta`、`completed` 或包含稳定错误码和 `errorId` 的 `error` 事件。AgentScope Runtime 转发最终回答的文本块增量，不发送思考过程、工具参数或工具原始输出；连接断开不取消后端运行，运行记录、工具调用和审计仍按既有终态流程落库。原 `POST /api/agents/{agentId}/runs` 保持不变，以兼容现有 API 调用方。
 - Agent 管理新增 `PUT /api/agents/{id}` 与 `DELETE /api/agents/{id}`：创建和编辑请求使用当前租户的 `modelConfigId`，服务端仅接受已启用配置并从配置读取实际模型名称；删除需要新增的 `agent:delete` 权限，会自动移除无历史 Agent 的工具授权并写入严格审计。已有会话或运行历史的 Agent 返回明确 `409 Conflict`，不可级联删除历史，应通过编辑接口停用。v2 控制台新增模型配置下拉选择、编辑、删除确认和冲突提示；v1 旧请求的 `modelName` 仅在当前租户唯一匹配一个已启用配置时暂时兼容。
 - 新增租户级模型配置管理 API 与 v2 控制台页面：`GET/POST /api/model-configs` 和 `GET/PUT/DELETE /api/model-configs/{id}` 分别使用 `model:read`、`model:write`、`model:delete` 权限，创建、更新、删除写入严格审计；删除仍被 Agent 引用的配置返回明确 `409 Conflict`，启动初始化器维护的系统默认配置不可删除但可停用或更新。创建请求必须写入 API Key，更新可轮换 API Key；服务以 AES/GCM 加密后写入数据库，所有响应均不回显密钥。新增 PostgreSQL/MySQL 方言 Flyway V9，仅更新密文字段的中文数据库注释。

@@ -13,3 +13,7 @@ cm-agent:
     jdbc-driver-class-name: org.postgresql.Driver
     fake-runtime-enabled: false
     agentscope-enabled: true
+  agentscope:
+    studio:
+      # Studio 会转发 Agent 消息，生产和类生产 profile 必须保持关闭。
+      enabled: false

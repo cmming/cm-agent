@@ -77,6 +77,16 @@ cm-agent:
 
 `CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY` 是 Base64 编码的 256 位 AES 主密钥，不是模型 API Key，必须由部署环境或密钥管理系统提供。模型 API Key 只以 AES/GCM 密文写入 `model_configs`，创建时必填、更新时可轮换，所有读取接口均不会回显。生产也可以提供自定义 `ModelCredentialProvider` 对接外部密钥管理系统。
 
+## AgentScope Studio 本地调试
+
+Studio 是 AgentScope 的开发期可视化工具。先按 [Studio 官方说明](https://github.com/agentscope-ai/agentscope-studio) 启动本地服务，再在非生产 profile 显式打开开关：
+
+```powershell
+mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=postgres --cm-agent.agentscope.studio.enabled=true"
+```
+
+`cm-agent.agentscope.studio.url`、`project` 和 `run-name` 可分别覆盖 Studio 地址、项目与当前服务实例名称。Studio 使用 AgentScope 的进程级全局 Hook：一个服务进程对应一个 Studio Run，多次 CM Agent 运行会汇集在该 Run 中；CM Agent 自身的 Run 查询、租户隔离、审计与持久化语义不变。`production`、`prod`、`supabase` profile 会拒绝此开关，避免将调试消息转发到外部 Studio。
+
 ## 当前状态
 
 - 第一阶段：已交付工程骨架、核心领域接口、Starter、控制台、工具治理、多租户/RBAC 基线和 fake runtime。

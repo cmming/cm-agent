@@ -9,3 +9,10 @@ cm-agent:
     bootstrap-admin-display-name: 本地管理员
     persistence-mode: memory
     fake-runtime-enabled: true
+  agentscope:
+    studio:
+      # Studio 是本地调试工具；启动 Studio 后再显式把此开关设为 true。
+      enabled: false
+      url: ${CM_AGENT_STUDIO_URL:http://localhost:8000}
+      project: cm-agent-local
+      run-name: cm-agent-local

@@ -34,6 +34,10 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 | `cm-agent.agentscope.model-timeout` | `60s` | 单次模型阶段超时时间，必须为正数 |
 | `cm-agent.agentscope.tool-timeout` | `30s` | AgentScope 工具执行超时时间，必须为正数 |
 | `cm-agent.agentscope.model-max-attempts` | `2` | 模型最大尝试次数，范围为 1 到 5 |
+| `cm-agent.agentscope.studio.enabled` | `false` | 是否启用 AgentScope Studio 开发期消息转发；`production`、`prod`、`supabase` 禁止启用 |
+| `cm-agent.agentscope.studio.url` | `http://localhost:8000` | Studio HTTP/WebSocket 地址；仅接受不含用户信息、查询串和片段的 HTTP(S) 绝对地址 |
+| `cm-agent.agentscope.studio.project` | `cm-agent` | Studio 中归集当前服务实例的项目名称 |
+| `cm-agent.agentscope.studio.run-name` | `cm-agent` | Studio 中当前服务实例的 Run 名称，不对应单个 CM Agent `runId` |
 | `cm-agent.persistence.mode` | `memory` | `memory` 只允许本地开发和测试；生产 profile 必须为 `jdbc` |
 | `cm-agent.default-tenant-code` | `default` | 默认租户标识 |
 | `cm-agent.mcp.enabled` | `false` | 是否注册无状态 MCP Streamable HTTP 端点；生产启用前必须同时配置来源和主机白名单 |
@@ -157,6 +161,24 @@ cm-agent:
 `model_configs` 表保存模型 Provider、`baseUrl`、`modelName`、启用状态与 API Key 密文。明文 API Key 不得进入 DTO、日志、审计或异常，也不支持接口回显。
 
 真实运行目前只提供同步单轮调用。多轮会话持久化、流式 REST、HITL 和手动取消均未在阶段3交付。
+
+## AgentScope Studio 本地调试
+
+Studio 仅用于开发期可视化调试与链路回放，不替代 CM Agent 的运行记录、工具审计、权限或租户隔离。启动本地 Studio 服务后，在 `local`、`test`、`postgres` 或 `mysql` 等非严格 profile 显式启用：
+
+```yaml
+cm-agent:
+  agentscope:
+    studio:
+      enabled: true
+      url: http://localhost:8000
+      project: cm-agent-local
+      run-name: cm-agent-local
+```
+
+AgentScope 2.0.2 的 Studio 初始化会注册进程级系统消息 Hook；因此一个服务 JVM 只能使用一套 Studio 地址、项目和 Run 名称。所有该 JVM 内的 AgentScope 消息汇集到同一个 Studio Run，不能把 `run-name` 设为每个并发 CM Agent 请求的 `runId`。如果同一 JVM 已由其他初始化器用不同参数连接 Studio，服务会启动失败而不是覆盖全局连接。
+
+严格 profile（`production`、`prod`、`supabase`）会拒绝 `enabled=true`，即使配置被外部覆盖也不会连接 Studio。Studio 转发的消息可能包含业务输入或模型输出，开发环境同样应避免输入不应离开本机或测试边界的敏感内容。
 
 ## JDBC 与 Flyway
 
