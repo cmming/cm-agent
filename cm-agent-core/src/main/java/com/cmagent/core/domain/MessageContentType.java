@@ -5,6 +5,9 @@ public enum MessageContentType {
     /** 普通文本块；USER 与 SYSTEM 消息只允许该类型。 */
     TEXT,
 
+    /** 模型实际返回的思考块；只允许 ASSISTANT 消息持有，且不参与历史提示词文本投影。 */
+    THINKING,
+
     /** 工具调用摘要块，保存脱敏后的输入摘要而非模型原始参数。 */
     TOOL_USE,
 

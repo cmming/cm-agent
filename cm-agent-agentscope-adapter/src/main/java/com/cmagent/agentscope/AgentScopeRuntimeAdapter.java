@@ -4,6 +4,7 @@ import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
 import com.cmagent.core.domain.AgentRuntimeResult;
 import com.cmagent.core.domain.AgentTextDelta;
+import com.cmagent.core.domain.AgentProgressEvent;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.runtime.ModelCredential;
@@ -172,14 +173,36 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
             AgentRunRequest request,
             Consumer<AgentTextDelta> outputDeltaConsumer
     ) {
+        return runStructured(request, outputDeltaConsumer, ignored -> {
+        });
+    }
+
+    /**
+     * 执行支持内容块快照和受控执行进度的会话运行。
+     *
+     * <p>进度消费者只能收到完整思考块以及不带参数、结果载荷的工具生命周期事件；凭据失败发生在
+     * AgentScope 执行前，因此不会伪造任何进度事件。</p>
+     *
+     * @param request 当前领域运行请求
+     * @param outputDeltaConsumer 接收最终回答文本增量
+     * @param progressConsumer 接收受控执行进度
+     * @return 原运行结果与可选最终 assistant 快照
+     */
+    @Override
+    public AgentRuntimeResult runStructured(
+            AgentRunRequest request,
+            Consumer<AgentTextDelta> outputDeltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
         Objects.requireNonNull(request, "request 不能为空");
         Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
+        Objects.requireNonNull(progressConsumer, "progressConsumer 不能为空");
         Instant startedAt = clock.instant();
         try {
             ModelCredential credential = credentialProvider.resolve(
                     request.tenantId(), request.modelConfig().id());
             AgentScopeExecutionResult execution = executor.executeStructured(
-                    toRunSpec(request), credential, toolGateway, outputDeltaConsumer);
+                    toRunSpec(request), credential, toolGateway, outputDeltaConsumer, progressConsumer);
             AgentRunResult run = new AgentRunResult(
                     request.runId(), execution.status(), execution.output(), execution.toolCalls(),
                     startedAt, clock.instant(), execution.errorMessage());

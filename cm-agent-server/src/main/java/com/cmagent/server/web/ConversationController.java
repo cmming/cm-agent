@@ -3,6 +3,7 @@ package com.cmagent.server.web;
 import com.cmagent.api.ApiErrorCode;
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentTextDelta;
+import com.cmagent.core.domain.AgentProgressEvent;
 import com.cmagent.core.domain.Conversation;
 import com.cmagent.core.domain.ConversationMessage;
 import com.cmagent.core.domain.ConversationPageRequest;
@@ -197,7 +198,8 @@ public class ConversationController {
                     conversationId,
                     input,
                     started -> send(emitter, "started", started),
-                    delta -> sendDelta(emitter, replyId, delta));
+                    delta -> sendDelta(emitter, replyId, delta),
+                    progress -> send(emitter, "progress", progress));
             send(emitter, "completed", result);
         } catch (RuntimeException failure) {
             send(emitter, "error", streamError(principal, agentId, conversationId, errorId, failure));

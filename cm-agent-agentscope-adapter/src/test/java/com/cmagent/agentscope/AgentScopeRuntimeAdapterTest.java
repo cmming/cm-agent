@@ -3,6 +3,7 @@ package com.cmagent.agentscope;
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.AgentMessageSnapshot;
+import com.cmagent.core.domain.AgentProgressEvent;
 import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
 import com.cmagent.core.domain.MessageContentType;
@@ -19,6 +20,7 @@ import com.cmagent.core.runtime.ToolInvocationResult;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import org.junit.jupiter.api.Test;
@@ -28,6 +30,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -163,6 +166,7 @@ class AgentScopeRuntimeAdapterTest {
                 .name("企业助手")
                 .role(MsgRole.ASSISTANT)
                 .content(List.of(
+                        ThinkingBlock.builder().thinking("先分析问题").build(),
                         TextBlock.builder().text("开始处理").build(),
                         ToolUseBlock.builder().id("tool-call-1").name("echo")
                                 .input(Map.of("value", "原始敏感输入")).build(),
@@ -179,14 +183,53 @@ class AgentScopeRuntimeAdapterTest {
         assertThat(snapshot.contentBlocks())
                 .extracting(block -> block.type())
                 .containsExactly(
+                        MessageContentType.THINKING,
                         MessageContentType.TEXT,
                         MessageContentType.TOOL_USE,
                         MessageContentType.TOOL_RESULT,
                         MessageContentType.TEXT);
-        assertThat(snapshot.contentBlocks().get(1).text()).isEqualTo("输入字段: [value]");
-        assertThat(snapshot.contentBlocks().get(2).text()).isEqualTo("执行成功");
+        assertThat(snapshot.contentBlocks().get(0).text()).isEqualTo("先分析问题");
+        assertThat(snapshot.contentBlocks().get(2).text()).isEqualTo("输入字段: [value]");
+        assertThat(snapshot.contentBlocks().get(3).text()).isEqualTo("执行成功");
         assertThat(snapshot.contentBlocks().toString())
                 .doesNotContain("原始敏感输入", "原始敏感输出");
+    }
+
+    @Test
+    void 结构化运行转发受控进度事件() {
+        AgentScopeExecutor executor = new AgentScopeExecutor() {
+            @Override
+            public AgentScopeExecutionResult execute(
+                    AgentScopeRunSpec spec,
+                    ModelCredential credential,
+                    ToolInvocationGateway toolGateway
+            ) {
+                return AgentScopeExecutionResult.succeeded("完成", List.of());
+            }
+
+            @Override
+            public AgentScopeExecutionResult executeStructured(
+                    AgentScopeRunSpec spec,
+                    ModelCredential credential,
+                    ToolInvocationGateway toolGateway,
+                    java.util.function.Consumer<com.cmagent.core.domain.AgentTextDelta> outputDeltaConsumer,
+                    java.util.function.Consumer<AgentProgressEvent> progressConsumer
+            ) {
+                progressConsumer.accept(AgentProgressEvent.thinkingCompleted(
+                        "reply-1", "thinking-1", "完整思考"));
+                return execute(spec, credential, toolGateway);
+            }
+        };
+        AgentScopeRuntimeAdapter adapter = adapter(executor);
+        List<AgentProgressEvent> progressEvents = new ArrayList<>();
+
+        adapter.runStructured(request(), ignored -> {
+        }, progressEvents::add);
+
+        assertThat(progressEvents).singleElement().satisfies(progress -> {
+            assertThat(progress.content()).isEqualTo("完整思考");
+            assertThat(progress.toolCallId()).isNull();
+        });
     }
 
     private static AgentScopeRuntimeAdapter adapter(AgentScopeExecutor executor) {

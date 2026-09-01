@@ -3,8 +3,13 @@ package com.cmagent.server.web;
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.core.domain.AgentDefinition;
+import com.cmagent.core.domain.AgentMessageSnapshot;
+import com.cmagent.core.domain.AgentProgressEvent;
 import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
+import com.cmagent.core.domain.AgentRuntimeResult;
+import com.cmagent.core.domain.AgentTextDelta;
+import com.cmagent.core.domain.MessageContentBlock;
 import com.cmagent.core.domain.ModelConfig;
 import com.cmagent.core.domain.ModelProviderType;
 import com.cmagent.core.domain.RunStatus;
@@ -292,6 +297,15 @@ class RunControllerTest {
                 .getResponse()
                 .getContentAsString();
         String conversationId = JsonPath.read(created, "$.id");
+        agentRuntime.returnProgressNext(List.of(
+                AgentProgressEvent.thinkingStarted("reply-progress", "thinking-progress"),
+                AgentProgressEvent.thinkingCompleted(
+                        "reply-progress", "thinking-progress", "先检查 token=secret-value"),
+                AgentProgressEvent.toolCallStarted("reply-progress", "call-progress", "echo"),
+                AgentProgressEvent.toolExecutionStarted("reply-progress", "call-progress", "echo"),
+                AgentProgressEvent.toolExecutionCompleted(
+                        "reply-progress", "call-progress", "echo", RunStatus.SUCCEEDED)
+        ));
 
         var response = mockMvc.perform(post(
                                 "/api/agents/{agentId}/conversations/{conversationId}/messages/stream",
@@ -306,9 +320,20 @@ class RunControllerTest {
         String body = new String(response.getContentAsByteArray(), StandardCharsets.UTF_8);
 
         assertThat(body)
-                .contains("event:started", "event:message-started", "event:delta", "event:completed")
+                .contains(
+                        "event:started", "event:progress", "THINKING_STARTED", "THINKING_COMPLETED",
+                        "TOOL_CALL_STARTED", "TOOL_EXECUTION_STARTED", "TOOL_EXECUTION_COMPLETED",
+                        "event:message-started", "event:delta", "event:completed")
                 .contains("\"conversationId\":\"" + conversationId + "\"")
-                .contains("fake-runtime:");
+                .contains("fake-runtime:", "token=<已脱敏>")
+                .doesNotContain("secret-value");
+
+        mockMvc.perform(get("/api/agents/{agentId}/conversations/{conversationId}/messages",
+                        agentId, conversationId)
+                        .header("Authorization", bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[1].contentBlocks[0].type").value("THINKING"))
+                .andExpect(jsonPath("$.items[1].contentBlocks[0].text").value("先检查 token=<已脱敏>"));
     }
 
     @Test
@@ -1020,6 +1045,7 @@ class RunControllerTest {
         private final AtomicReference<AgentRunRequest> lastRequest = new AtomicReference<>();
         private final AtomicReference<AgentRunResult> nextResult = new AtomicReference<>();
         private final AtomicBoolean failNextRun = new AtomicBoolean(false);
+        private final AtomicReference<List<AgentProgressEvent>> nextProgress = new AtomicReference<>(List.of());
 
         @Override
         /**
@@ -1058,8 +1084,43 @@ class RunControllerTest {
          */
         public AgentRunResult run(AgentRunRequest request, Consumer<String> outputDeltaConsumer) {
             AgentRunResult result = run(request);
-            outputDeltaConsumer.accept(result.output());
+            if (result.output() != null && !result.output().isBlank()) {
+                outputDeltaConsumer.accept(result.output());
+            }
             return result;
+        }
+
+        @Override
+        /**
+         * 发送测试预置的执行进度，并把完整思考块加入最终 assistant 快照以验证持久化和脱敏边界。
+         *
+         * @param request 当前运行请求
+         * @param outputDeltaConsumer 最终回答增量消费者
+         * @param progressConsumer 受控执行进度消费者
+         * @return 包含最终 assistant 安全快照的运行结果
+         */
+        public AgentRuntimeResult runStructured(
+                AgentRunRequest request,
+                Consumer<AgentTextDelta> outputDeltaConsumer,
+                Consumer<AgentProgressEvent> progressConsumer
+        ) {
+            List<AgentProgressEvent> progressEvents = nextProgress.getAndSet(List.of());
+            progressEvents.forEach(progressConsumer);
+            AgentRunResult result = run(request, delta -> outputDeltaConsumer.accept(
+                    new AgentTextDelta(request.runId().toString(), "text", delta)));
+            List<MessageContentBlock> blocks = new java.util.ArrayList<>();
+            progressEvents.stream()
+                    .filter(progress -> progress.type()
+                            == com.cmagent.core.domain.AgentProgressEventType.THINKING_COMPLETED)
+                    .map(AgentProgressEvent::content)
+                    .filter(java.util.Objects::nonNull)
+                    .map(MessageContentBlock::thinking)
+                    .forEach(blocks::add);
+            if (result.output() != null && !result.output().isBlank()) {
+                blocks.add(MessageContentBlock.text(result.output()));
+            }
+            return new AgentRuntimeResult(result, blocks.isEmpty() ? null : new AgentMessageSnapshot(
+                    request.runId().toString(), request.agent().name(), blocks));
         }
 
         /**
@@ -1078,6 +1139,11 @@ class RunControllerTest {
             nextResult.set(result);
         }
 
+        /** 预置下一次结构化运行发送的受控执行进度。 */
+        void returnProgressNext(List<AgentProgressEvent> progressEvents) {
+            nextProgress.set(List.copyOf(progressEvents));
+        }
+
         /**
          * 验证或支持 {@code lastRequest} 所描述的测试场景。
          */
@@ -1092,6 +1158,7 @@ class RunControllerTest {
             lastRequest.set(null);
             nextResult.set(null);
             failNextRun.set(false);
+            nextProgress.set(List.of());
         }
     }
 }

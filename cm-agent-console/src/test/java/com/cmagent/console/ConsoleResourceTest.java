@@ -62,7 +62,8 @@ class ConsoleResourceTest {
         assertThat(chat)
                 .contains(
                         "data-page=\"chatPage\"", "id=\"chatPage\"", "id=\"chatAgentSelect\"",
-                        "id=\"chatConversationList\"", "id=\"chatMessageList\"", "id=\"chatForm\""
+                        "id=\"chatConversationList\"", "id=\"chatMessageList\"", "id=\"chatForm\"",
+                        "实时查看回答、思考和工具调用", "执行过程仅展示模型提供的思考与脱敏工具摘要"
                 )
                 .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
         assertThat(runs)
@@ -94,7 +95,7 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.12", "/assets/console-core.js?v=2.0.9")
+                    .contains("/assets/app.js?v=2.0.13", "/assets/console-core.js?v=2.0.9")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }
@@ -108,6 +109,7 @@ class ConsoleResourceTest {
 
         assertThat(css)
                 .contains(".sidebar", ".page-view", ".empty-state", ":focus-visible")
+                .contains(".chat-execution-trace", ".chat-execution-step", ".chat-thinking-content", ".chat-tool-payloads")
                 .contains("#toolsPage .management-grid { grid-template-columns: minmax(0, 1fr); }")
                 .contains("#toolsPage .management-grid > * { width: 100%; grid-column: 1; }")
                 .contains("@media (max-width: 900px)");

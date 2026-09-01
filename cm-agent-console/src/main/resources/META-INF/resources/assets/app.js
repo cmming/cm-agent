@@ -1854,6 +1854,11 @@
                     const output = element("div", {className: "markdown-output"});
                     renderMarkdown(output, String(block.text || ""));
                     section.append(output);
+                } else if (block.type === "THINKING") {
+                    section.append(element("p", {
+                        className: "run-copy-block",
+                        text: `思考过程（模型提供）：${block.text || ""}`
+                    }));
                 } else {
                     section.append(element("p", {
                         className: "run-copy-block",
@@ -1971,25 +1976,105 @@
         article.append(element("p", {className: "chat-message-label", text: label}));
         const bubble = element("div", {className: "chat-message-bubble"});
         const blocks = Array.isArray(message.contentBlocks) ? message.contentBlocks : [];
-        blocks.forEach((block) => appendChatBlock(bubble, block));
+        appendChatBlocks(bubble, blocks);
         if (!blocks.length) bubble.append(element("p", {text: "消息内容为空。"}));
         article.append(bubble);
         return article;
     }
 
-    function appendChatBlock(container, block) {
-        if (block.type === "TEXT") {
-            const output = element("div", {className: "markdown-output"});
-            renderMarkdown(output, String(block.text || ""));
-            container.append(output);
-            return;
+    function appendChatBlocks(container, blocks) {
+        let traceBlocks = [];
+        const flushTrace = () => {
+            if (!traceBlocks.length) return;
+            container.append(createChatExecutionTrace(traceBlocks));
+            traceBlocks = [];
+        };
+        blocks.forEach((block) => {
+            if (block.type === "TEXT") {
+                flushTrace();
+                const output = element("div", {className: "markdown-output"});
+                renderMarkdown(output, String(block.text || ""));
+                container.append(output);
+            } else if (["THINKING", "TOOL_USE", "TOOL_RESULT"].includes(block.type)) {
+                traceBlocks.push(block);
+            }
+        });
+        flushTrace();
+    }
+
+    function createChatExecutionTrace(blocks) {
+        const trace = element("details", {className: "chat-execution-trace"});
+        const grouped = groupChatExecutionBlocks(blocks);
+        const summary = element("summary", {
+            text: `执行过程 · ${grouped.length} 个步骤 · 已完成`
+        });
+        const body = element("div", {className: "chat-execution-body"});
+        grouped.forEach((step) => body.append(renderChatExecutionStep(step)));
+        trace.append(summary, body);
+        return trace;
+    }
+
+    function groupChatExecutionBlocks(blocks) {
+        const steps = [];
+        const tools = new Map();
+        blocks.forEach((block, index) => {
+            if (block.type === "THINKING") {
+                steps.push({kind: "thinking", order: index, content: String(block.text || "")});
+                return;
+            }
+            const callId = String(block.toolCallId || `tool-${index}`);
+            let step = tools.get(callId);
+            if (!step) {
+                step = {kind: "tool", order: index, callId, toolName: "未命名 Tool", input: "", output: "", status: ""};
+                tools.set(callId, step);
+                steps.push(step);
+            }
+            if (block.type === "TOOL_USE") {
+                step.toolName = block.toolName || step.toolName;
+                step.input = String(block.text || "");
+            } else if (block.type === "TOOL_RESULT") {
+                step.output = String(block.text || "");
+                step.status = block.status || step.status;
+            }
+        });
+        return steps.sort((left, right) => left.order - right.order);
+    }
+
+    function renderChatExecutionStep(step) {
+        const section = element("section", {className: `chat-execution-step chat-execution-${step.kind}`});
+        const heading = element("div", {className: "chat-execution-step-heading"});
+        if (step.kind === "thinking") {
+            heading.append(
+                element("strong", {text: "思考过程"}),
+                element("span", {text: "模型提供 · 已完成"})
+            );
+            const content = element("div", {className: "chat-thinking-content markdown-output"});
+            renderMarkdown(content, step.content);
+            section.append(heading, content);
+            return section;
         }
-        container.append(element("p", {
-            className: "chat-tool-summary",
-            text: block.type === "TOOL_USE"
-                ? `工具调用：${block.toolName || "—"} · ${block.text || ""}`
-                : `工具结果：${block.status || "—"} · ${block.text || ""}`
-        }));
+        heading.append(
+            element("strong", {text: step.toolName}),
+            element("span", {text: chatToolStatusText(step.status)})
+        );
+        const payloads = element("div", {className: "chat-tool-payloads"});
+        payloads.append(
+            renderToolCallPayload("请求输入（已脱敏摘要）", step.input, "未记录输入摘要。"),
+            renderToolCallPayload("执行结果（已脱敏摘要）", step.output, "未记录结果摘要。")
+        );
+        section.dataset.status = String(step.status || "UNKNOWN");
+        section.append(heading, payloads);
+        return section;
+    }
+
+    function chatToolStatusText(status) {
+        const labels = {
+            RUNNING: "执行中",
+            SUCCEEDED: "执行成功",
+            FAILED: "执行失败",
+            DENIED: "已拒绝"
+        };
+        return labels[status] || "已完成";
     }
 
     function appendChatStreamingMessage() {
@@ -1997,12 +2082,65 @@
         const article = element("article", {className: "chat-message chat-message-agent is-streaming"});
         article.append(element("p", {className: "chat-message-label", text: "Agent · 正在生成"}));
         const bubble = element("div", {className: "chat-message-bubble"});
+        const trace = element("details", {className: "chat-execution-trace is-live"});
+        trace.open = true;
+        trace.hidden = true;
+        const traceSummary = element("summary", {text: "执行过程 · 正在运行"});
+        const traceBody = element("div", {className: "chat-execution-body"});
+        trace.append(traceSummary, traceBody);
         const output = element("div", {className: "markdown-output"});
         output.id = "chatStreamOutput";
-        bubble.append(output);
+        bubble.append(trace, output);
         article.append(bubble);
         container.append(article);
-        return output;
+        return {article, output, trace, traceSummary, traceBody, steps: new Map()};
+    }
+
+    function renderChatProgress(streamMessage, progress) {
+        if (!streamMessage || !progress?.type) return;
+        streamMessage.trace.hidden = false;
+        const isThinking = progress.type.startsWith("THINKING_");
+        const key = isThinking
+            ? `thinking:${progress.blockId || progress.replyId || "current"}`
+            : `tool:${progress.toolCallId || progress.toolName || "current"}`;
+        let step = streamMessage.steps.get(key);
+        if (!step) {
+            const section = element("section", {
+                className: `chat-execution-step chat-execution-${isThinking ? "thinking" : "tool"}`
+            });
+            const heading = element("div", {className: "chat-execution-step-heading"});
+            const title = element("strong", {text: isThinking ? "思考过程" : (progress.toolName || "Tool")});
+            const status = element("span", {text: isThinking ? "正在思考" : "准备调用"});
+            heading.append(title, status);
+            const content = element("div", {
+                className: isThinking ? "chat-thinking-content markdown-output" : "chat-tool-live-note",
+                text: isThinking ? "模型正在生成思考内容…" : "等待工具参数准备完成。"
+            });
+            section.append(heading, content);
+            step = {section, title, status, content, isThinking};
+            streamMessage.steps.set(key, step);
+            streamMessage.traceBody.append(section);
+        }
+        if (!isThinking && progress.toolName) step.title.textContent = progress.toolName;
+        if (progress.type === "THINKING_STARTED") {
+            step.status.textContent = "正在思考";
+        } else if (progress.type === "THINKING_COMPLETED") {
+            step.status.textContent = "模型提供 · 已完成";
+            renderMarkdown(step.content, String(progress.content || ""));
+        } else if (progress.type === "TOOL_CALL_COMPLETED") {
+            step.status.textContent = "参数已准备";
+            step.content.textContent = "参数已由模型生成；原始参数不在实时轨迹中展示。";
+        } else if (progress.type === "TOOL_EXECUTION_STARTED") {
+            step.status.textContent = "执行中";
+            step.content.textContent = "已进入受治理工具执行阶段。";
+            step.section.dataset.status = "RUNNING";
+        } else if (progress.type === "TOOL_EXECUTION_COMPLETED") {
+            step.status.textContent = chatToolStatusText(progress.status);
+            step.content.textContent = "执行已结束；完成后将加载服务端保存的脱敏摘要。";
+            step.section.dataset.status = String(progress.status || "UNKNOWN");
+        }
+        streamMessage.traceSummary.textContent = `执行过程 · ${streamMessage.steps.size} 个步骤 · 正在运行`;
+        scrollChatToBottom();
     }
 
     function scrollChatToBottom() {
@@ -2036,7 +2174,7 @@
                 const container = $("chatMessageList");
                 container.querySelector(".chat-welcome")?.remove();
                 container.append(createChatMessage({role: "USER", contentBlocks: [{type: "TEXT", text: input}]}));
-                const output = appendChatStreamingMessage();
+                const streamMessage = appendChatStreamingMessage();
                 scrollChatToBottom();
                 $("chatInput").value = "";
                 setStatus($("chatFormStatus"), "正在接收回答…", "neutral");
@@ -2049,8 +2187,10 @@
                         const delta = String(event.data?.delta || "");
                         if (!delta) return;
                         streamedOutput += delta;
-                        renderMarkdown(output, streamedOutput);
+                        renderMarkdown(streamMessage.output, streamedOutput);
                         scrollChatToBottom();
+                    } else if (event.type === "progress") {
+                        renderChatProgress(streamMessage, event.data);
                     } else if (event.type === "completed") {
                         result = event.data;
                     } else if (event.type === "error") {
