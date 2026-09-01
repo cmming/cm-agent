@@ -16,6 +16,8 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.AgentTool;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.agentscope.core.tool.ToolCallParam;
 import reactor.core.publisher.Mono;
 
@@ -41,6 +43,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  * 对外只能取得不可变快照。</p>
  */
 public class AgentScopeToolBridge implements AgentTool {
+
+    private static final Logger log = LoggerFactory.getLogger(AgentScopeToolBridge.class);
+
 
     private static final String UNEXPECTED_ERROR_MESSAGE = "工具调用失败";
 
@@ -202,6 +207,9 @@ public class AgentScopeToolBridge implements AgentTool {
         String inputSummary = summarizeInput(input);
         try {
             String inputJson = objectMapper.writeValueAsString(input);
+            // 调用开始用 DEBUG 级别：单次运行可能触发多轮工具调用，INFO 会淹没运行级日志。
+            log.debug("工具调用进入治理网关。runId={}, toolId={}, toolName={}, toolCallId={}",
+                    request.runId(), tool.id(), tool.name(), toolCallId);
             ToolInvocationResult result = runGate.invoke(gateway, new ToolInvocationRequest(
                     request.tenantId(),
                     request.agentId(),
@@ -215,6 +223,8 @@ public class AgentScopeToolBridge implements AgentTool {
             Duration duration = elapsedSince(startedAt);
             if (result.success()) {
                 completedToolCallIds.add(toolCallId);
+                log.info("工具调用成功。runId={}, tenantId={}, toolId={}, toolName={}, toolCallId={}, durationMs={}",
+                        request.runId(), request.tenantId(), tool.id(), tool.name(), toolCallId, duration.toMillis());
                 records.add(new ToolCallRecord(
                         tool.id(), tool.name(), inputSummary, result.output(), RunStatus.SUCCEEDED,
                         duration, true, ""));
@@ -226,6 +236,15 @@ public class AgentScopeToolBridge implements AgentTool {
             records.add(new ToolCallRecord(
                     tool.id(), tool.name(), inputSummary, "", status,
                     duration, result.authorized(), result.errorMessage()));
+            // 失败与拒绝都映射为工具错误块，但日志级别不同：拒绝是安全治理结果必须始终可见；
+            // 普通失败可能由工具端可恢复问题导致，用 WARN 记录受控原因。reason 来自网关已脱敏的 errorMessage。
+            if (status == RunStatus.DENIED) {
+                log.warn("工具调用被授权拒绝。runId={}, tenantId={}, toolId={}, toolName={}, toolCallId={}",
+                        request.runId(), request.tenantId(), tool.id(), tool.name(), toolCallId);
+            } else {
+                log.warn("工具调用失败。runId={}, tenantId={}, toolId={}, toolName={}, toolCallId={}, durationMs={}, reason={}",
+                        request.runId(), request.tenantId(), tool.id(), tool.name(), toolCallId, duration.toMillis(), result.errorMessage());
+            }
             return ToolResultBlock.error(result.errorMessage()).withState(ToolResultState.ERROR);
         } catch (AgentScopeRunGate.RunAbortedException aborted) {
             throw aborted;
@@ -240,6 +259,9 @@ public class AgentScopeToolBridge implements AgentTool {
             records.add(new ToolCallRecord(
                     tool.id(), tool.name(), inputSummary, "", RunStatus.FAILED,
                     elapsedSince(startedAt), false, UNEXPECTED_ERROR_MESSAGE));
+            // 未预期异常在此处必须留下诊断堆栈；对外记录仍只写固定文案，避免输入值或异常细节泄露。
+            log.error("工具调用发生未预期异常。runId={}, tenantId={}, toolId={}, toolName={}, toolCallId={}",
+                    request.runId(), request.tenantId(), tool.id(), tool.name(), toolCallId, exception);
             return ToolResultBlock.error(UNEXPECTED_ERROR_MESSAGE).withState(ToolResultState.ERROR);
         }
     }

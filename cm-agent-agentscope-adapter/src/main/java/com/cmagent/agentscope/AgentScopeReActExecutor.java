@@ -27,6 +27,8 @@ import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ModelHttpException;
 import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.tool.Toolkit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.ArrayDeque;
@@ -56,8 +58,14 @@ import java.util.function.Consumer;
  */
 final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
+    private static final Logger log = LoggerFactory.getLogger(AgentScopeReActExecutor.class);
+
+    // 多租户运行共用同一执行器实例，固定中文提示既保证不同失败分支可区分，又避免把底层异常、
+    // Provider 响应或内部 URL 透传到 Run 结果与控制台。
     private static final String TIMEOUT_MESSAGE = "Agent 运行超时";
     private static final String FAILURE_MESSAGE = "Agent 运行失败";
+    // AgentScope 2.0.0 的模型超时以 ModelException + 固定英文前缀消息表达，没有专用异常类型可判，
+    // 只能通过消息前缀识别；框架升级该文案时必须同步调整此常量与 isTimeoutFailure。
     private static final String MODEL_TIMEOUT_PREFIX = "Model request timeout after ";
 
     private final AgentScopeRuntimeOptions options;
@@ -148,6 +156,19 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                 delta -> outputDeltaConsumer.accept(delta.delta()));
     }
 
+    /**
+     * 执行会话运行，并把带 replyId、blockId 的文本块增量交付给调用方。
+     *
+     * <p>这是生产执行主流程：文本、工具、超时与最终结果事件均在此归并为
+     * {@link AgentScopeExecutionResult}。最终 assistant 消息会按内容块顺序过滤为
+     * 受控快照，避免工具原始输入输出越过适配边界。</p>
+     *
+     * @param spec 已校验领域请求的适配器视图
+     * @param credential 当前租户与模型配置对应的受控凭据
+     * @param toolGateway 每次实际工具调用都必须经过的治理入口
+     * @param outputDeltaConsumer 接收带块标识的安全文本增量的非空消费者
+     * @return 已归并模型输出、工具记录与最终消息快照的终态结果
+     */
     @Override
     public AgentScopeExecutionResult executeStructured(
             AgentScopeRunSpec spec,
@@ -166,6 +187,10 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         ReActAgent agent = null;
         RuntimeContext context = null;
         RuntimeException primaryFailure = null;
+        // 运行级日志使用 runId 作为主关联键，便于与上层 Run 日志及错误 errorId 对照排查。
+        log.info("AgentScope 运行开始。runId={}, tenantId={}, agentId={}, principalId={}, toolCount={}, modelTimeout={}, toolTimeout={}",
+                spec.runId(), spec.tenantId(), spec.agentId(), spec.principalId(),
+                spec.request().tools().size(), options.modelTimeout(), options.toolTimeout());
         try {
             Toolkit toolkit = new Toolkit();
             // ObjectMapper 仅服务于本次运行，Schema 在桥接器构造时即完成校验，避免模型启动后才失败。
@@ -253,6 +278,9 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
             throwIfRunAborted(runGate, agent, context, lifecycle);
             List<ToolCallRecord> records = collectRecords(bridges);
+            // 正常路径在结果映射前记录一次事件流收尾，便于把工具记录数量与最终消息存在性关联排查。
+            log.info("AgentScope 事件流正常结束。runId={}, toolCallCount={}, hasFinalMessage={}",
+                    spec.runId(), records.size(), finalMessage.get() != null);
             return completedResult(finalMessage.get(), records);
         } catch (RuntimeException exception) {
             primaryFailure = exception;
@@ -283,14 +311,23 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             if (denied != null) {
                 // 工具授权拒绝决定整个 Run 的终态，即使 AgentScope 随后还生成了说明文本。
                 primaryFailure = null;
+                // 拒绝属于可预期的治理结果，用 WARN 记录命中边界而不是 ERROR。
+                log.warn("AgentScope 运行因工具授权拒绝终止。runId={}, tenantId={}, agentId={}, deniedToolId={}, deniedToolName={}",
+                        spec.runId(), spec.tenantId(), spec.agentId(), denied.toolId(), denied.toolName());
                 return AgentScopeExecutionResult.denied(denied.errorMessage(), records);
             }
             if (timedOut) {
                 primaryFailure = null;
+                // 超时属于运行期可恢复问题，用 WARN 记录，提示调整 modelTimeout 或 toolTimeout。
+                log.warn("AgentScope 运行超时。runId={}, tenantId={}, modelTimeout={}, toolTimeout={}, pendingToolCalls={}",
+                        spec.runId(), spec.tenantId(), options.modelTimeout(), options.toolTimeout(), records.size());
                 return AgentScopeExecutionResult.failed(TIMEOUT_MESSAGE, records);
             }
             if (isProviderFailure(exception)) {
                 primaryFailure = null;
+                // 只记录异常类型与可关联键；Provider 响应体、内部 URL 等细节不进入日志。
+                log.warn("AgentScope 运行遭遇模型 Provider 失败。runId={}, tenantId={}, exceptionType={}",
+                        spec.runId(), spec.tenantId(), exception.getClass().getName());
                 return AgentScopeExecutionResult.failed(FAILURE_MESSAGE, records);
             }
             throw exception;
