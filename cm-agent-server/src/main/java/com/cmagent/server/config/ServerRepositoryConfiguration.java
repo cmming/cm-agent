@@ -17,6 +17,8 @@ import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import com.cmagent.server.store.InMemoryConversationStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -34,10 +36,15 @@ import java.util.UUID;
 @EnableConfigurationProperties(CmAgentPersistenceProperties.class)
 /** 按持久化模式选择 memory 或 JDBC Repository 实现。 */
 public class ServerRepositoryConfiguration {
+    private static final Logger log = LoggerFactory.getLogger(ServerRepositoryConfiguration.class);
+    private static final String MEMORY_MODE_LOG = "当前使用 memory 持久化，重启后数据全部丢失，禁止用于生产";
 
     @Bean
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
     public InMemoryConversationStore inMemoryConversationStore() {
+        // memory 是默认值，静默装配会让运行数据丢失风险完全不可见；这里在装配首个 memory
+        // bean 时输出一次 INFO，生产 profile 的强制校验由 CmAgentPersistenceProperties.validate 负责。
+        log.info(MEMORY_MODE_LOG);
         return new InMemoryConversationStore();
     }
 

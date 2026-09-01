@@ -15,6 +15,8 @@ import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.runtime.http.HttpToolConfigValidator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -34,6 +36,7 @@ import java.util.function.Supplier;
 @Service
 /** 管理类写操作的统一编排层，负责校验、持久化和必要的审计动作。 */
 public class ManagementCommandService {
+    private static final Logger log = LoggerFactory.getLogger(ManagementCommandService.class);
     private static final UUID MODEL_PROVIDER_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
     private static final int TOOL_LOCK_STRIPE_COUNT = 256;
     private static final ReentrantLock[] TOOL_LOCKS = createToolLocks();
@@ -730,26 +733,33 @@ public class ManagementCommandService {
             RuntimeException original
     ) {
         if (publicationWriteAttempted) {
-            compensate(() -> mcpToolPublicationRepository.delete(prepared.tool().tenantId(), prepared.tool().id()), original);
+            compensate("删除MCP发布记录", () -> mcpToolPublicationRepository.delete(prepared.tool().tenantId(), prepared.tool().id()), original);
         }
         if (configurationWriteAttempted) {
-            compensate(() -> httpToolConfigRepository.delete(prepared.tool().tenantId(), prepared.tool().id()), original);
+            compensate("删除HTTP工具配置", () -> httpToolConfigRepository.delete(prepared.tool().tenantId(), prepared.tool().id()), original);
         }
         if (toolWriteAttempted) {
-            compensate(() -> toolRepository.delete(prepared.tool().tenantId(), prepared.tool().id()), original);
+            compensate("删除工具定义", () -> toolRepository.delete(prepared.tool().tenantId(), prepared.tool().id()), original);
         }
     }
 
     /**
      * 执行补偿动作，并把补偿失败附加到原异常。
      *
+     * <p>补偿失败意味着内存态与目标状态可能不一致，仅依赖 {@code addSuppressed} 会让该失败
+     * 只在主异常堆栈中偶然可见，因此这里额外输出 WARN。原始失败本身不在此记录：它会继续
+     * 向上传播并由统一异常边界记录 ERROR，避免同一堆栈重复打印。</p>
+     *
+     * @param step 补偿步骤名称，用于在日志中定位失败发生在哪个恢复动作。
      * @param action 持有锁或执行补偿时调用的业务动作。
      * @param original 执行变更前的原始状态，用于失败补偿。
      */
-    private void compensate(Runnable action, RuntimeException original) {
+    private void compensate(String step, Runnable action, RuntimeException original) {
         try {
             action.run();
         } catch (RuntimeException compensationFailure) {
+            log.warn("工具状态补偿失败，可能残留部分写入。step={}, exceptionType={}",
+                    step, compensationFailure.getClass().getName());
             original.addSuppressed(compensationFailure);
         }
     }
@@ -784,7 +794,7 @@ public class ManagementCommandService {
      * @param original 变更前的原始状态，用于失败补偿。
      */
     private void restoreToolState(ToolStateSnapshot snapshot, RuntimeException original) {
-        compensate(() -> {
+        compensate("恢复工具定义", () -> {
             if (toolRepository.findByTenantAndId(snapshot.tool().tenantId(), snapshot.tool().id()).isEmpty()) {
                 if (!toolRepository.restoreDeletedToolForCompensation(snapshot.tool())) {
                     toolRepository.save(snapshot.tool());
@@ -793,8 +803,8 @@ public class ManagementCommandService {
                 toolRepository.update(snapshot.tool());
             }
         }, original);
-        compensate(() -> restoreHttpToolConfig(snapshot), original);
-        compensate(() -> restoreMcpToolPublication(snapshot), original);
+        compensate("恢复HTTP工具配置", () -> restoreHttpToolConfig(snapshot), original);
+        compensate("恢复MCP发布状态", () -> restoreMcpToolPublication(snapshot), original);
     }
 
     /**
@@ -835,8 +845,8 @@ public class ManagementCommandService {
             List<ToolGrant> grants,
             RuntimeException original
     ) {
-        compensate(() -> grantRepository.deleteByTenantAndToolId(tool.tenantId(), tool.id()), original);
-        grants.forEach(grant -> compensate(() -> grantRepository.save(grant), original));
+        compensate("清空工具授权", () -> grantRepository.deleteByTenantAndToolId(tool.tenantId(), tool.id()), original);
+        grants.forEach(grant -> compensate("恢复工具授权", () -> grantRepository.save(grant), original));
     }
 
     /**
@@ -854,12 +864,12 @@ public class ManagementCommandService {
             RuntimeException original
     ) {
         if (agent.toolIds().contains(toolId)) {
-            compensate(() -> agentRepository.addToolToAgent(agent.tenantId(), agent.id(), toolId), original);
+            compensate("恢复Agent工具关联", () -> agentRepository.addToolToAgent(agent.tenantId(), agent.id(), toolId), original);
         } else {
-            compensate(() -> agentRepository.removeToolFromAgent(agent.tenantId(), agent.id(), toolId), original);
+            compensate("移除Agent工具关联", () -> agentRepository.removeToolFromAgent(agent.tenantId(), agent.id(), toolId), original);
         }
-        compensate(() -> grantRepository.delete(agent.tenantId(), agent.id(), toolId), original);
-        grants.forEach(grant -> compensate(() -> grantRepository.save(grant), original));
+        compensate("删除授权记录", () -> grantRepository.delete(agent.tenantId(), agent.id(), toolId), original);
+        grants.forEach(grant -> compensate("恢复授权记录", () -> grantRepository.save(grant), original));
     }
 
     /**
@@ -907,7 +917,7 @@ public class ManagementCommandService {
     }
 
     /**
-     * 获取指定租户和工具对应的进程内锁。
+     * 获取指定租户和工具对应的进程��锁。
      *
      * @param tenantId 当前租户标识
      * @param toolId 目标工具标识

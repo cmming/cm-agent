@@ -4,6 +4,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -17,6 +19,8 @@ import java.io.IOException;
 @Component
 /** 从 Bearer Token 或控制台 HttpOnly Cookie 构建 Spring Security 认证主体，失败时保持请求未认证。 */
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+
     private final JwtService jwtService;
     /**
      * 创建 {@code JwtAuthenticationFilter} 实例并保存其运行所需依赖。
@@ -52,6 +56,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             } catch (Exception ex) {
+                // 提供了 token 却解析失败属于需要关注的信号（过期、签名不匹配或伪造），静默清除上下文
+                // 会让这类请求在应用日志中完全消失。这里只记录异常类型：token、Authorization 头和异常
+                // 消息都可能携带 JWT 片段或签名细节，一律不得写入日志；请求保持未认证并继续过滤器链。
+                log.warn("JWT 认证被拒绝。exceptionType={}", ex.getClass().getName());
                 SecurityContextHolder.clearContext();
             }
         }

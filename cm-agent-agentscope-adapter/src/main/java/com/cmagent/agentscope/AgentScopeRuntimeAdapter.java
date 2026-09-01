@@ -10,6 +10,8 @@ import com.cmagent.core.runtime.ModelCredential;
 import com.cmagent.core.runtime.ModelCredentialProvider;
 import com.cmagent.core.runtime.ModelCredentialUnavailableException;
 import com.cmagent.core.runtime.ToolInvocationGateway;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -32,6 +34,7 @@ import java.util.function.Consumer;
  * 服务端安全及持久化实现解耦。</p>
  */
 public class AgentScopeRuntimeAdapter implements AgentRuntime {
+    private static final Logger log = LoggerFactory.getLogger(AgentScopeRuntimeAdapter.class);
 
     private final ModelCredentialProvider credentialProvider;
     private final ToolInvocationGateway toolGateway;
@@ -137,6 +140,11 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
                     clock.instant(),
                     execution.errorMessage());
         } catch (ModelCredentialUnavailableException exception) {
+            // 凭据解析失败被映射为受控失败终态，此 catch 是该失败唯一可观察的应用日志位置；
+            // 只记录租户与模型配置标识及异常类型：失败原因 cause 可能携带配置路径或密钥来源等
+            // 运维细节，不写入日志；异常的 {@code getMessage()} 固定为脱敏文本，可直接使用。
+            log.warn("模型凭据不可用。runId={}, tenantId={}, modelConfigId={}, exceptionType={}",
+                    request.runId(), request.tenantId(), request.modelConfig().id(), exception.getClass().getName());
             return new AgentRunResult(
                     request.runId(),
                     RunStatus.FAILED,
@@ -177,6 +185,9 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
                     startedAt, clock.instant(), execution.errorMessage());
             return new AgentRuntimeResult(run, execution.assistantMessage());
         } catch (ModelCredentialUnavailableException exception) {
+            // 同 run()：结构化运行路径的凭据失败也不会再向上传播，必须在此处留下 WARN。
+            log.warn("模型凭据不可用。runId={}, tenantId={}, modelConfigId={}, exceptionType={}",
+                    request.runId(), request.tenantId(), request.modelConfig().id(), exception.getClass().getName());
             return new AgentRuntimeResult(new AgentRunResult(
                     request.runId(), RunStatus.FAILED, "", List.of(), startedAt, clock.instant(),
                     "模型凭据不可用"), null);

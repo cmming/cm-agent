@@ -2,6 +2,8 @@ package com.cmagent.persistence;
 
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.configuration.FluentConfiguration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -18,6 +20,10 @@ import java.util.Objects;
 public final class CmAgentFlyway {
     private static final String COMMON_MIGRATION_LOCATION = "classpath:db/migration/*.sql";
     private static final String DIALECT_MIGRATION_ROOT = "classpath:db/migration/";
+
+    // 数据库方言决定加载哪套 Native COMMENT 迁移脚本，启动期一次输出 INFO，可在排障时
+    // 直接确认实际生效的迁移目录；persistence 模块经 spring-boot-starter-jdbc 传递依赖 slf4j-api。
+    private static final Logger log = LoggerFactory.getLogger(CmAgentFlyway.class);
 
     private CmAgentFlyway() {
     }
@@ -40,12 +46,16 @@ public final class CmAgentFlyway {
     private static String resolveDialect(DataSource dataSource) {
         try (Connection connection = dataSource.getConnection()) {
             String productName = connection.getMetaData().getDatabaseProductName();
-            return switch (productName) {
+            String dialect = switch (productName) {
                 case "PostgreSQL" -> "postgresql";
                 case "MySQL" -> "mysql";
                 default -> throw new IllegalStateException("不支持为数据库 " + productName + " 选择 Flyway 方言迁移");
             };
+            log.info("Flyway 加载数据库方言迁移目录。database={}, dialect={}", productName, dialect);
+            return dialect;
         } catch (SQLException exception) {
+            // 包装为 IllegalStateException 上抛：启动失败由 Spring 启动日志统一记录，
+            // 此处不再重复打印堆栈。
             throw new IllegalStateException("无法识别数据库类型，不能选择 Flyway 方言迁移", exception);
         }
     }

@@ -95,13 +95,17 @@ public class RunPersistenceService {
         if (transactionTemplate == null) {
             // Without JDBC transactions, audit first prevents a failed audit from leaving a memory row behind.
             appendAudit(principal, pending, RunStatus.RUNNING, "Agent 运行已启动");
-            return runRepository.save(principal.tenantId(), pending);
-        }
-        return requireResult(transactionTemplate.execute(status -> {
             RunRecord saved = runRepository.save(principal.tenantId(), pending);
-            appendAudit(principal, saved, RunStatus.RUNNING, "Agent 运行已启动");
+            log.info("Agent 运行已启动。runId={}, tenantId={}, agentId={}, principalId={}", saved.id(), saved.tenantId(), saved.agentId(), saved.principalId());
             return saved;
+        }
+        RunRecord saved = requireResult(transactionTemplate.execute(status -> {
+            RunRecord persisted = runRepository.save(principal.tenantId(), pending);
+            appendAudit(principal, persisted, RunStatus.RUNNING, "Agent 运行已启动");
+            return persisted;
         }));
+        log.info("Agent 运行已启动。runId={}, tenantId={}, agentId={}, principalId={}", saved.id(), saved.tenantId(), saved.agentId(), saved.principalId());
+        return saved;
     }
 
     /**
@@ -110,7 +114,6 @@ public class RunPersistenceService {
      * @param principal  当前认证主体
      * @param runningRun 已存在的运行中记录
      * @param result     Agent 运行结果
-     * @param toolCalls  本次运行产生的工具调用记录
      * @param authorizedTools 已通过授权校验、允许本次运行调用的工具集合
      * @return 完成后的运行记录
      * @throws RuntimeException 持久化或审计失败时抛出
@@ -141,17 +144,21 @@ public class RunPersistenceService {
                         principal.tenantId(), runningRun.id(), status, output, errorMessage, finishedAt
                 );
                 toolCallRepository.saveAll(principal.tenantId(), new RunToolCallBatch(principal.tenantId(), toolCalls));
+                log.info("Agent 运行完成。runId={}, tenantId={}, agentId={}, status={}, toolCallCount={}",
+                        saved.id(), saved.tenantId(), saved.agentId(), status, toolCalls.size());
                 return saved;
             }
             final String persistedError = errorMessage;
-            return requireResult(transactionTemplate.execute(transactionStatus -> {
-                RunRecord saved = runRepository.complete(
+            RunRecord completedRow = requireResult(transactionTemplate.execute(transactionStatus -> {
+                RunRecord row = runRepository.complete(
                         principal.tenantId(), runningRun.id(), status, output, persistedError, finishedAt
                 );
                 toolCallRepository.saveAll(principal.tenantId(), new RunToolCallBatch(principal.tenantId(), toolCalls));
-                appendAudit(principal, saved, status, completionMessage(status));
-                return saved;
+                appendAudit(principal, row, status, completionMessage(status));
+                return row;
             }));
+            log.info("Agent 运行完成。runId={}, tenantId={}, agentId={}, status={}, toolCallCount={}", completedRow.id(), completedRow.tenantId(), completedRow.agentId(), status, toolCalls.size());
+            return completedRow;
         } catch (RuntimeException completionFailure) {
             try {
                 completeFailure(principal, runningRun);

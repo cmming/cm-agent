@@ -154,6 +154,14 @@ public class McpPublishedToolCatalog {
             try {
                 audits.accessDenied(principal, "MCP", "/mcp", INVOKE_PERMISSION, decision.reason());
             } catch (AuditPersistenceException exception) {
+                // 此处直接转换为 MCP 协议错误，不会经过任何统一异常边界；不记录会导致
+                // "权限拒绝但审计写入失败"在日志中完全不可见。errorId 在工具调用请求建立前
+                // 尚未生成，这里单独生成本地关联编号供运维检索。
+                diagnosticLogger.error(new ErrorDiagnosticLogger.DiagnosticContext(
+                        UUID.randomUUID().toString(), "MCP_TOOL", "MCP_AUDIT_UNAVAILABLE",
+                        principal.tenantId().toString(), principal.principalId(),
+                        "-", "-", listedTool.id().toString(), "-", ToolInvocationSource.MCP.name()
+                ), exception);
                 throw protocolPersistenceError();
             }
             return failed("没有权限调用 MCP 工具");
@@ -166,6 +174,13 @@ public class McpPublishedToolCatalog {
         try {
             inputJson = canonicalJson(call.arguments() == null ? Map.of() : call.arguments());
         } catch (JsonProcessingException exception) {
+            // 受控失败也必须可检索：JSON 规范化失败意味着客户端传入的 arguments 无法参与
+            // 审计与执行，此处留下脱敏诊断记录后再返回协议层失败。
+            diagnosticLogger.error(new ErrorDiagnosticLogger.DiagnosticContext(
+                    UUID.randomUUID().toString(), "MCP_TOOL", "MCP_TOOL_INPUT_INVALID",
+                    principal.tenantId().toString(), principal.principalId(),
+                    "-", "-", listedTool.id().toString(), "-", ToolInvocationSource.MCP.name()
+            ), "MCP 工具输入参数无法规范化");
             return failed("工具输入无效");
         }
         ToolExecutionRequest request = new ToolExecutionRequest(
@@ -245,6 +260,13 @@ public class McpPublishedToolCatalog {
             audits.append(principal.tenantId(), principal.principalId(), "MCP_TOOL_CALL_FAILED", RESOURCE_TYPE,
                     toolId.toString(), "FAILED", "MCP 工具调用失败");
         } catch (AuditPersistenceException exception) {
+            // 与 call() 中的审计失败路径同理：helper 内部失败不会到达任何统一日志边界,
+            // 必须先写入脱敏诊断日志再抛出协议错误。
+            diagnosticLogger.error(new ErrorDiagnosticLogger.DiagnosticContext(
+                    UUID.randomUUID().toString(), "MCP_TOOL", "MCP_AUDIT_UNAVAILABLE",
+                    principal.tenantId().toString(), principal.principalId(),
+                    "-", "-", toolId.toString(), "-", ToolInvocationSource.MCP.name()
+            ), exception);
             throw protocolPersistenceError();
         }
         return failed(message);

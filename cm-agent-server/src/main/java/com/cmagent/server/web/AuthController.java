@@ -9,6 +9,8 @@ import com.cmagent.server.security.LoginRequest;
 import com.cmagent.server.security.LoginResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,6 +30,7 @@ import java.util.UUID;
 @RequestMapping("/api/auth")
 /** 登录和当前用户信息接口，不在响应中暴露任何敏感配置。 */
 public class AuthController {
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final List<String> PERMISSIONS = List.of(
             "agent:run",
@@ -78,11 +81,16 @@ public class AuthController {
         String username = principalFrom(request);
         String password = request == null || request.password() == null ? "" : request.password();
         if (!bootstrapAdminProperties.isBootstrapAdminEnabled()) {
+            // 登录失败属于安全相关事件：审计已记录 LOGIN FAILED，应用日志补一条 WARN
+            // 便于把瞬时失败风暴与配置错误（bootstrap admin 根本未启用）区分开。
+            // 只输出提交的用户名，不输出密码。
+            log.warn("登录被拒绝。principalId={}, reason=bootstrap admin 未启用", username);
             auditLogin(username, "FAILED", "bootstrap admin 未启用");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "bootstrap admin 未启用");
         }
         if (!bootstrapAdminProperties.getBootstrapAdminUsername().equals(username)
                 || !bootstrapAdminProperties.getBootstrapAdminPassword().equals(password)) {
+            log.warn("登录被拒绝。principalId={}, reason=凭据不匹配", username);
             auditLogin(username, "FAILED", "用户名或密码错误");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "用户名或密码错误");
         }
@@ -95,6 +103,8 @@ public class AuthController {
                 ConsoleSessionCookie.active(token, httpRequest.isSecure()).toString()
         );
         auditLogin(configuredUsername, "SUCCEEDED", "登录成功");
+        // 登录成功只记录主体标识，绝不含 token 或密码；token 已写入 HttpOnly Cookie 与响应体。
+        log.info("登录成功。principalId={}, tenantId={}", configuredUsername, TENANT_ID);
         return new LoginResponse(TENANT_ID.toString(), configuredUsername, displayName, PERMISSIONS, token);
     }
 

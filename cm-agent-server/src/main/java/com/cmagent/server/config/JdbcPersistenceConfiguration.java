@@ -26,6 +26,8 @@ import com.cmagent.persistence.JdbcMcpToolPublicationRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import org.flywaydb.core.Flyway;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -43,6 +45,7 @@ import java.time.Instant;
 @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "jdbc")
 /** JDBC 持久化条件配置，负责装配事务、Flyway 和 JDBC 访问所需组件。 */
 public class JdbcPersistenceConfiguration {
+    private static final Logger log = LoggerFactory.getLogger(JdbcPersistenceConfiguration.class);
     private static final String DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001";
     private static final String DEFAULT_MODEL_PROVIDER_ID = "00000000-0000-0000-0000-000000000301";
 
@@ -75,7 +78,11 @@ public class JdbcPersistenceConfiguration {
     @Bean
     Flyway cmAgentFlyway(DataSource cmAgentDataSource) {
         Flyway flyway = CmAgentFlyway.configure(cmAgentDataSource).load();
-        flyway.migrate();
+        // migrate() 返回 MigrateResult，其中 migrationsExecuted 为本次应用的迁移数量（int），
+        // 0 表示已处于最新版本。迁移是 jdbc 模式启动的第一个外部依赖动作；输出成功结果便于
+        // 把"启动正常但表结构滞后"与"迁移失败"区分开。失败异常保持原样上抛，由 Spring 启动日志统一记录。
+        var result = flyway.migrate();
+        log.info("Flyway 迁移完成。migrationsExecuted={}", result.migrationsExecuted);
         return flyway;
     }
 
@@ -291,6 +298,8 @@ public class JdbcPersistenceConfiguration {
                     .param("tenantId", DEFAULT_TENANT_ID)
                     .param("createdAt", now)
                     .update();
+            // 默认初始化结果只在首次插入时有排障价值；幂等重跑不输出，避免正常启动噪音。
+            log.info("JDBC 默认数据初始化完成。tenantId={}, modelProviderId={}", DEFAULT_TENANT_ID, DEFAULT_MODEL_PROVIDER_ID);
         };
     }
 }
