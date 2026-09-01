@@ -2025,7 +2025,10 @@
             const callId = String(block.toolCallId || `tool-${index}`);
             let step = tools.get(callId);
             if (!step) {
-                step = {kind: "tool", order: index, callId, toolName: "未命名 Tool", input: "", output: "", status: ""};
+                step = {
+                    kind: "tool", order: index, callId, toolName: "未命名 Tool",
+                    input: "", output: "", status: "", durationMillis: null
+                };
                 tools.set(callId, step);
                 steps.push(step);
             }
@@ -2035,6 +2038,7 @@
             } else if (block.type === "TOOL_RESULT") {
                 step.output = String(block.text || "");
                 step.status = block.status || step.status;
+                step.durationMillis = block.durationMillis ?? step.durationMillis;
             }
         });
         return steps.sort((left, right) => left.order - right.order);
@@ -2055,26 +2059,27 @@
         }
         heading.append(
             element("strong", {text: step.toolName}),
-            element("span", {text: chatToolStatusText(step.status)})
+            element("span", {text: chatToolStatusText(step.status, step.durationMillis)})
         );
         const payloads = element("div", {className: "chat-tool-payloads"});
         payloads.append(
-            renderToolCallPayload("请求输入（已脱敏摘要）", step.input, "未记录输入摘要。"),
-            renderToolCallPayload("执行结果（已脱敏摘要）", step.output, "未记录结果摘要。")
+            renderToolCallPayload("调用入参（已脱敏）", step.input, "未记录调用入参。"),
+            renderToolCallPayload("返回值（已脱敏）", step.output, "未记录返回值或错误信息。")
         );
         section.dataset.status = String(step.status || "UNKNOWN");
         section.append(heading, payloads);
         return section;
     }
 
-    function chatToolStatusText(status) {
+    function chatToolStatusText(status, durationMillis = null) {
         const labels = {
             RUNNING: "执行中",
             SUCCEEDED: "执行成功",
             FAILED: "执行失败",
             DENIED: "已拒绝"
         };
-        return labels[status] || "已完成";
+        const label = labels[status] || "已完成";
+        return durationMillis === null || durationMillis === undefined ? label : `${label} · ${durationMillis} ms`;
     }
 
     function appendChatStreamingMessage() {
@@ -2113,11 +2118,11 @@
             const status = element("span", {text: isThinking ? "正在思考" : "准备调用"});
             heading.append(title, status);
             const content = element("div", {
-                className: isThinking ? "chat-thinking-content markdown-output" : "chat-tool-live-note",
+                className: isThinking ? "chat-thinking-content markdown-output" : "chat-tool-live-content",
                 text: isThinking ? "模型正在生成思考内容…" : "等待工具参数准备完成。"
             });
             section.append(heading, content);
-            step = {section, title, status, content, isThinking};
+            step = {section, title, status, content, isThinking, input: "", output: "", durationMillis: null};
             streamMessage.steps.set(key, step);
             streamMessage.traceBody.append(section);
         }
@@ -2127,20 +2132,35 @@
         } else if (progress.type === "THINKING_COMPLETED") {
             step.status.textContent = "模型提供 · 已完成";
             renderMarkdown(step.content, String(progress.content || ""));
+        } else if (progress.type === "TOOL_CALL_STARTED") {
+            step.status.textContent = "参数已准备";
+            step.input = String(progress.input || "");
+            renderChatLiveToolPayload(step);
         } else if (progress.type === "TOOL_CALL_COMPLETED") {
             step.status.textContent = "参数已准备";
-            step.content.textContent = "参数已由模型生成；原始参数不在实时轨迹中展示。";
+            if (!step.input) step.content.textContent = "正在整理工具调用入参。";
         } else if (progress.type === "TOOL_EXECUTION_STARTED") {
             step.status.textContent = "执行中";
-            step.content.textContent = "已进入受治理工具执行阶段。";
+            if (!step.input) step.content.textContent = "已进入受治理工具执行阶段。";
             step.section.dataset.status = "RUNNING";
         } else if (progress.type === "TOOL_EXECUTION_COMPLETED") {
-            step.status.textContent = chatToolStatusText(progress.status);
-            step.content.textContent = "执行已结束；完成后将加载服务端保存的脱敏摘要。";
+            step.output = String(progress.output || "");
+            step.durationMillis = progress.durationMillis ?? null;
+            step.status.textContent = chatToolStatusText(progress.status, step.durationMillis);
+            renderChatLiveToolPayload(step);
             step.section.dataset.status = String(progress.status || "UNKNOWN");
         }
         streamMessage.traceSummary.textContent = `执行过程 · ${streamMessage.steps.size} 个步骤 · 正在运行`;
         scrollChatToBottom();
+    }
+
+    function renderChatLiveToolPayload(step) {
+        const payloads = element("div", {className: "chat-tool-payloads"});
+        payloads.append(
+            renderToolCallPayload("调用入参（已脱敏）", step.input, "尚未收到调用入参。"),
+            renderToolCallPayload("返回值（已脱敏）", step.output, "等待工具返回。")
+        );
+        step.content.replaceChildren(payloads);
     }
 
     function scrollChatToBottom() {

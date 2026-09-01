@@ -17,15 +17,26 @@ class AgentProgressEventTest {
     }
 
     @Test
-    void 工具完成事件只公开标识名称和终态() {
+    void 工具完成事件保留待服务端脱敏的返回值和耗时() {
         AgentProgressEvent event = AgentProgressEvent.toolExecutionCompleted(
-                "reply-1", "call-1", "search", RunStatus.SUCCEEDED);
+                "reply-1", "call-1", "search", RunStatus.SUCCEEDED, "{\"total\":1}", 12L);
 
         assertThat(event.type()).isEqualTo(AgentProgressEventType.TOOL_EXECUTION_COMPLETED);
         assertThat(event.toolCallId()).isEqualTo("call-1");
         assertThat(event.toolName()).isEqualTo("search");
         assertThat(event.status()).isEqualTo(RunStatus.SUCCEEDED);
         assertThat(event.content()).isNull();
+        assertThat(event.output()).isEqualTo("{\"total\":1}");
+        assertThat(event.durationMillis()).isEqualTo(12L);
+    }
+
+    @Test
+    void 工具调用开始事件可以携带待脱敏的入参快照() {
+        AgentProgressEvent event = AgentProgressEvent.toolCallStarted(
+                "reply-1", "call-1", "search", "{\"keyword\":\"客户\"}");
+
+        assertThat(event.input()).isEqualTo("{\"keyword\":\"客户\"}");
+        assertThat(event.output()).isNull();
     }
 
     @Test

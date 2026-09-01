@@ -20,4 +20,18 @@ class SensitiveDataRedactorTest {
                 .contains("<已脱敏>")
                 .doesNotContain("eyJhbGciOiJIUzI1NiJ9.demo", "unit-test-password", "unit-test-api-key", "unit-user:unit-password");
     }
+
+    @Test
+    /**
+     * 工具入参和返回值以 JSON 快照传递给会话展示，因此键名被引号包围时也必须脱敏。
+     */
+    void redactsJsonStyleSecretAssignments() {
+        String source = "{\"keyword\":\"客户\",\"token\":\"tool-secret\",\"apiKey\":\"return-secret\"}";
+
+        String redacted = new SensitiveDataRedactor().redact(source);
+
+        assertThat(redacted)
+                .contains("token=<已脱敏>", "apiKey=<已脱敏>")
+                .doesNotContain("tool-secret", "return-secret");
+    }
 }

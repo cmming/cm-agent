@@ -17,17 +17,12 @@ import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.event.ToolCallEndEvent;
-import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
-import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
-import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.Model;
@@ -39,13 +34,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.ArrayDeque;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -233,7 +225,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             spec.request().tools().forEach(tool -> {
                 AgentScopeToolBridge bridge =
                         new AgentScopeToolBridge(
-                                spec.request(), tool, toolGateway, objectMapper, runGate);
+                                spec.request(), tool, toolGateway, objectMapper, runGate, progressConsumer);
                 bridges.add(bridge);
                 toolkit.registerAgentTool(bridge);
             });
@@ -278,9 +270,6 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
             AtomicReference<Msg> finalMessage = new AtomicReference<>();
             Map<String, ThinkingProgress> thinkingByBlock = new HashMap<>();
-            Set<String> authorizedToolNames = spec.request().tools().stream()
-                    .map(tool -> tool.name())
-                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
             // 局部别名使事件回调只捕获已经完成构造的 Agent 和上下文，避免引用后续会变化的生命周期变量。
             ReActAgent activeAgent = agent;
             RuntimeContext activeContext = context;
@@ -312,24 +301,6 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                                         progress.replyId(), progress.blockId(), progress.content().toString()));
                             }
                         }
-                        if (event instanceof ToolCallStartEvent toolCallStart
-                                && authorizedToolNames.contains(toolCallStart.getToolCallName())) {
-                            progressConsumer.accept(AgentProgressEvent.toolCallStarted(
-                                    toolCallStart.getReplyId(), toolCallStart.getToolCallId(),
-                                    toolCallStart.getToolCallName()));
-                        }
-                        if (event instanceof ToolCallEndEvent toolCallEnd
-                                && authorizedToolNames.contains(toolCallEnd.getToolCallName())) {
-                            progressConsumer.accept(AgentProgressEvent.toolCallCompleted(
-                                    toolCallEnd.getReplyId(), toolCallEnd.getToolCallId(),
-                                    toolCallEnd.getToolCallName()));
-                        }
-                        if (event instanceof ToolResultStartEvent toolResultStart
-                                && authorizedToolNames.contains(toolResultStart.getToolCallName())) {
-                            progressConsumer.accept(AgentProgressEvent.toolExecutionStarted(
-                                    toolResultStart.getReplyId(), toolResultStart.getToolCallId(),
-                                    toolResultStart.getToolCallName()));
-                        }
                         // AgentScope 2.0.0 会把工具结果拆成文本增量和终态事件；先聚合文本，才能在终态时
                         // 精确识别由框架生成、但未经过桥接器完成的工具超时包装。
                         if (event instanceof ToolResultTextDeltaEvent toolResultEvent) {
@@ -342,12 +313,6 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                             runGate.observeToolResultEnd(
                                     toolResultEndEvent.getToolCallId(),
                                     bridgeCompleted);
-                            if (authorizedToolNames.contains(toolResultEndEvent.getToolCallName())
-                                    && toolResultEndEvent.getState() != null) {
-                                progressConsumer.accept(AgentProgressEvent.toolExecutionCompleted(
-                                        toolResultEndEvent.getReplyId(), toolResultEndEvent.getToolCallId(),
-                                        toolResultEndEvent.getToolCallName(), mapToolResultState(toolResultEndEvent.getState())));
-                            }
                         }
                         if (event instanceof TextBlockDeltaEvent textDeltaEvent
                                 && textDeltaEvent.getDelta() != null
@@ -564,66 +529,66 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
     /**
      * 将 AgentScope 最终消息映射为只含思考、回答文本和受治理工具摘要的 Core 快照。
      *
-     * <p>思考与回答文本仍会在服务端运行边界统一脱敏。框架消息中的工具输入和结果不能直接越过适配边界；
-     * 这里按最终消息中的工具块顺序关联本次运行
-     * 已保存的 {@link ToolCallRecord}，仅使用其中的输入、输出或错误摘要；没有可验证记录的工具块会被
-     * 丢弃，而不是回退到 AgentScope 原始内容。</p>
+     * <p>思考与回答文本仍会在服务端运行边界统一脱敏。框架最终消息中的工具块可能因 Provider 实现而丢失，
+     * 因此这里始终使用本次运行已保存的 {@link ToolCallRecord}；不会回退到 AgentScope 原始工具参数或响应。</p>
      */
     private static AgentMessageSnapshot safeMessage(Msg result, List<ToolCallRecord> records) {
         if (result == null) {
             return null;
         }
-        Map<String, ArrayDeque<ToolCallRecord>> recordsByName = new LinkedHashMap<>();
-        records.forEach(record -> recordsByName
-                .computeIfAbsent(record.toolName(), ignored -> new ArrayDeque<>())
-                .add(record));
-        Map<String, ToolCallRecord> recordsByCallId = new HashMap<>();
         List<MessageContentBlock> blocks = new ArrayList<>();
+        boolean appendedToolRecords = false;
         for (ContentBlock block : result.getContent()) {
             if (block instanceof ThinkingBlock thinkingBlock && thinkingBlock.getThinking() != null
                     && !thinkingBlock.getThinking().isBlank()) {
                 blocks.add(MessageContentBlock.thinking(thinkingBlock.getThinking()));
             } else if (block instanceof TextBlock textBlock && textBlock.getText() != null
                     && !textBlock.getText().isBlank()) {
+                if (!appendedToolRecords) {
+                    appendToolBlocks(blocks, records);
+                    appendedToolRecords = true;
+                }
                 blocks.add(MessageContentBlock.text(textBlock.getText()));
-            } else if (block instanceof ToolUseBlock toolUse) {
-                ArrayDeque<ToolCallRecord> queue = recordsByName.get(toolUse.getName());
-                ToolCallRecord record = queue == null ? null : queue.pollFirst();
-                if (record != null) {
-                    recordsByCallId.put(toolUse.getId(), record);
-                    blocks.add(MessageContentBlock.toolUse(
-                            toolUse.getId(), record.toolName(), record.inputSummary()));
-                }
-            } else if (block instanceof ToolResultBlock toolResult) {
-                ToolCallRecord record = recordsByCallId.get(toolResult.getId());
-                if (record != null) {
-                    String summary = record.status() == RunStatus.SUCCEEDED
-                            ? record.outputSummary()
-                            : record.errorMessage();
-                    blocks.add(MessageContentBlock.toolResult(
-                            toolResult.getId(), record.status(), summary));
-                }
             }
         }
+        if (!appendedToolRecords) {
+            appendToolBlocks(blocks, records);
+        }
         if (blocks.isEmpty() && result.getTextContent() != null && !result.getTextContent().isBlank()) {
+            appendToolBlocks(blocks, records);
             blocks.add(MessageContentBlock.text(result.getTextContent()));
         }
         return blocks.isEmpty() ? null : new AgentMessageSnapshot(result.getId(), result.getName(), blocks);
     }
 
-    private static String thinkingKey(String replyId, String blockId) {
-        return String.valueOf(replyId) + '\u0000' + String.valueOf(blockId);
+    /**
+     * 以治理网关已经确认的调用记录构造会话工具块，而非依赖 AgentScope 最终消息保留工具块。
+     *
+     * <p>部分 Provider 会在最终 {@link Msg} 中仅保留回答文本；若以它作为工具信息唯一来源，前端会丢失
+     * 已实际执行的工具调用。此处使用桥接器记录的稳定调用标识、可展示输入/输出快照与单调时钟耗时，
+     * 由外层服务在落库前统一脱敏。</p>
+     *
+     * @param blocks 当前正在构造的 assistant 内容块
+     * @param records 本次实际完成的工具调用记录，保持桥接器收集顺序
+     */
+    private static void appendToolBlocks(List<MessageContentBlock> blocks, List<ToolCallRecord> records) {
+        for (ToolCallRecord record : records) {
+            if (record == null || record.toolCallId() == null || record.toolCallId().isBlank()) {
+                continue;
+            }
+            blocks.add(MessageContentBlock.toolUse(
+                    record.toolCallId(), record.toolName(), record.inputSummary()));
+            String summary = record.status() == RunStatus.SUCCEEDED
+                    ? record.outputSummary()
+                    : record.errorMessage();
+            Long durationMillis = record.duration() == null ? null : record.duration().toMillis();
+            blocks.add(MessageContentBlock.toolResult(
+                    record.toolCallId(), record.status(), summary, durationMillis));
+        }
     }
 
-    /** 将 AgentScope 工具结果终态映射为稳定领域枚举，避免 Web 层依赖框架类型。 */
-    private static RunStatus mapToolResultState(io.agentscope.core.message.ToolResultState state) {
-        return switch (state) {
-            case SUCCESS -> RunStatus.SUCCEEDED;
-            case ERROR -> RunStatus.FAILED;
-            case INTERRUPTED -> RunStatus.FAILED;
-            case DENIED -> RunStatus.DENIED;
-            case RUNNING -> RunStatus.RUNNING;
-        };
+    private static String thinkingKey(String replyId, String blockId) {
+        return String.valueOf(replyId) + '\u0000' + String.valueOf(blockId);
     }
 
     /** 保存尚未完成的思考块，内容只在块结束后离开适配器。 */

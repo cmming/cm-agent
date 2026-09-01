@@ -21,8 +21,6 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -31,7 +29,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.ArrayList;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -144,7 +141,7 @@ class AgentScopeRuntimeAdapterTest {
     void completedResultPrefersDeniedRecordWhenFinalMessageIsMissing() {
         ToolCallRecord denied = new ToolCallRecord(
                 UUID.fromString("00000000-0000-0000-0000-000000000501"),
-                "echo", "输入字段: [value]", "", RunStatus.DENIED,
+                "tool-call-denied", "echo", "{\"keyword\":\"客户\"}", "", RunStatus.DENIED,
                 Duration.ZERO, false, "没有工具权限");
 
         AgentScopeExecutionResult result =
@@ -156,22 +153,17 @@ class AgentScopeRuntimeAdapterTest {
     }
 
     @Test
-    void 最终消息按原顺序映射文本和受控工具摘要() {
+    void 最终消息缺少框架工具块时仍映射桥接器实际调用记录() {
         ToolCallRecord toolRecord = new ToolCallRecord(
                 UUID.fromString("00000000-0000-0000-0000-000000000501"),
-                "echo", "输入字段: [value]", "执行成功", RunStatus.SUCCEEDED,
-                Duration.ZERO, false, "");
+                "tool-call-1", "echo", "{\"keyword\":\"客户\"}", "{\"records\":1}", RunStatus.SUCCEEDED,
+                Duration.ofMillis(125), true, "");
         Msg message = Msg.builder()
                 .id("reply-1")
                 .name("企业助手")
                 .role(MsgRole.ASSISTANT)
                 .content(List.of(
                         ThinkingBlock.builder().thinking("先分析问题").build(),
-                        TextBlock.builder().text("开始处理").build(),
-                        ToolUseBlock.builder().id("tool-call-1").name("echo")
-                                .input(Map.of("value", "原始敏感输入")).build(),
-                        ToolResultBlock.builder().id("tool-call-1").name("echo")
-                                .output(TextBlock.builder().text("原始敏感输出").build()).build(),
                         TextBlock.builder().text("处理完成").build()))
                 .build();
 
@@ -184,15 +176,13 @@ class AgentScopeRuntimeAdapterTest {
                 .extracting(block -> block.type())
                 .containsExactly(
                         MessageContentType.THINKING,
-                        MessageContentType.TEXT,
                         MessageContentType.TOOL_USE,
                         MessageContentType.TOOL_RESULT,
                         MessageContentType.TEXT);
         assertThat(snapshot.contentBlocks().get(0).text()).isEqualTo("先分析问题");
-        assertThat(snapshot.contentBlocks().get(2).text()).isEqualTo("输入字段: [value]");
-        assertThat(snapshot.contentBlocks().get(3).text()).isEqualTo("执行成功");
-        assertThat(snapshot.contentBlocks().toString())
-                .doesNotContain("原始敏感输入", "原始敏感输出");
+        assertThat(snapshot.contentBlocks().get(1).text()).isEqualTo("{\"keyword\":\"客户\"}");
+        assertThat(snapshot.contentBlocks().get(2).text()).isEqualTo("{\"records\":1}");
+        assertThat(snapshot.contentBlocks().get(2).durationMillis()).isEqualTo(125L);
     }
 
     @Test

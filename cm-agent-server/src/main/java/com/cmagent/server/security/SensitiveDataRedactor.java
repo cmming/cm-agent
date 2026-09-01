@@ -12,7 +12,8 @@ public class SensitiveDataRedactor {
     private static final Pattern JDBC_URL = Pattern.compile("(?i)jdbc:(?:postgresql|mysql)://[^\\s\\\"']+");
     private static final Pattern HTTP_URL = Pattern.compile("(?i)https?://[^\\s\\\"']+");
     private static final Pattern SECRET_ASSIGNMENT = Pattern.compile(
-            "(?i)\\b(password|passwd|api[-_]?key|jwt[-_]?secret|secret|token)\\s*[:=]\\s*(?:\\\"[^\\\"]*\\\"|'[^']*'|[^\\s,;]+)"
+            "(?i)(?<![A-Za-z0-9_])\\\"?(password|passwd|api[-_]?key|jwt[-_]?secret|secret|token)"
+                    + "\\\"?\\s*[:=]\\s*(?:\\\"[^\\\"]*\\\"|'[^']*'|[^\\s,;}]+)"
     );
 
     /**

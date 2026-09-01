@@ -301,10 +301,13 @@ class RunControllerTest {
                 AgentProgressEvent.thinkingStarted("reply-progress", "thinking-progress"),
                 AgentProgressEvent.thinkingCompleted(
                         "reply-progress", "thinking-progress", "先检查 token=secret-value"),
-                AgentProgressEvent.toolCallStarted("reply-progress", "call-progress", "echo"),
+                AgentProgressEvent.toolCallStarted(
+                        "reply-progress", "call-progress", "echo",
+                        "{\"keyword\":\"客户\",\"token\":\"tool-secret\"}"),
                 AgentProgressEvent.toolExecutionStarted("reply-progress", "call-progress", "echo"),
                 AgentProgressEvent.toolExecutionCompleted(
-                        "reply-progress", "call-progress", "echo", RunStatus.SUCCEEDED)
+                        "reply-progress", "call-progress", "echo", RunStatus.SUCCEEDED,
+                        "{\"records\":2,\"apiKey\":\"return-secret\"}", 42L)
         ));
 
         var response = mockMvc.perform(post(
@@ -325,15 +328,22 @@ class RunControllerTest {
                         "TOOL_CALL_STARTED", "TOOL_EXECUTION_STARTED", "TOOL_EXECUTION_COMPLETED",
                         "event:message-started", "event:delta", "event:completed")
                 .contains("\"conversationId\":\"" + conversationId + "\"")
-                .contains("fake-runtime:", "token=<已脱敏>")
-                .doesNotContain("secret-value");
+                .contains("fake-runtime:", "token=<已脱敏>", "apiKey=<已脱敏>", "\"durationMillis\":42")
+                .doesNotContain("secret-value", "tool-secret", "return-secret");
 
         mockMvc.perform(get("/api/agents/{agentId}/conversations/{conversationId}/messages",
                         agentId, conversationId)
                         .header("Authorization", bearer(accessToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[1].contentBlocks[0].type").value("THINKING"))
-                .andExpect(jsonPath("$.items[1].contentBlocks[0].text").value("先检查 token=<已脱敏>"));
+                .andExpect(jsonPath("$.items[1].contentBlocks[0].text").value("先检查 token=<已脱敏>"))
+                .andExpect(jsonPath("$.items[1].contentBlocks[1].type").value("TOOL_USE"))
+                .andExpect(jsonPath("$.items[1].contentBlocks[1].text")
+                        .value("{\"keyword\":\"客户\",token=<已脱敏>}"))
+                .andExpect(jsonPath("$.items[1].contentBlocks[2].type").value("TOOL_RESULT"))
+                .andExpect(jsonPath("$.items[1].contentBlocks[2].text")
+                        .value("{\"records\":2,apiKey=<已脱敏>}"))
+                .andExpect(jsonPath("$.items[1].contentBlocks[2].durationMillis").value(42));
     }
 
     @Test
@@ -1115,6 +1125,19 @@ class RunControllerTest {
                     .map(AgentProgressEvent::content)
                     .filter(java.util.Objects::nonNull)
                     .map(MessageContentBlock::thinking)
+                    .forEach(blocks::add);
+            progressEvents.stream()
+                    .filter(progress -> progress.type()
+                            == com.cmagent.core.domain.AgentProgressEventType.TOOL_CALL_STARTED)
+                    .filter(progress -> progress.input() != null)
+                    .map(progress -> MessageContentBlock.toolUse(
+                            progress.toolCallId(), progress.toolName(), progress.input()))
+                    .forEach(blocks::add);
+            progressEvents.stream()
+                    .filter(progress -> progress.type()
+                            == com.cmagent.core.domain.AgentProgressEventType.TOOL_EXECUTION_COMPLETED)
+                    .map(progress -> MessageContentBlock.toolResult(
+                            progress.toolCallId(), progress.status(), progress.output(), progress.durationMillis()))
                     .forEach(blocks::add);
             if (result.output() != null && !result.output().isBlank()) {
                 blocks.add(MessageContentBlock.text(result.output()));
