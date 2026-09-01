@@ -25,6 +25,9 @@
 | server SSE 与持久化开发 | 已完成 | 新增 progress 事件，整体脱敏并沿既有内容块持久化 |
 | console 轨迹展示开发 | 已完成 | 实时与历史执行轨迹、响应式样式及资源版本已完成 |
 | 测试与文档收口 | 已完成 | 相关 Java 与 JavaScript 测试通过，发布说明已更新 |
+| 工具调用可见性与参数/返回值修复设计 | 已完成 | 已确认最终消息缺少工具块是根因，改为桥接器事实来源与脱敏限长快照 |
+| 工具调用可见性与参数/返回值修复开发 | 已完成 | 工具桥接器成为事实来源，SSE 和历史消息展示脱敏、限长的入参、返回值/错误及耗时 |
+| 工具调用可见性与参数/返回值修复验证 | 已完成 | Core 71 项、Adapter 30 项、Console 12 项、Server 32 项针对性测试通过 |
 
 ## 已执行检查
 
@@ -42,11 +45,22 @@
 - `node --check cm-agent-console/src/main/resources/META-INF/resources/assets/app.js`：通过。
 - `node --test cm-agent-console/src/test/js/console-core.test.cjs`：39 项测试全部通过。
 - `git diff --check`：通过，仅有 Git 对工作区 LF/CRLF 的转换提示，无空白错误。
+- `mvn -pl cm-agent-core,cm-agent-agentscope-adapter,cm-agent-server,cm-agent-console -am test`：Core 测试
+  71 项通过；后续未改动的 persistence Testcontainers 测试因本机没有有效 Docker 环境而停止，未继续执行。
+- `mvn -pl cm-agent-agentscope-adapter -am '-Dtest=AgentScopeToolBridgeTest,AgentScopeRuntimeAdapterTest'
+  '-Dsurefire.failIfNoSpecifiedTests=false' test`：30 项通过。
+- `mvn -pl cm-agent-console -am test`：12 项通过。
+- `mvn -pl cm-agent-server -am '-Dtest=RunControllerTest,SensitiveDataRedactorTest'
+  '-Dsurefire.failIfNoSpecifiedTests=false' test`：32 项通过。
+- `node --check cm-agent-console/src/main/resources/META-INF/resources/assets/app.js`：通过。
+- `node --test cm-agent-console/src/test/js/console-core.test.cjs`：39 项通过，已将旧的“不得展示参数”断言
+  调整为展示服务端脱敏的入参和返回值。
 
 ## 遗留问题与风险
 
-- 本次没有数据库结构变化，未执行本地 Docker、Testcontainers 或 JDBC 集成测试；按仓库约束，
-  此类测试只能在 `ssh rocky` 的容器环境执行，本次变更不触及其覆盖范围。
+- 本次没有数据库结构变化，未执行远程 Docker、Testcontainers 或 JDBC 集成测试；按仓库约束，
+  此类测试只能在 `ssh rocky` 的容器环境执行，本次变更不触及其覆盖范围。本机全量依赖构建曾因没有有效
+  Docker 环境而在未改动的 persistence 测试阶段停止。
 - 消息 JSON 新增 `THINKING` 枚举值。升级后若已经产生此类历史消息，直接回滚到不识别该值的旧版本
   可能读取失败；发布说明已明确要求回滚前处理兼容策略。
 - 当前展示的是 Provider/AgentScope 实际提供的 thinking 块；不支持 thinking 的模型不会显示该步骤。
@@ -55,3 +69,4 @@
 
 - 文档基线：`4859027 docs: 设计会话执行过程展示`
 - 实现提交：随本账本以 `feat: 展示会话思考与工具调用过程` 提交。
+- 工具调用可见性修复提交：当前提交，说明为 `fix: 展示会话工具调用参数和返回值`。

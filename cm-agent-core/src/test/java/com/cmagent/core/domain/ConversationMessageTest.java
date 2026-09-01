@@ -15,7 +15,7 @@ class ConversationMessageTest {
         List<MessageContentBlock> blocks = new java.util.ArrayList<>(List.of(
                 MessageContentBlock.thinking("先查找资料"),
                 MessageContentBlock.toolUse("call-1", "search", "字段: keyword"),
-                MessageContentBlock.toolResult("call-1", RunStatus.SUCCEEDED, "找到 1 条"),
+                MessageContentBlock.toolResult("call-1", RunStatus.SUCCEEDED, "找到 1 条", 18L),
                 MessageContentBlock.text("处理完成")));
 
         ConversationMessage message = new ConversationMessage(
@@ -30,6 +30,7 @@ class ConversationMessageTest {
                         MessageContentType.TOOL_RESULT,
                         MessageContentType.TEXT);
         assertThat(message.textContent()).isEqualTo("处理完成");
+        assertThat(message.contentBlocks().get(2).durationMillis()).isEqualTo(18L);
     }
 
     @Test

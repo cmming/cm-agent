@@ -26,8 +26,10 @@
   - `cm-agent-agentscope-adapter/src/main/java/com/cmagent/agentscope/AgentScopeReActExecutor.java`
   - `cm-agent-agentscope-adapter/src/main/java/com/cmagent/agentscope/AgentScopeRuntimeAdapter.java`
   - adapter 测试
-- 实现：聚合 thinking 块，在块结束时发送完整内容；工具事件只发送名称、标识、阶段和终态；最终消息保留 thinking，工具内容仍从 `ToolCallRecord` 映射。
-- 验证：AgentScope 2.0.2 事件映射、工具状态转换、thinking 最终快照和无原始载荷断言。
+- 实现：聚合 thinking 块，在块结束时发送完整内容；工具进度由实际执行 `ToolInvocationGateway` 的
+  `AgentScopeToolBridge` 发出，携带稳定调用标识、可展示输入 JSON、结果/错误与耗时；最终消息直接从
+  `ToolCallRecord` 构造工具内容块，不依赖最终 AgentScope 消息包含工具块。
+- 验证：桥接器事件顺序、工具状态转换、输入/输出脱敏限长、最终消息缺少工具块时仍可回放，以及 thinking 最终快照。
 
 ### 任务 3：贯通服务端 SSE 与持久化
 
@@ -36,8 +38,9 @@
   - `cm-agent-server/src/main/java/com/cmagent/server/runtime/ConversationService.java`
   - `cm-agent-server/src/main/java/com/cmagent/server/web/ConversationController.java`
   - 对应 server 测试
-- 实现：在运行编排边界脱敏 thinking；通过 `progress` SSE 发送受控事件；最终 `THINKING` 块随 assistant 消息保存。
-- 验证：进度事件顺序、thinking 脱敏、SSE 错误语义、运行完成后消息快照。
+- 实现：在运行编排边界脱敏并截断 thinking、工具入参和返回值；通过 `progress` SSE 发送受控事件；最终
+  `THINKING`、`TOOL_USE`、`TOOL_RESULT` 块随 assistant 消息保存。
+- 验证：进度事件顺序、工具调用可见性、输入/输出脱敏、SSE 错误语义、运行完成后消息快照。
 
 ### 任务 4：实现聊天页执行轨迹
 
@@ -46,8 +49,9 @@
   - `cm-agent-console/src/main/resources/META-INF/resources/assets/app.js`
   - `cm-agent-console/src/main/resources/META-INF/resources/assets/styles.css`
   - console Java/JavaScript 测试
-- 实现：assistant 消息增加可折叠执行过程；实时消费 `progress`；历史消息合并 thinking 与同一工具调用；保持 Markdown 与纯文本安全渲染边界。
-- 验证：DOM 结构、未知/无 thinking 兼容、工具状态、响应式布局和脚本语法。
+- 实现：assistant 消息增加可折叠执行过程；实时消费 `progress` 并显示调用入参、返回值、错误和耗时；历史消息合并
+  thinking 与同一工具调用；保持 Markdown 与纯文本安全渲染边界。
+- 验证：DOM 结构、工具输入/输出更新、未知/无 thinking 兼容、工具状态、响应式布局和脚本语法。
 
 ### 任务 5：文档收口与验证
 

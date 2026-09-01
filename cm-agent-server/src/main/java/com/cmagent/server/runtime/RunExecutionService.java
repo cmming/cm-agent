@@ -44,6 +44,7 @@ import java.util.function.Consumer;
 /** 编排 Agent 单轮运行，连接运行时、工具治理、持久化和输出脱敏边界。 */
 public class RunExecutionService {
     private static final String CONTROLLED_FAILURE = "Agent 运行失败";
+    private static final int EXECUTION_TRACE_PAYLOAD_MAX_CHARACTERS = 12_000;
     private static final Logger log = LoggerFactory.getLogger(RunExecutionService.class);
 
     private final AgentRuntime runtime;
@@ -166,8 +167,8 @@ public class RunExecutionService {
     /**
      * 使用已经落库的 RUNNING 记录执行会话运行，并转发受控执行进度。
      *
-     * <p>思考内容在此可信运行边界完成整体脱敏；工具进度只包含适配器筛选后的名称、调用标识和终态，
-     * 不允许调用方通过该通道取得原始工具参数或结果。</p>
+     * <p>思考内容、工具入参、返回值和受控错误都在此可信运行边界完成脱敏与限长；工具进度可携带
+     * 工具名称、调用标识、终态和可展示快照，但调用方不能通过该通道取得未经处理的工具参数或结果。</p>
      *
      * @param principal 提供可信租户和主体的已认证上下文
      * @param agentId 预创建 Run 必须归属的 Agent 标识
@@ -287,14 +288,14 @@ public class RunExecutionService {
         }
         List<MessageContentBlock> blocks = message.contentBlocks().stream()
                 .map(block -> new MessageContentBlock(
-                        block.type(), redactor.redact(block.text()), block.toolCallId(),
-                        block.toolName(), block.status()))
+                        block.type(), redactMessageBlockText(block), block.toolCallId(),
+                        block.toolName(), block.status(), block.durationMillis()))
                 .toList();
         return new AgentMessageSnapshot(message.replyId(), message.senderName(), blocks);
     }
 
     /**
-     * 对 Runtime 进度执行纵深脱敏，并保持工具事件的无载荷约束。
+     * 对 Runtime 进度执行纵深脱敏和限长，避免完整工具载荷直接进入浏览器。
      *
      * @param progress 适配器产生的受控进度
      * @return 可发送给 SSE 客户端的进度
@@ -303,7 +304,35 @@ public class RunExecutionService {
         Objects.requireNonNull(progress, "progress 不能为空");
         return new AgentProgressEvent(
                 progress.type(), progress.replyId(), progress.blockId(), progress.toolCallId(),
-                progress.toolName(), redactor.redact(progress.content()), progress.status());
+                progress.toolName(), redactTracePayload(progress.content()), redactTracePayload(progress.input()),
+                redactTracePayload(progress.output()), progress.status(), progress.durationMillis());
+    }
+
+    /**
+     * 对会话执行轨迹中的思考、工具入参和返回值进行脱敏与长度限制。
+     *
+     * @param block 当前消息内容块
+     * @return 可安全持久化和发送到会话页面的文本
+     */
+    private String redactMessageBlockText(MessageContentBlock block) {
+        return switch (block.type()) {
+            case THINKING, TOOL_USE, TOOL_RESULT -> redactTracePayload(block.text());
+            case TEXT -> redactor.redact(block.text());
+        };
+    }
+
+    /**
+     * 先脱敏再截断可展示载荷，避免截断破坏 Secret、URL 或令牌的识别模式。
+     *
+     * @param value 待处理的思考、工具入参、返回值或错误文本
+     * @return 脱敏且不超过页面展示上限的文本
+     */
+    private String redactTracePayload(String value) {
+        String redacted = redactor.redact(value);
+        if (redacted.length() <= EXECUTION_TRACE_PAYLOAD_MAX_CHARACTERS) {
+            return redacted;
+        }
+        return redacted.substring(0, EXECUTION_TRACE_PAYLOAD_MAX_CHARACTERS) + "\n…（内容超过展示上限，已截断）";
     }
 
     private record ResolvedRunContext(
@@ -388,9 +417,9 @@ public class RunExecutionService {
      */
     private ToolCallRecord redactToolCall(ToolCallRecord record) {
         return new ToolCallRecord(
-                record.toolId(), record.toolName(), redactor.redact(record.inputSummary()),
-                redactor.redact(record.outputSummary()), record.status(), record.duration(),
-                record.authorized(), redactor.redact(record.errorMessage())
+                record.toolId(), record.toolCallId(), record.toolName(), redactTracePayload(record.inputSummary()),
+                redactTracePayload(record.outputSummary()), record.status(), record.duration(),
+                record.authorized(), redactTracePayload(record.errorMessage())
         );
     }
 

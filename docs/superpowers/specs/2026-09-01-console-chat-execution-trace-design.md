@@ -37,11 +37,12 @@ Agent、模型和工具节点的输入、输出、状态与耗时。本项目采
    - 工具参数准备完成；
    - 工具执行开始；
    - 工具执行结束及其终态。
-3. AgentScope 适配器订阅 2.0.2 已验证存在的 `ThinkingBlock*Event`、`ToolCall*Event` 和
-   `ToolResult*Event`。思考增量先按 `replyId + blockId` 聚合，块结束后才越过适配层；工具参数增量和
-   工具原始结果增量不离开适配器。
-4. AgentScope 最终 `ThinkingBlock` 映射为 `THINKING` 内容块；最终工具块继续只从已经过治理的
-   `ToolCallRecord` 读取输入、输出和错误摘要。
+3. 思考继续订阅 AgentScope 2.0.2 的 `ThinkingBlock*Event`，按 `replyId + blockId` 聚合并在块结束后
+   才越过适配层。工具展示事件改由 `AgentScopeToolBridge` 在实际进入受治理网关时产生，不再依赖
+   AgentScope 最终消息是否保留 `ToolUseBlock` 或 `ToolResultBlock`。
+4. 每条 `ToolCallRecord` 保留稳定 `toolCallId`、可展示输入 JSON、成功输出或受控错误、终态与耗时；
+   最终 assistant 消息直接根据该记录构造 `TOOL_USE` 与 `TOOL_RESULT` 块，即使 AgentScope 最终消息
+   只剩回答文本，历史会话仍可回放工具调用。
 
 ### SSE 协议
 
@@ -60,8 +61,9 @@ completed | error
 ```
 
 `progress` 数据包含事件类型以及必要的 `replyId`、`blockId`、`toolCallId`、`toolName`、
-`content`、`status`。字段按事件类型选填；`content` 只用于完整思考块，必须在运行编排边界再次脱敏。
-工具事件不携带模型原始参数或工具原始输出。
+`content`、`input`、`output`、`status`、`durationMillis`。字段按事件类型选填；`content` 只用于完整思考块；
+工具开始事件可携带输入 JSON，工具完成事件可携带输出或受控错误及耗时。所有文本必须在运行编排边界
+再次脱敏并按单字段 12,000 字符上限截断后才可离开服务端。
 
 旧客户端会忽略未知 SSE 事件，因此新增 `progress` 不改变既有 `delta`、`completed` 和 `error` 合同。
 不支持结构化进度的替代 Runtime 继续通过默认方法运行，只是不产生 `progress`。
@@ -75,14 +77,12 @@ assistant 消息由两个区域组成：
 │ ▾ 执行过程 · 2 个步骤 · 已完成              │
 │   ◉ 思考过程          已完成                 │
 │     [可折叠的已脱敏思考文本]                 │
-│   ⬡ search_orders     执行成功 · 128 ms*     │
-│     输入摘要 / 输出摘要 / 错误摘要           │
+│   ⬡ search_orders     执行成功 · 128 ms       │
+│     调用入参 JSON / 返回值 JSON / 错误信息     │
 │                                             │
 │ 最终回答 Markdown                           │
 └─────────────────────────────────────────────┘
 ```
-
-`*` 当前会话消息内容块不保存耗时；只有接口实际返回耗时时才展示，不由前端估算。
 
 - 流式运行期间执行过程默认展开，按事件到达顺序更新节点状态；最终回答继续使用现有 Markdown 流式区。
 - 历史消息按内容块原始顺序重建轨迹。相同 `toolCallId` 的 `TOOL_USE` 和 `TOOL_RESULT` 合并为一张工具卡片。
@@ -95,16 +95,20 @@ assistant 消息由两个区域组成：
 
 - `tenantId`、Agent、会话和工具归属仍只来自认证主体及服务端已校验对象，客户端不能提交或覆盖。
 - 思考文本可能包含用户输入或模型复述，必须经 `SensitiveDataRedactor` 脱敏后才能进入 SSE、响应和持久化。
-- 工具调用过程只展示工具名称、阶段和终态；模型生成的原始参数 JSON、工具原始响应、异常堆栈、内部 URL、
-  Secret、Token、API Key、Authorization 和 Cookie 均不得进入 `progress`。
-- 最终工具输入、输出和错误只使用现有 `ToolCallRecord` 受控摘要，不能回退读取 AgentScope 原始内容。
+- 工具调用过程展示的是经 `SensitiveDataRedactor` 处理并限长的调用入参、返回值或受控错误，便于排障；
+  它们不是未筛选的原始载荷。异常堆栈、内部 URL、Secret、Token、API Key、Authorization 和 Cookie
+  均不得进入 `progress`、消息 JSON 或页面。
+- 工具桥接器遇到未预期异常时，日志只保留异常类型和不含异常消息的调用栈位置；异常消息可能携带
+  用户入参或上游响应，不能直接输出到日志。
+- 最终工具输入、输出和错误只使用 `ToolCallRecord` 中由受治理网关实际调用生成的快照，不能回退读取
+  AgentScope 最终消息中的原始工具块。
 - `THINKING` 不参与 `ConversationPromptComposer` 的文本投影，避免把上一轮隐藏推理作为下一轮用户上下文重放。
 - 不支持 thinking 的模型或 Provider 只展示工具过程和最终回答；页面不得显示“空思考”占位来暗示不存在的推理。
 
 ## 非目标
 
 - 不接入 AgentScope Studio 服务、OpenTelemetry/OTLP、Trace 数据库或跨运行调用树。
-- 不展示模型请求原文、系统提示词、完整上下文、token 使用量、原始工具参数或原始工具响应。
+- 不展示模型请求原文、系统提示词、完整上下文、token 使用量，以及未经脱敏或超过展示长度限制的工具载荷。
 - 不新增思考开关、工具确认、人工介入、运行取消、重试、会话编辑或消息删除。
 - 不修改 Flyway 迁移；`messages.content_blocks_json` 已能保存新增 JSON 枚举值。
 - 不把历史思考文本重新发送给模型，也不承诺所有模型都会返回思考内容。
@@ -119,8 +123,8 @@ assistant 消息由两个区域组成：
 ## 验收标准
 
 1. 支持 thinking 的运行在发送期间出现“正在思考”，思考块结束后展示经脱敏的可折叠文本；不支持时不伪造。
-2. 工具调用按准备、执行、成功/失败/拒绝/中断顺序更新，且 SSE 中不包含原始参数和原始结果。
-3. 运行完成并刷新后，思考块、工具摘要和最终回答仍按服务端消息顺序可回看。
+2. 工具调用按准备、执行、成功/失败/拒绝/中断顺序更新，并显示经脱敏、限长的调用入参、返回值或错误与耗时。
+3. 即使 AgentScope 最终消息不含工具块，运行完成并刷新后，思考块、工具调用信息和最终回答仍按服务端消息顺序可回看。
 4. USER/SYSTEM 不能构造 `THINKING`；thinking 不进入历史提示词文本投影。
 5. 旧 Runtime 不实现新进度能力时仍可完成会话，旧 SSE 客户端仍可消费文本和终态。
 6. 前端动态内容不使用 `innerHTML`；错误仍显示脱敏中文原因、`errorCode` 和 `errorId`。

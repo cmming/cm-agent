@@ -2,6 +2,8 @@ package com.cmagent.agentscope;
 
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
+import com.cmagent.core.domain.AgentProgressEvent;
+import com.cmagent.core.domain.AgentProgressEventType;
 import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.ModelConfig;
 import com.cmagent.core.domain.ModelProviderType;
@@ -127,12 +129,37 @@ class AgentScopeToolBridgeTest {
             assertThat(invocation.inputJson()).isEqualTo("{\"value\":\"hello\"}");
         });
         assertThat(bridge.records()).singleElement().satisfies(record -> {
+            assertThat(record.toolCallId()).isEqualTo("tool-call-1");
             assertThat(record.status()).isEqualTo(RunStatus.SUCCEEDED);
             assertThat(record.authorized()).isTrue();
             assertThat(record.duration()).isGreaterThanOrEqualTo(Duration.ZERO);
-            assertThat(record.inputSummary()).contains("value").doesNotContain("hello");
+            assertThat(record.inputSummary()).isEqualTo("{\"value\":\"hello\"}");
             assertThat(record.outputSummary()).isEqualTo("hello");
             assertThat(record.errorMessage()).isEmpty();
+        });
+    }
+
+    @Test
+    void 从实际网关调用发送包含入参返回值和耗时的工具进度() {
+        List<AgentProgressEvent> progressEvents = new CopyOnWriteArrayList<>();
+        AgentScopeToolBridge bridge = new AgentScopeToolBridge(
+                request(), tool(validSchema()), ignored -> ToolInvocationResult.succeeded("{\"records\":2}"),
+                objectMapper, new AgentScopeRunGate(), progressEvents::add);
+
+        bridge.callAsync(toolCallParam()).block();
+
+        assertThat(progressEvents).extracting(AgentProgressEvent::type).containsExactly(
+                AgentProgressEventType.TOOL_CALL_STARTED,
+                AgentProgressEventType.TOOL_CALL_COMPLETED,
+                AgentProgressEventType.TOOL_EXECUTION_STARTED,
+                AgentProgressEventType.TOOL_EXECUTION_COMPLETED);
+        assertThat(progressEvents.get(0))
+                .extracting(AgentProgressEvent::toolCallId, AgentProgressEvent::toolName, AgentProgressEvent::input)
+                .containsExactly("tool-call-1", "echo", "{\"value\":\"hello\"}");
+        assertThat(progressEvents.get(3)).satisfies(progress -> {
+            assertThat(progress.status()).isEqualTo(RunStatus.SUCCEEDED);
+            assertThat(progress.output()).isEqualTo("{\"records\":2}");
+            assertThat(progress.durationMillis()).isGreaterThanOrEqualTo(0L);
         });
     }
 
@@ -211,7 +238,7 @@ class AgentScopeToolBridgeTest {
     }
 
     @Test
-    void convertsUnexpectedExceptionToControlledErrorWithoutLeakingInputOrCause() {
+    void convertsUnexpectedExceptionToControlledErrorAndRetainsInputForServerSideRedaction() {
         String sensitiveValue = "secret-input-and-key";
         AgentScopeToolBridge bridge = bridge(request(), tool(validSchema()), ignored -> {
             throw new IllegalStateException("底层异常包含 " + sensitiveValue);
@@ -225,13 +252,25 @@ class AgentScopeToolBridgeTest {
         assertThat(bridge.records()).singleElement().satisfies(record -> {
             assertThat(record.status()).isEqualTo(RunStatus.FAILED);
             assertThat(record.authorized()).isFalse();
-            assertThat(record.inputSummary()).doesNotContain(sensitiveValue);
+            assertThat(record.inputSummary()).contains(sensitiveValue);
             assertThat(record.outputSummary()).doesNotContain(sensitiveValue);
             assertThat(record.errorMessage()).isEqualTo("工具调用失败").doesNotContain(sensitiveValue);
         });
         assertThatCode(bridge::throwIfInfrastructureFailure).doesNotThrowAnyException();
     }
 
+    @Test
+    void 异常日志调用栈不包含可能携带工具载荷的异常消息() {
+        String sensitiveValue = "secret-in-exception-message";
+
+        String stack = AgentScopeToolBridge.safeExceptionStack(
+                new IllegalStateException("上游异常: " + sensitiveValue));
+
+        assertThat(stack)
+                .contains(IllegalStateException.class.getName())
+                .doesNotContain(sensitiveValue, "上游异常");
+    }
+
     @Test
     void rethrowsInfrastructureFailureWithoutCreatingOrdinaryFailureRecord() {
         ToolInvocationInfrastructureException failure = new ToolInvocationInfrastructureException(
