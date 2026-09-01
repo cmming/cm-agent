@@ -3,7 +3,12 @@ package com.cmagent.core.domain;
 import java.time.Instant;
 import java.util.UUID;
 
-/** 会话列表使用的稳定复合游标。 */
+/**
+ * 会话列表使用的稳定复合游标。
+ *
+ * <p>{@code beforeUpdatedAt} 与 {@code beforeId} 必须同时存在或同时缺失；两者共同消除同一更新时间下的
+ * 分页歧义，不能把时间戳单独作为游标。</p>
+ */
 public record ConversationPageRequest(int limit, Instant beforeUpdatedAt, UUID beforeId) {
     public ConversationPageRequest {
         if (limit < 1 || limit > 100) {

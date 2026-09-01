@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="same-origin">
+    <title>会话聊天 | CM Agent 控制台 v2</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <link rel="stylesheet" href="/console/v2/assets/multipage.css">
+</head>
+<body data-console-version="v2" data-page="chatPage">
+<div class="console-layout">
+    <aside class="sidebar">
+        <div class="sidebar-brand"><div class="brand-mark small" aria-hidden="true">CM</div><div><strong>CM Agent</strong><span>管理控制台</span></div><span class="version-badge">V2</span></div>
+        <nav id="sidebarNav" aria-label="控制台导航">
+            <a class="nav-item" href="/console/v2/overview.html"><span aria-hidden="true">▦</span>能力总览</a>
+            <a class="nav-item" href="/console/v2/agents.html"><span aria-hidden="true">◇</span>Agent 管理</a>
+            <a class="nav-item" href="/console/v2/model-configs.html"><span aria-hidden="true">◉</span>模型配置</a>
+            <a class="nav-item" href="/console/v2/tools.html"><span aria-hidden="true">⬡</span>工具治理</a>
+            <a class="nav-item active" href="/console/v2/chat.html" aria-current="page"><span aria-hidden="true">◌</span>会话聊天</a>
+            <a class="nav-item" href="/console/v2/runs.html"><span aria-hidden="true">▷</span>运行记录</a>
+            <a class="nav-item" href="/console/v2/audit.html"><span aria-hidden="true">≡</span>审计日志</a>
+        </nav>
+        <div class="sidebar-links"><span>版本与系统</span><a href="/console/v1/">旧版 v1 <b aria-hidden="true">↗</b></a><a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI <b aria-hidden="true">↗</b></a><a href="/actuator/health" target="_blank" rel="noreferrer">健康检查 <b aria-hidden="true">↗</b></a></div>
+    </aside>
+    <main class="workspace">
+        <header class="workspace-header"><div><p class="eyebrow">连续对话</p><h1>会话聊天</h1><p class="muted">选择 Agent，在同一会话中保留上下文并实时查看回答。</p></div><div class="user-actions"><span class="online-dot" aria-label="已登录"></span><span id="currentUser">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
+        <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
+        <section id="chatPage" class="page-view chat-page" aria-label="会话聊天工作区">
+            <aside class="panel chat-session-panel" aria-label="会话列表">
+                <div class="chat-agent-picker">
+                    <label for="chatAgentSelect">当前 Agent</label>
+                    <select id="chatAgentSelect"></select>
+                </div>
+                <div class="panel-heading"><div><p class="eyebrow">历史会话</p><h2>继续聊天</h2></div><button id="newChatConversationBtn" class="button ghost compact" type="button">新会话</button></div>
+                <p class="chat-session-note">会话会保留最近消息历史；切换后可继续发送。</p>
+                <div id="chatConversationList" class="chat-conversation-list"><p class="empty-state">正在加载会话。</p></div>
+            </aside>
+            <section class="panel chat-main-panel" aria-label="消息内容">
+                <div class="chat-main-heading"><div><p class="eyebrow">消息</p><h2 id="chatConversationTitle">请选择会话</h2></div><span id="chatLiveStatus" class="chat-live-status">已就绪</span></div>
+                <div id="chatMessageList" class="chat-message-list" aria-live="polite"><div class="chat-welcome"><span class="runs-detail-mark" aria-hidden="true">◌</span><h3>开始一段会话</h3><p>选择 Agent 后发送第一条消息，系统会自动创建会话并保存上下文。</p></div></div>
+                <form id="chatForm" class="chat-composer">
+                    <label class="sr-only" for="chatInput">输入消息</label>
+                    <textarea id="chatInput" rows="3" required placeholder="输入消息，按发送继续当前会话…"></textarea>
+                    <div class="chat-composer-footer"><span>回答将实时显示；写入请求不会自动重试。</span><button id="chatSendBtn" class="button primary" type="submit">发送</button></div>
+                    <p id="chatFormStatus" class="form-status" aria-live="polite"></p>
+                </form>
+            </section>
+        </section>
+    </main>
+</div>
+<script src="/assets/console-core.js?v=2.0.9"></script>
+<script src="/assets/app.js?v=2.0.12"></script>
+</body>
+</html>

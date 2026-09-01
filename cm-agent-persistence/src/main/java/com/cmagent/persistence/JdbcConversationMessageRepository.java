@@ -20,7 +20,12 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.UUID;
 
-/** 使用会话行锁为 JDBC 消息分配稳定序号。 */
+/**
+ * 使用会话行锁为 JDBC 消息分配稳定序号。
+ *
+ * <p>先锁定 {@code conversations} 行，再计算并写入下一条消息，使 {@code MAX(sequence_no) + 1}
+ * 在同一会话内仍然安全；锁只覆盖短暂的持久化事务，绝不覆盖模型调用。</p>
+ */
 public class JdbcConversationMessageRepository implements ConversationMessageRepository {
     private static final TypeReference<List<MessageContentBlock>> BLOCKS_TYPE = new TypeReference<>() {
     };
@@ -29,6 +34,13 @@ public class JdbcConversationMessageRepository implements ConversationMessageRep
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
+    /**
+     * 创建消息 JDBC 仓储。
+     *
+     * @param jdbcClient 执行具名参数 SQL 的客户端
+     * @param objectMapper 序列化受控内容块快照的 JSON 映射器
+     * @param transactionTemplate 包裹行锁、序号分配和会话时间更新的事务模板
+     */
     public JdbcConversationMessageRepository(
             JdbcClient jdbcClient,
             ObjectMapper objectMapper,
@@ -40,6 +52,12 @@ public class JdbcConversationMessageRepository implements ConversationMessageRep
     }
 
     @Override
+    /**
+     * 在一次短事务内追加消息、分配序号并推进会话活动时间。
+     *
+     * <p>锁查询带有租户条件，因此不能利用其他租户的会话行获得序号或写入消息；任一步失败时事务回滚，
+     * 不会留下已推进时间但未写入消息的半成品状态。</p>
+     */
     public ConversationMessage append(UUID tenantId, ConversationMessageDraft draft) {
         Objects.requireNonNull(draft, "draft 不能为空");
         if (!Objects.requireNonNull(tenantId, "tenantId 不能为空").equals(draft.tenantId())) {
@@ -102,6 +120,9 @@ public class JdbcConversationMessageRepository implements ConversationMessageRep
     }
 
     @Override
+    /**
+     * 以正序读取排他序号游标后的消息，供接口稳定分页。
+     */
     public List<ConversationMessage> list(
             UUID tenantId, UUID conversationId, MessagePageRequest pageRequest) {
         return jdbcClient.sql("""
@@ -122,6 +143,9 @@ public class JdbcConversationMessageRepository implements ConversationMessageRep
     }
 
     @Override
+    /**
+     * 先按倒序限制窗口以减少数据库读取，再在内存中恢复正序供提示词编排使用。
+     */
     public List<ConversationMessage> listRecent(UUID tenantId, UUID conversationId, int limit) {
         if (limit < 1 || limit > 200) {
             throw new IllegalArgumentException("limit 必须在 1 到 200 之间");
@@ -142,6 +166,9 @@ public class JdbcConversationMessageRepository implements ConversationMessageRep
         return descending.reversed();
     }
 
+    /**
+     * 将 JSON 内容块恢复为领域快照；解析失败表示已持久化数据不符合约定，不能静默降级为空消息。
+     */
     private ConversationMessage mapMessage(ResultSet resultSet, int rowNum) throws SQLException {
         String runId = resultSet.getString("run_id");
         return new ConversationMessage(
@@ -156,6 +183,7 @@ public class JdbcConversationMessageRepository implements ConversationMessageRep
                 resultSet.getTimestamp("created_at").toInstant());
     }
 
+    /** 将受控内容块写为 JSON；序列化失败属于调用方输入或映射配置错误，故转换为参数异常。 */
     private String writeBlocks(List<MessageContentBlock> blocks) {
         try {
             return objectMapper.writeValueAsString(blocks);
@@ -164,6 +192,7 @@ public class JdbcConversationMessageRepository implements ConversationMessageRep
         }
     }
 
+    /** 将数据库 JSON 还原为内容块；失败时暴露数据完整性问题而非伪造缺失历史。 */
     private List<MessageContentBlock> readBlocks(String json) {
         try {
             return objectMapper.readValue(json, BLOCKS_TYPE);

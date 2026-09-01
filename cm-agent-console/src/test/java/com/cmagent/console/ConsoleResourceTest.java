@@ -36,6 +36,7 @@ class ConsoleResourceTest {
         String agents = resource("META-INF/resources/console/v2/agents.html");
         String modelConfigs = resource("META-INF/resources/console/v2/model-configs.html");
         String tools = resource("META-INF/resources/console/v2/tools.html");
+        String chat = resource("META-INF/resources/console/v2/chat.html");
         String runs = resource("META-INF/resources/console/v2/runs.html");
         String audit = resource("META-INF/resources/console/v2/audit.html");
 
@@ -58,6 +59,12 @@ class ConsoleResourceTest {
         assertThat(tools)
                 .contains("data-page=\"toolsPage\"", "id=\"toolsPage\"", "id=\"toolForm\"", "id=\"debugToolForm\"")
                 .doesNotContain("id=\"agentsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
+        assertThat(chat)
+                .contains(
+                        "data-page=\"chatPage\"", "id=\"chatPage\"", "id=\"chatAgentSelect\"",
+                        "id=\"chatConversationList\"", "id=\"chatMessageList\"", "id=\"chatForm\""
+                )
+                .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
         assertThat(runs)
                 .contains(
                         "data-page=\"runsPage\"", "id=\"runsPage\"", "id=\"runForm\"",
@@ -76,7 +83,7 @@ class ConsoleResourceTest {
     void v2跨页会话不在浏览器脚本中存储令牌() throws IOException {
         String app = resource("META-INF/resources/assets/app.js");
         String[] pages = {
-                "login.html", "overview.html", "agents.html", "model-configs.html", "tools.html", "runs.html", "audit.html"
+                "login.html", "overview.html", "agents.html", "model-configs.html", "tools.html", "chat.html", "runs.html", "audit.html"
         };
 
         assertThat(app)
@@ -87,7 +94,7 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.11", "/assets/console-core.js?v=2.0.9")
+                    .contains("/assets/app.js?v=2.0.12", "/assets/console-core.js?v=2.0.9")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }

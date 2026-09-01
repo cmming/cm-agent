@@ -79,6 +79,13 @@ class ConsoleSmokeTest {
         mockMvc.perform(get("/console/v2/overview.html"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("data-page=\"overviewPage\"")));
+
+        mockMvc.perform(get("/console/v2/chat.html"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(allOf(
+                        containsString("data-page=\"chatPage\""),
+                        containsString("id=\"chatMessageList\"")
+                )));
     }
 
     @Test

@@ -15,15 +15,28 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-/** 使用 JDBC 保存和查询租户内 Agent 会话。 */
+/**
+ * 使用 JDBC 保存和查询租户内 Agent 会话。
+ *
+ * <p>所有查询都同时限制租户；读取单条会话时额外限制 Agent，避免仅凭会话 UUID 跨 Agent 或跨租户读取。
+ * 列表使用 {@code updated_at + id} 复合游标，保证数据库排序与 Core 分页语义一致。</p>
+ */
 public class JdbcConversationRepository implements ConversationRepository {
     private final JdbcClient jdbcClient;
 
+    /**
+     * 创建会话 JDBC 仓储。
+     *
+     * @param jdbcClient 执行具名参数 SQL 的客户端
+     */
     public JdbcConversationRepository(JdbcClient jdbcClient) {
         this.jdbcClient = Objects.requireNonNull(jdbcClient, "jdbcClient 不能为空");
     }
 
     @Override
+    /**
+     * 保存新会话，并在写入前拒绝参数租户与领域对象不一致的调用。
+     */
     public Conversation save(UUID tenantId, Conversation conversation) {
         requireTenant(tenantId, conversation.tenantId());
         jdbcClient.sql("""
@@ -45,6 +58,9 @@ public class JdbcConversationRepository implements ConversationRepository {
     }
 
     @Override
+    /**
+     * 以租户、Agent 和会话标识三重条件读取会话，使不存在和越权读取统一表现为空结果。
+     */
     public Optional<Conversation> findByTenantAndAgentAndId(
             UUID tenantId, UUID agentId, UUID conversationId) {
         return jdbcClient.sql("""
@@ -60,6 +76,11 @@ public class JdbcConversationRepository implements ConversationRepository {
     }
 
     @Override
+    /**
+     * 使用与 API 游标一致的复合排序分页读取会话。
+     *
+     * <p>当多个会话拥有相同 {@code updated_at} 时，UUID 字符串顺序作为稳定的次级排序，避免翻页重复。</p>
+     */
     public List<Conversation> listByTenantAndAgent(
             UUID tenantId, UUID agentId, ConversationPageRequest pageRequest) {
         Objects.requireNonNull(pageRequest, "pageRequest 不能为空");
@@ -96,6 +117,11 @@ public class JdbcConversationRepository implements ConversationRepository {
     }
 
     @Override
+    /**
+     * 更新标题和最后活动时间，并重新读取持久化结果。
+     *
+     * <p>更新条件始终包含可信租户；影响行数不是一时拒绝访问，说明会话已不存在或不属于当前租户。</p>
+     */
     public Conversation touch(UUID tenantId, UUID conversationId, String title, Instant updatedAt) {
         int updated = jdbcClient.sql("""
                         UPDATE conversations

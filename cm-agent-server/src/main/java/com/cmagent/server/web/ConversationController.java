@@ -44,7 +44,13 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** 会话和消息 API，仅负责可信主体解析、授权、HTTP/SSE 合同与错误边界。 */
+/**
+ * 会话和消息 API，仅负责可信主体解析、授权、HTTP/SSE 合同与错误边界。
+ *
+ * <p>tenant、主体、角色、序号和 Run 关联均不接受客户端覆盖；它们由认证会话和服务端编排生成。
+ * SSE 已提交响应后无法改写 HTTP 状态，因此异步失败必须转换为带稳定 {@code errorCode} 和
+ * {@code errorId} 的事件。</p>
+ */
 @RestController
 @RequestMapping("/api/agents/{agentId}/conversations")
 public class ConversationController {
@@ -69,6 +75,9 @@ public class ConversationController {
     }
 
     @PostMapping
+    /**
+     * 创建指定 Agent 的空会话，需要 {@code agent:run} 权限。
+     */
     public Conversation create(@PathVariable("agentId") UUID agentId, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:run", "AGENT", agentId.toString());
@@ -76,6 +85,9 @@ public class ConversationController {
     }
 
     @GetMapping
+    /**
+     * 使用服务端编码的 {@code updatedAt + id} 游标分页读取会话，需要 {@code agent:read} 权限。
+     */
     public ConversationPage list(
             @PathVariable("agentId") UUID agentId,
             @RequestParam(name = "limit", defaultValue = "20") int limit,
@@ -96,6 +108,9 @@ public class ConversationController {
     }
 
     @GetMapping("/{conversationId}")
+    /**
+     * 读取单个会话元数据，需要 {@code agent:read} 权限。
+     */
     public Conversation get(
             @PathVariable("agentId") UUID agentId,
             @PathVariable("conversationId") UUID conversationId,
@@ -107,6 +122,9 @@ public class ConversationController {
     }
 
     @GetMapping("/{conversationId}/messages")
+    /**
+     * 从排他序号游标之后正序读取消息，需要 {@code agent:read} 权限。
+     */
     public MessagePage messages(
             @PathVariable("agentId") UUID agentId,
             @PathVariable("conversationId") UUID conversationId,
@@ -123,6 +141,9 @@ public class ConversationController {
     }
 
     @PostMapping("/{conversationId}/messages")
+    /**
+     * 同步追加 USER 消息并执行本轮 Runtime，需要 {@code agent:run} 权限。
+     */
     public ConversationRunResult send(
             @PathVariable("agentId") UUID agentId,
             @PathVariable("conversationId") UUID conversationId,
@@ -135,6 +156,12 @@ public class ConversationController {
     }
 
     @PostMapping(value = "/{conversationId}/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    /**
+     * 异步执行会话续聊并以 SSE 返回生命周期事件，需要 {@code agent:run} 权限。
+     *
+     * <p>事件顺序为 {@code started}、可选 {@code message-started}/{@code delta}、最终
+     * {@code completed} 或 {@code error}；创建 emitter 后由任务执行器完成实际运行，避免阻塞 MVC 请求线程。</p>
+     */
     public SseEmitter stream(
             @PathVariable("agentId") UUID agentId,
             @PathVariable("conversationId") UUID conversationId,
@@ -151,6 +178,9 @@ public class ConversationController {
         return emitter;
     }
 
+    /**
+     * 执行已授权的异步会话，并在异常边界转换为安全的 SSE 错误事件。
+     */
     private void executeStream(
             SseEmitter emitter,
             PrincipalRef principal,
@@ -216,6 +246,9 @@ public class ConversationController {
         return new ConversationStreamError(code, message, errorId, conversationId);
     }
 
+    /**
+     * 首次观察到 Runtime 的 {@code replyId} 时补发一次消息开始事件，不能在未收到 Runtime 标识前伪造它。
+     */
     private void sendDelta(SseEmitter emitter, AtomicReference<String> currentReplyId, AgentTextDelta delta) {
         if (delta.replyId() != null && currentReplyId.compareAndSet(null, delta.replyId())) {
             send(emitter, "message-started", new MessageStarted(delta.replyId()));
@@ -249,6 +282,9 @@ public class ConversationController {
         }
     }
 
+    /**
+     * 解码不透明游标；格式错误统一按请求参数错误处理，不泄露解析细节。
+     */
     private ConversationCursor decodeConversationCursor(String cursor) {
         if (cursor == null) {
             return null;

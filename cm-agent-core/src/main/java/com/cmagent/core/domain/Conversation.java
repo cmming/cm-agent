@@ -4,7 +4,12 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
-/** 租户内固定归属于一个 Agent 的持久化会话。 */
+/**
+ * 租户内固定归属于一个 Agent 的持久化会话。
+ *
+ * <p>会话创建后不能迁移至其他 Agent 或租户；{@code updatedAt} 是列表复合游标的一部分，必须不早于
+ * {@code createdAt}。首条用户消息写入后，服务层可以将 {@link #DEFAULT_TITLE} 更新为输入摘要。</p>
+ */
 public record Conversation(
         UUID id,
         UUID tenantId,

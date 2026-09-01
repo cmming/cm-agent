@@ -28,6 +28,23 @@ test("优先显示结构化接口错误", () => {
     );
 });
 
+test("会话聊天页复用既有会话流和多页面导航", () => {
+    const resources = path.join(__dirname, "../../main/resources/META-INF/resources");
+    const app = fs.readFileSync(path.join(resources, "assets/app.js"), "utf8");
+    const chat = fs.readFileSync(path.join(resources, "console/v2/chat.html"), "utf8");
+    const overview = fs.readFileSync(path.join(resources, "console/v2/overview.html"), "utf8");
+
+    assert.match(chat, /data-page="chatPage"/);
+    assert.match(chat, /id="chatConversationList"/);
+    assert.match(chat, /id="chatMessageList"/);
+    assert.match(chat, /id="chatForm"/);
+    assert.match(app, /chatPage: "\/console\/v2\/chat\.html"/);
+    assert.match(app, /function sendChatMessage\(\)/);
+    assert.match(app, /messages\/stream/);
+    assert.match(app, /function renderChatMessages\(messages\)/);
+    assert.match(overview, /href="\/console\/v2\/chat\.html"/);
+});
+
 test("追加游标页并保留下一游标", () => {
     const result = core.appendCursorPage([{id: "1"}], {items: [{id: "2"}], nextCursor: "next"});
     assert.deepEqual(result, {items: [{id: "1"}, {id: "2"}], nextCursor: "next"});

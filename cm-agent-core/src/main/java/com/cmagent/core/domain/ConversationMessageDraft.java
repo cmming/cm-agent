@@ -5,7 +5,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Repository 分配会话内序号之前的消息草稿。 */
+/**
+ * Repository 分配会话内序号之前的消息草稿。
+ *
+ * <p>调用方不能预先指定 {@code sequence}，以免绕过并发追加顺序；内容块在进入存储层前复制并按角色校验，
+ * 防止客户端或适配器把不允许的工具块写入 USER、SYSTEM 消息。</p>
+ */
 public record ConversationMessageDraft(
         UUID id,
         UUID tenantId,
@@ -31,6 +36,12 @@ public record ConversationMessageDraft(
         Objects.requireNonNull(createdAt, "createdAt 不能为空");
     }
 
+    /**
+     * 校验角色与内容块类型的组合。
+     *
+     * <p>ASSISTANT 保留文本与工具摘要的混合表达；{@code TOOL} 仅为后续显式工具结果消息保留，当前 Web API
+     * 不允许客户端直接构造该角色。</p>
+     */
     static void validateBlocks(MessageRole role, List<MessageContentBlock> blocks) {
         if ((role == MessageRole.USER || role == MessageRole.SYSTEM)
                 && blocks.stream().anyMatch(block -> block.type() != MessageContentType.TEXT)) {

@@ -13,6 +13,7 @@
         agentsPage: "/console/v2/agents.html",
         modelConfigsPage: "/console/v2/model-configs.html",
         toolsPage: "/console/v2/tools.html",
+        chatPage: "/console/v2/chat.html",
         runsPage: "/console/v2/runs.html",
         auditPage: "/console/v2/audit.html"
     });
@@ -73,6 +74,7 @@
         agentsPage: ["Agent 管理", "创建、编辑或删除 Agent，并从模型配置中选择运行模型。"],
         modelConfigsPage: ["模型配置", "管理 Provider、服务地址和默认模型名称。"],
         toolsPage: ["工具治理", "注册 Tool，并向指定 Agent 授予使用权限。"],
+        chatPage: ["会话聊天", "选择 Agent，在同一会话中保留上下文并实时查看回答。"],
         runsPage: ["运行记录", "执行 Agent，并查看运行历史、结果与工具调用。"],
         auditPage: ["审计日志", "追踪当前租户的安全事件和资源操作。"]
     };
@@ -403,6 +405,10 @@
                     loadTools(undefined, session),
                     loadLocalExamples(undefined, false, session)
                 ]);
+                break;
+            case "chatPage":
+                await loadAgents(session);
+                if (sessionEpoch.isCurrent(session)) await initializeChatPage();
                 break;
             case "runsPage":
                 await loadAgents(session);
@@ -1545,7 +1551,7 @@
     }
 
     function updateAgentOptions() {
-        [$("grantAgentSelect"), $("runAgentSelect")].filter(Boolean).forEach((select) => {
+        [$("grantAgentSelect"), $("runAgentSelect"), $("chatAgentSelect")].filter(Boolean).forEach((select) => {
             select.replaceChildren();
             if (!state.agents.length) {
                 select.append(option("", "暂无 Agent"));
@@ -1803,17 +1809,19 @@
             state.selectedConversationId = state.conversations[0]?.id || "";
         }
         const select = $("runConversationSelect");
-        if (!select) return;
-        select.replaceChildren();
-        if (!state.conversations.length) {
-            select.append(element("option", {text: "发送时自动创建", value: ""}));
-        } else {
-            state.conversations.forEach((conversation) => select.append(element("option", {
-                text: conversation.title || "新会话",
-                value: conversation.id
-            })));
+        if (select) {
+            select.replaceChildren();
+            if (!state.conversations.length) {
+                select.append(element("option", {text: "发送时自动创建", value: ""}));
+            } else {
+                state.conversations.forEach((conversation) => select.append(element("option", {
+                    text: conversation.title || "新会话",
+                    value: conversation.id
+                })));
+            }
+            select.value = state.selectedConversationId;
         }
-        select.value = state.selectedConversationId;
+        renderChatConversations();
     }
 
     async function createConversation() {
@@ -1857,6 +1865,213 @@
             });
             container.append(section);
         });
+    }
+
+    async function initializeChatPage() {
+        if (!$("chatPage")) return;
+        if (!state.selectedAgentId) {
+            renderChatConversations();
+            renderChatWelcome("暂无可用 Agent，请先创建并启用一个 Agent。");
+            return;
+        }
+        await loadConversations(state.selectedAgentId);
+        if (state.selectedConversationId) {
+            await loadChatMessages(state.selectedAgentId, state.selectedConversationId);
+        } else {
+            renderChatWelcome("当前 Agent 还没有会话，发送第一条消息即可开始。");
+        }
+    }
+
+    function renderChatConversations() {
+        const container = $("chatConversationList");
+        if (!container) return;
+        container.replaceChildren();
+        if (!state.selectedAgentId) {
+            container.append(emptyState("请先选择可用 Agent。"));
+            return;
+        }
+        if (!state.conversations.length) {
+            container.append(emptyState("暂无会话，点击“新会话”或发送消息开始。"));
+            return;
+        }
+        state.conversations.forEach((conversation) => {
+            const button = element("button", {className: "chat-conversation-item", type: "button"});
+            button.classList.toggle("active", conversation.id === state.selectedConversationId);
+            const title = conversation.title || "新会话";
+            button.append(
+                element("strong", {text: title}),
+                element("span", {text: core.formatDateTime(conversation.updatedAt)})
+            );
+            button.addEventListener("click", () => selectChatConversation(conversation.id));
+            container.append(button);
+        });
+    }
+
+    async function selectChatConversation(conversationId) {
+        if (!conversationId || $("chatSendBtn")?.disabled) return;
+        state.selectedConversationId = conversationId;
+        renderChatConversations();
+        await loadChatMessages(state.selectedAgentId, conversationId);
+    }
+
+    async function createChatConversation() {
+        const agentId = $("chatAgentSelect")?.value;
+        if (!agentId) {
+            setStatus($("chatFormStatus"), "请先选择 Agent。", "error");
+            return;
+        }
+        const created = await api.request(`/api/agents/${encodeURIComponent(agentId)}/conversations`, {
+            method: "POST"
+        });
+        state.selectedAgentId = agentId;
+        state.selectedConversationId = created.id;
+        await loadConversations(agentId);
+        await loadChatMessages(agentId, created.id);
+        setStatus($("chatFormStatus"), "新会话已创建。", "success");
+    }
+
+    async function loadChatMessages(agentId, conversationId) {
+        if (!conversationId || !$("chatMessageList")) return;
+        const page = await api.request(`/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/messages?limit=200`);
+        renderChatMessages(Array.isArray(page?.items) ? page.items : []);
+    }
+
+    function renderChatMessages(messages) {
+        const container = $("chatMessageList");
+        if (!container) return;
+        container.replaceChildren();
+        const conversation = state.conversations.find((item) => item.id === state.selectedConversationId);
+        $("chatConversationTitle").textContent = conversation?.title || "当前会话";
+        if (!messages.length) {
+            renderChatWelcome("当前会话还没有消息，输入问题开始聊天。", false);
+            return;
+        }
+        messages.forEach((message) => container.append(createChatMessage(message)));
+        scrollChatToBottom();
+    }
+
+    function renderChatWelcome(message, replace = true) {
+        const container = $("chatMessageList");
+        if (!container) return;
+        if (replace) container.replaceChildren();
+        $("chatConversationTitle").textContent = state.selectedConversationId ? "当前会话" : "请选择会话";
+        const welcome = element("div", {className: "chat-welcome"});
+        welcome.append(
+            element("span", {className: "runs-detail-mark", text: "◌"}),
+            element("h3", {text: "开始一段会话"}),
+            element("p", {text: message})
+        );
+        container.append(welcome);
+    }
+
+    function createChatMessage(message) {
+        const isUser = message.role === "USER";
+        const article = element("article", {className: `chat-message ${isUser ? "chat-message-user" : "chat-message-agent"}`});
+        const label = isUser ? "你" : (message.senderName || "Agent");
+        article.append(element("p", {className: "chat-message-label", text: label}));
+        const bubble = element("div", {className: "chat-message-bubble"});
+        const blocks = Array.isArray(message.contentBlocks) ? message.contentBlocks : [];
+        blocks.forEach((block) => appendChatBlock(bubble, block));
+        if (!blocks.length) bubble.append(element("p", {text: "消息内容为空。"}));
+        article.append(bubble);
+        return article;
+    }
+
+    function appendChatBlock(container, block) {
+        if (block.type === "TEXT") {
+            const output = element("div", {className: "markdown-output"});
+            renderMarkdown(output, String(block.text || ""));
+            container.append(output);
+            return;
+        }
+        container.append(element("p", {
+            className: "chat-tool-summary",
+            text: block.type === "TOOL_USE"
+                ? `工具调用：${block.toolName || "—"} · ${block.text || ""}`
+                : `工具结果：${block.status || "—"} · ${block.text || ""}`
+        }));
+    }
+
+    function appendChatStreamingMessage() {
+        const container = $("chatMessageList");
+        const article = element("article", {className: "chat-message chat-message-agent is-streaming"});
+        article.append(element("p", {className: "chat-message-label", text: "Agent · 正在生成"}));
+        const bubble = element("div", {className: "chat-message-bubble"});
+        const output = element("div", {className: "markdown-output"});
+        output.id = "chatStreamOutput";
+        bubble.append(output);
+        article.append(bubble);
+        container.append(article);
+        return output;
+    }
+
+    function scrollChatToBottom() {
+        const container = $("chatMessageList");
+        if (container) container.scrollTop = container.scrollHeight;
+    }
+
+    function setChatBusy(busy) {
+        [$("chatAgentSelect"), $("newChatConversationBtn"), $("chatSendBtn")].filter(Boolean)
+            .forEach((control) => { control.disabled = busy; });
+        const liveStatus = $("chatLiveStatus");
+        if (liveStatus) {
+            liveStatus.textContent = busy ? "正在生成" : "已就绪";
+            liveStatus.classList.toggle("is-streaming", busy);
+        }
+    }
+
+    async function sendChatMessage() {
+        const agentId = $("chatAgentSelect")?.value;
+        const input = $("chatInput")?.value.trim();
+        if (!agentId || !input) {
+            setStatus($("chatFormStatus"), "请选择 Agent 并输入消息。", "error");
+            return;
+        }
+        let streamedOutput = "";
+        try {
+            setChatBusy(true);
+            await withSubmitState($("chatSendBtn"), async () => {
+                state.selectedAgentId = agentId;
+                const conversationId = await ensureConversation(agentId);
+                const container = $("chatMessageList");
+                container.querySelector(".chat-welcome")?.remove();
+                container.append(createChatMessage({role: "USER", contentBlocks: [{type: "TEXT", text: input}]}));
+                const output = appendChatStreamingMessage();
+                scrollChatToBottom();
+                $("chatInput").value = "";
+                setStatus($("chatFormStatus"), "正在接收回答…", "neutral");
+                let result = null;
+                await api.stream(`/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/messages/stream`, {
+                    method: "POST",
+                    body: JSON.stringify({input})
+                }, (event) => {
+                    if (event.type === "delta") {
+                        const delta = String(event.data?.delta || "");
+                        if (!delta) return;
+                        streamedOutput += delta;
+                        renderMarkdown(output, streamedOutput);
+                        scrollChatToBottom();
+                    } else if (event.type === "completed") {
+                        result = event.data;
+                    } else if (event.type === "error") {
+                        const code = event.data?.code ? `（错误码：${event.data.code}）` : "";
+                        const errorId = event.data?.errorId ? `（错误编号：${event.data.errorId}）` : "";
+                        throw new Error(`${event.data?.message || "会话运行失败"}${code}${errorId}`);
+                    }
+                });
+                if (!result) throw new Error("运行未返回最终结果，请刷新会话确认状态。");
+                await loadConversations(agentId);
+                await loadChatMessages(agentId, conversationId);
+                setStatus($("chatFormStatus"), "回答已完成。", "success");
+            });
+        } catch (error) {
+            setStatus($("chatFormStatus"), error.message, "error");
+            if (state.selectedConversationId) {
+                loadChatMessages(agentId, state.selectedConversationId).catch(() => {});
+            }
+        } finally {
+            setChatBusy(false);
+        }
     }
 
     let streamingMarkdownOutput = "";
@@ -2372,6 +2587,19 @@
             loadConversationMessages($("runAgentSelect").value, state.selectedConversationId)
                 .catch((error) => setStatus($("runFormStatus"), error.message, "error"));
         });
+        bind("chatForm", "submit", (event) => { event.preventDefault(); sendChatMessage(); });
+        bind("chatAgentSelect", "change", () => {
+            const agentId = $("chatAgentSelect").value;
+            state.selectedAgentId = agentId;
+            state.selectedConversationId = "";
+            loadConversations(agentId)
+                .then(() => state.selectedConversationId
+                    ? loadChatMessages(agentId, state.selectedConversationId)
+                    : renderChatWelcome("当前 Agent 还没有会话，发送第一条消息即可开始。"))
+                .catch((error) => setStatus($("chatFormStatus"), error.message, "error"));
+        });
+        bind("newChatConversationBtn", "click", () => createChatConversation()
+            .catch((error) => setStatus($("chatFormStatus"), error.message, "error")));
         bind("refreshAuditBtn", "click", () => loadAudit({append: false}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
         bind("loadMoreAuditBtn", "click", () => loadAudit({append: true}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
         document.querySelectorAll("button[data-page]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));
