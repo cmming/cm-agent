@@ -5,6 +5,11 @@ import java.util.UUID;
 
 /**
  * 记录租户内工具是否通过 MCP 对外发布及其更新时间。
+ *
+ * @param tenantId 发布记录归属租户
+ * @param toolId 被发布的工具标识
+ * @param enabled 是否允许经 MCP 端点调用；取消后端点应立即对新调用生效
+ * @param publishedBy 发布操作主体标识
  */
 public record McpToolPublication(
         UUID tenantId,
@@ -15,11 +20,11 @@ public record McpToolPublication(
 
     /**
      * 校验并规范化工具的 MCP 发布状态与更新时间。
-      *
-      * @param tenantId 当前租户标识
-      * @param toolId 目标工具标识
-      * @param enabled 是否启用目标能力
-      * @param publishedBy 发布主体标识
+     *
+     * @param tenantId 当前租户标识
+     * @param toolId 目标工具标识
+     * @param enabled 是否启用目标能力
+     * @param publishedBy 发布主体标识
      */
     public McpToolPublication {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");

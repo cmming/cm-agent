@@ -14,13 +14,19 @@ import java.util.function.Consumer;
 
 /**
  * 定义执行一次 Agent 运行并返回结构化结果的运行时契约。
+ *
+ * <p>运行时属于可替换 SPI：本地与测试使用 {@code FakeAgentRuntime}，真实模型执行由
+ * {@code cm-agent-agentscope-adapter} 落地。实现方必须遵守的边界：
+ * 租户与主体以请求中已校验的字段为准，不得接受客户端覆盖；模型凭据只能经
+ * {@link ModelCredentialProvider} 解析，API Key 不得进入结果、日志或审计。</p>
  */
 public interface AgentRuntime {
 
     /**
      * 执行一次 Agent 运行并返回结构化结果。
-      *
-      * @param request 当前运行或工具调用请求
+     *
+     * @param request 当前运行请求，其租户一致性已在构造期校验
+     * @return 运行终态，包含输出与工具调用摘要
      */
     AgentRunResult run(AgentRunRequest request);
 

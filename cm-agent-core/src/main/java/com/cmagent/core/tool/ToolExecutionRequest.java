@@ -7,6 +7,15 @@ import java.util.UUID;
 
 /**
  * 封装工具执行所需的租户、主体、运行上下文和输入数据。
+ *
+ * @param tenantId 调用归属租户；LEGACY 来源可为 {@code null}
+ * @param agentId 目标 Agent 标识；仅 AGENT 来源必填，DEBUG/MCP 必须为 {@code null}
+ * @param principal 当前认证主体；仅 AGENT 来源必填
+ * @param runId 所属运行标识；仅 AGENT 来源必填
+ * @param toolCallId 本次工具调用的唯一标识；LEGACY 来源可为 {@code null}
+ * @param toolId 被调用工具的标识，任何来源都必填
+ * @param inputJson 序列化后的工具输入 JSON
+ * @param source 调用来源，决定其余字段的校验规则
  */
 public record ToolExecutionRequest(
         UUID tenantId,
@@ -21,15 +30,19 @@ public record ToolExecutionRequest(
 
     /**
      * 校验工具调用来源与租户、主体、Agent 和运行上下文是否一致。
-      *
-      * @param tenantId 当前租户标识
-      * @param agentId 目标 Agent 标识
-      * @param principal 当前认证主体
-      * @param runId 目标运行标识
-      * @param toolCallId 工具调用标识
-      * @param toolId 目标工具标识
-      * @param inputJson 序列化后的工具输入 JSON
-      * @param source 待转换的源对象
+     *
+     * <p>上下文校验按调用来源区分严格程度：AGENT 来源必须绑定完整的运行上下文，DEBUG/MCP
+     * 来源禁止绑定 agentId/runId 以防止把调用错归因到某次运行，LEGACY 来源仅保持既有兼容行为。
+     * 主体与租户不匹配直接拒绝构造，保证跨租户调用无法进入后续执行链。</p>
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     * @param principal 当前认证主体
+     * @param runId 目标运行标识
+     * @param toolCallId 工具调用标识
+     * @param toolId 目标工具标识
+     * @param inputJson 序列化后的工具输入 JSON
+     * @param source 调用来源，决定运行上下文的校验规则
      */
     public ToolExecutionRequest {
         Objects.requireNonNull(toolId, "toolId 不能为空");
@@ -57,14 +70,14 @@ public record ToolExecutionRequest(
 
     /**
      * 创建默认来源为 Agent 运行的完整工具执行请求。
-      *
-      * @param tenantId 当前租户标识
-      * @param agentId 目标 Agent 标识
-      * @param principal 当前认证主体
-      * @param runId 目标运行标识
-      * @param toolCallId 工具调用标识
-      * @param toolId 目标工具标识
-      * @param inputJson 序列化后的工具输入 JSON
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     * @param principal 当前认证主体
+     * @param runId 目标运行标识
+     * @param toolCallId 工具调用标识
+     * @param toolId 目标工具标识
+     * @param inputJson 序列化后的工具输入 JSON
      */
     public ToolExecutionRequest(UUID tenantId, UUID agentId, PrincipalRef principal, UUID runId,
                                 String toolCallId, UUID toolId, String inputJson) {
@@ -74,9 +87,12 @@ public record ToolExecutionRequest(
 
     /**
      * 创建不带运行上下文的兼容工具执行请求。
-      *
-      * @param toolId 目标工具标识
-      * @param inputJson 序列化后的工具输入 JSON
+     *
+     * <p>LEGACY 来源跳过上下文校验，仅供尚未接入治理编排的旧调用方过渡使用；
+     * 新代码必须使用携带完整上下文的构造方式。</p>
+     *
+     * @param toolId 目标工具标识
+     * @param inputJson 序列化后的工具输入 JSON
      */
     public ToolExecutionRequest(UUID toolId, String inputJson) {
         this(null, null, null, null, null, toolId, inputJson, ToolInvocationSource.LEGACY);

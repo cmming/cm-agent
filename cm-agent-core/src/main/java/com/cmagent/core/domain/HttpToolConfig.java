@@ -9,6 +9,14 @@ import java.util.regex.Pattern;
 
 /**
  * 描述动态 HTTP 工具的地址、方法、参数定义、认证和响应限制。
+ *
+ * @param tenantId 配置归属租户
+ * @param toolId 所属工具标识
+ * @param method HTTP 请求方法；GET 不允许 BODY 参数
+ * @param urlTemplate 带占位符的 URL 模板，占位符与必填 PATH 映射一一对应
+ * @param parameters 扁平参数定义集合，树关系由服务端编译器校验
+ * @param secretHeaders 请求头名称到 {@code secret/...} 引用的映射，不允许明文凭据
+ * @param timeout HTTP 调用超时，必须为正数
  */
 public record HttpToolConfig(
         UUID tenantId,
@@ -25,14 +33,17 @@ public record HttpToolConfig(
 
     /**
      * 校验并规范化动态 HTTP 工具的地址、参数、认证与响应限制。
-      *
-      * @param tenantId 当前租户标识
-      * @param toolId 目标工具标识
-      * @param method HTTP 请求方法
-      * @param urlTemplate HTTP 工具 URL 模板
-      * @param parameters 扁平参数定义集合
-      * @param secretHeaders 请求头名称到 Secret 引用的映射
-      * @param timeout HTTP 调用超时
+     *
+     * <p>{@code secretHeaders} 的值只能是 {@code secret/...} 引用而非真实凭据；
+     * GET 请求禁止 BODY 参数，因为 GET 语义不允许携带请求体。</p>
+     *
+     * @param tenantId 当前租户标识
+     * @param toolId 目标工具标识
+     * @param method HTTP 请求方法
+     * @param urlTemplate HTTP 工具 URL 模板
+     * @param parameters 扁平参数定义集合
+     * @param secretHeaders 请求头名称到 Secret 引用的映射
+     * @param timeout HTTP 调用超时
      */
     public HttpToolConfig {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");

@@ -11,41 +11,47 @@ import java.util.UUID;
 public interface ToolGrantRepository {
     /**
      * 在当前租户边界内保存领域记录。
-      *
-      * @param grant 工具授权定义
+     *
+     * @param grant 工具授权定义
+     * @return 已保存的授权记录
      */
     ToolGrant save(ToolGrant grant);
 
     /**
      * 按租户边界列出可见记录。
-      *
-      * @param tenantId 当前租户标识
+     *
+     * @param tenantId 当前租户标识
+     * @return 仅当前租户的授权记录列表
      */
     List<ToolGrant> listByTenant(UUID tenantId);
 
     /**
      * 按租户和 Agent 标识列出授权记录。
-      *
-      * @param tenantId 当前租户标识
-      * @param agentId 目标 Agent 标识
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     * @return 该 Agent 在当前租户内的全部授权记录
      */
     List<ToolGrant> listByTenantAndAgent(UUID tenantId, UUID agentId);
 
     /**
      * 按租户、Agent 和工具标识精确查询授权记录。
-      *
-      * @param tenantId 当前租户标识
-      * @param agentId 目标 Agent 标识
-      * @param toolId 目标工具标识
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     * @param toolId 目标工具标识
+     * @return 匹配三元组的授权记录；无匹配时返回空列表
      */
     List<ToolGrant> listByTenantAgentAndTool(UUID tenantId, UUID agentId, UUID toolId);
 
     /**
      * 删除指定租户中 Agent 对工具的授权。
-      *
-      * @param tenantId 当前租户标识
-      * @param agentId 目标 Agent 标识
-      * @param toolId 目标工具标识
+     *
+     * <p>目标不存在时静默返回，保证取消授权可重复执行。</p>
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     * @param toolId 目标工具标识
      */
     void delete(UUID tenantId, UUID agentId, UUID toolId);
 
@@ -65,9 +71,11 @@ public interface ToolGrantRepository {
 
     /**
      * 删除指定租户中工具的全部授权。
-      *
-      * @param tenantId 当前租户标识
-      * @param toolId 目标工具标识
+     *
+     * <p>工具被删除或下线时调用，防止残留授权被后续同名工具继承。</p>
+     *
+     * @param tenantId 当前租户标识
+     * @param toolId 目标工具标识
      */
     void deleteByTenantAndToolId(UUID tenantId, UUID toolId);
 }

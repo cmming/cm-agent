@@ -5,7 +5,14 @@ import java.util.Objects;
 /**
  * 一条消息中的有序、类型化内容块。
  *
- * <p>工具块只保存受治理后的摘要，不能放入模型原始参数、工具原始响应或凭据。</p>
+ * <p>工具块只保存受治理后的摘要，不能放入模型原始参数、工具原始响应或凭据。
+ * 各类型允许的字段组合见紧凑构造器校验。</p>
+ *
+ * @param type 内容块类型，决定哪些字段必须或禁止出现
+ * @param text 文本内容；TEXT 块必须非空，工具块中存放脱敏后的摘要
+ * @param toolCallId 工具调用标识；TOOL_USE 与 TOOL_RESULT 块必填
+ * @param toolName 工具名称；仅 TOOL_USE 块携带
+ * @param status 调用终态；仅 TOOL_RESULT 块携带
  */
 public record MessageContentBlock(
         MessageContentType type,

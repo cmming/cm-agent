@@ -20,10 +20,7 @@ public interface ModelConfigRepository {
     ModelConfig save(ModelConfig modelConfig);
 
     /**
-     * 保存新的模型配置及其已加密的 API Key。
-     *
-     * <p>调用方必须在进入仓储前完成加密。领域对象和普通查询均不携带密钥，
-     * 防止凭据随模型元数据、审计或接口响应扩散。</p>
+     * 保存新的模型配置及已加密的 API Key 密文（未提供密文时仅用于历史初始化或测试）。
      *
      * @param modelConfig 待创建的模型配置
      * @param encryptedApiKey 已加密且带版本信息的 API Key 密文
@@ -54,9 +51,10 @@ public interface ModelConfigRepository {
 
     /**
      * 按租户和资源标识查询唯一记录。
-      *
-      * @param tenantId 当前租户标识
-      * @param modelConfigId 模型配置标识
+     *
+     * @param tenantId 当前租户标识
+     * @param modelConfigId 模型配置标识
+     * @return 命中时返回配置；跨租户或不存在一律返回空
      */
     Optional<ModelConfig> findByTenantAndId(UUID tenantId, UUID modelConfigId);
 

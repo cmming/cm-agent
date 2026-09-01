@@ -10,6 +10,15 @@ import java.util.UUID;
  *
  * <p>调用方不能预先指定 {@code sequence}，以免绕过并发追加顺序；内容块在进入存储层前复制并按角色校验，
  * 防止客户端或适配器把不允许的工具块写入 USER、SYSTEM 消息。</p>
+ *
+ * @param id 草稿由调用方生成的消息标识
+ * @param tenantId 消息归属租户
+ * @param conversationId 目标会话标识；会话不存在或不属于该租户时追加失败
+ * @param role 消息角色，约束允许的内容块类型
+ * @param senderName 展示用发送者名称；空白归一化为 {@code null}
+ * @param contentBlocks 有序内容块列表，至少一个且不可变
+ * @param runId 关联的运行标识，可为 {@code null}
+ * @param createdAt 消息创建时间
  */
 public record ConversationMessageDraft(
         UUID id,

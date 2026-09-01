@@ -7,6 +7,27 @@ import java.util.regex.Pattern;
 
 /**
  * 使用扁平节点描述 HTTP Tool 输入参数及其请求位置。
+ *
+ * <p>每个实例只描述单个节点的局部信息；父子关系由 {@code id}/{@code parentId} 表达，
+ * 完整树结构和位置继承由服务端编译器统一校验。</p>
+ *
+ * @param id 参数节点标识，以字母开头且仅含字母数字下划线连字符，租户内唯一
+ * @param parentId 父节点标识；空白表示顶层节点
+ * @param name 参数名称（或 JSON Pointer 路径），不允许换行符
+ * @param dataType 参数数据类型，决定约束项与是否允许子节点
+ * @param requestLocation 参数写入的 HTTP 请求位置
+ * @param description 面向控制台的参数说明
+ * @param required 是否必填；缺失且无默认值时映射阶段报错
+ * @param defaultValueJson 参数默认值的 JSON 文本；空白表示未配置
+ * @param exampleValueJson 参数示例值的 JSON 文本，仅供控制台填充示例；空白表示未配置
+ * @param enumValues 枚举值列表，不允许空白或重复；空列表表示非枚举参数
+ * @param minLength 字符串最小长度；仅 STRING 类型生效
+ * @param maxLength 字符串最大长度；仅 STRING 类型生效
+ * @param minimum 数值下界；仅数值类型生效
+ * @param maximum 数值上界；仅数值类型生效
+ * @param minItems 数组最小元素数；仅 ARRAY 类型生效
+ * @param maxItems 数组最大元素数；仅 ARRAY 类型生效
+ * @param uniqueItems 数组元素是否必须唯一；仅 ARRAY 类型生效
  */
 public record HttpParameterDefinition(
         String id,
@@ -66,21 +87,21 @@ public record HttpParameterDefinition(
     }
 
     /**
-     * @return 是否为顶层参数节点。
+     * @return 节点为顶层参数（无父节点）时返回 {@code true}
      */
     public boolean root() {
         return parentId.isBlank();
     }
 
     /**
-     * @return 是否配置了默认值。
+     * @return 已配置默认值时返回 {@code true}；缺失输入将按默认值参与映射
      */
     public boolean hasDefaultValue() {
         return !defaultValueJson.isBlank();
     }
 
     /**
-     * @return 是否配置了示例值。
+     * @return 已配置示例值时返回 {@code true}，示例值仅供控制台填充输入
      */
     public boolean hasExampleValue() {
         return !exampleValueJson.isBlank();

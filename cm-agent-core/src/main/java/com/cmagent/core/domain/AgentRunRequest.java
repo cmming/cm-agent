@@ -8,6 +8,15 @@ import java.util.UUID;
 
 /**
  * 封装一次 Agent 运行所需的定义、模型、主体、输入和授权工具。
+ *
+ * @param runId 运行唯一标识，同时作为无会话运行时的 sessionId
+ * @param tenantId 运行归属租户，全部参与对象的租户一致性以此为基准
+ * @param agent 被运行的 Agent 定义
+ * @param modelConfig 本次运行使用的模型配置，须与 Agent 绑定一致
+ * @param principal 发起运行的认证主体
+ * @param input 用户输入文本
+ * @param tools 预筛选后的授权工具集合，构造时逐个校验租户归属
+ * @param conversationId 可选的持久化会话标识；为空表示单轮无状态运行
  */
 public record AgentRunRequest(
         UUID runId,
@@ -35,15 +44,19 @@ public record AgentRunRequest(
 
     /**
      * 校验运行请求的租户、主体、模型绑定和工具集合是否一致。
-      *
-      * @param runId 目标运行标识
-      * @param tenantId 当前租户标识
-      * @param agent 当前 Agent 定义
-      * @param modelConfig Agent 绑定的模型配置
-      * @param principal 当前认证主体
-      * @param input 调用方输入
-      * @param tools 本次运行授权的工具集合
-      * @param conversationId 可选的持久化会话标识
+     *
+     * <p>该构造器是运行入口的租户一致性总闸：Agent、模型配置、主体和每个授权工具
+     * 必须全部属于 {@code tenantId}，且 Agent 绑定的模型配置 ID 必须与实际传入的
+     * 模型配置一致。任何不一致在进入 Runtime 之前即失败，防止跨租户运行。</p>
+     *
+     * @param runId 目标运行标识
+     * @param tenantId 当前租户标识
+     * @param agent 当前 Agent 定义
+     * @param modelConfig Agent 绑定的模型配置
+     * @param principal 当前认证主体
+     * @param input 调用方输入
+     * @param tools 本次运行授权的工具集合
+     * @param conversationId 可选的持久化会话标识
      */
     public AgentRunRequest {
         Objects.requireNonNull(runId, "runId 不能为空");

@@ -5,6 +5,9 @@ package com.cmagent.core.domain;
  *
  * <p>{@code afterSequence} 是排他游标，使用零表示从会话第一条消息开始；消息时间戳不参与本接口的排序，
  * 以避免并发写入时的展示时间相同影响回放顺序。</p>
+ *
+ * @param limit 单页最大返回数量，限定 1 到 200
+ * @param afterSequence 排他起始序号；0 表示从会话第一条消息开始
  */
 public record MessagePageRequest(int limit, long afterSequence) {
     public MessagePageRequest {

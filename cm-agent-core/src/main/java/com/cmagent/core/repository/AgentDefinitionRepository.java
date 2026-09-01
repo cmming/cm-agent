@@ -12,8 +12,9 @@ import java.util.UUID;
 public interface AgentDefinitionRepository {
     /**
      * 在当前租户边界内保存领域记录。
-      *
-      * @param agent 当前 Agent 定义
+     *
+     * @param agent 当前 Agent 定义
+     * @return 已保存的 Agent 定义
      */
     AgentDefinition save(AgentDefinition agent);
 
@@ -32,16 +33,18 @@ public interface AgentDefinitionRepository {
 
     /**
      * 按租户和资源标识查询唯一记录。
-      *
-      * @param tenantId 当前租户标识
-      * @param agentId 目标 Agent 标识
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     * @return 命中时返回 Agent 定义；跨租户或不存在一律返回空
      */
     Optional<AgentDefinition> findByTenantAndId(UUID tenantId, UUID agentId);
 
     /**
      * 按租户边界列出可见记录。
-      *
-      * @param tenantId 当前租户标识
+     *
+     * @param tenantId 当前租户标识
+     * @return 仅当前租户的 Agent 定义列表
      */
     List<AgentDefinition> listByTenant(UUID tenantId);
 
@@ -72,19 +75,21 @@ public interface AgentDefinitionRepository {
 
     /**
      * 在同一租户内建立 Agent 与工具的关联。
-      *
-      * @param tenantId 当前租户标识
-      * @param agentId 目标 Agent 标识
-      * @param toolId 目标工具标识
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     * @param toolId 目标工具标识
+     * @return 关联后的 Agent 定义
      */
     AgentDefinition addToolToAgent(UUID tenantId, UUID agentId, UUID toolId);
 
     /**
      * 移除指定 Agent 关联的工具。
-      *
-      * @param tenantId 当前租户标识
-      * @param agentId 目标 Agent 标识
-      * @param toolId 目标工具标识
+     *
+     * @param tenantId 当前租户标识
+     * @param agentId 目标 Agent 标识
+     * @param toolId 目标工具标识
+     * @return 解除关联后的 Agent 定义
      */
     AgentDefinition removeToolFromAgent(UUID tenantId, UUID agentId, UUID toolId);
 }

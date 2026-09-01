@@ -10,6 +10,16 @@ import java.util.UUID;
  *
  * <p>时间戳只用于展示和审计，不能替代序号进行上下文重放或分页；内容块在构造时复制，防止保存后
  * 被调用方修改而破坏消息快照。</p>
+ *
+ * @param id 消息唯一标识
+ * @param tenantId 消息归属租户
+ * @param conversationId 所属会话标识
+ * @param sequence 会话内从 1 开始的权威顺序号，由仓储追加时分配
+ * @param role 消息角色，约束允许的内容块类型
+ * @param senderName 展示用发送者名称；空白归一化为 {@code null}
+ * @param contentBlocks 有序内容块列表，至少一个且不可变
+ * @param runId 产生该消息的运行标识；USER 消息与运行前提交时可能为 {@code null}
+ * @param createdAt 消息创建时间，仅用于展示与审计
  */
 public record ConversationMessage(
         UUID id,
