@@ -307,24 +307,33 @@ public class ConversationController {
                 .encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * 客户端允许提交的唯一消息写入字段。
+     *
+     * <p>tenant、角色、序号、消息标识和 Run 关联均由服务端生成，不能通过请求体覆盖可信会话边界。</p>
+     */
     public record SendMessageRequest(@NotBlank String input) {
     }
 
+    /** 使用不透明复合游标返回的会话列表页。 */
     public record ConversationPage(List<Conversation> items, String nextCursor) {
         public ConversationPage {
             items = List.copyOf(items);
         }
     }
 
+    /** 按会话内稳定序号正序返回的消息列表页。 */
     public record MessagePage(List<ConversationMessage> items, Long nextSequence) {
         public MessagePage {
             items = List.copyOf(items);
         }
     }
 
+    /** Runtime 首次实际提供 {@code replyId} 后发送的 SSE 消息开始事件。 */
     public record MessageStarted(String replyId) {
     }
 
+    /** SSE 已提交后用于报告安全错误信息的终态事件载荷。 */
     public record ConversationStreamError(
             ApiErrorCode code,
             String message,

@@ -122,6 +122,9 @@ public class JdbcConversationMessageRepository implements ConversationMessageRep
     @Override
     /**
      * 以正序读取排他序号游标后的消息，供接口稳定分页。
+     *
+     * <p>查询条件显式包含 tenant，且只以 {@code sequence_no} 排序，不能用展示时间替代会话回放顺序。
+     * 读取到损坏的内容块 JSON 会在映射时失败，避免把不完整历史静默交给模型。</p>
      */
     public List<ConversationMessage> list(
             UUID tenantId, UUID conversationId, MessagePageRequest pageRequest) {
@@ -145,6 +148,9 @@ public class JdbcConversationMessageRepository implements ConversationMessageRep
     @Override
     /**
      * 先按倒序限制窗口以减少数据库读取，再在内存中恢复正序供提示词编排使用。
+     *
+     * <p>该查询刻意不复用 API 分页路径：模型只需要最近的完整消息，而正序返回使调用方无需再反转，
+     * 从而避免历史窗口与 {@code sequence} 的关联关系被破坏。</p>
      */
     public List<ConversationMessage> listRecent(UUID tenantId, UUID conversationId, int limit) {
         if (limit < 1 || limit > 200) {

@@ -18,6 +18,7 @@ import java.util.Objects;
  * @param output 可安全返回的模型输出；无输出时使用空字符串
  * @param toolCalls 本次运行已经完成记录的工具调用快照
  * @param errorMessage 可安全返回的错误说明；无错误时使用空字符串
+ * @param assistantMessage 可选的最终 assistant 安全快照；没有最终消息时为空
  */
 record AgentScopeExecutionResult(
         RunStatus status,
@@ -64,6 +65,14 @@ record AgentScopeExecutionResult(
         return succeeded(output, toolCalls, null);
     }
 
+    /**
+     * 创建同时保留最终 assistant 内容块顺序的成功结果。
+     *
+     * @param output 与既有 Run API 兼容的文本输出
+     * @param toolCalls 本次运行产生的工具调用记录
+     * @param assistantMessage 已滤除原始工具内容的最终消息快照
+     * @return 成功终态快照
+     */
     static AgentScopeExecutionResult succeeded(
             String output,
             List<ToolCallRecord> toolCalls,

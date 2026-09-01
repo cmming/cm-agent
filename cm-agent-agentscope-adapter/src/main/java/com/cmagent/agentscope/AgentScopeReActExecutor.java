@@ -189,8 +189,9 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                     .timeout(options.toolTimeout())
                     .maxAttempts(1)
                     .build();
-            // userId 加租户前缀防止不同租户的同名主体在 AgentScope 上下文中碰撞；一次性 runId
-            // 作为 sessionId，保持当前同步单轮语义，不引入跨运行会话状态。
+            // userId 加租户前缀防止不同租户的同名主体在 AgentScope 上下文中碰撞。会话运行使用
+            // conversationId 作为 sessionId，单轮兼容入口才回退到一次性 runId；但持久化历史仍是
+            // 连续对话的权威来源，不能依赖进程内 Agent 状态恢复上下文。
             context = RuntimeContext.builder()
                     .userId(spec.tenantId() + ":" + spec.principalId())
                     .sessionId(spec.request().conversationId() == null
@@ -436,6 +437,10 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
     /**
      * 将 AgentScope 最终消息映射为只含安全文本和受治理工具摘要的 Core 快照。
+     *
+     * <p>框架消息中的工具输入和结果不能直接越过适配边界。这里按最终消息中的工具块顺序关联本次运行
+     * 已保存的 {@link ToolCallRecord}，仅使用其中的输入、输出或错误摘要；没有可验证记录的工具块会被
+     * 丢弃，而不是回退到 AgentScope 原始内容。</p>
      */
     private static AgentMessageSnapshot safeMessage(Msg result, List<ToolCallRecord> records) {
         if (result == null) {

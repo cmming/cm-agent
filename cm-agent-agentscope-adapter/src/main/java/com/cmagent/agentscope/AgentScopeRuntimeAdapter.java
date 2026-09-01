@@ -148,6 +148,17 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
         }
     }
 
+    /**
+     * 执行支持内容块快照的会话运行。
+     *
+     * <p>与 {@link #run(AgentRunRequest, Consumer)} 相比，此入口保留最终 assistant 消息的有序内容块，
+     * 供会话服务在运行结束后持久化。文本增量仍在 AgentScope 事件线程中同步交付；上层必须在发送 SSE
+     * 前完成脱敏，且不得把工具原始参数或原始结果传给该消费者。</p>
+     *
+     * @param request 当前领域运行请求；其中的 {@code conversationId} 会决定 AgentScope sessionId
+     * @param outputDeltaConsumer 接收带 replyId、blockId 的安全文本增量
+     * @return 原运行结果与可选最终 assistant 快照
+     */
     @Override
     public AgentRuntimeResult runStructured(
             AgentRunRequest request,

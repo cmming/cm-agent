@@ -136,6 +136,18 @@ public class RunExecutionService {
 
     /**
      * 使用已经落库的 RUNNING 记录执行会话运行，避免重复创建 Run。
+     *
+     * <p>调用方必须先在短事务中完成 USER 消息和该 Run 的创建；本方法只执行模型、工具治理和既有的
+     * Run 收口流程。{@code conversationId} 仅传递给 Runtime 用于选择会话 session，不能替代运行记录的
+     * tenant、Agent 归属校验。</p>
+     *
+     * @param principal 提供可信租户和主体的已认证上下文
+     * @param agentId 预创建 Run 必须归属的 Agent 标识
+     * @param runningRun 已持久化且仍处于 {@code RUNNING} 的运行记录
+     * @param runtimeInput 已拼接历史边界并脱敏后的本轮输入
+     * @param conversationId 可选的会话标识；传统单轮运行传 {@code null}
+     * @param deltaConsumer 接收已在本服务边界脱敏的文本增量
+     * @return 带持久化 Run 终态和可选 assistant 安全快照的结果
      */
     public AgentRuntimeResult runPrepared(
             PrincipalRef principal,
@@ -227,6 +239,13 @@ public class RunExecutionService {
         return new ResolvedRunContext(agent, modelConfig, authorizedTools(principal, agent));
     }
 
+    /**
+     * 在离开运行编排边界前再次脱敏最终消息。
+     *
+     * <p>适配器本应只产生受治理摘要，但运行服务仍执行纵深防御，确保旧 Runtime 或未来适配器不会将
+     * 敏感文本通过会话持久化或 {@code completed} SSE 事件泄露出去；工具调用标识、名称与终态保持原样，
+     * 以维持内容块关联关系。</p>
+     */
     private AgentMessageSnapshot redactMessage(AgentMessageSnapshot message) {
         if (message == null) {
             return null;
