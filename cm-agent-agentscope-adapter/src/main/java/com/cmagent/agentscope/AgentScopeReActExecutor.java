@@ -3,6 +3,7 @@ package com.cmagent.agentscope;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.ToolCallRecord;
 import com.cmagent.core.domain.AgentMessageSnapshot;
+import com.cmagent.core.domain.AgentProgressEvent;
 import com.cmagent.core.domain.AgentTextDelta;
 import com.cmagent.core.domain.MessageContentBlock;
 import com.cmagent.core.runtime.ModelCredential;
@@ -12,12 +13,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockEndEvent;
+import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.UserMessage;
@@ -37,6 +45,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -176,10 +185,36 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             ToolInvocationGateway toolGateway,
             Consumer<AgentTextDelta> outputDeltaConsumer
     ) {
+        return executeStructured(spec, credential, toolGateway, outputDeltaConsumer, ignored -> {
+        });
+    }
+
+    /**
+     * 执行会话运行，并转发完整思考块和无原始载荷的工具生命周期事件。
+     *
+     * <p>thinking 增量先在适配器内按块聚合，只有结束事件到达后才交给上层整体脱敏；工具参数增量和
+     * 工具结果文本增量只供 AgentScope 与运行门控内部使用，不进入 {@code progressConsumer}。</p>
+     *
+     * @param spec 已校验领域请求的适配器视图
+     * @param credential 当前租户与模型配置对应的受控凭据
+     * @param toolGateway 每次实际工具调用都必须经过的治理入口
+     * @param outputDeltaConsumer 接收带块标识的最终回答文本增量
+     * @param progressConsumer 接收受控执行进度
+     * @return 已归并模型输出、工具记录与最终消息快照的终态结果
+     */
+    @Override
+    public AgentScopeExecutionResult executeStructured(
+            AgentScopeRunSpec spec,
+            ModelCredential credential,
+            ToolInvocationGateway toolGateway,
+            Consumer<AgentTextDelta> outputDeltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
         Objects.requireNonNull(spec, "spec 不能为空");
         Objects.requireNonNull(credential, "credential 不能为空");
         Objects.requireNonNull(toolGateway, "toolGateway 不能为空");
         Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
+        Objects.requireNonNull(progressConsumer, "progressConsumer 不能为空");
 
         List<AgentScopeToolBridge> bridges = new ArrayList<>();
         // 同一次运行的所有工具必须共享门控，才能在任一工具超时、取消或基础设施失败后统一熔断。
@@ -242,11 +277,59 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             lifecycle.onCreated(agent, context);
 
             AtomicReference<Msg> finalMessage = new AtomicReference<>();
+            Map<String, ThinkingProgress> thinkingByBlock = new HashMap<>();
+            Set<String> authorizedToolNames = spec.request().tools().stream()
+                    .map(tool -> tool.name())
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
             // 局部别名使事件回调只捕获已经完成构造的 Agent 和上下文，避免引用后续会变化的生命周期变量。
             ReActAgent activeAgent = agent;
             RuntimeContext activeContext = context;
             agent.streamEvents(new UserMessage(spec.userInput()), context)
                     .doOnNext(event -> {
+                        if (event instanceof ThinkingBlockStartEvent thinkingStart) {
+                            String key = thinkingKey(thinkingStart.getReplyId(), thinkingStart.getBlockId());
+                            thinkingByBlock.put(key, new ThinkingProgress(
+                                    thinkingStart.getReplyId(), thinkingStart.getBlockId(), new StringBuilder()));
+                            progressConsumer.accept(AgentProgressEvent.thinkingStarted(
+                                    thinkingStart.getReplyId(), thinkingStart.getBlockId()));
+                        }
+                        if (event instanceof ThinkingBlockDeltaEvent thinkingDelta
+                                && thinkingDelta.getDelta() != null) {
+                            String key = thinkingKey(thinkingDelta.getReplyId(), thinkingDelta.getBlockId());
+                            ThinkingProgress progress = thinkingByBlock.computeIfAbsent(key, ignored -> {
+                                progressConsumer.accept(AgentProgressEvent.thinkingStarted(
+                                        thinkingDelta.getReplyId(), thinkingDelta.getBlockId()));
+                                return new ThinkingProgress(
+                                        thinkingDelta.getReplyId(), thinkingDelta.getBlockId(), new StringBuilder());
+                            });
+                            progress.content().append(thinkingDelta.getDelta());
+                        }
+                        if (event instanceof ThinkingBlockEndEvent thinkingEnd) {
+                            ThinkingProgress progress = thinkingByBlock.remove(
+                                    thinkingKey(thinkingEnd.getReplyId(), thinkingEnd.getBlockId()));
+                            if (progress != null && !progress.content().isEmpty()) {
+                                progressConsumer.accept(AgentProgressEvent.thinkingCompleted(
+                                        progress.replyId(), progress.blockId(), progress.content().toString()));
+                            }
+                        }
+                        if (event instanceof ToolCallStartEvent toolCallStart
+                                && authorizedToolNames.contains(toolCallStart.getToolCallName())) {
+                            progressConsumer.accept(AgentProgressEvent.toolCallStarted(
+                                    toolCallStart.getReplyId(), toolCallStart.getToolCallId(),
+                                    toolCallStart.getToolCallName()));
+                        }
+                        if (event instanceof ToolCallEndEvent toolCallEnd
+                                && authorizedToolNames.contains(toolCallEnd.getToolCallName())) {
+                            progressConsumer.accept(AgentProgressEvent.toolCallCompleted(
+                                    toolCallEnd.getReplyId(), toolCallEnd.getToolCallId(),
+                                    toolCallEnd.getToolCallName()));
+                        }
+                        if (event instanceof ToolResultStartEvent toolResultStart
+                                && authorizedToolNames.contains(toolResultStart.getToolCallName())) {
+                            progressConsumer.accept(AgentProgressEvent.toolExecutionStarted(
+                                    toolResultStart.getReplyId(), toolResultStart.getToolCallId(),
+                                    toolResultStart.getToolCallName()));
+                        }
                         // AgentScope 2.0.0 会把工具结果拆成文本增量和终态事件；先聚合文本，才能在终态时
                         // 精确识别由框架生成、但未经过桥接器完成的工具超时包装。
                         if (event instanceof ToolResultTextDeltaEvent toolResultEvent) {
@@ -259,6 +342,12 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                             runGate.observeToolResultEnd(
                                     toolResultEndEvent.getToolCallId(),
                                     bridgeCompleted);
+                            if (authorizedToolNames.contains(toolResultEndEvent.getToolCallName())
+                                    && toolResultEndEvent.getState() != null) {
+                                progressConsumer.accept(AgentProgressEvent.toolExecutionCompleted(
+                                        toolResultEndEvent.getReplyId(), toolResultEndEvent.getToolCallId(),
+                                        toolResultEndEvent.getToolCallName(), mapToolResultState(toolResultEndEvent.getState())));
+                            }
                         }
                         if (event instanceof TextBlockDeltaEvent textDeltaEvent
                                 && textDeltaEvent.getDelta() != null
@@ -473,9 +562,10 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
     }
 
     /**
-     * 将 AgentScope 最终消息映射为只含安全文本和受治理工具摘要的 Core 快照。
+     * 将 AgentScope 最终消息映射为只含思考、回答文本和受治理工具摘要的 Core 快照。
      *
-     * <p>框架消息中的工具输入和结果不能直接越过适配边界。这里按最终消息中的工具块顺序关联本次运行
+     * <p>思考与回答文本仍会在服务端运行边界统一脱敏。框架消息中的工具输入和结果不能直接越过适配边界；
+     * 这里按最终消息中的工具块顺序关联本次运行
      * 已保存的 {@link ToolCallRecord}，仅使用其中的输入、输出或错误摘要；没有可验证记录的工具块会被
      * 丢弃，而不是回退到 AgentScope 原始内容。</p>
      */
@@ -490,7 +580,10 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         Map<String, ToolCallRecord> recordsByCallId = new HashMap<>();
         List<MessageContentBlock> blocks = new ArrayList<>();
         for (ContentBlock block : result.getContent()) {
-            if (block instanceof TextBlock textBlock && textBlock.getText() != null
+            if (block instanceof ThinkingBlock thinkingBlock && thinkingBlock.getThinking() != null
+                    && !thinkingBlock.getThinking().isBlank()) {
+                blocks.add(MessageContentBlock.thinking(thinkingBlock.getThinking()));
+            } else if (block instanceof TextBlock textBlock && textBlock.getText() != null
                     && !textBlock.getText().isBlank()) {
                 blocks.add(MessageContentBlock.text(textBlock.getText()));
             } else if (block instanceof ToolUseBlock toolUse) {
@@ -516,6 +609,25 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             blocks.add(MessageContentBlock.text(result.getTextContent()));
         }
         return blocks.isEmpty() ? null : new AgentMessageSnapshot(result.getId(), result.getName(), blocks);
+    }
+
+    private static String thinkingKey(String replyId, String blockId) {
+        return String.valueOf(replyId) + '\u0000' + String.valueOf(blockId);
+    }
+
+    /** 将 AgentScope 工具结果终态映射为稳定领域枚举，避免 Web 层依赖框架类型。 */
+    private static RunStatus mapToolResultState(io.agentscope.core.message.ToolResultState state) {
+        return switch (state) {
+            case SUCCESS -> RunStatus.SUCCEEDED;
+            case ERROR -> RunStatus.FAILED;
+            case INTERRUPTED -> RunStatus.FAILED;
+            case DENIED -> RunStatus.DENIED;
+            case RUNNING -> RunStatus.RUNNING;
+        };
+    }
+
+    /** 保存尚未完成的思考块，内容只在块结束后离开适配器。 */
+    private record ThinkingProgress(String replyId, String blockId, StringBuilder content) {
     }
 
     /**

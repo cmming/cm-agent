@@ -3,6 +3,7 @@ package com.cmagent.agentscope;
 import com.cmagent.core.runtime.ModelCredential;
 import com.cmagent.core.runtime.ToolInvocationGateway;
 import com.cmagent.core.domain.AgentTextDelta;
+import com.cmagent.core.domain.AgentProgressEvent;
 
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -62,5 +63,26 @@ interface AgentScopeExecutor {
         Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
         return execute(spec, credential, toolGateway, delta -> outputDeltaConsumer.accept(
                 new AgentTextDelta(spec.runId().toString(), "text", delta)));
+    }
+
+    /**
+     * 执行并转发受控思考与工具生命周期；旧执行器默认忽略进度消费者。
+     *
+     * @param spec 已校验领域请求的适配器视图
+     * @param credential 当前租户与模型配置对应的受控凭据
+     * @param toolGateway 每次实际工具调用都必须经过的治理入口
+     * @param outputDeltaConsumer 接收最终回答文本增量
+     * @param progressConsumer 接收不包含原始工具载荷的执行进度
+     * @return 已归并模型输出与工具记录的终态结果
+     */
+    default AgentScopeExecutionResult executeStructured(
+            AgentScopeRunSpec spec,
+            ModelCredential credential,
+            ToolInvocationGateway toolGateway,
+            Consumer<AgentTextDelta> outputDeltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
+        Objects.requireNonNull(progressConsumer, "progressConsumer 不能为空");
+        return executeStructured(spec, credential, toolGateway, outputDeltaConsumer);
     }
 }

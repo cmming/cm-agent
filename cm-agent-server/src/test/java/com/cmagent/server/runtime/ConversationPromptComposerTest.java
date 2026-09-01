@@ -44,6 +44,22 @@ class ConversationPromptComposerTest {
                 .contains("[USER] [上一轮执行失败]", "失败问题");
     }
 
+    @Test
+    void 思考块不会重新注入下一轮提示词() {
+        UUID tenantId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        ConversationMessage assistant = new ConversationMessage(
+                UUID.randomUUID(), tenantId, conversationId, 1, MessageRole.ASSISTANT, "agent",
+                List.of(
+                        MessageContentBlock.thinking("隐藏分析内容"),
+                        MessageContentBlock.text("可见最终回答")),
+                UUID.randomUUID(), Instant.now());
+
+        assertThat(composer.compose(List.of(assistant), "继续"))
+                .contains("可见最终回答")
+                .doesNotContain("隐藏分析内容", "工具结果 null");
+    }
+
     private static ConversationMessage message(
             UUID tenantId, UUID conversationId, long sequence, MessageRole role, String text) {
         return new ConversationMessage(

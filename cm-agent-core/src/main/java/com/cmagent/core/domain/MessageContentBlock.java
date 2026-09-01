@@ -9,7 +9,7 @@ import java.util.Objects;
  * 各类型允许的字段组合见紧凑构造器校验。</p>
  *
  * @param type 内容块类型，决定哪些字段必须或禁止出现
- * @param text 文本内容；TEXT 块必须非空，工具块中存放脱敏后的摘要
+ * @param text 文本内容；TEXT 与 THINKING 块必须非空，工具块中存放脱敏后的摘要
  * @param toolCallId 工具调用标识；TOOL_USE 与 TOOL_RESULT 块必填
  * @param toolName 工具名称；仅 TOOL_USE 块携带
  * @param status 调用终态；仅 TOOL_RESULT 块携带
@@ -27,9 +27,9 @@ public record MessageContentBlock(
         toolCallId = blankToNull(toolCallId);
         toolName = blankToNull(toolName);
         switch (type) {
-            case TEXT -> {
+            case TEXT, THINKING -> {
                 if (text.isBlank() || toolCallId != null || toolName != null || status != null) {
-                    throw new IllegalArgumentException("TEXT 内容块只能包含非空文本");
+                    throw new IllegalArgumentException(type + " 内容块只能包含非空文本");
                 }
             }
             case TOOL_USE -> {
@@ -53,6 +53,19 @@ public record MessageContentBlock(
      */
     public static MessageContentBlock text(String text) {
         return new MessageContentBlock(MessageContentType.TEXT, text, null, null, null);
+    }
+
+    /**
+     * 创建模型实际返回的思考块。
+     *
+     * <p>调用方必须先完成脱敏；该内容仅用于可观察性展示，不会被
+     * {@link ConversationMessage#textContent()} 投影为下一轮提示词历史。</p>
+     *
+     * @param thinking 已脱敏的非空思考文本
+     * @return 不携带工具关联信息的思考块
+     */
+    public static MessageContentBlock thinking(String thinking) {
+        return new MessageContentBlock(MessageContentType.THINKING, thinking, null, null, null);
     }
 
     /**

@@ -2,6 +2,7 @@ package com.cmagent.server.runtime;
 
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentRuntimeResult;
+import com.cmagent.core.domain.AgentProgressEvent;
 import com.cmagent.core.domain.AgentTextDelta;
 import com.cmagent.core.domain.Conversation;
 import com.cmagent.core.domain.ConversationMessage;
@@ -157,6 +158,34 @@ public class ConversationService {
             Consumer<ConversationRunStarted> startedConsumer,
             Consumer<AgentTextDelta> deltaConsumer
     ) {
+        return send(principal, agentId, conversationId, input, startedConsumer, deltaConsumer, ignored -> {
+        });
+    }
+
+    /**
+     * 追加用户消息、执行本轮 Runtime，并向当前观察者发送受控思考与工具进度。
+     *
+     * <p>进度事件不会参与消息序号分配；只有 Runtime 最终安全快照会随 assistant 消息持久化，
+     * 因此浏览器断开或临时事件丢失不会改变会话历史的权威结果。</p>
+     *
+     * @param principal 已认证主体，提供唯一可信 tenant
+     * @param agentId 当前会话绑定的 Agent 标识
+     * @param conversationId 目标会话标识
+     * @param input 原始用户输入
+     * @param startedConsumer USER 消息与 Run 提交后的通知消费者
+     * @param deltaConsumer Runtime 输出已脱敏文本增量的消费者
+     * @param progressConsumer Runtime 输出已脱敏执行进度的消费者
+     * @return 用户消息、运行结果与可选 assistant 消息的关联结果
+     */
+    public ConversationRunResult send(
+            PrincipalRef principal,
+            UUID agentId,
+            UUID conversationId,
+            String input,
+            Consumer<ConversationRunStarted> startedConsumer,
+            Consumer<AgentTextDelta> deltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
         Conversation conversation = get(principal, agentId, conversationId);
         String safeInput = redactor.redact(input);
         UUID runId = UUID.randomUUID();
@@ -192,7 +221,7 @@ public class ConversationService {
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         String runtimeInput = promptComposer.compose(history, safeInput, failedRunIds);
         AgentRuntimeResult runtimeResult = executionService.runPrepared(
-                principal, agentId, started.run(), runtimeInput, conversationId, deltaConsumer);
+                principal, agentId, started.run(), runtimeInput, conversationId, deltaConsumer, progressConsumer);
 
         ConversationMessage assistantMessage = null;
         if (runtimeResult.assistantMessage() != null) {

@@ -42,6 +42,12 @@ test("会话聊天页复用既有会话流和多页面导航", () => {
     assert.match(app, /function sendChatMessage\(\)/);
     assert.match(app, /messages\/stream/);
     assert.match(app, /function renderChatMessages\(messages\)/);
+    assert.match(app, /function createChatExecutionTrace\(blocks\)/);
+    assert.match(app, /function renderChatProgress\(streamMessage, progress\)/);
+    assert.match(app, /event\.type === "progress"/);
+    assert.match(app, /\["THINKING", "TOOL_USE", "TOOL_RESULT"\]/);
+    assert.match(app, /原始参数不在实时轨迹中展示/);
+    assert.doesNotMatch(app, /progress\.input|progress\.output|progress\.arguments/);
     assert.match(overview, /href="\/console\/v2\/chat\.html"/);
 });
 

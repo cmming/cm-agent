@@ -4,6 +4,7 @@ import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
 import com.cmagent.core.domain.AgentMessageSnapshot;
 import com.cmagent.core.domain.AgentRuntimeResult;
+import com.cmagent.core.domain.AgentProgressEvent;
 import com.cmagent.core.domain.AgentTextDelta;
 import com.cmagent.core.domain.MessageContentBlock;
 
@@ -82,6 +83,26 @@ public interface AgentRuntime {
         AgentMessageSnapshot message = blocks.isEmpty() ? null : new AgentMessageSnapshot(
                 request.runId().toString(), request.agent().name(), blocks);
         return new AgentRuntimeResult(result, message);
+    }
+
+    /**
+     * 执行并同时通知受控的思考与工具生命周期进度。
+     *
+     * <p>默认实现回退到既有结构化执行入口，使不支持进度事件的 Runtime 保持源码兼容；
+     * 实现方不得通过进度事件传递原始工具参数、原始工具结果或凭据。</p>
+     *
+     * @param request 当前运行请求
+     * @param deltaConsumer 接收最终回答文本增量
+     * @param progressConsumer 接收受控执行进度
+     * @return 运行终态和可选 assistant 消息快照
+     */
+    default AgentRuntimeResult runStructured(
+            AgentRunRequest request,
+            Consumer<AgentTextDelta> deltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
+        Objects.requireNonNull(progressConsumer, "progressConsumer 不能为空");
+        return runStructured(request, deltaConsumer);
     }
 
     /** 非流式结构化执行的便利入口。 */

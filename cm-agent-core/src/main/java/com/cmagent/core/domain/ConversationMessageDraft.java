@@ -48,7 +48,8 @@ public record ConversationMessageDraft(
     /**
      * 校验角色与内容块类型的组合。
      *
-     * <p>ASSISTANT 保留文本与工具摘要的混合表达；{@code TOOL} 仅为后续显式工具结果消息保留，当前 Web API
+     * <p>ASSISTANT 保留文本、思考与工具摘要的混合表达；{@code THINKING} 不允许进入 USER、SYSTEM 或
+     * TOOL 消息，避免客户端伪造模型推理。{@code TOOL} 仅为后续显式工具结果消息保留，当前 Web API
      * 不允许客户端直接构造该角色。</p>
      */
     static void validateBlocks(MessageRole role, List<MessageContentBlock> blocks) {

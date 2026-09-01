@@ -86,6 +86,10 @@ public class ConversationPromptComposer {
             value.append(" [上一轮执行失败]");
         }
         for (MessageContentBlock block : message.contentBlocks()) {
+            if (block.type() == MessageContentType.THINKING) {
+                // 思考块只用于可观察性回看，不能作为下一轮提示词历史重新注入模型，避免隐藏推理固化为指令。
+                continue;
+            }
             value.append('\n');
             if (block.type() == MessageContentType.TEXT) {
                 value.append(block.text());

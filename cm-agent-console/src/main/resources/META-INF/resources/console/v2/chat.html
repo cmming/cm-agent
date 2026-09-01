@@ -24,7 +24,7 @@
         <div class="sidebar-links"><span>版本与系统</span><a href="/console/v1/">旧版 v1 <b aria-hidden="true">↗</b></a><a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI <b aria-hidden="true">↗</b></a><a href="/actuator/health" target="_blank" rel="noreferrer">健康检查 <b aria-hidden="true">↗</b></a></div>
     </aside>
     <main class="workspace">
-        <header class="workspace-header"><div><p class="eyebrow">连续对话</p><h1>会话聊天</h1><p class="muted">选择 Agent，在同一会话中保留上下文并实时查看回答。</p></div><div class="user-actions"><span class="online-dot" aria-label="已登录"></span><span id="currentUser">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
+        <header class="workspace-header"><div><p class="eyebrow">连续对话</p><h1>会话聊天</h1><p class="muted">选择 Agent，在同一会话中保留上下文并实时查看回答、思考和工具调用。</p></div><div class="user-actions"><span class="online-dot" aria-label="已登录"></span><span id="currentUser">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
         <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
         <section id="chatPage" class="page-view chat-page" aria-label="会话聊天工作区">
             <aside class="panel chat-session-panel" aria-label="会话列表">
@@ -42,7 +42,7 @@
                 <form id="chatForm" class="chat-composer">
                     <label class="sr-only" for="chatInput">输入消息</label>
                     <textarea id="chatInput" rows="3" required placeholder="输入消息，按发送继续当前会话…"></textarea>
-                    <div class="chat-composer-footer"><span>回答将实时显示；写入请求不会自动重试。</span><button id="chatSendBtn" class="button primary" type="submit">发送</button></div>
+                    <div class="chat-composer-footer"><span>执行过程仅展示模型提供的思考与脱敏工具摘要；写入请求不会自动重试。</span><button id="chatSendBtn" class="button primary" type="submit">发送</button></div>
                     <p id="chatFormStatus" class="form-status" aria-live="polite"></p>
                 </form>
             </section>
@@ -50,6 +50,6 @@
     </main>
 </div>
 <script src="/assets/console-core.js?v=2.0.9"></script>
-<script src="/assets/app.js?v=2.0.12"></script>
+<script src="/assets/app.js?v=2.0.13"></script>
 </body>
 </html>

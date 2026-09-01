@@ -2,6 +2,7 @@ package com.cmagent.server.runtime;
 
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
+import com.cmagent.core.domain.AgentProgressEvent;
 import com.cmagent.core.domain.AgentRunRequest;
 import com.cmagent.core.domain.AgentRunResult;
 import com.cmagent.core.domain.AgentRuntimeResult;
@@ -131,7 +132,8 @@ public class RunExecutionService {
         ResolvedRunContext context = resolve(principal, agentId);
         RunRecord runningRun = persistenceService.start(principal, context.agent().id(), input);
         return executePrepared(principal, context, runningRun, input, null,
-                delta -> outputDeltaConsumer.accept(delta.delta())).run();
+                delta -> outputDeltaConsumer.accept(delta.delta()), ignored -> {
+                }).run();
     }
 
     /**
@@ -157,12 +159,42 @@ public class RunExecutionService {
             UUID conversationId,
             Consumer<AgentTextDelta> deltaConsumer
     ) {
+        return runPrepared(principal, agentId, runningRun, runtimeInput, conversationId, deltaConsumer, ignored -> {
+        });
+    }
+
+    /**
+     * 使用已经落库的 RUNNING 记录执行会话运行，并转发受控执行进度。
+     *
+     * <p>思考内容在此可信运行边界完成整体脱敏；工具进度只包含适配器筛选后的名称、调用标识和终态，
+     * 不允许调用方通过该通道取得原始工具参数或结果。</p>
+     *
+     * @param principal 提供可信租户和主体的已认证上下文
+     * @param agentId 预创建 Run 必须归属的 Agent 标识
+     * @param runningRun 已持久化且仍处于 {@code RUNNING} 的运行记录
+     * @param runtimeInput 已拼接历史边界并脱敏后的本轮输入
+     * @param conversationId 可选的会话标识
+     * @param deltaConsumer 接收已脱敏的最终回答文本增量
+     * @param progressConsumer 接收已脱敏的执行进度
+     * @return 带持久化 Run 终态和可选 assistant 安全快照的结果
+     */
+    public AgentRuntimeResult runPrepared(
+            PrincipalRef principal,
+            UUID agentId,
+            RunRecord runningRun,
+            String runtimeInput,
+            UUID conversationId,
+            Consumer<AgentTextDelta> deltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
         Objects.requireNonNull(runningRun, "runningRun 不能为空");
+        Objects.requireNonNull(progressConsumer, "progressConsumer 不能为空");
         if (!principal.tenantId().equals(runningRun.tenantId()) || !agentId.equals(runningRun.agentId())) {
             throw new IllegalArgumentException("预创建 Run 不属于当前租户或 Agent");
         }
         return executePrepared(
-                principal, resolve(principal, agentId), runningRun, runtimeInput, conversationId, deltaConsumer);
+                principal, resolve(principal, agentId), runningRun, runtimeInput, conversationId,
+                deltaConsumer, progressConsumer);
     }
 
     private AgentRuntimeResult executePrepared(
@@ -171,9 +203,11 @@ public class RunExecutionService {
             RunRecord runningRun,
             String runtimeInput,
             UUID conversationId,
-            Consumer<AgentTextDelta> deltaConsumer
+            Consumer<AgentTextDelta> deltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
     ) {
         Objects.requireNonNull(deltaConsumer, "deltaConsumer 不能为空");
+        Objects.requireNonNull(progressConsumer, "progressConsumer 不能为空");
 
         AgentRuntimeResult runtimeEnvelope;
         try {
@@ -182,7 +216,8 @@ public class RunExecutionService {
                     runningRun.id(), principal.tenantId(), context.agent(), context.modelConfig(), principal,
                     runtimeInput, context.authorizedTools(), conversationId
             ), delta -> deltaConsumer.accept(new AgentTextDelta(
-                    delta.replyId(), delta.blockId(), redactor.redact(delta.delta()))));
+                    delta.replyId(), delta.blockId(), redactor.redact(delta.delta()))),
+                    progress -> progressConsumer.accept(redactProgress(progress)));
         } catch (AuditPersistenceException auditFailure) {
             // 审计持久化失败时尽力关闭运行记录，并保留原异常交给上层严格处理。
             bestEffortFailureClosure(principal, runningRun);
@@ -256,6 +291,19 @@ public class RunExecutionService {
                         block.toolName(), block.status()))
                 .toList();
         return new AgentMessageSnapshot(message.replyId(), message.senderName(), blocks);
+    }
+
+    /**
+     * 对 Runtime 进度执行纵深脱敏，并保持工具事件的无载荷约束。
+     *
+     * @param progress 适配器产生的受控进度
+     * @return 可发送给 SSE 客户端的进度
+     */
+    private AgentProgressEvent redactProgress(AgentProgressEvent progress) {
+        Objects.requireNonNull(progress, "progress 不能为空");
+        return new AgentProgressEvent(
+                progress.type(), progress.replyId(), progress.blockId(), progress.toolCallId(),
+                progress.toolName(), redactor.redact(progress.content()), progress.status());
     }
 
     private record ResolvedRunContext(
