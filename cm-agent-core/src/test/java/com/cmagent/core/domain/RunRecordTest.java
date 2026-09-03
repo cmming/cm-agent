@@ -161,6 +161,31 @@ class RunRecordTest {
     }
 
     @Test
+    void 运行可以暂停等待审批并从等待状态完成() {
+        RunRecord running = RunRecord.create(ID, TENANT_ID, AGENT_ID, "principal", "input", STARTED_AT);
+
+        RunRecord waiting = running.waitForApproval();
+        RunRecord completed = waiting.complete(
+                RunStatus.SUCCEEDED, "output", "", STARTED_AT.plusSeconds(3));
+
+        assertThat(waiting.status()).isEqualTo(RunStatus.WAITING_APPROVAL);
+        assertThat(waiting.finishedAt()).isNull();
+        assertThat(waiting.status().isActive()).isTrue();
+        assertThat(completed.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(completed.finishedAt()).isEqualTo(STARTED_AT.plusSeconds(3));
+    }
+
+    @Test
+    void 只有运行中状态可以首次进入等待审批() {
+        RunRecord waiting = RunRecord.create(ID, TENANT_ID, AGENT_ID, "principal", "input", STARTED_AT)
+                .waitForApproval();
+
+        assertThatThrownBy(waiting::waitForApproval)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("只能暂停 RUNNING 状态的运行");
+    }
+
+    @Test
     /**
      * 验证或支持 {@code completeRejectsFinishedAtBeforeStartedAt} 所描述的测试场景。
      */

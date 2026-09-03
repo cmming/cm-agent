@@ -6,13 +6,20 @@ import com.cmagent.core.domain.AgentMessageSnapshot;
 import com.cmagent.core.domain.AgentProgressEvent;
 import com.cmagent.core.domain.AgentTextDelta;
 import com.cmagent.core.domain.MessageContentBlock;
+import com.cmagent.core.domain.RuntimePendingApproval;
+import com.cmagent.core.domain.ToolApprovalDecision;
+import com.cmagent.core.domain.ToolDefinition;
+import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.runtime.ModelCredential;
+import com.cmagent.core.runtime.RuntimeApprovalDecisions;
 import com.cmagent.core.runtime.ToolInvocationGateway;
 import com.cmagent.core.runtime.ToolInvocationInfrastructureException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
@@ -20,16 +27,26 @@ import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ModelHttpException;
 import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
+import io.agentscope.core.permission.PermissionRule;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +55,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.LinkedHashSet;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -58,6 +81,7 @@ import java.util.function.Consumer;
  * {@code AgentRuntime} 的同步契约；调用线程会一直等待到事件流结束或失败。</p>
  */
 final class AgentScopeReActExecutor implements AgentScopeExecutor {
+    private static final int APPROVAL_INPUT_SUMMARY_MAX_CHARACTERS = 12_000;
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeReActExecutor.class);
 
@@ -65,13 +89,14 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
     // Provider 响应或内部 URL 透传到 Run 结果与控制台。
     private static final String TIMEOUT_MESSAGE = "Agent 运行超时";
     private static final String FAILURE_MESSAGE = "Agent 运行失败";
-    // AgentScope 2.0.0 的模型超时以 ModelException + 固定英文前缀消息表达，没有专用异常类型可判，
+    // 当前实际解析的 AgentScope 2.0.2 中，模型超时以 ModelException + 固定英文前缀消息表达，没有专用异常类型可判，
     // 只能通过消息前缀识别；框架升级该文案时必须同步调整此常量与 isTimeoutFailure。
     private static final String MODEL_TIMEOUT_PREFIX = "Model request timeout after ";
 
     private final AgentScopeRuntimeOptions options;
     private final AgentScopeModelFactory modelFactory;
     private final AgentLifecycle lifecycle;
+    private final AgentStateStore stateStore;
 
     /**
      * 使用真实 AgentScope 中断和关闭操作创建执行器。
@@ -80,7 +105,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
      * @param modelFactory 根据领域配置和受控凭据创建模型的工厂
      */
     AgentScopeReActExecutor(AgentScopeRuntimeOptions options, AgentScopeModelFactory modelFactory) {
-        this(options, modelFactory, new AgentLifecycle() {
+        this(options, modelFactory, new InMemoryAgentStateStore(), new AgentLifecycle() {
             @Override
             public void interrupt(ReActAgent agent, RuntimeContext context) {
                 agent.interrupt(context);
@@ -108,8 +133,37 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             AgentScopeModelFactory modelFactory,
             AgentLifecycle lifecycle
     ) {
+        this(options, modelFactory, new InMemoryAgentStateStore(), lifecycle);
+    }
+
+    /** 使用外部持久化 State Store 创建可跨实例恢复的执行器。 */
+    AgentScopeReActExecutor(
+            AgentScopeRuntimeOptions options,
+            AgentScopeModelFactory modelFactory,
+            AgentStateStore stateStore
+    ) {
+        this(options, modelFactory, stateStore, new AgentLifecycle() {
+            @Override
+            public void interrupt(ReActAgent agent, RuntimeContext context) {
+                agent.interrupt(context);
+            }
+
+            @Override
+            public void close(ReActAgent agent) {
+                agent.close();
+            }
+        });
+    }
+
+    AgentScopeReActExecutor(
+            AgentScopeRuntimeOptions options,
+            AgentScopeModelFactory modelFactory,
+            AgentStateStore stateStore,
+            AgentLifecycle lifecycle
+    ) {
         this.options = Objects.requireNonNull(options, "options 不能为空");
         this.modelFactory = Objects.requireNonNull(modelFactory, "modelFactory 不能为空");
+        this.stateStore = Objects.requireNonNull(stateStore, "stateStore 不能为空");
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle 不能为空");
     }
 
@@ -181,6 +235,30 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         });
     }
 
+    @Override
+    public AgentScopeExecutionResult executeStructured(
+            AgentScopeRunSpec spec,
+            ModelCredential credential,
+            ToolInvocationGateway toolGateway,
+            Consumer<AgentTextDelta> outputDeltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
+        return executeInternal(spec, credential, toolGateway, null, outputDeltaConsumer, progressConsumer);
+    }
+
+    @Override
+    public AgentScopeExecutionResult resumeStructured(
+            AgentScopeRunSpec spec,
+            ModelCredential credential,
+            ToolInvocationGateway toolGateway,
+            RuntimeApprovalDecisions decisions,
+            Consumer<AgentTextDelta> outputDeltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
+        return executeInternal(spec, credential, toolGateway,
+                Objects.requireNonNull(decisions, "decisions 不能为空"), outputDeltaConsumer, progressConsumer);
+    }
+
     /**
      * 执行会话运行，并转发完整思考块和无原始载荷的工具生命周期事件。
      *
@@ -194,11 +272,11 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
      * @param progressConsumer 接收受控执行进度
      * @return 已归并模型输出、工具记录与最终消息快照的终态结果
      */
-    @Override
-    public AgentScopeExecutionResult executeStructured(
+    private AgentScopeExecutionResult executeInternal(
             AgentScopeRunSpec spec,
             ModelCredential credential,
             ToolInvocationGateway toolGateway,
+            RuntimeApprovalDecisions decisions,
             Consumer<AgentTextDelta> outputDeltaConsumer,
             Consumer<AgentProgressEvent> progressConsumer
     ) {
@@ -214,6 +292,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         ReActAgent agent = null;
         RuntimeContext context = null;
         RuntimeException primaryFailure = null;
+        boolean preserveCheckpoint = false;
         // 运行级日志使用 runId 作为主关联键，便于与上层 Run 日志及错误 errorId 对照排查。
         log.info("AgentScope 运行开始。runId={}, tenantId={}, agentId={}, principalId={}, toolCount={}, modelTimeout={}, toolTimeout={}",
                 spec.runId(), spec.tenantId(), spec.agentId(), spec.principalId(),
@@ -241,14 +320,11 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                     .timeout(options.toolTimeout())
                     .maxAttempts(1)
                     .build();
-            // userId 加租户前缀防止不同租户的同名主体在 AgentScope 上下文中碰撞。会话运行使用
-            // conversationId 作为 sessionId，单轮兼容入口才回退到一次性 runId；但持久化历史仍是
-            // 连续对话的权威来源，不能依赖进程内 Agent 状态恢复上下文。
+            // userId 加租户前缀防止同名主体跨租户碰撞；sessionId 固定使用 runId，使长期会话历史与
+            // 本次可恢复运行检查点完全分离，审批恢复不会把上一轮 AgentState 带入新 Run。
             context = RuntimeContext.builder()
                     .userId(spec.tenantId() + ":" + spec.principalId())
-                    .sessionId(spec.request().conversationId() == null
-                            ? spec.runId().toString()
-                            : spec.request().conversationId().toString())
+                    .sessionId(spec.runId().toString())
                     .put("tenantId", spec.tenantId().toString())
                     .put("agentId", spec.agentId().toString())
                     .put("principalId", spec.principalId())
@@ -262,6 +338,10 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                     .maxIters(spec.request().agent().maxIterations())
                     .modelExecutionConfig(modelConfig)
                     .toolExecutionConfig(toolConfig)
+                    .permissionContext(permissionContext(
+                            spec.request().tools(), options.permissionEnabled(), spec.request().conversationId() != null))
+                    .stateStore(stateStore)
+                    .defaultSessionId(spec.runId().toString())
                     // 只注册经过 CM Agent 治理的业务工具，避免元工具或任务列表形成旁路能力。
                     .enableMetaTool(false)
                     .enableTaskList(false)
@@ -269,12 +349,19 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             lifecycle.onCreated(agent, context);
 
             AtomicReference<Msg> finalMessage = new AtomicReference<>();
+            AtomicReference<RequireUserConfirmEvent> approvalEvent = new AtomicReference<>();
             Map<String, ThinkingProgress> thinkingByBlock = new HashMap<>();
             // 局部别名使事件回调只捕获已经完成构造的 Agent 和上下文，避免引用后续会变化的生命周期变量。
             ReActAgent activeAgent = agent;
             RuntimeContext activeContext = context;
-            agent.streamEvents(new UserMessage(spec.userInput()), context)
+            Msg inputMessage = decisions == null
+                    ? new UserMessage(spec.userInput())
+                    : resumeMessage(agent, context, decisions, objectMapper, spec.request().tools());
+            agent.streamEvents(inputMessage, context)
                     .doOnNext(event -> {
+                        if (event instanceof RequireUserConfirmEvent required) {
+                            approvalEvent.set(required);
+                        }
                         if (event instanceof ThinkingBlockStartEvent thinkingStart) {
                             String key = thinkingKey(thinkingStart.getReplyId(), thinkingStart.getBlockId());
                             thinkingByBlock.put(key, new ThinkingProgress(
@@ -301,7 +388,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                                         progress.replyId(), progress.blockId(), progress.content().toString()));
                             }
                         }
-                        // AgentScope 2.0.0 会把工具结果拆成文本增量和终态事件；先聚合文本，才能在终态时
+                        // 当前实际解析的 AgentScope 2.0.2 会把工具结果拆成文本增量和终态事件；先聚合文本，才能在终态时
                         // 精确识别由框架生成、但未经过桥接器完成的工具超时包装。
                         if (event instanceof ToolResultTextDeltaEvent toolResultEvent) {
                             runGate.observeToolResultText(
@@ -334,8 +421,11 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             List<ToolCallRecord> records = collectRecords(bridges);
             // 正常路径在结果映射前记录一次事件流收尾，便于把工具记录数量与最终消息存在性关联排查。
             log.info("AgentScope 事件流正常结束。runId={}, toolCallCount={}, hasFinalMessage={}",
-                    spec.runId(), records.size(), finalMessage.get() != null);
-            return completedResult(finalMessage.get(), records);
+                    spec.runId(), records.size(), finalMessage.get()  != null);
+            AgentScopeExecutionResult completed = completedResult(
+                    finalMessage.get(), records, approvalEvent.get(), spec.request().tools(), objectMapper);
+            preserveCheckpoint = completed.status() == RunStatus.WAITING_APPROVAL;
+            return completed;
         } catch (RuntimeException exception) {
             primaryFailure = exception;
             // 基础设施失败可能已被响应式工具链消费，必须先从共享门控恢复并优先向上抛出，
@@ -386,18 +476,35 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             }
             throw exception;
         } finally {
+            RuntimeException finalizationFailure = null;
+            if (context != null && !preserveCheckpoint) {
+                // 只有 ASK 暂停需要保留状态；成功、拒绝、超时、Provider 故障和未知异常均删除状态槽，
+                // 防止终态 Run 留下可被误恢复的 ToolUseBlock。
+                try {
+                    stateStore.delete(context.getUserId(), context.getSessionId());
+                } catch (RuntimeException cleanupFailure) {
+                    finalizationFailure = cleanupFailure;
+                }
+            }
             if (agent != null) {
                 try {
-                    // AgentScope 2.0.0 的 ReActAgent.close() 当前为空实现；仍统一调用生命周期契约，
+                    // 当前实际解析的 AgentScope 2.0.2 中 ReActAgent.close() 为空实现；仍统一调用生命周期契约，
                     // 避免后续框架版本或替代实现开始持有资源后出现成功路径与失败路径的清理差异。
                     lifecycle.close(agent);
                 } catch (RuntimeException closeFailure) {
-                    // 无主异常时关闭失败必须直接可见；已有主异常时则保留为 suppressed，避免覆盖原始根因。
-                    if (primaryFailure == null || primaryFailure == closeFailure) {
-                        throw closeFailure;
+                    if (finalizationFailure == null) {
+                        finalizationFailure = closeFailure;
+                    } else if (finalizationFailure != closeFailure) {
+                        finalizationFailure.addSuppressed(closeFailure);
                     }
-                    primaryFailure.addSuppressed(closeFailure);
                 }
+            }
+            if (finalizationFailure != null) {
+                // 先完成状态与 Agent 两项清理；已有主异常时把清理失败附加其后，避免覆盖原始根因。
+                if (primaryFailure == null || primaryFailure == finalizationFailure) {
+                    throw finalizationFailure;
+                }
+                primaryFailure.addSuppressed(finalizationFailure);
             }
         }
     }
@@ -513,6 +620,16 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
      * @return 映射后的适配器终态结果
      */
     static AgentScopeExecutionResult completedResult(Msg result, List<ToolCallRecord> records) {
+        return completedResult(result, records, null, List.of(), new ObjectMapper());
+    }
+
+    static AgentScopeExecutionResult completedResult(
+            Msg result,
+            List<ToolCallRecord> records,
+            RequireUserConfirmEvent approvalEvent,
+            List<ToolDefinition> tools,
+            ObjectMapper objectMapper
+    ) {
         ToolCallRecord denied = findDenied(records);
         if (denied != null) {
             String output = result == null ? "" : result.getTextContent();
@@ -522,8 +639,147 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         if (result == null) {
             return AgentScopeExecutionResult.failed(FAILURE_MESSAGE, records);
         }
+        if (result.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
+            List<ToolUseBlock> asking = approvalEvent == null
+                    ? result.getContentBlocks(ToolUseBlock.class).stream()
+                    .filter(block -> block.getState() == ToolCallState.ASKING)
+                    .toList()
+                    : approvalEvent.getToolCalls();
+            return AgentScopeExecutionResult.waiting(
+                    pendingApproval(result.getId(), asking, tools, objectMapper), records);
+        }
         return AgentScopeExecutionResult.succeeded(
                 result.getTextContent(), records, safeMessage(result, records));
+    }
+
+    /** 构造在线 DEFAULT 或无会话 DONT_ASK 模式下的第一版固定规则。 */
+    static PermissionContextState permissionContext(List<ToolDefinition> tools, boolean permissionEnabled) {
+        return permissionContext(tools, permissionEnabled, true);
+    }
+
+    /**
+     * 构造 LOW/MEDIUM 明确允许、HIGH 每次询问的固定规则。
+     *
+     * <p>只有持久化会话具备审批查询和恢复入口，因此无会话 Run 必须使用 DONT_ASK，
+     * 让 AgentScope 将 ASK 安全转换为拒绝，不能留下没有审批请求的 WAITING_APPROVAL。</p>
+     */
+    static PermissionContextState permissionContext(
+            List<ToolDefinition> tools, boolean permissionEnabled, boolean interactive) {
+        var builder = PermissionContextState.builder()
+                .mode(interactive ? PermissionMode.DEFAULT : PermissionMode.DONT_ASK);
+        for (ToolDefinition tool : tools) {
+            PermissionBehavior behavior = permissionEnabled && tool.riskLevel() == ToolRiskLevel.HIGH
+                    ? PermissionBehavior.ASK
+                    : PermissionBehavior.ALLOW;
+            PermissionRule rule = new PermissionRule(tool.name(), null, behavior, "cm-agent-policy-v1");
+            if (behavior == PermissionBehavior.ASK) {
+                builder.addAskRule(tool.name(), rule);
+            } else {
+                builder.addAllowRule(tool.name(), rule);
+            }
+        }
+        return builder.build();
+    }
+
+    /** 从持久化 AgentState 中提取 ASKING 块并构造完整 ConfirmResult 消息。 */
+    private static Msg resumeMessage(
+            ReActAgent agent,
+            RuntimeContext context,
+            RuntimeApprovalDecisions decisions,
+            ObjectMapper objectMapper,
+            List<ToolDefinition> authorizedTools
+    ) {
+        List<ToolUseBlock> asking = agent.getAgentState(context).getContext().stream()
+                .flatMap(message -> message.getContentBlocks(ToolUseBlock.class).stream())
+                .filter(block -> block.getState() == ToolCallState.ASKING)
+                .toList();
+        Map<String, RuntimeApprovalDecisions.Item> byCall = new HashMap<>();
+        for (RuntimeApprovalDecisions.Item item : decisions.items()) {
+            if (byCall.put(item.toolCallId(), item) != null) {
+                throw new IllegalArgumentException("审批决定包含重复 toolCallId");
+            }
+        }
+        Set<String> expected = asking.stream().map(ToolUseBlock::getId)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        if (!expected.equals(byCall.keySet())) {
+            throw new IllegalArgumentException("审批决定未完整覆盖当前待确认工具");
+        }
+        for (ToolUseBlock tool : asking) {
+            // 检查点内工具名只用于定位，批准仍绑定原工具 ID；删除后重建同名工具不能继承旧批准。
+            RuntimeApprovalDecisions.Item decision = byCall.get(tool.getId());
+            if (decision.decision() == ToolApprovalDecision.APPROVE
+                    && authorizedTools.stream().noneMatch(candidate -> candidate.name().equals(tool.getName())
+                    && candidate.id().equals(decision.toolId()))) {
+                throw new IllegalStateException("待审批工具已变更或失去授权，不能继续执行");
+            }
+            String actualHash = approvalInputHash(objectMapper, tool.getInput());
+            if (!actualHash.equals(byCall.get(tool.getId()).inputHash())) {
+                throw new IllegalStateException("待审批工具输入已变化，不能继续执行");
+            }
+        }
+        List<ConfirmResult> results = asking.stream()
+                .map(tool -> new ConfirmResult(
+                        byCall.get(tool.getId()).decision() == ToolApprovalDecision.APPROVE, tool))
+                .toList();
+        return Msg.builder().name("user").role(MsgRole.USER)
+                .textContent("工具审批决定已提交")
+                .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, results))
+                .build();
+    }
+
+    /** 将原始 ToolUseBlock 限制为服务端审批所需的安全摘要与绑定哈希。 */
+    private static RuntimePendingApproval pendingApproval(
+            String replyId,
+            List<ToolUseBlock> asking,
+            List<ToolDefinition> tools,
+            ObjectMapper objectMapper
+    ) {
+        Map<String, ToolDefinition> byName = tools.stream().collect(java.util.stream.Collectors.toMap(
+                ToolDefinition::name, java.util.function.Function.identity()));
+        List<RuntimePendingApproval.RuntimePendingToolCall> items = asking.stream().map(block -> {
+            ToolDefinition tool = byName.get(block.getName());
+            if (tool == null) {
+                throw new IllegalStateException("待审批工具不在本次授权快照中");
+            }
+            String input = canonicalJson(objectMapper, block.getInput());
+            return new RuntimePendingApproval.RuntimePendingToolCall(
+                    block.getId(), tool.id(), tool.name(), tool.riskLevel(),
+                    approvalInputSummary(input), approvalInputHash(objectMapper, block.getInput()));
+        }).toList();
+        return new RuntimePendingApproval(replyId, items);
+    }
+
+    private static String canonicalJson(ObjectMapper objectMapper, Map<String, Object> input) {
+        try {
+            return objectMapper.copy()
+                    .configure(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                    .writeValueAsString(input == null ? Map.of() : input);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            throw new IllegalStateException("待审批工具输入无法规范化", exception);
+        }
+    }
+
+    /**
+     * 对规范化工具输入计算审批绑定哈希。
+     *
+     * <p>哈希只用于检测暂停到恢复期间的输入漂移，不用于替代检查点加密或访问控制。</p>
+     */
+    static String approvalInputHash(ObjectMapper objectMapper, Map<String, Object> input) {
+        String value = canonicalJson(objectMapper, input);
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("运行环境不支持 SHA-256", exception);
+        }
+    }
+
+    /** 将前端可见审批摘要限制在固定长度，完整输入只存在于加密检查点。 */
+    static String approvalInputSummary(String input) {
+        if (input.length() <= APPROVAL_INPUT_SUMMARY_MAX_CHARACTERS) {
+            return input;
+        }
+        return input.substring(0, APPROVAL_INPUT_SUMMARY_MAX_CHARACTERS) + "\n…（内容超过展示上限，已截断）";
     }
 
     /**
@@ -598,7 +854,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
     /**
      * 判断异常链是否表示模型或执行流程超时。
      *
-     * <p>除标准 {@link TimeoutException} 外，AgentScope 2.0.0 还可能使用带固定前缀的
+     * <p>除标准 {@link TimeoutException} 外，当前实际解析的 AgentScope 2.0.2 还可能使用带固定前缀的
      * {@link ModelException} 表达模型请求超时，因此需要同时识别两种形式。</p>
      *
      * @param failure 当前捕获的异常
@@ -670,7 +926,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         /**
          * 调用 AgentScope Agent 的关闭生命周期契约。
          *
-         * <p>AgentScope 2.0.0 的 {@link ReActAgent#close()} 当前不执行额外动作；保留该步骤是为了让
+         * <p>当前实际解析的 AgentScope 2.0.2 中 {@link ReActAgent#close()} 不执行额外动作；保留该步骤是为了让
          * 生命周期顺序稳定，并兼容后续框架版本或测试替代实现可能引入的资源释放行为。</p>
          *
          * @param agent 待关闭的 AgentScope Agent

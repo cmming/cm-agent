@@ -19,6 +19,7 @@ import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.core.runtime.AgentRuntime;
+import com.cmagent.core.runtime.RuntimeApprovalDecisions;
 import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.ToolAuthorizationPolicy;
 import com.cmagent.server.audit.AuditPersistenceException;
@@ -132,7 +133,7 @@ public class RunExecutionService {
         Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
         ResolvedRunContext context = resolve(principal, agentId);
         RunRecord runningRun = persistenceService.start(principal, context.agent().id(), input);
-        return executePrepared(principal, context, runningRun, input, null,
+        return executePrepared(principal, context, runningRun, input, null, null,
                 delta -> outputDeltaConsumer.accept(delta.delta()), ignored -> {
                 }).run();
     }
@@ -194,8 +195,38 @@ public class RunExecutionService {
             throw new IllegalArgumentException("预创建 Run 不属于当前租户或 Agent");
         }
         return executePrepared(
-                principal, resolve(principal, agentId), runningRun, runtimeInput, conversationId,
+                principal, resolve(principal, agentId), runningRun, runtimeInput, conversationId, null,
                 deltaConsumer, progressConsumer);
+    }
+
+    /**
+     * 使用原 runId、原发起主体和最新工具授权快照恢复 WAITING_APPROVAL 运行。
+     *
+     * <p>恢复前重新解析 Agent、模型和 ToolGrant；审批只解除 AgentScope ASK，不会跳过
+     * 受治理网关的执行前授权、租户与工具状态复核。</p>
+     */
+    public AgentRuntimeResult resumePrepared(
+            PrincipalRef principal,
+            UUID agentId,
+            RunRecord waitingRun,
+            UUID conversationId,
+            RuntimeApprovalDecisions decisions,
+            Consumer<AgentTextDelta> deltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
+        Objects.requireNonNull(waitingRun, "waitingRun 不能为空");
+        if (waitingRun.status() != com.cmagent.core.domain.RunStatus.WAITING_APPROVAL) {
+            throw new IllegalStateException("只能恢复 WAITING_APPROVAL 运行");
+        }
+        if (!principal.tenantId().equals(waitingRun.tenantId()) || !agentId.equals(waitingRun.agentId())) {
+            throw new IllegalArgumentException("待恢复 Run 不属于当前租户或 Agent");
+        }
+        // 第一版只允许原发起人恢复，不能把审批人或另一个内部调用者的权限借给旧 Run。
+        if (!principal.principalId().equals(waitingRun.principalId())) {
+            throw new IllegalArgumentException("待恢复 Run 不属于当前发起主体");
+        }
+        return executePrepared(principal, resolve(principal, agentId), waitingRun, "", conversationId,
+                Objects.requireNonNull(decisions, "decisions 不能为空"), deltaConsumer, progressConsumer);
     }
 
     private AgentRuntimeResult executePrepared(
@@ -204,6 +235,7 @@ public class RunExecutionService {
             RunRecord runningRun,
             String runtimeInput,
             UUID conversationId,
+            RuntimeApprovalDecisions approvalDecisions,
             Consumer<AgentTextDelta> deltaConsumer,
             Consumer<AgentProgressEvent> progressConsumer
     ) {
@@ -213,12 +245,16 @@ public class RunExecutionService {
         AgentRuntimeResult runtimeEnvelope;
         try {
             // 将完整运行上下文交给 Runtime；Runtime 内部可能继续发起受治理的工具调用。
-            runtimeEnvelope = runtime.runStructured(new AgentRunRequest(
+            AgentRunRequest runtimeRequest = new AgentRunRequest(
                     runningRun.id(), principal.tenantId(), context.agent(), context.modelConfig(), principal,
                     runtimeInput, context.authorizedTools(), conversationId
-            ), delta -> deltaConsumer.accept(new AgentTextDelta(
-                    delta.replyId(), delta.blockId(), redactor.redact(delta.delta()))),
-                    progress -> progressConsumer.accept(redactProgress(progress)));
+            );
+            Consumer<AgentTextDelta> safeDelta = delta -> deltaConsumer.accept(new AgentTextDelta(
+                    delta.replyId(), delta.blockId(), redactor.redact(delta.delta())));
+            Consumer<AgentProgressEvent> safeProgress = progress -> progressConsumer.accept(redactProgress(progress));
+            runtimeEnvelope = approvalDecisions == null
+                    ? runtime.runStructured(runtimeRequest, safeDelta, safeProgress)
+                    : runtime.resumeStructured(runtimeRequest, approvalDecisions, safeDelta, safeProgress);
         } catch (AuditPersistenceException auditFailure) {
             // 审计持久化失败时尽力关闭运行记录，并保留原异常交给上层严格处理。
             bestEffortFailureClosure(principal, runningRun);
@@ -254,6 +290,14 @@ public class RunExecutionService {
 
         // Runtime 成功返回后持久化运行终态与工具调用，再基于持久化记录构造脱敏响应。
         AgentRunResult runtimeResult = runtimeEnvelope.run();
+        if (runtimeResult.status() == com.cmagent.core.domain.RunStatus.WAITING_APPROVAL) {
+            // 每次 ASK 都先保存当前片段已发生的工具事实；重复等待状态由持久化服务保持，不重复迁移。
+            RunRecord waiting = persistenceService.waitForApproval(
+                    principal, runningRun, context.authorizedTools(), runtimeResult.toolCalls());
+            AgentRunResult waitingResult = new AgentRunResult(
+                    waiting.id(), waiting.status(), "", List.of(), waiting.startedAt(), null, "");
+            return new AgentRuntimeResult(waitingResult, null, runtimeEnvelope.pendingApproval());
+        }
         var completedRun = persistenceService.complete(
                 principal, runningRun, runtimeResult, context.authorizedTools()
         );

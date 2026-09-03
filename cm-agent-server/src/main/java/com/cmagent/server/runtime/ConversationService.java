@@ -47,6 +47,7 @@ public class ConversationService {
     private final RunRepository runRepository;
     private final RunPersistenceService runPersistenceService;
     private final RunExecutionService executionService;
+    private final ToolApprovalService approvalService;
     private final ConversationPromptComposer promptComposer;
     private final SensitiveDataRedactor redactor;
     private final TransactionTemplate transactionTemplate;
@@ -60,6 +61,7 @@ public class ConversationService {
      * @param runRepository 查询历史消息关联 Run 的终态
      * @param runPersistenceService 创建并收口运行记录
      * @param executionService 调用受治理 Runtime
+     * @param approvalService 阻止同会话并发消息并保存 Runtime ASK 审批
      * @param promptComposer 构造受限历史上下文
      * @param redactor 在持久化和模型调用前清理文本
      * @param transactionTemplate JDBC 模式的短事务模板；内存模式可为空
@@ -71,6 +73,7 @@ public class ConversationService {
             RunRepository runRepository,
             RunPersistenceService runPersistenceService,
             RunExecutionService executionService,
+            ToolApprovalService approvalService,
             ConversationPromptComposer promptComposer,
             SensitiveDataRedactor redactor,
             @Nullable TransactionTemplate transactionTemplate
@@ -81,6 +84,7 @@ public class ConversationService {
         this.runRepository = runRepository;
         this.runPersistenceService = runPersistenceService;
         this.executionService = executionService;
+        this.approvalService = approvalService;
         this.promptComposer = promptComposer;
         this.redactor = redactor;
         this.transactionTemplate = transactionTemplate;
@@ -187,6 +191,7 @@ public class ConversationService {
             Consumer<AgentProgressEvent> progressConsumer
     ) {
         Conversation conversation = get(principal, agentId, conversationId);
+        approvalService.requireNoPending(principal, agentId, conversationId);
         String safeInput = redactor.redact(input);
         UUID runId = UUID.randomUUID();
         UUID userMessageId = UUID.randomUUID();
@@ -222,6 +227,11 @@ public class ConversationService {
         String runtimeInput = promptComposer.compose(history, safeInput, failedRunIds);
         AgentRuntimeResult runtimeResult = executionService.runPrepared(
                 principal, agentId, started.run(), runtimeInput, conversationId, deltaConsumer, progressConsumer);
+
+        if (runtimeResult.run().status() == RunStatus.WAITING_APPROVAL) {
+            approvalService.create(
+                    principal, agentId, conversationId, runId, runtimeResult.pendingApproval());
+        }
 
         ConversationMessage assistantMessage = null;
         if (runtimeResult.assistantMessage() != null) {

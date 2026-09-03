@@ -7,6 +7,7 @@ import com.cmagent.core.runtime.ModelCredentialProvider;
 import com.cmagent.core.runtime.ToolInvocationGateway;
 import com.cmagent.core.runtime.ToolInvocationResult;
 import com.cmagent.core.repository.ModelConfigRepository;
+import com.cmagent.core.repository.RuntimeCheckpointRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -117,6 +118,11 @@ class AgentScopeRuntimeConfigurationTest {
         @Bean
         ModelConfigRepository modelConfigRepository() {
             return mock(ModelConfigRepository.class);
+        }
+
+        @Bean
+        RuntimeCheckpointRepository runtimeCheckpointRepository() {
+            return mock(RuntimeCheckpointRepository.class);
         }
     }
 

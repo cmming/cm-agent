@@ -1,6 +1,6 @@
 # 部署指南
 
-本文档说明阶段3的构建、AgentScope 2.0.0 真实 Runtime、JDBC/Flyway 部署、运行持久化和 Rocky VM 容器验证方式。生产环境不使用本机 Docker Desktop 作为容器验证环境。
+本文档说明阶段3的构建、AgentScope 2.0.2 真实 Runtime、JDBC/Flyway 部署、运行持久化和 Rocky VM 容器验证方式。生产环境不使用本机 Docker Desktop 作为容器验证环境。
 
 ## 前置条件
 
@@ -84,7 +84,7 @@ cm-agent:
 
 真实 Runtime 必须同时满足 `fake-runtime-enabled=false` 与 `agentscope-enabled=true`。`CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY` 是 Base64 编码的 256 位 AES 主密钥，仅用于加密数据库中的模型 API Key；它必须由部署平台或密钥管理系统注入。模型 API Key 通过受权限保护的模型配置 API 写入数据库密文，不从 YAML 凭据列表读取；也可以用自定义 `ModelCredentialProvider` Bean 直接对接 secret manager。
 
-`model_configs` 保存 Provider、`baseUrl`、`modelName` 等模型元数据和 API Key 密文，不保存明文 API Key，也不会通过 API 回显。AgentScope Java 2.0.0 当前支持 OpenAI Compatible 与 DashScope Provider；升级 AgentScope 或 Provider 扩展时必须重新核对依赖树和运行合同。
+`model_configs` 保存 Provider、`baseUrl`、`modelName` 等模型元数据和 API Key 密文，不保存明文 API Key，也不会通过 API 回显。AgentScope Java 2.0.2 当前支持 OpenAI Compatible 与 DashScope Provider；升级 AgentScope 或 Provider 扩展时必须重新核对依赖树和运行合同。
 
 ## 动态 HTTP 工具与 MCP 部署
 
@@ -140,6 +140,8 @@ JWT 验证密钥、数据库凭据和模型 API Key 不得写入 Git、镜像层
 
 V8 为当前 18 张业务表和 135 个字段补齐中文数据库原生注释。公共 V1–V7 继续位于迁移根目录；V8 因 PostgreSQL 使用 `COMMENT ON`、MySQL 使用 `ALTER TABLE ... COMMENT/MODIFY COLUMN`，分别位于 `db/migration/postgresql` 与 `db/migration/mysql`，由 `CmAgentFlyway` 根据 JDBC 元数据只选择当前方言。MySQL 脚本完整重述字段类型和空值约束，升级前仍应备份并在预发布环境核对表结构；迁移测试会同时验证索引、外键、空值约束及所有表/字段注释。
 
+V11 新增 `tool_approval_requests`、`tool_approval_items` 和 `runtime_checkpoints`。审批表保存状态、乐观锁版本、脱敏摘要和输入哈希；检查点表只保存 AES/GCM 密文并按 tenant、可信 userId、runId session 和状态键唯一。部署启用 `cm-agent.agentscope.permission-enabled=true` 前必须保证所有实例使用同一受控加密主密钥，并先完成 V11 迁移；回滚到不认识 `WAITING_APPROVAL` 的旧版本前必须先收口所有待审批 Run。
+
 升级前先备份数据库并记录当前迁移版本；迁移失败时停止发布、保留错误上下文并按回滚预案处理，不修改历史 V1 文件“修复”问题。
 
 V4 为 `tool_definitions` 增加同一租户内的名称唯一索引，并新增 HTTP 工具配置和 MCP 发布配置表。应用 V4 前必须先执行以下只读检查并处理结果中的重复记录，否则唯一索引会使迁移失败：
@@ -181,4 +183,4 @@ GET http://<service-host>:8080/actuator/health
 
 启动失败、Flyway 失败、JWT 验证密钥缺失、模型凭据缺失、数据库连接失败和审计写入失败都应阻止流量切入。`local`/`test` 才允许显式启用 fake runtime；生产 profile 固定为 `fake-runtime-enabled=false`、`agentscope-enabled=true`。
 
-阶段3只提供同步单轮运行，不应把部署就绪解释为已经支持多轮会话持久化、流式 REST、HITL 或手动取消。工具每次调用都会重新授权，endpoint 元数据不会被自动执行。对具有外部副作用的工具，部署前必须确认下游支持幂等键；模型或工具 timeout、中断以及 AgentScope 2.0.0 的通用取消信号均不能证明外部副作用已回滚。
+阶段3已提供多轮会话、流式 REST 和在线 HIGH 工具逐调用审批，但不提供无人值守暂停、独立审批中心、长期预授权规则或手动取消。工具恢复执行时会重新授权，endpoint 元数据不会被自动执行。对具有外部副作用的工具，部署前必须确认下游支持幂等键；模型或工具 timeout、中断以及 AgentScope 2.0.2 的通用取消信号均不能证明外部副作用已回滚。

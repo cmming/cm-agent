@@ -7,14 +7,21 @@ import java.util.Objects;
  * 单次 AgentScope 运行所使用的模型与工具执行策略。
  *
  * <p>{@code modelTimeout} 与 {@code modelMaxAttempts} 会传入模型 {@code ExecutionConfig}；
- * {@code toolTimeout} 会传入工具 {@code ExecutionConfig}，并用于识别 AgentScope 2.0.0 产生的工具超时事件。
+ * {@code toolTimeout} 会传入工具 {@code ExecutionConfig}，并用于识别 AgentScope 2.0.2 产生的工具超时事件。
  * 工具调用固定只尝试一次，避免对可能具有外部副作用的工具进行隐式重试。</p>
  *
  * @param modelTimeout 单次模型调用的超时时间
  * @param toolTimeout 单次工具调用的超时时间
  * @param modelMaxAttempts 传递给 AgentScope 的模型调用最大尝试次数
+ * @param permissionEnabled 是否启用 HIGH 工具 ASK；关闭时全部已授权工具仍显式 ALLOW
  */
-public record AgentScopeRuntimeOptions(Duration modelTimeout, Duration toolTimeout, int modelMaxAttempts) {
+public record AgentScopeRuntimeOptions(
+        Duration modelTimeout, Duration toolTimeout, int modelMaxAttempts, boolean permissionEnabled) {
+
+    /** 兼容既有配置的构造器，默认不改变 HIGH 工具运行行为。 */
+    public AgentScopeRuntimeOptions(Duration modelTimeout, Duration toolTimeout, int modelMaxAttempts) {
+        this(modelTimeout, toolTimeout, modelMaxAttempts, false);
+    }
 
     /**
      * 在创建配置时校验边界，避免非法参数延迟到远程模型或工具执行阶段才失败。

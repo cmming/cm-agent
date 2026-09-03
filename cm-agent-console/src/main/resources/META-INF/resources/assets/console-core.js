@@ -35,6 +35,105 @@
             : `请求失败(${status})：服务器未返回可读错误信息`;
     }
 
+    // 客户端只提交明细标识和决定；工具参数、主体与检查点始终由服务端持有。
+    function buildApprovalDecisionPayload(approval, decisions) {
+        if (approval?.status !== "PENDING" || !approval.canDecide) {
+            throw new Error("当前审批不可提交，请刷新后查看权限和状态。");
+        }
+        const expected = new Set((approval.items || []).map((item) => item.itemId));
+        if (!expected.size || !Array.isArray(decisions) || decisions.length !== expected.size) {
+            throw new Error("请为每个工具调用选择允许或拒绝。");
+        }
+        const seen = new Set();
+        const normalized = decisions.map((item) => {
+            if (!item || !expected.has(item.itemId) || seen.has(item.itemId)
+                    || !["APPROVE", "DENY"].includes(item.decision)) {
+                throw new Error("审批明细不完整或重复，请重新选择。");
+            }
+            seen.add(item.itemId);
+            return {itemId: item.itemId, decision: item.decision};
+        });
+        return {expectedVersion: approval.version, decisions: normalized};
+    }
+
+    // 汇总仅用于交互反馈；正式提交仍由 buildApprovalDecisionPayload 与服务端再次完整校验。
+    function summarizeApprovalChoices(items, decisions) {
+        const expected = new Set((items || []).map((item) => item.itemId));
+        const selected = new Map();
+        let invalid = expected.size !== (items || []).length;
+        for (const item of decisions || []) {
+            if (!item || !expected.has(item.itemId) || selected.has(item.itemId)
+                    || !["APPROVE", "DENY"].includes(item.decision)) {
+                invalid = true;
+                continue;
+            }
+            selected.set(item.itemId, item.decision);
+        }
+        const approved = [...selected.values()].filter((decision) => decision === "APPROVE").length;
+        const denied = selected.size - approved;
+        const total = expected.size;
+        const ready = !invalid && total > 0 && selected.size === total;
+        const submitLabel = !ready ? "请先完成全部选择" : denied === total
+            ? `拒绝${total === 1 ? "本次调用" : `全部 ${total} 项`}并结束`
+            : denied === 0 ? `允许${total === 1 ? "本次调用" : ` ${total} 项调用`}并继续`
+                : `提交决定：允许 ${approved} 项，拒绝 ${denied} 项`;
+        return {total, selected: selected.size, approved, denied, ready, submitLabel};
+    }
+
+    // 运行恢复和审批决定是不同状态：批准不代表工具已成功，未知结果不能引导用户再次提交。
+    function approvalUiState(approval, phase = "") {
+        const phases = {
+            SUBMITTING: ["正在提交决定", "尚未收到服务端确认，请勿重复提交。"],
+            RESUMING: ["决定已接受", "正在处理原运行；批准不代表工具已执行成功。"],
+            CHECKING: ["正在核对状态", "正在查询服务端最新记录，不会重复提交决定。"],
+            UNKNOWN: ["结果尚未确认", "请先刷新审批状态。确认结果之前不能再次提交。"]
+        };
+        if (phases[phase]) return {label: phases[phase][0], message: phases[phase][1], editable: false, terminal: false};
+        const statuses = {
+            APPROVED: ["已允许本次调用", "审批决定已保存，实际执行结果请查看会话回答或运行记录。"],
+            PARTIALLY_APPROVED: ["已提交混合决定", "仅允许选中的调用；实际执行结果请查看会话回答或运行记录。"],
+            DENIED: ["已拒绝全部调用", "本次请求的工具调用不会获准执行。"],
+            EXPIRED: ["审批已过期", "本次请求不能再审批，如仍需执行，请重新发起会话请求。"],
+            CANCELLED: ["审批已取消", "本次请求不能再审批。"]
+        };
+        if (statuses[approval?.status]) return {label: statuses[approval.status][0], message: statuses[approval.status][1], editable: false, terminal: true};
+        if (approval?.status === "PENDING" && approval.canDecide) {
+            return {label: "等待你的确认", message: "先核对参数，再选择每项决定；点击提交后才会生效，仅授权本次具体调用。", editable: true, terminal: false};
+        }
+        return {label: "当前不可审批", message: "仅发起本次运行且具备审批权限的账号可在有效期内处理。请刷新状态确认。", editable: false, terminal: false};
+    }
+
+    // 草稿只在当前页面内存保留；版本或调用快照变化立即失效，不能把旧批准选择套到新调用。
+    function createApprovalDraftStore() {
+        const drafts = new Map();
+        const signature = (approval) => JSON.stringify([approval.agentId, approval.conversationId, approval.version,
+            (approval.items || []).map((item) => [item.itemId, item.toolId, item.toolCallId, item.inputSummary])]);
+        return {
+            read(approval) {
+                const draft = drafts.get(approval.approvalId);
+                if (!approvalUiState(approval).editable || draft?.signature !== signature(approval)) {
+                    drafts.delete(approval.approvalId);
+                    return [];
+                }
+                return draft.decisions.map((item) => ({...item}));
+            },
+            write(approval, decisions) {
+                const ids = new Set((approval.items || []).map((item) => item.itemId));
+                const seen = new Set();
+                if (!approvalUiState(approval).editable) return;
+                const safe = (decisions || []).filter((item) => {
+                    if (!item || !ids.has(item.itemId) || seen.has(item.itemId)
+                            || !["APPROVE", "DENY"].includes(item.decision)) return false;
+                    seen.add(item.itemId);
+                    return true;
+                }).map(({itemId, decision}) => ({itemId, decision}));
+                drafts.set(approval.approvalId, {signature: signature(approval), decisions: safe});
+            },
+            remove(approvalId) { drafts.delete(approvalId); },
+            clear() { drafts.clear(); }
+        };
+    }
+
     function appendCursorPage(currentItems, page) {
         const existingItems = Array.isArray(currentItems) ? currentItems : [];
         const incomingItems = Array.isArray(page?.items) ? page.items : [];
@@ -491,6 +590,33 @@
         }
     }
 
+    // 历史与待办分离；即使服务端错误标记 canDecide，历史视图也不能生成新的决定操作。
+    function mergeApprovalHistory(current, incoming, agentId, conversationId) {
+        const terminal = new Set(["APPROVED", "PARTIALLY_APPROVED", "DENIED", "EXPIRED", "CANCELLED"]);
+        const merged = new Map();
+        for (const item of [...(current || []), ...(incoming || [])]) {
+            if (!item?.approvalId || !item.runId || item.agentId !== agentId || item.conversationId !== conversationId
+                    || !terminal.has(item.status) || !Number.isFinite(Date.parse(item.decidedAt))) continue;
+            const previous = merged.get(item.approvalId);
+            if (previous && previous.version > item.version) continue;
+            merged.set(item.approvalId, {...item, canDecide: false});
+        }
+        return [...merged.values()].sort((left, right) => Date.parse(right.decidedAt) - Date.parse(left.decidedAt)
+            || String(right.approvalId).localeCompare(String(left.approvalId)));
+    }
+
+    // 页面按 Run 关联，一次 Run 中的多轮 ASK 按决定时间正序展示，不覆盖之前已处理的请求。
+    function groupApprovalHistory(history) {
+        const runs = new Map();
+        for (const approval of history || []) {
+            if (!runs.has(approval.runId)) runs.set(approval.runId, []);
+            runs.get(approval.runId).push(approval);
+        }
+        return [...runs].map(([runId, items]) => ({runId, items: items.slice().sort((left, right) =>
+            Date.parse(left.decidedAt) - Date.parse(right.decidedAt)
+            || String(left.approvalId).localeCompare(String(right.approvalId)))}));
+    }
+
     function parseSseFrame(frame) {
         if (!frame || frame.startsWith(":")) return null;
         let type = "message";
@@ -530,6 +656,7 @@
         const values = {
             SUCCEEDED: {label: "成功", tone: "success"},
             RUNNING: {label: "运行中", tone: "warning"},
+            WAITING_APPROVAL: {label: "等待审批", tone: "warning"},
             FAILED: {label: "失败", tone: "error"},
             DENIED: {label: "已拒绝", tone: "error"}
         };
@@ -538,9 +665,15 @@
 
     return {
         formatError,
+        buildApprovalDecisionPayload,
+        summarizeApprovalChoices,
+        approvalUiState,
+        createApprovalDraftStore,
         createApiClient,
         parseSseFrame,
         appendCursorPage,
+        mergeApprovalHistory,
+        groupApprovalHistory,
         buildCursorPath,
         parseJsonField,
         canDebugTool,

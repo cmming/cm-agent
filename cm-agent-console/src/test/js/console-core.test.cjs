@@ -37,6 +37,7 @@ test("会话聊天页复用既有会话流和多页面导航", () => {
     assert.match(chat, /data-page="chatPage"/);
     assert.match(chat, /id="chatConversationList"/);
     assert.match(chat, /id="chatMessageList"/);
+    assert.match(chat, /id="chatApprovalRegion"/);
     assert.match(chat, /id="chatForm"/);
     assert.match(app, /chatPage: "\/console\/v2\/chat\.html"/);
     assert.match(app, /function sendChatMessage\(\)/);
@@ -45,6 +46,15 @@ test("会话聊天页复用既有会话流和多页面导航", () => {
     assert.match(app, /function createChatExecutionTrace\(blocks\)/);
     assert.match(app, /function renderChatProgress\(streamMessage, progress\)/);
     assert.match(app, /event\.type === "progress"/);
+    assert.match(app, /event\.type === "approval-required"/);
+    assert.match(app, /function renderChatApprovals\(\)/);
+    assert.match(app, /function submitApprovalDecision\(approval, form\)/);
+    assert.match(app, /pendingApprovals: new Map\(\)/);
+    assert.match(app, /function updateApprovalSubmitAvailability\(approval, decisions, submit, summary, submitting\)/);
+    assert.match(app, /event\.type === "approval-decision"/);
+    assert.match(app, /className: "chat-approval-decisions"/);
+    assert.match(app, /text: item\.inputSummary/);
+    assert.doesNotMatch(app, /innerHTML\s*=\s*item\.inputSummary/);
     assert.match(app, /\["THINKING", "TOOL_USE", "TOOL_RESULT"\]/);
     assert.match(app, /调用入参（已脱敏）/);
     assert.match(app, /返回值（已脱敏）/);
@@ -153,6 +163,7 @@ test("日期和运行状态转换为可读中文", () => {
     assert.equal(core.formatDateTime(""), "—");
     assert.deepEqual(core.statusMeta("SUCCEEDED"), {label: "成功", tone: "success"});
     assert.deepEqual(core.statusMeta("RUNNING"), {label: "运行中", tone: "warning"});
+    assert.deepEqual(core.statusMeta("WAITING_APPROVAL"), {label: "等待审批", tone: "warning"});
     assert.deepEqual(core.statusMeta("FAILED"), {label: "失败", tone: "error"});
 });
 
@@ -601,3 +612,522 @@ function response(status, body) {
         text: async () => JSON.stringify(body)
     };
 }
+
+test("审批提交覆盖单项、多项和混合决定且丢弃不可信附加字段", () => {
+    const view = {status: "PENDING", canDecide: true, version: 2, items: [{itemId: "a"}, {itemId: "b"}]};
+    const payload = core.buildApprovalDecisionPayload(view, [
+        {itemId: "a", decision: "APPROVE", tenant: "不可信租户", input: "不得发送"},
+        {itemId: "b", decision: "DENY"}
+    ]);
+    assert.deepEqual(payload, {expectedVersion: 2, decisions: [
+        {itemId: "a", decision: "APPROVE"}, {itemId: "b", decision: "DENY"}
+    ]});
+    assert.deepEqual(core.buildApprovalDecisionPayload({...view, items: [{itemId: "a"}]}, [
+        {itemId: "a", decision: "APPROVE"}
+    ]).decisions, [{itemId: "a", decision: "APPROVE"}]);
+    assert.equal(core.buildApprovalDecisionPayload(view, view.items.map((item) => ({
+        itemId: item.itemId, decision: "APPROVE"
+    }))).decisions.length, 2);
+});
+
+test("审批缺项、重复、外来明细和非法决定必须在发送前拒绝", () => {
+    const view = {status: "PENDING", canDecide: true, version: 0, items: [{itemId: "a"}, {itemId: "b"}]};
+    assert.throws(() => core.buildApprovalDecisionPayload(view, [{itemId: "a", decision: "APPROVE"}]), /每个工具/);
+    for (const invalid of [
+        [{itemId: "a", decision: "APPROVE"}, {itemId: "a", decision: "DENY"}],
+        [{itemId: "a", decision: "APPROVE"}, {itemId: "other", decision: "DENY"}],
+        [{itemId: "a", decision: "APPROVE"}, {itemId: "b", decision: "ALLOW_ALWAYS"}]
+    ]) assert.throws(() => core.buildApprovalDecisionPayload(view, invalid), /明细/);
+});
+
+test("只读及过期或已处理审批不可再次提交", () => {
+    const view = {status: "PENDING", canDecide: false, version: 0, items: [{itemId: "a"}]};
+    for (const change of [{}, {canDecide: true, status: "EXPIRED"}, {canDecide: true, status: "APPROVED"}]) {
+        assert.throws(() => core.buildApprovalDecisionPayload({...view, ...change}, [
+            {itemId: "a", decision: "APPROVE"}
+        ]), /不可提交/);
+    }
+});
+
+test("审批和恢复SSE支持跨分片中文与连续事件且按顺序交付", async () => {
+    const events = [];
+    const frames = [
+        ["approval-required", {approvalId: "a", status: "PENDING"}],
+        ["approval-decision", {approvalId: "a", status: "APPROVED", version: 1}],
+        ["progress", {content: "执行中"}], ["delta", {delta: "完成"}], ["completed", {run: {status: "SUCCEEDED"}}]
+    ];
+    const bytes = new TextEncoder().encode(frames.map(([type, data]) =>
+        `event: ${type}\r\ndata: ${JSON.stringify(data)}\r\n\r\n`).join(""));
+    const api = core.createApiClient({getToken: () => "", onUnauthorized: () => {},
+        fetchImpl: async () => ({ok: true, body: new ReadableStream({start(controller) {
+            for (let index = 0; index < bytes.length; index += 2) controller.enqueue(bytes.slice(index, index + 2));
+            controller.close();
+        }})})});
+    await api.stream("/api/approvals/a/decision/stream", {method: "POST"}, (event) => events.push(event));
+    assert.deepEqual(events, frames.map(([type, data]) => ({type, data})));
+});
+
+test("审批冲突与过期保留HTTP状态及错误编号供权威查询", async () => {
+    for (const [status, code, message] of [[409, "TOOL_APPROVAL_CONFLICT", "审批已处理"], [410, "TOOL_APPROVAL_EXPIRED", "审批已过期"]]) {
+        const api = core.createApiClient({getToken: () => "", onUnauthorized: () => {},
+            fetchImpl: async () => response(status, {code, message, errorId: "approval-error"})});
+        await assert.rejects(() => api.stream("/api/approval", {method: "POST"}, () => {}), (error) => {
+            assert.equal(error.status, status);
+            assert.match(error.message, /approval-error/);
+            assert.ok(error.message.includes(code));
+            return true;
+        });
+    }
+});
+
+test("会话审批查询拒绝旧响应且网络中断后必须读取权威详情", () => {
+    const gate = core.createLoadRevisionGate();
+    const firstConversation = gate.issue();
+    const secondConversation = gate.issue();
+    assert.equal(gate.isCurrent(firstConversation), false);
+    assert.equal(gate.isCurrent(secondConversation), true);
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"), "utf8");
+    assert.match(app, /chatLoadRevision\.isCurrent\(revision\)/);
+    assert.match(app, /if \(state\.approvalSubmissions\.has\(approval\.approvalId\)\) return/);
+    assert.match(app, /refreshApprovalState\(approval, isCurrent\)/);
+    assert.match(app, /state\.chatLoading = true/);
+    assert.match(app, /决定已经被服务端接受，请勿重复提交/);
+    assert.match(app, /canDecide: false/);
+});
+
+test("审批选择汇总不预选且按钮明确区分允许与拒绝的结果", () => {
+    const items = [{itemId: "a"}, {itemId: "b"}];
+    assert.deepEqual(core.summarizeApprovalChoices(items, []), {
+        total: 2, selected: 0, approved: 0, denied: 0, ready: false, submitLabel: "请先完成全部选择"
+    });
+    assert.equal(core.summarizeApprovalChoices(items, [{itemId: "a", decision: "APPROVE"}]).ready, false);
+    const mixed = core.summarizeApprovalChoices(items, [{itemId: "a", decision: "APPROVE"}, {itemId: "b", decision: "DENY"}]);
+    assert.equal(mixed.ready, true);
+    assert.equal(mixed.submitLabel, "提交决定：允许 1 项，拒绝 1 项");
+    assert.equal(core.summarizeApprovalChoices([items[0]], [{itemId: "a", decision: "APPROVE"}]).submitLabel, "允许本次调用并继续");
+    assert.equal(core.summarizeApprovalChoices([items[0]], [{itemId: "a", decision: "DENY"}]).submitLabel, "拒绝本次调用并结束");
+    assert.equal(core.summarizeApprovalChoices(items, items.map(({itemId}) => ({itemId, decision: "DENY"}))).submitLabel, "拒绝全部 2 项并结束");
+});
+
+test("选择汇总拒绝空明细重复明细外来明细与非法决定", () => {
+    assert.equal(core.summarizeApprovalChoices([], []).ready, false);
+    assert.equal(core.summarizeApprovalChoices([{itemId: "a"}, {itemId: "a"}], [{itemId: "a", decision: "APPROVE"}]).ready, false);
+    for (const decisions of [
+        [{itemId: "a", decision: "APPROVE"}, {itemId: "a", decision: "DENY"}],
+        [{itemId: "a", decision: "APPROVE"}, {itemId: "foreign", decision: "DENY"}],
+        [{itemId: "a", decision: "ALLOW_ALWAYS"}], [null]
+    ]) assert.equal(core.summarizeApprovalChoices([{itemId: "a"}], decisions).ready, false);
+});
+
+test("提交恢复查询与未知结果都不可重新决定且不冒充运行成功", () => {
+    const pending = {status: "PENDING", canDecide: true};
+    assert.equal(core.approvalUiState(pending).editable, true);
+    for (const phase of ["SUBMITTING", "RESUMING", "CHECKING", "UNKNOWN"]) {
+        assert.equal(core.approvalUiState(pending, phase).editable, false);
+    }
+    assert.equal(core.approvalUiState(pending, "SUBMITTING").label, "正在提交决定");
+    assert.equal(core.approvalUiState({...pending, status: "APPROVED"}, "RESUMING").label, "决定已接受");
+    assert.match(core.approvalUiState({...pending, status: "APPROVED"}).message, /实际执行结果/);
+    assert.match(core.approvalUiState(pending, "UNKNOWN").message, /不能再次提交/);
+});
+
+test("只读提示不把过期或他人发起误断言为账号缺少权限", () => {
+    const readonly = core.approvalUiState({status: "PENDING", canDecide: false});
+    assert.equal(readonly.editable, false);
+    assert.match(readonly.message, /发起本次运行/);
+    assert.match(readonly.message, /有效期/);
+    assert.doesNotMatch(readonly.message, /当前账号没有审批权限/);
+    for (const status of ["APPROVED", "PARTIALLY_APPROVED", "DENIED", "EXPIRED", "CANCELLED"]) {
+        assert.equal(core.approvalUiState({status, canDecide: true}).editable, false);
+        assert.equal(core.approvalUiState({status}).terminal, true);
+    }
+});
+
+function approvalDraftFixture() {
+    return {approvalId: "request", agentId: "agent", conversationId: "conversation", version: 1,
+        status: "PENDING", canDecide: true, items: [{itemId: "item", toolId: "tool", toolCallId: "call", inputSummary: "测试参数"}]};
+}
+
+test("审批草稿只保存明确选择且读写防御性复制", () => {
+    const store = core.createApprovalDraftStore();
+    const approval = approvalDraftFixture();
+    assert.deepEqual(store.read(approval), []);
+    const submitted = [{itemId: "item", decision: "APPROVE", input: "不得缓存"}];
+    store.write(approval, submitted);
+    submitted[0].decision = "DENY";
+    assert.deepEqual(store.read(approval), [{itemId: "item", decision: "APPROVE"}]);
+    store.read(approval)[0].decision = "DENY";
+    assert.equal(store.read(approval)[0].decision, "APPROVE");
+    store.remove(approval.approvalId);
+    assert.deepEqual(store.read(approval), []);
+});
+
+test("审批草稿在版本调用参数所属会话或权限变化时失效", () => {
+    const original = approvalDraftFixture();
+    const variants = [
+        {...original, version: 2}, {...original, agentId: "another"}, {...original, conversationId: "another"},
+        {...original, canDecide: false}, {...original, status: "APPROVED"},
+        ...["itemId", "toolId", "toolCallId", "inputSummary"].map((field) => ({...original, items: [{...original.items[0], [field]: "changed"}]}))
+    ];
+    for (const variant of variants) {
+        const store = core.createApprovalDraftStore();
+        store.write(original, [{itemId: "item", decision: "APPROVE"}]);
+        assert.deepEqual(store.read(variant), []);
+        assert.deepEqual(store.read(original), []);
+    }
+});
+
+test("审批草稿不会记住永久允许且退出清理后不再回填", () => {
+    const store = core.createApprovalDraftStore();
+    const approval = approvalDraftFixture();
+    store.write(approval, [{itemId: "item", decision: "ALLOW_ALWAYS"}, {itemId: "foreign", decision: "APPROVE"}]);
+    assert.deepEqual(store.read(approval), []);
+    store.write(approval, [{itemId: "item", decision: "DENY"}]);
+    store.clear();
+    assert.deepEqual(store.read(approval), []);
+});
+
+test("人工确认界面明确批量选择非提交并保留纯文本与焦点合同", () => {
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"), "utf8");
+    assert.match(app, /if \(items\.length > 1\)/);
+    assert.match(app, /全部选为允许/);
+    assert.match(app, /批量按钮仅更改选择，不会提交/);
+    assert.match(app, /调用参数（已脱敏，仅供核对，不可编辑）/);
+    assert.match(app, /text: item\.inputSummary/);
+    assert.match(app, /details\.open = !ui\.terminal/);
+    assert.match(app, /status\.tabIndex = -1/);
+    assert.match(app, /"alert" : "status"/);
+    assert.match(app, /approvalDrafts\.clear\(\)/);
+    assert.doesNotMatch(app, /\.innerHTML|localStorage|sessionStorage/);
+});
+
+test("状态刷新入口只查询且未知结果保持关闭", () => {
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"), "utf8");
+    const start = app.indexOf("async function refreshApprovalFromCard(");
+    const end = app.indexOf("async function refreshApprovalState(", start);
+    const refresh = app.slice(start, end);
+    assert.match(refresh, /refreshApprovalState\(approval, isCurrent\)/);
+    assert.match(refresh, /state\.chatLoading = true/);
+    assert.match(refresh, /phase: "UNKNOWN"/);
+    assert.match(refresh, /sessionEpoch\.isCurrent\(session\)/);
+    assert.doesNotMatch(refresh, /method: "POST"|api\.stream|submitApprovalDecision\(/);
+    assert.match(app, /if \(!state\.pendingApprovals\.has\(approval\.approvalId\)\) setStatus\(\$\("chatFormStatus"\), error\.message, "error"\)/);
+});
+
+// 在隔离上下文中执行真实审批编排函数，只替换网络和 DOM 边界；不需要启动服务或调用真实工具。
+function approvalFlowHarness({stream, refresh} = {}) {
+    const vm = require("node:vm");
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"), "utf8");
+    const begin = app.indexOf("async function submitApprovalDecision(");
+    const end = app.indexOf("async function refreshApprovalState(", begin);
+    assert.ok(begin > 0 && end > begin);
+    const approval = approvalDraftFixture();
+    const state = {selectedAgentId: approval.agentId, selectedConversationId: approval.conversationId,
+        pendingApprovals: new Map([[approval.approvalId, approval]]), approvalSubmissions: new Set(),
+        approvalFeedback: new Map(), approvalHistory: [], chatLoading: false};
+    const requests = [];
+    const phases = [];
+    let queries = 0;
+    let session = 0;
+    const context = {
+        state, core, approvalDrafts: core.createApprovalDraftStore(),
+        sessionEpoch: {capture: () => session, isCurrent: (value) => session === value},
+        collectApprovalChoices: () => [{itemId: "item", decision: "APPROVE"}],
+        renderChatApprovals: () => phases.push(state.approvalFeedback.get(approval.approvalId)?.phase),
+        $: () => ({focus() {}}), setStatus() {}, renderMarkdown() {}, renderChatProgress() {},
+        appendChatStreamingMessage: () => ({article: {remove() {}}, output: {}}),
+        loadConversations: async () => {},
+        refreshApprovalState: async () => {
+            queries += 1;
+            if (refresh) return refresh(state, approval);
+            state.pendingApprovals.set(approval.approvalId, {...approval, status: "APPROVED", canDecide: false});
+            state.chatLoading = false;
+        },
+        streamEventError: (data) => new Error(`${data.message} ${data.code} ${data.errorId}`),
+        api: {stream: async (url, options, emit) => {
+            requests.push({url, options});
+            if (stream) return stream(emit);
+            emit({type: "approval-decision", data: {status: "APPROVED", version: 2}});
+            emit({type: "completed", data: {}});
+        }}
+    };
+    vm.runInNewContext(`${app.slice(begin, end)}; globalThis.actions = {submitApprovalDecision, refreshApprovalFromCard};`, context);
+    return {approval, state, requests, phases, actions: context.actions,
+        queryCount: () => queries, changeSession: () => { session += 1; }};
+}
+
+test("真实审批编排在提交和接受后切换阶段并保持原协议载荷", async () => {
+    const flow = approvalFlowHarness();
+    await flow.actions.submitApprovalDecision(flow.approval, {});
+    assert.equal(flow.requests.length, 1);
+    assert.deepEqual(JSON.parse(flow.requests[0].options.body), {
+        expectedVersion: 1, decisions: [{itemId: "item", decision: "APPROVE"}]
+    });
+    assert.ok(flow.phases.includes("SUBMITTING"));
+    assert.ok(flow.phases.includes("RESUMING"));
+    assert.equal(flow.phases.at(-1), "DONE");
+    assert.equal(flow.state.approvalSubmissions.size, 0);
+});
+
+test("真实审批编排双击只发一次决定请求", async () => {
+    let finish;
+    const pending = new Promise((resolve) => { finish = resolve; });
+    const flow = approvalFlowHarness({stream: async (emit) => {
+        await pending;
+        emit({type: "approval-decision", data: {status: "APPROVED", version: 2}});
+        emit({type: "completed", data: {}});
+    }});
+    const first = flow.actions.submitApprovalDecision(flow.approval, {});
+    await flow.actions.submitApprovalDecision(flow.approval, {});
+    assert.equal(flow.requests.length, 1);
+    finish();
+    await first;
+});
+
+test("网络结果不确定且权威查询失败时实际关闭决定和会话发送", async () => {
+    const flow = approvalFlowHarness({stream: async () => { throw new Error("网络中断，错误编号：network-test"); },
+        refresh: async () => { throw new Error("状态查询失败"); }});
+    await assert.rejects(() => flow.actions.submitApprovalDecision(flow.approval, {}), /network-test.*无法确认审批状态/);
+    assert.equal(flow.state.pendingApprovals.get(flow.approval.approvalId).canDecide, false);
+    assert.equal(flow.state.approvalFeedback.get(flow.approval.approvalId).phase, "UNKNOWN");
+    assert.equal(flow.state.chatLoading, true);
+    assert.equal(flow.requests.length, 1);
+    assert.equal(flow.queryCount(), 1);
+});
+
+test("决定接受后恢复错误保留错误码编号且不会再次提交", async () => {
+    const flow = approvalFlowHarness({stream: async (emit) => {
+        emit({type: "approval-decision", data: {status: "APPROVED", version: 2}});
+        emit({type: "error", data: {message: "模型暂时不可用", code: "MODEL_UNAVAILABLE", errorId: "resume-test"}});
+    }});
+    await assert.rejects(() => flow.actions.submitApprovalDecision(flow.approval, {}), /MODEL_UNAVAILABLE resume-test.*决定已经被服务端接受，请勿重复提交/);
+    assert.equal(flow.state.pendingApprovals.get(flow.approval.approvalId).canDecide, false);
+    assert.equal(flow.requests.length, 1);
+    assert.equal(flow.queryCount(), 1);
+});
+
+test("卡片刷新实际只查询状态并在成功后解除未知提示", async () => {
+    const flow = approvalFlowHarness();
+    flow.state.approvalFeedback.set(flow.approval.approvalId, {phase: "UNKNOWN"});
+    flow.state.chatLoading = true;
+    await flow.actions.refreshApprovalFromCard(flow.approval);
+    assert.equal(flow.requests.length, 0);
+    assert.equal(flow.queryCount(), 1);
+    assert.ok(flow.phases.includes("CHECKING"));
+    assert.equal(flow.state.approvalFeedback.size, 0);
+    assert.equal(flow.state.chatLoading, false);
+});
+
+test("旧登录会话的审批返回不会覆盖新会话卡片或启动查询", async () => {
+    let finish;
+    const pending = new Promise((resolve) => { finish = resolve; });
+    const flow = approvalFlowHarness({stream: async (emit) => {
+        await pending;
+        emit({type: "approval-decision", data: {status: "APPROVED", version: 2}});
+        emit({type: "completed", data: {}});
+    }});
+    const first = flow.actions.submitApprovalDecision(flow.approval, {});
+    flow.changeSession();
+    flow.state.approvalFeedback.clear();
+    finish();
+    await first;
+    assert.equal(flow.state.approvalFeedback.size, 0);
+    assert.equal(flow.state.pendingApprovals.get(flow.approval.approvalId).status, "PENDING");
+    assert.equal(flow.queryCount(), 0);
+});
+
+function historyFixture(id, changes = {}) {
+    return {...approvalDraftFixture(), approvalId: id, runId: "run", status: "APPROVED", canDecide: false,
+        decidedAt: "2026-09-03T04:00:00Z", version: 2,
+        items: [{itemId: `${id}-item`, toolName: "测试工具", toolCallId: `${id}-call`, decision: "APPROVE", inputSummary: "脱敏参数"}], ...changes};
+}
+
+test("历史按审批编号去重而不是覆盖同一运行的多轮确认", () => {
+    const first = historyFixture("first", {decidedAt: "2026-09-03T03:00:00Z"});
+    const second = historyFixture("second", {status: "PARTIALLY_APPROVED", items: [
+        {itemId: "one", decision: "APPROVE"}, {itemId: "two", decision: "DENY"}]} );
+    const history = core.mergeApprovalHistory([first], [second, {...first, canDecide: true}], "agent", "conversation");
+    assert.deepEqual(history.map((item) => item.approvalId), ["second", "first"]);
+    assert.ok(history.every((item) => item.canDecide === false));
+    const group = core.groupApprovalHistory(history)[0];
+    assert.equal(group.runId, "run");
+    assert.deepEqual(group.items.map((item) => item.approvalId), ["first", "second"]);
+    assert.deepEqual(group.items[1].items.map((item) => item.decision), ["APPROVE", "DENY"]);
+});
+
+test("历史合并过滤其他会话Agent待办与非法时间并保留更高版本", () => {
+    const current = historyFixture("same", {version: 3, status: "DENIED"});
+    const history = core.mergeApprovalHistory([current], [historyFixture("same"),
+        historyFixture("foreign", {agentId: "other"}), historyFixture("foreign2", {conversationId: "other"}),
+        historyFixture("pending", {status: "PENDING"}), historyFixture("bad", {decidedAt: "bad"}), null], "agent", "conversation");
+    assert.equal(history.length, 1);
+    assert.equal(history[0].status, "DENIED");
+    const reloaded = core.mergeApprovalHistory([], JSON.parse(JSON.stringify(history)), "agent", "conversation");
+    assert.deepEqual(reloaded, history);
+});
+
+// 仅模拟标准 DOM 边界；加载、分组、消息关联、错误重试使用实际 app.js 函数。
+function historyFlowHarness(request) {
+    const vm = require("node:vm");
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"), "utf8");
+    function node(tag, options = {}) {
+        const result = {tag, className: options.className || "", textContent: options.text || "", dataset: {}, children: [],
+            append(...children) { for (const child of children) { child.parent = this; this.children.push(child); } },
+            replaceChildren(...children) { this.children = []; this.append(...children); },
+            remove() { this.parent.children = this.parent.children.filter((child) => child !== this); },
+            querySelectorAll(selector) {
+                const [classPart] = selector.split("[");
+                return this.children.flatMap((child) => [child, ...child.all()]).filter((child) =>
+                    child.className.split(" ").includes(classPart.slice(1))
+                    && (!selector.includes("[open]") || child.open)
+                    && (!selector.includes("[data-run-id]") || child.dataset.runId));
+            },
+            all() { return this.children.flatMap((child) => [child, ...child.all()]); }};
+        result.classList = {add(name) { result.className += ` ${name}`; }};
+        return result;
+    }
+    const root = node("main");
+    const ids = Object.fromEntries(["chatApprovalHistoryRegion", "chatApprovalHistoryList", "chatMessageList",
+        "chatApprovalHistorySummary", "chatApprovalHistoryStatus", "loadMoreApprovalHistoryBtn", "refreshApprovalHistoryBtn", "chatFormStatus"]
+        .map((id) => [id, node("div")]));
+    root.append(...Object.values(ids));
+    const state = {selectedAgentId: "agent", selectedConversationId: "conversation", approvalHistory: [],
+        approvalHistoryCursor: "", approvalHistoryBusy: false, approvalHistoryError: "", pendingApprovals: new Map()};
+    const requests = [];
+    let session = 0;
+    const context = {state, core, document: root, element: node, $: (id) => ids[id],
+        shortIdentifier: (id) => id.slice(0, 8), setStatus: (target, message) => { target.textContent = message; },
+        sessionEpoch: {capture: () => session, isCurrent: (value) => value === session},
+        chatLoadRevision: core.createLoadRevisionGate(), approvalHistoryRevision: core.createLoadRevisionGate(),
+        renderChatApprovals() {}, renderChatMessages(messages) {
+            ids.chatMessageList.replaceChildren(...messages.map((message) => {
+                const item = node("article", {className: "chat-message"});
+                item.dataset.runId = message.runId;
+                return item;
+            }));
+        },
+        api: {request: async (url, options) => { requests.push({url, options}); return request(url, options); }}
+    };
+    const loading = app.slice(app.indexOf("async function loadChatMessages("), app.indexOf("function renderChatApprovals("));
+    const history = app.slice(app.indexOf("async function refreshApprovalState("), app.indexOf("function streamEventError("));
+    vm.runInNewContext(`${loading}\n${history}\nglobalThis.actions = {loadChatMessages, refreshApprovalState, resetApprovalHistory, loadApprovalHistory, renderApprovalHistory, createApprovalHistoryGroup};`, context);
+    return {state, requests, ids, node, actions: context.actions, changeSession: () => { session += 1; }};
+}
+
+test("实际会话加载在重新进入时恢复历史并保留待审批入口", async () => {
+    const entries = [historyFixture("one"), historyFixture("two", {decidedAt: "2026-09-03T05:00:00Z"})];
+    const flow = historyFlowHarness(async (url) => {
+        if (url.includes("/messages?")) return {items: [{runId: "run"}]};
+        if (url.includes("status=PENDING")) return {items: [approvalDraftFixture()]};
+        return {items: entries, nextCursor: null};
+    });
+    await flow.actions.loadChatMessages("agent", "conversation");
+    assert.equal(flow.state.pendingApprovals.size, 1);
+    assert.equal(flow.state.approvalHistory.length, 2);
+    assert.equal(flow.ids.chatMessageList.querySelectorAll(".chat-approval-history-inline").length, 1);
+    flow.actions.resetApprovalHistory();
+    await flow.actions.loadChatMessages("agent", "conversation");
+    assert.equal(flow.state.approvalHistory.length, 2);
+    assert.equal(flow.requests.length, 6);
+    assert.ok(flow.requests.every(({options}) => !options?.method || options.method === "GET"));
+});
+
+test("实际分页保留多轮记录且无消息锚点的运行进入历史区", async () => {
+    const flow = historyFlowHarness(async (url) => url.includes("cursor=")
+        ? {items: [historyFixture("old", {runId: "old-run", decidedAt: "2026-09-02T00:00:00Z"})]}
+        : {items: [historyFixture("latest")], nextCursor: "opaque+/cursor"});
+    const anchor = flow.node("article", {className: "chat-message"});
+    anchor.dataset.runId = "run";
+    flow.ids.chatMessageList.append(anchor);
+    await flow.actions.loadApprovalHistory();
+    anchor.children[0].open = true;
+    await flow.actions.loadApprovalHistory(true);
+    assert.equal(flow.state.approvalHistory.length, 2);
+    assert.match(flow.requests[1].url, /cursor=opaque%2B%2Fcursor/);
+    assert.equal(anchor.children.length, 1);
+    assert.equal(anchor.children[0].open, true);
+    assert.equal(flow.ids.chatApprovalHistoryList.children[0].dataset.runId, "old-run");
+    assert.match(flow.ids.chatApprovalHistorySummary.textContent, /1 条位于对应消息下方.*另有 1 条/);
+    assert.equal(flow.ids.loadMoreApprovalHistoryBtn.hidden, true);
+});
+
+test("提交后权威查询将终态放入历史而不是覆盖下一轮待审批", async () => {
+    const decided = historyFixture("done");
+    const next = {...approvalDraftFixture(), approvalId: "next"};
+    const flow = historyFlowHarness(async (url) => {
+        if (url.endsWith("/approvals/done")) return decided;
+        if (url.includes("status=PENDING")) return {items: [next]};
+        if (url.includes("/history?")) return {items: [historyFixture("earlier")]};
+        return {items: [{runId: "run"}]};
+    });
+    await flow.actions.refreshApprovalState(decided, () => true);
+    assert.equal(flow.state.pendingApprovals.has("done"), false);
+    assert.equal(flow.state.pendingApprovals.has("next"), true);
+    assert.deepEqual(Array.from(flow.state.approvalHistory, (item) => item.approvalId).sort(), ["done", "earlier"]);
+    assert.equal(flow.requests.length, 4);
+});
+
+test("历史失败不伪装空数据并保留分页游标和错误编号供重试", async () => {
+    let failed = true;
+    const flow = historyFlowHarness(async () => {
+        if (failed) throw new Error("暂时不可用（错误码：PERSISTENCE_UNAVAILABLE）（错误编号：history-error）");
+        return {items: [historyFixture("old", {decidedAt: "2026-09-02T00:00:00Z"})]};
+    });
+    flow.state.approvalHistory = [historyFixture("first")];
+    flow.state.approvalHistoryCursor = "cursor";
+    await flow.actions.loadApprovalHistory(true);
+    assert.equal(flow.state.approvalHistory.length, 1);
+    assert.equal(flow.state.approvalHistoryCursor, "cursor");
+    assert.match(flow.ids.chatApprovalHistoryStatus.textContent, /PERSISTENCE_UNAVAILABLE.*history-error/);
+    assert.equal(flow.ids.refreshApprovalHistoryBtn.textContent, "重试加载历史");
+    failed = false;
+    await flow.actions.loadApprovalHistory(true);
+    assert.equal(flow.state.approvalHistory.length, 2);
+    assert.equal(flow.state.approvalHistoryError, "");
+});
+
+test("首屏历史失败独立显示错误而不丢失已读取的消息和待办", async () => {
+    const flow = historyFlowHarness(async (url) => {
+        if (url.includes("/messages?")) return {items: [{runId: "run"}]};
+        if (url.includes("status=PENDING")) return {items: [approvalDraftFixture()]};
+        throw new Error("历史不可用，错误编号：history-first");
+    });
+    assert.equal(await flow.actions.loadChatMessages("agent", "conversation"), true);
+    assert.equal(flow.state.chatLoading, false);
+    assert.equal(flow.state.pendingApprovals.size, 1);
+    assert.equal(flow.ids.chatMessageList.children.length, 1);
+    assert.match(flow.ids.chatApprovalHistorySummary.textContent, /不表示没有历史/);
+    assert.match(flow.ids.chatApprovalHistoryStatus.textContent, /history-first/);
+});
+
+test("迟到历史响应在切换会话或退出登录后不写回新页面", async () => {
+    for (const logout of [false, true]) {
+        let resolve;
+        const flow = historyFlowHarness(() => new Promise((done) => { resolve = done; }));
+        const loading = flow.actions.loadApprovalHistory();
+        if (logout) flow.changeSession();
+        else flow.state.selectedConversationId = "another";
+        flow.actions.resetApprovalHistory();
+        resolve({items: [historyFixture("late")], nextCursor: "old"});
+        await loading;
+        assert.equal(flow.state.approvalHistory.length, 0);
+        assert.equal(flow.state.approvalHistoryCursor, "");
+        assert.equal(flow.state.approvalHistoryBusy, false);
+    }
+});
+
+test("历史详情逐项只读展示且HTML样参数始终作为纯文本", () => {
+    const flow = historyFlowHarness(async () => ({}));
+    const dangerous = "<img src=x onerror=alert(1)>";
+    const detail = flow.actions.createApprovalHistoryGroup({runId: "run", items: [historyFixture("readonly", {
+        canDecide: true, requestedByDisplayName: "发起人", decidedByDisplayName: "审批人",
+        items: [{toolName: dangerous, inputSummary: dangerous, decision: "DENY"},
+            {toolName: "允许项", inputSummary: "已脱敏", decision: "APPROVE"}]
+    })]});
+    const nodes = [detail, ...detail.all()];
+    assert.ok(nodes.every((item) => !["form", "input", "button", "img"].includes(item.tag)));
+    assert.ok(nodes.some((item) => item.tag === "pre" && item.textContent === dangerous));
+    assert.ok(nodes.some((item) => item.textContent.includes("已拒绝")));
+    assert.ok(nodes.some((item) => item.textContent.includes("已允许")));
+    assert.ok(nodes.some((item) => item.textContent.includes("审批允许不等于工具执行成功")));
+});

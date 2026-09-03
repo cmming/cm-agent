@@ -6,8 +6,12 @@ import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.runtime.ModelCredentialProvider;
 import com.cmagent.core.runtime.ToolInvocationGateway;
 import com.cmagent.core.repository.ModelConfigRepository;
+import com.cmagent.core.repository.RuntimeCheckpointRepository;
 import com.cmagent.server.runtime.DatabaseModelCredentialProvider;
 import com.cmagent.server.runtime.ModelCredentialCipher;
+import com.cmagent.server.runtime.RepositoryAgentStateStore;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.state.AgentStateStore;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -58,6 +62,20 @@ public class AgentScopeRuntimeConfiguration {
         return new DatabaseModelCredentialProvider(repository, cipher);
     }
 
+    /** 创建使用 AES/GCM 密文持久化 AgentScope 状态的 Store。 */
+    @Bean
+    @ConditionalOnMissingBean(AgentRuntime.class)
+    AgentStateStore agentScopeStateStore(
+            RuntimeCheckpointRepository repository,
+            ModelCredentialCipher cipher,
+            ObjectProvider<ObjectMapper> objectMapper,
+            AgentScopeRuntimeProperties properties
+    ) {
+        return new RepositoryAgentStateStore(
+                repository, cipher, objectMapper.getIfAvailable(ObjectMapper::new),
+                Clock.systemUTC(), properties.getApprovalTtl());
+    }
+
     /**
      * 创建 AgentScope 真实运行时，并接入受治理的工具调用网关。
      *
@@ -72,14 +90,16 @@ public class AgentScopeRuntimeConfiguration {
     AgentRuntime agentScopeRuntime(
             AgentScopeRuntimeProperties properties,
             ObjectProvider<ModelCredentialProvider> credentialProvider,
-            ToolInvocationGateway gateway
+            ToolInvocationGateway gateway,
+            AgentStateStore stateStore
     ) {
         properties.validate(false);
         ModelCredentialProvider provider = Objects.requireNonNull(
                 credentialProvider.getIfAvailable(),
                 "启用 AgentScope runtime 时必须配置 ModelCredentialProvider");
         AgentScopeRuntimeOptions options = new AgentScopeRuntimeOptions(
-                properties.getModelTimeout(), properties.getToolTimeout(), properties.getModelMaxAttempts());
-        return AgentScopeRuntimeAdapter.create(provider, gateway, options, Clock.systemUTC());
+                properties.getModelTimeout(), properties.getToolTimeout(), properties.getModelMaxAttempts(),
+                properties.isPermissionEnabled());
+        return AgentScopeRuntimeAdapter.create(provider, gateway, options, Clock.systemUTC(), stateStore);
     }
 }

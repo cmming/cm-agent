@@ -3,14 +3,18 @@ package com.cmagent.server.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
-@ConfigurationProperties(prefix = "cm-agent.agentscope")
 /** AgentScope 运行时开关及调用控制配置属性。 */
+@ConfigurationProperties(prefix = "cm-agent.agentscope")
 public class AgentScopeRuntimeProperties {
 
     private boolean enabled;
     private Duration modelTimeout = Duration.ofSeconds(60);
     private Duration toolTimeout = Duration.ofSeconds(30);
     private int modelMaxAttempts = 2;
+    /** 默认关闭以保持升级兼容；开启后 HIGH 工具进入 AgentScope ASK。 */
+    private boolean permissionEnabled;
+    /** 审批请求与可恢复检查点共享的有效期，默认十五分钟。 */
+    private Duration approvalTtl = Duration.ofMinutes(15);
 
     /**
      * @return 是否启用 AgentScope 真实运行时。
@@ -68,6 +72,26 @@ public class AgentScopeRuntimeProperties {
         this.modelMaxAttempts = modelMaxAttempts;
     }
 
+    /** @return 是否启用 HIGH 工具逐调用审批。 */
+    public boolean isPermissionEnabled() {
+        return permissionEnabled;
+    }
+
+    /** @param permissionEnabled 是否启用 HIGH 工具逐调用审批。 */
+    public void setPermissionEnabled(boolean permissionEnabled) {
+        this.permissionEnabled = permissionEnabled;
+    }
+
+    /** @return 待审批请求和运行检查点的有效期。 */
+    public Duration getApprovalTtl() {
+        return approvalTtl;
+    }
+
+    /** @param approvalTtl 审批有效期，必须为正数且不超过 24 小时。 */
+    public void setApprovalTtl(Duration approvalTtl) {
+        this.approvalTtl = approvalTtl;
+    }
+
     /**
      * 校验运行时开关、超时和重试次数。
      *
@@ -83,6 +107,9 @@ public class AgentScopeRuntimeProperties {
         }
         if (modelMaxAttempts < 1 || modelMaxAttempts > 5) {
             throw new IllegalStateException("模型最大尝试次数必须在 1 到 5 之间");
+        }
+        if (!isPositive(approvalTtl) || approvalTtl.compareTo(Duration.ofHours(24)) > 0) {
+            throw new IllegalStateException("审批有效期必须大于 0 且不超过 24 小时");
         }
         if (enabled && fakeRuntimeEnabled) {
             throw new IllegalStateException("AgentScope 真实运行时与 fake runtime 不能同时启用");
@@ -106,6 +133,8 @@ public class AgentScopeRuntimeProperties {
         return "AgentScopeRuntimeProperties[enabled=" + enabled
                 + ", modelTimeout=" + modelTimeout
                 + ", toolTimeout=" + toolTimeout
-                + ", modelMaxAttempts=" + modelMaxAttempts + "]";
+                + ", modelMaxAttempts=" + modelMaxAttempts
+                + ", permissionEnabled=" + permissionEnabled
+                + ", approvalTtl=" + approvalTtl + "]";
     }
 }

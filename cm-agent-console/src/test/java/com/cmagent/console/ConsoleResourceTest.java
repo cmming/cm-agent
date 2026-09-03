@@ -62,7 +62,8 @@ class ConsoleResourceTest {
         assertThat(chat)
                 .contains(
                         "data-page=\"chatPage\"", "id=\"chatPage\"", "id=\"chatAgentSelect\"",
-                        "id=\"chatConversationList\"", "id=\"chatMessageList\"", "id=\"chatForm\"",
+                        "id=\"chatConversationList\"", "id=\"chatMessageList\"", "id=\"chatApprovalRegion\"",
+                        "id=\"chatApprovalList\"", "id=\"chatForm\"",
                         "实时查看回答、思考和工具调用", "执行过程仅展示模型提供的思考与脱敏工具摘要"
                 )
                 .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
@@ -95,7 +96,7 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.14", "/assets/console-core.js?v=2.0.9")
+                    .contains("/assets/app.js?v=2.0.17", "/assets/console-core.js?v=2.0.11", "/assets/styles.css?v=2.0.17")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }
@@ -290,6 +291,16 @@ class ConsoleResourceTest {
      *
      * @param path 测试辅助方法使用的 path 参数
      */
+    @Test
+    void 会话包含独立的只读审批历史及分页重试入口() throws IOException {
+        String chat = resource("META-INF/resources/console/v2/chat.html");
+        String app = resource("META-INF/resources/assets/app.js");
+        assertThat(chat).contains("id=\"chatApprovalHistoryRegion\"", "id=\"chatApprovalHistoryList\"",
+                "id=\"loadMoreApprovalHistoryBtn\"", "id=\"refreshApprovalHistoryBtn\"", "id=\"chatApprovalHistoryStatus\"");
+        assertThat(app).contains("/approvals/history", "createApprovalHistoryGroup", "mergeApprovalHistory",
+                "groupApprovalHistory", "article.dataset.runId = message.runId", "审批允许不等于工具执行成功");
+    }
+
     private String resource(String path) throws IOException {
         try (InputStream input = getClass().getClassLoader().getResourceAsStream(path)) {
             assertThat(input).as("资源应存在：%s", path).isNotNull();

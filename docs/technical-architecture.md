@@ -14,11 +14,11 @@ CM Agent 是基于 AgentScope Java 的企业级智能体底座。当前路线不
 4. **运行时受治理**：真实模型只能得到经授权的工具描述；工具实际调用时再次鉴权，而不是信任模型输出或配置中的 endpoint。
 5. **生产化演进**：阶段 1 的内存实现和 Fake Runtime 用于本地/测试；阶段 2 已形成 JDBC、Flyway、严格审计和 profile 安全边界；阶段 3 已接入 AgentScope Java 真实同步单轮运行。可观测性、正式交付流水线等属于后续路线。
 
-当前不承诺多轮会话持久化、流式 REST、人工介入（HITL）或手动取消；超时和取消也不能证明具有外部副作用的工具已回滚。
+当前支持持久化多轮会话、流式 REST、在线 HIGH 工具人工确认及会话审批历史回显；不承诺手动取消、无人值守暂停或崩溃自动接管。超时或失败也不能证明具有外部副作用的工具已回滚。
 
 ## 2. 技术栈与模块边界
 
-项目使用 Java 21、Maven 多模块构建和 Spring Boot 3.5.0。Web 层采用 Spring MVC、Spring Security、Validation、Actuator 与 springdoc OpenAPI；JWT 使用 JJWT；持久化采用 Spring JDBC、Flyway，支持 PostgreSQL 16 与 MySQL 8.4；真实智能体运行时采用 AgentScope Java 2.0.0，并支持 OpenAI Compatible 与 DashScope Provider。
+项目使用 Java 21、Maven 多模块构建和 Spring Boot 3.5.0。Web 层采用 Spring MVC、Spring Security、Validation、Actuator 与 springdoc OpenAPI；JWT 使用 JJWT；持久化采用 Spring JDBC、Flyway，支持 PostgreSQL 16 与 MySQL 8.4；真实智能体运行时采用 AgentScope Java 2.0.2，并支持 OpenAI Compatible 与 DashScope Provider。
 
 | 模块 | 职责 | 不应承担的职责 |
 | --- | --- | --- |
@@ -66,6 +66,16 @@ Bearer JWT
 运行时异常会尝试将运行记录收口为 `FAILED`，并对日志、持久化数据和响应中的敏感内容进行脱敏。运行历史和工具调用详情查询同样按 tenant 和 Agent 限定，并通过有界 cursor 分页避免无界扫描。
 
 ## 5. 真实运行时与工具调用
+
+### 会话审批与只读历史
+
+在线会话由 `ConversationController/ConversationService` 进入运行，HIGH ASK 暂停时保存原 Run、审批及加密检查点；决定由 `ToolApprovalService` 接受并恢复原运行。一次 Run 可有多轮独立 approvalId，不能按 runId 覆盖历史决定。
+
+历史读取链路为 `ConversationController.approvalHistory → ToolApprovalService.listHistory → ToolApprovalRepository.listHistory`。领域分页对象为 `ToolApprovalHistoryPageRequest`，memory 与 JDBC 均按 tenant、Agent、会话过滤终态，按 `decidedAt DESC, id DESC` 使用复合游标定位。Controller 校验读取权限及资源归属，只返回脱敏视图；GET 无运行、批准或过期更新副作用。复用已有表，不增加本次迁移；自定义审批 Repository 需要实现新增历史查询方法。
+
+控制台分别保存待审批状态和历史集合，历史按 approvalId 去重、按 runId 关联消息。独立只读渲染器展示折叠记录，消息不在窗口时放入历史区；加载代次与登录会话隔离迟到响应，查询失败保留已有记录及可重试错误。审批明细摘要用纯文本展示，绝不作为 HTML 执行。JDBC 保存已处理事实不依赖当前服务进程，memory 只保证进程生命周期。
+
+### 运行时适配
 
 `AgentRuntime` 是核心运行时接口。Starter 在显式启用 Fake Runtime 时提供 `FakeAgentRuntime`，用于本地开发和测试；生产/类生产环境使用 `AgentScopeRuntimeAdapter`。真实 Adapter 的职责是：
 

@@ -45,6 +45,7 @@ class AuthControllerTest {
     private static final String TEST_PASSWORD = "admin-test-password-only";
     private static final String[] EXPECTED_PERMISSIONS = {
             "agent:run",
+            "agent:approve",
             "agent:read",
             "agent:write",
             "agent:delete",

@@ -48,7 +48,7 @@ final class AgentScopeRunGate {
     }
 
     /**
-     * 创建能够识别 AgentScope 2.0.0 工具超时包装文本的门控。
+     * 创建能够识别当前实际解析的 AgentScope 2.0.2 工具超时包装文本的门控。
      *
      * @param toolTimeout 传给 AgentScope 工具执行配置的单次调用超时
      */
@@ -139,7 +139,7 @@ final class AgentScopeRunGate {
      */
     void observeToolResultEnd(String toolCallId, boolean bridgeCompleted) {
         StringBuffer text = toolCallId == null ? null : toolResultTexts.remove(toolCallId);
-        // AgentScope 2.0.0 的 ToolResultEndEvent 无法可靠区分工具错误终态，必须结合桥接完成状态和
+        // 当前实际解析的 AgentScope 2.0.2 中 ToolResultEndEvent 无法可靠区分工具错误终态，必须结合桥接完成状态和
         // 框架生成的完整文本精确识别，不能仅依赖事件状态或模糊匹配“timeout”。
         if (!bridgeCompleted && text != null && toolTimeoutResult.contentEquals(text)) {
             markToolTimeout();

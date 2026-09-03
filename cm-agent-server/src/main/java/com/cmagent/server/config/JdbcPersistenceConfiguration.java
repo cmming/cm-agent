@@ -11,6 +11,8 @@ import com.cmagent.core.repository.ToolCallRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.repository.McpToolPublicationRepository;
+import com.cmagent.core.repository.ToolApprovalRepository;
+import com.cmagent.core.repository.RuntimeCheckpointRepository;
 import com.cmagent.persistence.JdbcAuditEventRepository;
 import com.cmagent.persistence.JdbcAgentDefinitionRepository;
 import com.cmagent.persistence.CmAgentFlyway;
@@ -23,6 +25,8 @@ import com.cmagent.persistence.JdbcToolCallRepository;
 import com.cmagent.persistence.JdbcToolGrantRepository;
 import com.cmagent.persistence.JdbcHttpToolConfigRepository;
 import com.cmagent.persistence.JdbcMcpToolPublicationRepository;
+import com.cmagent.persistence.JdbcToolApprovalRepository;
+import com.cmagent.persistence.JdbcRuntimeCheckpointRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import org.flywaydb.core.Flyway;
@@ -174,6 +178,19 @@ public class JdbcPersistenceConfiguration {
     @Bean
     RunRepository jdbcRunRepository(JdbcClient cmAgentJdbcClient) {
         return new JdbcRunRepository(cmAgentJdbcClient);
+    }
+
+    /** 创建支持原子多明细决定的 JDBC 审批 Repository。 */
+    @Bean
+    ToolApprovalRepository jdbcToolApprovalRepository(
+            JdbcClient cmAgentJdbcClient, TransactionTemplate cmAgentTransactionTemplate) {
+        return new JdbcToolApprovalRepository(cmAgentJdbcClient, cmAgentTransactionTemplate);
+    }
+
+    /** 创建只保存密文载荷的 JDBC Runtime 检查点 Repository。 */
+    @Bean
+    RuntimeCheckpointRepository jdbcRuntimeCheckpointRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcRuntimeCheckpointRepository(cmAgentJdbcClient);
     }
 
     /** 创建会话元数据 Repository。 */

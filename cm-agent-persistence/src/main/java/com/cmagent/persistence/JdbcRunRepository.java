@@ -68,6 +68,22 @@ public class JdbcRunRepository implements RunRepository {
     }
 
     @Override
+    public RunRecord waitForApproval(UUID tenantId, UUID runId) {
+        RunRecord existing = findByTenantAndId(tenantId, runId)
+                .orElseThrow(() -> new NoSuchElementException("Run 不存在"));
+        RunRecord waiting = existing.waitForApproval();
+        int updated = jdbcClient.sql("""
+                        UPDATE runs SET status = 'WAITING_APPROVAL'
+                        WHERE tenant_id = :tenantId AND id = :runId AND status = 'RUNNING'
+                        """)
+                .param("tenantId", tenantId.toString()).param("runId", runId.toString()).update();
+        if (updated != 1) {
+            throw new NoSuchElementException("Run 不存在或状态已变化");
+        }
+        return waiting;
+    }
+
+    @Override
     /**
      * 将仍处于 {@code RUNNING} 的运行原子更新为最终状态。
      *
@@ -97,7 +113,8 @@ public class JdbcRunRepository implements RunRepository {
                             output_text = :output,
                             error_message = :errorMessage,
                             finished_at = :finishedAt
-                        WHERE tenant_id = :tenantId AND id = :runId AND status = 'RUNNING'
+                        WHERE tenant_id = :tenantId AND id = :runId
+                          AND status IN ('RUNNING', 'WAITING_APPROVAL')
                         """)
                 .param("status", completed.status().name())
                 .param("output", nullIfBlank(completed.output()))

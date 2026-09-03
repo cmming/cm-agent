@@ -26,10 +26,13 @@ public interface RunRepository {
      */
     RunRecord save(UUID tenantId, RunRecord run);
 
+    /** 将 RUNNING 运行原子转换为 WAITING_APPROVAL。 */
+    RunRecord waitForApproval(UUID tenantId, UUID runId);
+
     /**
-     * 将当前租户内处于 {@link RunStatus#RUNNING} 状态的运行记录收口为终态。
+     * 将当前租户内处于非终态的运行记录收口为终态。
      *
-     * <p>只有 RUNNING 记录允许完成，防止已终态记录被重复收口或改写历史；
+     * <p>只有 RUNNING 或 WAITING_APPROVAL 记录允许完成，防止已终态记录被重复收口或改写历史；
      * 运行不存在、不属于该租户或已终态时的行为由实现定义并有测试覆盖。</p>
      *
      * @param tenantId 当前租户标识

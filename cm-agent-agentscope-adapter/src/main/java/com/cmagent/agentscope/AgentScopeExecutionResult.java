@@ -3,29 +3,32 @@ package com.cmagent.agentscope;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.ToolCallRecord;
 import com.cmagent.core.domain.AgentMessageSnapshot;
+import com.cmagent.core.domain.RuntimePendingApproval;
 
 import java.util.List;
 import java.util.Objects;
 
 /**
- * AgentScope 执行阶段与 CM Agent 领域结果之间的终态快照。
+ * AgentScope 执行阶段与 CM Agent 领域结果之间的完成或待审批快照。
  *
  * <p>该类型仅在适配器内部流转：执行器负责把 AgentScope 事件和工具调用记录归并到此处，
  * {@link AgentScopeRuntimeAdapter} 再补充运行标识与起止时间，形成对外的领域结果。将中间表示限制在包内，
  * 可以避免 Core 模块依赖任何 AgentScope 类型。</p>
  *
- * @param status 已完成运行的终态
+ * @param status 已完成运行的终态或 WAITING_APPROVAL
  * @param output 可安全返回的模型输出；无输出时使用空字符串
  * @param toolCalls 本次运行已经完成记录的工具调用快照
  * @param errorMessage 可安全返回的错误说明；无错误时使用空字符串
  * @param assistantMessage 可选的最终 assistant 安全快照；没有最终消息时为空
+ * @param pendingApproval 可选待审批安全快照；仅 WAITING_APPROVAL 时存在
  */
 record AgentScopeExecutionResult(
         RunStatus status,
         String output,
         List<ToolCallRecord> toolCalls,
         String errorMessage,
-        AgentMessageSnapshot assistantMessage
+        AgentMessageSnapshot assistantMessage,
+        RuntimePendingApproval pendingApproval
 ) {
 
     AgentScopeExecutionResult(
@@ -34,7 +37,18 @@ record AgentScopeExecutionResult(
             List<ToolCallRecord> toolCalls,
             String errorMessage
     ) {
-        this(status, output, toolCalls, errorMessage, null);
+        this(status, output, toolCalls, errorMessage, null, null);
+    }
+
+    /** 兼容既有带最终消息的终态构造方式。 */
+    AgentScopeExecutionResult(
+            RunStatus status,
+            String output,
+            List<ToolCallRecord> toolCalls,
+            String errorMessage,
+            AgentMessageSnapshot assistantMessage
+    ) {
+        this(status, output, toolCalls, errorMessage, assistantMessage, null);
     }
 
     /**
@@ -49,7 +63,11 @@ record AgentScopeExecutionResult(
         Objects.requireNonNull(toolCalls, "toolCalls 不能为空");
         Objects.requireNonNull(errorMessage, "errorMessage 不能为空");
         if (status == RunStatus.RUNNING) {
+            // 保留既有异常文案，避免扩展 WAITING_APPROVAL 时破坏依赖该契约的调用方和测试。
             throw new IllegalArgumentException("执行结果必须是终态");
+        }
+        if ((status == RunStatus.WAITING_APPROVAL) != (pendingApproval != null)) {
+            throw new IllegalArgumentException("WAITING_APPROVAL 与 pendingApproval 必须同时存在");
         }
         toolCalls = List.copyOf(toolCalls);
     }
@@ -78,7 +96,7 @@ record AgentScopeExecutionResult(
             List<ToolCallRecord> toolCalls,
             AgentMessageSnapshot assistantMessage
     ) {
-        return new AgentScopeExecutionResult(RunStatus.SUCCEEDED, output, toolCalls, "", assistantMessage);
+        return new AgentScopeExecutionResult(RunStatus.SUCCEEDED, output, toolCalls, "", assistantMessage, null);
     }
 
     /**
@@ -89,7 +107,7 @@ record AgentScopeExecutionResult(
      * @return 失败终态快照
      */
     static AgentScopeExecutionResult failed(String errorMessage, List<ToolCallRecord> toolCalls) {
-        return new AgentScopeExecutionResult(RunStatus.FAILED, "", toolCalls, errorMessage, null);
+        return new AgentScopeExecutionResult(RunStatus.FAILED, "", toolCalls, errorMessage, null, null);
     }
 
     /**
@@ -119,6 +137,13 @@ record AgentScopeExecutionResult(
             String errorMessage,
             List<ToolCallRecord> toolCalls
     ) {
-        return new AgentScopeExecutionResult(RunStatus.DENIED, output, toolCalls, errorMessage, null);
+        return new AgentScopeExecutionResult(RunStatus.DENIED, output, toolCalls, errorMessage, null, null);
+    }
+
+    /** 创建需要服务端保存审批请求后再恢复的暂停结果。 */
+    static AgentScopeExecutionResult waiting(RuntimePendingApproval approval, List<ToolCallRecord> toolCalls) {
+        return new AgentScopeExecutionResult(
+                RunStatus.WAITING_APPROVAL, "", toolCalls, "", null,
+                Objects.requireNonNull(approval, "approval 不能为空"));
     }
 }

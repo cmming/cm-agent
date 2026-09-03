@@ -16,11 +16,11 @@
 
 ## 阶段 3：真实 AgentScope Runtime（已完成）
 
-阶段3已将 `AgentRuntime` 接到 AgentScope Java 2.0.0，支持 OpenAI Compatible 与 DashScope Provider、ReAct 运行、外部 `ModelCredentialProvider`、运行事件与结果映射，以及模型和工具 timeout。后续迭代已在不破坏原 Run API 的前提下补齐持久化 Conversation/Message、受控内容块、会话历史窗口和消息级 SSE。
+阶段3已将 `AgentRuntime` 接到 AgentScope Java 2.0.2，支持 OpenAI Compatible 与 DashScope Provider、ReAct 运行、外部 `ModelCredentialProvider`、运行事件与结果映射，以及模型和工具 timeout。后续迭代已在不破坏原 Run API 的前提下补齐持久化 Conversation/Message、受控内容块、会话历史窗口、消息级 SSE 和在线 HIGH 工具逐调用审批。
 
 模型凭据按 `tenantId + modelConfigId` 与外部 Secret 映射，`model_configs` 不保存明文 API Key。工具每次调用重新授权，endpoint 不会自动执行；权限拒绝、审计严格失败和租户隔离继续沿用阶段2边界。对外部副作用，工具和下游仍需自行保证幂等。
 
-当前已交付多轮会话持久化与流式 REST；仍不承诺消息编辑/删除、会话归档、自动摘要、HITL、写请求幂等重放或手动取消。AgentScope 2.0.0 的通用取消信号也不能证明外部副作用已回滚。
+当前已交付多轮会话持久化、流式 REST 与在线 HIGH 工具审批；仍不承诺消息编辑/删除、会话归档、自动摘要、无人值守暂停、独立审批中心、写请求幂等重放或手动取消。AgentScope 2.0.2 的通用取消信号也不能证明外部副作用已回滚。
 
 ## 阶段 4：可观测性与运维（尚未交付）
 

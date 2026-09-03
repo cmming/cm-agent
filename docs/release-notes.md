@@ -2,13 +2,19 @@
 
 ## 0.1.0-SNAPSHOT：阶段3真实 AgentScope Runtime
 
-本快照在阶段2生产持久化与安全收口基础上，接入 AgentScope Java 2.0.0 真实 Runtime。第一阶段底座和阶段2的 JDBC/Flyway、安全、多租户、权限与严格审计边界继续保持。
+本快照在阶段2生产持久化与安全收口基础上，接入 AgentScope Java 2.0.2 真实 Runtime。第一阶段底座和阶段2的 JDBC/Flyway、安全、多租户、权限与严格审计边界继续保持。
 
 - 新增消息一等公民的持久化会话：Core 提供 Conversation、ConversationMessage 和有序内容块合同，文本、工具调用与工具结果以脱敏快照保存。新增 `/api/agents/{agentId}/conversations` 会话/消息分页、同步发送和 SSE 发送接口；续聊使用最近 40 条、最多 60,000 字符的完整消息窗口，原 Run API 与 `AgentRunResult` 保持兼容。
 - 新增 PostgreSQL/MySQL 方言 V10，扩展 `conversations.updated_at` 与消息 sequence、发送方、内容块 JSON、关联 runId，补齐中文数据库注释、租户索引、会话内 sequence 唯一约束和 Run 外键。memory 模式同步提供仅用于本地和测试的会话仓储。
 - AgentScope Adapter 从最终 `Msg` 映射安全的 TEXT/TOOL_USE/TOOL_RESULT 块，会话使用 conversationId 作为 sessionId；会话 SSE 使用 `started`、`message-started`、`delta`、`completed/error` 生命周期事件。控制台运行页新增会话选择、新建会话、历史回放和连续发送。
 
 ### 本次变更
+
+- 补齐会话审批历史回显：新增 `GET /api/agents/{agentId}/conversations/{conversationId}/approvals/history`，按决定时间/审批 ID 游标分页，要求 `agent:read` 并隔离 tenant、Agent、会话。前端把待审批和只读历史分开；同 Run 多轮决定按消息关联，未匹配当前消息窗口的记录在历史区展示，支持重新进入回显、加载更早和失败重试。历史不提供批准按钮，也不触发工具执行或自动过期处理。复用既有 V11，无新增迁移或配置；跨重启保存要求 JDBC。Node 历史回归及 Rocky PostgreSQL/MySQL 专项测试通过，真实浏览器及进程重启验收仍待完成。
+
+- 优化聊天页人工确认：增加仅本次授权和参数核对说明、逐项决定汇总及结果明确的提交按钮；批量按钮明确只改变选择，单项不显示批量操作。提交、接受、恢复和未知结果分别提示，终态详情折叠；内存草稿绑定审批版本/调用快照，退出或快照变化失效。新增只查询的“刷新审批状态”入口，保留错误编号、防重复提交及纯文本参数展示。仅前端变化，不调整权限、API 或数据库；真实浏览器视觉和焦点验收待完成。
+
+- 新增 AgentScope Permission System 在线审批：桥接工具统一继承 `ToolBase`，`cm-agent.agentscope.permission-enabled=true` 时 HIGH 工具按具体 `toolId + toolCallId + 输入哈希` 在治理网关前进入 ASK，Run 状态变为 `WAITING_APPROVAL`；聊天 SSE 发送 `approval-required`，审批接口按全部明细原子接收允许/拒绝决定，并使用原发起主体从加密 AgentState 恢复。审批者必须是运行发起人且同时拥有 `agent:run` 和新增 `agent:approve`；恢复执行仍重新校验 tenant、ToolGrant 和工具启用状态，同名替换工具不能继承旧批准。每轮 ASK 前已执行的工具记录会保存，恢复预检失败尝试终结 Run、清理检查点并审计；接口与日志使用相同错误编号，受控拒绝和内部故障分别记录脱敏 WARN/ERROR。控制台支持刷新恢复、纯文本参数、多工具决定、旧会话响应隔离和异常后的权威状态查询。新增 PostgreSQL/MySQL V11；功能默认关闭，有效期默认 15 分钟、最大 24 小时。主动过期扫描、崩溃自动接管和完整浏览器端到端验收尚未交付，详见运维说明。
 
 - 会话聊天页新增类似 AgentScope Studio 的可折叠“执行过程”：实时展示模型实际产生的完整思考块以及工具调用准备、执行和终态；工具桥接器以实际进入治理网关的调用为唯一来源，即使 AgentScope 最终消息未保留工具块，历史消息和 SSE `progress` 仍会关联展示入参、返回值（或受控错误）及服务端耗时。所有展示载荷均由服务端脱敏、限长后才会持久化或发送到浏览器，绝不传递原始参数、原始结果或凭据；思考块只用于可观察性展示，不会作为后续轮次提示词重新注入模型。原有 Runtime 实现通过默认重载保持兼容，不新增数据库迁移；已写入 `THINKING` 内容块后，回滚到不认识该枚举值的旧版本前应先确认历史消息兼容策略。
 
@@ -41,7 +47,7 @@
 - 控制台覆盖当前用户、Agent 列表/详情/创建、Tool 列表/创建/编辑/删除/授权与解除关联、Agent 执行、运行历史/详情/工具调用和审计游标分页；健康检查与 OpenAPI 作为辅助入口。
 - HTTP Tool 注册与编辑表单改为树形参数编辑器，支持在 OBJECT/ARRAY 节点内直接添加子参数并按层级缩进展示；页面根据 `parentId` 还原树，提交时自动转为扁平参数数组。表单同时提供类型、请求位置、默认值、示例值及包含 PATH、QUERY、BODY_ROOT 根数组的完整示例，并已移除旧版 Schema 与映射入口。
 - v1 控制台继续使用页面内存令牌；v2 使用前端不可读取的会话 Cookie 恢复刷新认证，并只在当前文档内存中保留登录令牌。两个版本复用统一 `401` 失效处理和纯文本 DOM 渲染，不使用 `localStorage` 或 `sessionStorage` 持久化 JWT、用户名或密码；补充窄屏响应式布局和键盘焦点样式。
-- 控制台仍不提供手动取消、消息编辑/删除、会话归档、自动摘要或 HITL。
+- 控制台仍不提供手动取消、消息编辑/删除、会话归档、自动摘要、无人值守暂停、长期审批规则或独立审批中心。
 - `agentscope.version` 升级到 `2.0.0`，接入 OpenAI Compatible 与 DashScope Provider，提供同步单轮 ReAct 运行。
 - 通过 `tenantId + modelConfigId` 调用 `ModelCredentialProvider` 获取模型凭据；默认实现从数据库读取 AES/GCM 密文并在运行时解密，`model_configs` 不保存明文 API Key。
 - 生产 profile 使用 `fake-runtime-enabled=false` 与 `agentscope-enabled=true`；fake runtime 继续仅服务本地和测试。
@@ -63,6 +69,7 @@
 - V2、V3 迁移只增加 `runs`、`tool_calls`、`audit_events` 的查询索引；V1 已建立对应表和基础租户约束。
 - 新增 `V5__soft_delete_tool_definitions.sql`，为 `tool_definitions` 增加 `deleted_at`、`deleted_name` 和租户删除状态索引。旧迁移不变；墓碑行保留原名称副本，活动名称改为内部唯一值以释放租户内名称约束。
 - 新增 V6 扁平 HTTP 参数定义列，并通过 `V7__remove_legacy_http_parameter_mapping.sql` 删除 HTTP 配置表中的旧 Schema 与 JSON Pointer 映射列；历史 HTTP 映射数据不再兼容。
+- 新增 PostgreSQL/MySQL 方言 V11，创建 `tool_approval_requests`、`tool_approval_items` 和 `runtime_checkpoints`，包含租户复合外键、乐观锁版本、审批查询索引、AES/GCM 密文状态槽及完整中文表/字段注释。回滚到旧版本前必须先收口所有 `WAITING_APPROVAL` Run。
 - JDBC 应用启动时由 Flyway 执行迁移。升级前应备份数据库、核对 `flyway_schema_history`，并准备迁移失败处理与恢复预案。
 - 生产可将迁移账号与运行账号分离；连接信息、密码和 JWT secret 只从受控外部 YAML 或 secret manager 注入。
 
@@ -72,7 +79,7 @@
 - 现有 API 的认证、权限、租户过滤和审计约束继续生效；新增的 cursor 由服务端生成，调用方不应自行构造。
 - 审计写入失败不再被忽略，会导致请求返回 `503`；部署和告警系统应将其视为依赖不可用。
 - 生产 profile 不允许 bootstrap admin、开发 JWT fallback 或可用的固定凭据。文档和配置示例仅使用占位符。
-- 真实 Runtime 当前支持兼容单轮 SSE 与持久化会话 SSE；不承诺手动取消、会话归档、自动摘要、写请求幂等重放或 HITL。
+- 真实 Runtime 当前支持兼容单轮 SSE、持久化会话 SSE 与在线 HIGH 工具审批；不承诺手动取消、会话归档、自动摘要、写请求幂等重放、无人值守暂停或长期审批规则。
 - AgentScope 2.0.0 工具层的通用取消信号不能证明外部副作用已停止；有副作用的工具必须使用 `runId`、`toolCallId` 或业务键保证幂等。
 - 模型 API Key 通过受权限保护的模型配置接口加密写入数据库；加密主密钥只能使用受控环境变量或 Secret Manager 注入，密钥不得进入 Git、日志、审计或 API 响应。
 
@@ -80,7 +87,7 @@
 
 以下内容不属于本次阶段3发布：
 
-- 消息编辑/删除、会话归档、自动摘要、写请求幂等重放、手动取消和 HITL。
+- 消息编辑/删除、会话归档、自动摘要、写请求幂等重放、手动取消、无人值守暂停、长期审批规则和独立审批中心。
 - 阶段4 metrics、集中式日志与追踪、备份恢复自动化、容量治理和应用自动归档。
 - 阶段5 CI/CD 交付流水线、发布自动化、稳定性工程和正式版本承诺。
 

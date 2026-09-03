@@ -20,7 +20,7 @@ GET /actuator/health
 
 生产 profile 还必须设置 `fake-runtime-enabled=false`。本地和测试 profile 可按需启用 fake runtime，但不得把该开关带入生产配置或通过外部覆盖重新打开。
 
-生产还必须设置 `agentscope-enabled=true`，并提供 AgentScope Java 2.0.0 的 OpenAI Compatible 或 DashScope 模型配置。默认凭据按 `tenantId + modelConfigId` 从数据库密文解析，也可由自定义 `ModelCredentialProvider` 对接 secret manager；必须由受控环境提供 Base64 编码的 256 位 AES 加密主密钥。`model_configs` 不保存明文 API Key，接口也不回显。
+生产还必须设置 `agentscope-enabled=true`，并提供 AgentScope Java 2.0.2 的 OpenAI Compatible 或 DashScope 模型配置。默认凭据按 `tenantId + modelConfigId` 从数据库密文解析，也可由自定义 `ModelCredentialProvider` 对接 secret manager；必须由受控环境提供 Base64 编码的 256 位 AES 加密主密钥。`model_configs` 不保存明文 API Key，接口也不回显。
 
 ## 审计严格失败语义
 
@@ -49,15 +49,23 @@ GET /api/agents/<agent-id>/runs/<run-id>
 
 JDBC 模式下，运行启动阶段写入 `RUNNING` Run 和启动审计；运行完成阶段在同一完成事务边界内更新 Run、写入 ToolCall 和完成审计。运行异常会尝试写入 `FAILED` 收口；审计失败仍按严格错误语义返回 `503`。
 
-当前没有应用自动删除、归档或 TTL 清理 Run、ToolCall、Audit。备份恢复演练、保留期、容量阈值、分区/归档策略属于阶段4的可观测性与运维工作，生产团队需要在交付前另行建立数据库级治理方案。
+当前没有应用自动删除、归档或 TTL 清理 Run、ToolCall、Audit。PENDING 查询排除已过期审批，详情依据服务端时间显示不可决定；只有提交过期审批时才原子标记 EXPIRED、收口 Run 并删除检查点。当前未提供主动定时扫描，因此没有后续提交的过期行和 WAITING_APPROVAL Run 可能长期保留，不能把“待办列表为空”当作状态全部清理完毕。备份恢复演练、保留期、容量阈值、分区/归档策略属于阶段4的可观测性与运维工作，生产团队需要在交付前另行建立数据库级治理方案。
+
+审批决定最多被原子接受一次，但模型恢复和外部副作用不在该事务内；进程在决定后崩溃不会自动接管，重复点击也不能补偿恢复。检查点写入、Run 等待转换和审批创建同样不是跨阶段原子操作，失败时应关联 Run、审批 ID、审计和 `errorId` 排查。当前没有面向运维的强制恢复/取消接口，不应直接重置审批为 PENDING 后盲目重放工具。主密钥轮换前先停止新审批并收口待审批 Run，因为检查点尚无独立密钥版本。
+
+当前会话发送锁仅覆盖有效 PENDING 阶段，不提供多客户端恢复期间的执行租约；存在同会话并行客户端的部署应在上线验收中专门确认消息顺序。真实浏览器审批流程、进程重启/多实例恢复，以及新审批 JDBC 仓储专门事务测试仍需补齐，不能仅凭迁移和单元测试通过启用生产开关。
+
+会话聊天现支持独立只读审批历史：按决定时间和审批标识分页，按 Run 关联消息，找不到对应消息时在历史区兜底展示。历史接口要求 `agent:read`，由认证 tenant 与会话归属限制数据。审批通过并不代表工具或 Run 成功，排障时同时查看运行记录。历史加载失败的 `errorId` 可用于检索 `APPROVAL_HISTORY` 日志，不能通过重复审批补偿查询失败。
+
+2026-09-03 已在 Rocky 的 PostgreSQL 16/MySQL 8.4 完成审批历史专项测试，覆盖仓储重建后的数据库回读、同一时刻分页、同 Run 多轮及多项决定、隔离和新决定插入。该项不是服务进程重启、审批事务故障恢复或浏览器端到端验收。查询不会主动把已过期 PENDING 改成 EXPIRED，因而终态历史区也不能替代过期状态治理。memory 不提供跨进程历史；JDBC 历史与既有审批表采用同一备份和保留策略。
 
 ## 真实运行故障与工具副作用
 
 - 每次工具调用都会重新读取租户工具定义并执行授权；运行中撤销授权或禁用工具后，后续调用必须被拒绝并审计。endpoint 字段只作为治理元数据，Adapter 不会据此自动访问网络。
 - 模型 timeout、Provider HTTP/传输故障会使运行失败；工具拒绝按拒绝状态收口；审计持久化失败保持严格语义，不能被普通 Provider 错误覆盖。
-- AgentScope 2.0.0 的工具 API 只提供通用取消信号，无法可靠区分所有取消来源。系统只把 AgentScope 明确生成且与当前工具超时配置匹配的结果识别为 timeout，不承诺手动取消。
+- AgentScope 2.0.2 的工具 API 只提供通用取消信号，无法可靠区分所有取消来源。系统只把 AgentScope 明确生成且与当前工具超时配置匹配的结果识别为 timeout，不承诺手动取消。
 - timeout 或线程中断不等于外部副作用已停止。工具与下游系统必须以 `runId`、`toolCallId` 或业务键实现幂等；重试前先查询下游结果，避免重复扣款、通知或写入。
-- 当前仅支持同步单轮调用，不支持多轮会话持久化、流式 REST 或 HITL。调用方超时应保留运行 ID，并通过 Run 详情查询最终收口状态。
+- 当前支持持久化多轮会话、流式 REST 及在线 HIGH 工具审批。在线审批依赖加密检查点；检查点损坏、密钥不一致或审批过期时必须按拒绝处理并通过 Run/审批详情排障。当前不支持无人值守暂停、独立审批工作台或长期授权规则。
 
 ## 动态 HTTP 工具与 MCP 运维
 

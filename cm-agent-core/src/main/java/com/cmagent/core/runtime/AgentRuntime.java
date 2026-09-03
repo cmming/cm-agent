@@ -110,4 +110,25 @@ public interface AgentRuntime {
         return runStructured(request, ignored -> {
         });
     }
+
+    /**
+     * 使用服务端已原子接受的全量决定恢复一次 WAITING_APPROVAL 运行。
+     *
+     * <p>默认实现显式拒绝恢复，保证旧 Runtime 不会静默忽略审批并重复执行；支持 AgentScope
+     * 检查点的实现必须覆盖本方法，并继续使用原 runId、原发起主体和受治理工具网关。</p>
+     *
+     * @param request 使用原 runId 重建的可信运行请求
+     * @param decisions 覆盖当前 ASK 全部工具调用的决定
+     * @param deltaConsumer 接收最终回答文本增量
+     * @param progressConsumer 接收受控执行进度
+     * @return 恢复后的终态或下一次待审批状态
+     */
+    default AgentRuntimeResult resumeStructured(
+            AgentRunRequest request,
+            RuntimeApprovalDecisions decisions,
+            Consumer<AgentTextDelta> deltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
+        throw new UnsupportedOperationException("当前 Runtime 不支持审批恢复");
+    }
 }

@@ -142,7 +142,7 @@ cm-agent:
 
 ## AgentScope 真实 Runtime
 
-阶段3使用 AgentScope Java `2.0.0`，支持 `OPENAI_COMPATIBLE` 和 `DASHSCOPE_NATIVE` 两种 Provider，分别由 AgentScope OpenAI 与 DashScope 扩展提供。启用真实 Runtime 必须满足：
+阶段3使用 AgentScope Java `2.0.2`，支持 `OPENAI_COMPATIBLE` 和 `DASHSCOPE_NATIVE` 两种 Provider，分别由 AgentScope OpenAI 与 DashScope 扩展提供。启用真实 Runtime 必须满足：
 
 ```yaml
 cm-agent:
@@ -152,6 +152,8 @@ cm-agent:
     model-timeout: 60s
     tool-timeout: 30s
     model-max-attempts: 2
+    permission-enabled: true
+    approval-ttl: 15m
   model-credentials:
     encryption-key: ${CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY}
 ```
@@ -160,7 +162,15 @@ cm-agent:
 
 `model_configs` 表保存模型 Provider、`baseUrl`、`modelName`、启用状态与 API Key 密文。明文 API Key 不得进入 DTO、日志、审计或异常，也不支持接口回显。
 
-真实运行同时提供兼容的单轮 Run API 和持久化会话 API。会话接口位于 `/api/agents/{agentId}/conversations`；续聊时固定读取最近 40 条、最多 60,000 字符的完整消息历史，不做自动摘要。该限制当前不是外部配置项，避免不同实例产生不一致的上下文边界。会话流式接口只发送最终回答文本增量和受控终态，不发送思考过程、工具原始参数或工具原始输出。HITL、消息编辑/删除、会话归档、手动取消和写请求幂等重放仍未交付。
+真实运行同时提供兼容的单轮 Run API 和持久化会话 API。会话接口位于 `/api/agents/{agentId}/conversations`；续聊时固定读取最近 40 条、最多 60,000 字符的完整消息历史，不做自动摘要。该限制当前不是外部配置项，避免不同实例产生不一致的上下文边界。会话流式接口发送最终回答文本增量、受控执行进度及审批事件，不发送工具原始参数或工具原始输出。
+
+`permission-enabled` 默认 `false`，用于保持已有工具放行策略的兼容升级；只有明确设为 `true` 时，HIGH 工具才按每次具体调用进入 `WAITING_APPROVAL`。`approval-ttl` 默认 `15m`，必须大于 0 且不超过 24 小时。审批请求保存脱敏摘要及原工具 ID、调用 ID、输入哈希，AgentScope 状态通过 AES/GCM 加密写入 `runtime_checkpoints`，终态或过期处理后删除。第一版只允许原运行发起人且同时拥有 `agent:run`、`agent:approve` 的主体决定，不支持独立审批人、长期预授权规则或无人值守暂停。模式固定在线 DEFAULT、无会话 DONT_ASK，没有 `permission.*` 嵌套配置。
+
+## 会话审批历史
+
+会话审批历史无新增配置项，复用当前持久化模式和 V11 审批表。`GET /api/agents/{agentId}/conversations/{conversationId}/approvals/history?limit=20` 使用 `agent:read` 和会话归属校验；`limit` 范围为 1～100，后续请求的 `cursor` 使用响应 `nextCursor` 原值。响应 `{items, nextCursor}` 中仅有终态的脱敏视图；`nextCursor=null` 表示本次查询没有更早页。非法参数为 400/VALIDATION_FAILED，持久化不可用为 503/PERSISTENCE_UNAVAILABLE，并返回可关联日志的 `errorId`。历史读取不依赖开关当前是否开启，不会触发运行或自动过期处理。
+
+控制台默认最新 20 条；“加载更早审批”追加旧页，“刷新记录”重新读取最新页。JDBC 才能跨服务重启保留历史；memory 仅用于本地与测试，刷新浏览器不清除进程内数据，但重启进程会丢失。完整操作见 [README](../README.md)。
 
 ## AgentScope Studio 本地调试
 
@@ -220,6 +230,6 @@ Run、ToolCall、Conversation 与 Message 使用当前认证主体的 tenant 条
 - `memory` 仅限开发和测试，进程重启会丢失运行、工具调用和审计状态。
 - JDBC 模式已接通 Run、ToolCall、Conversation、Message、Audit 的持久化与查询；`local`/`test` 的运行执行器可以由 fake runtime 提供结果。
 - 真实 Runtime 的每次工具调用都通过治理网关重新读取定义并授权；工具定义中的 endpoint 只是元数据，不会被 Adapter 自动联网执行。
-- 模型 timeout 或 Provider 故障会把运行收口为失败；授权拒绝优先映射为拒绝；审计失败保持严格语义并传播。AgentScope 2.0.0 的工具层只暴露通用取消信号，系统仅根据其明确生成的超时结果判定工具 timeout，不能把该信号视为通用手动取消能力。
+- 模型 timeout 或 Provider 故障会把运行收口为失败；授权拒绝优先映射为拒绝；审计失败保持严格语义并传播。AgentScope 2.0.2 的工具层只暴露通用取消信号，系统仅根据其明确生成的超时结果判定工具 timeout，不能把该信号视为通用手动取消能力。
 - 工具可能产生外部副作用。超时、中断或 Provider 重试不能证明外部系统已经回滚，工具实现与下游接口必须使用 `runId`、`toolCallId` 或业务幂等键实现去重。
 - metrics、集中式日志/追踪、备份治理和 CI/CD 不应在当前配置文档中被视为已交付能力，对应工作列入[中文路线图](roadmap.md)的阶段4-5。

@@ -105,6 +105,18 @@ class ApiExceptionHandlerTest {
                 .andExpect(jsonPath("$.message").value("工具已有调用历史，为保留运行记录不能删除"));
     }
 
+    @Test
+    void 审批冲突和过期使用独立稳定错误码() throws Exception {
+        mockMvc.perform(get("/test/conversations/c1/approvals/conflict"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TOOL_APPROVAL_CONFLICT"))
+                .andExpect(jsonPath("$.message").value("审批状态已变化"));
+        mockMvc.perform(get("/test/conversations/c1/approvals/expired"))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.code").value("TOOL_APPROVAL_EXPIRED"))
+                .andExpect(jsonPath("$.message").value("审批请求已过期"));
+    }
+
     @RestController
     static class FailingController {
         @GetMapping("/test/resources/{id}")
@@ -155,6 +167,16 @@ class ApiExceptionHandlerTest {
                     HttpStatus.CONFLICT,
                     "工具已有调用历史，为保留运行记录不能删除"
             );
+        }
+
+        @GetMapping("/test/conversations/c1/approvals/conflict")
+        void approvalConflict() {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "审批状态已变化");
+        }
+
+        @GetMapping("/test/conversations/c1/approvals/expired")
+        void approvalExpired() {
+            throw new ResponseStatusException(HttpStatus.GONE, "审批请求已过期");
         }
     }
 }

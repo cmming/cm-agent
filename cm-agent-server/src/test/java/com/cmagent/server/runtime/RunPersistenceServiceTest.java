@@ -70,6 +70,19 @@ class RunPersistenceServiceTest {
     }
 
     @Test
+    void 暂停审批时保存已执行工具事实并脱敏() {
+        when(runRepository.waitForApproval(TENANT_ID, RUN_ID)).thenReturn(runningRun.waitForApproval());
+        ToolCallRecord completed = new ToolCallRecord(TOOL_ID, "echo", "apiKey=private-test-marker", "结果",
+                RunStatus.SUCCEEDED, Duration.ofMillis(1), true, "");
+
+        RunRecord waiting = service.waitForApproval(principal, runningRun, List.of(tool), List.of(completed));
+
+        assertThat(waiting.status()).isEqualTo(RunStatus.WAITING_APPROVAL);
+        verify(toolCallRepository).saveAll(eq(TENANT_ID), org.mockito.ArgumentMatchers.argThat(batch ->
+                batch.toolCalls().size() == 1 && !batch.toolCalls().getFirst().inputSummary().contains("private-test-marker")));
+    }
+
+    @Test
     /**
      * 验证或支持 {@code completionPreparationFailureClosesRunningRun} 所描述的测试场景。
      */

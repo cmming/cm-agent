@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="referrer" content="same-origin">
     <title>会话聊天 | CM Agent 控制台 v2</title>
-    <link rel="stylesheet" href="/assets/styles.css">
+    <link rel="stylesheet" href="/assets/styles.css?v=2.0.17">
     <link rel="stylesheet" href="/console/v2/assets/multipage.css">
 </head>
 <body data-console-version="v2" data-page="chatPage">
@@ -39,6 +39,18 @@
             <section class="panel chat-main-panel" aria-label="消息内容">
                 <div class="chat-main-heading"><div><p class="eyebrow">消息</p><h2 id="chatConversationTitle">请选择会话</h2></div><span id="chatLiveStatus" class="chat-live-status">已就绪</span></div>
                 <div id="chatMessageList" class="chat-message-list" aria-live="polite"><div class="chat-welcome"><span class="runs-detail-mark" aria-hidden="true">◌</span><h3>开始一段会话</h3><p>选择 Agent 后发送第一条消息，系统会自动创建会话并保存上下文。</p></div></div>
+                <section id="chatApprovalHistoryRegion" class="chat-approval-history-region" aria-labelledby="chatApprovalHistoryHeading" hidden>
+                    <div class="chat-approval-history-heading"><h3 id="chatApprovalHistoryHeading">审批历史</h3><button id="refreshApprovalHistoryBtn" class="button ghost compact" type="button">刷新记录</button></div>
+                    <p id="chatApprovalHistorySummary" class="chat-approval-history-note" role="status">正在读取审批历史…</p>
+                    <div id="chatApprovalHistoryList" class="chat-approval-history-list"></div>
+                    <button id="loadMoreApprovalHistoryBtn" class="button ghost compact" type="button" hidden>加载更早审批</button>
+                    <p id="chatApprovalHistoryStatus" class="form-status" role="status" aria-live="polite"></p>
+                </section>
+                <section id="chatApprovalRegion" class="chat-approval-region" aria-labelledby="chatApprovalHeading" hidden>
+                    <div class="chat-approval-heading"><div><p class="eyebrow">人工确认 · 仅限本次调用</p><h3 id="chatApprovalHeading">待审批操作</h3></div><span class="risk-badge">高风险 HIGH</span></div>
+                    <div id="chatApprovalList" class="chat-approval-list"></div>
+                    <p id="chatApprovalStatus" class="form-status" role="status" aria-live="polite"></p>
+                </section>
                 <form id="chatForm" class="chat-composer">
                     <label class="sr-only" for="chatInput">输入消息</label>
                     <textarea id="chatInput" rows="3" required placeholder="输入消息，按发送继续当前会话…"></textarea>
@@ -49,7 +61,7 @@
         </section>
     </main>
 </div>
-<script src="/assets/console-core.js?v=2.0.9"></script>
-<script src="/assets/app.js?v=2.0.14"></script>
+<script src="/assets/console-core.js?v=2.0.11"></script>
+<script src="/assets/app.js?v=2.0.17"></script>
 </body>
 </html>

@@ -11,6 +11,8 @@ import com.cmagent.core.runtime.ModelCredential;
 import com.cmagent.core.runtime.ModelCredentialProvider;
 import com.cmagent.core.runtime.ModelCredentialUnavailableException;
 import com.cmagent.core.runtime.ToolInvocationGateway;
+import com.cmagent.core.runtime.RuntimeApprovalDecisions;
+import io.agentscope.core.state.AgentStateStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -80,10 +82,27 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
             AgentScopeRuntimeOptions options,
             Clock clock
     ) {
+        return create(credentialProvider, toolGateway, options, clock,
+                new io.agentscope.core.state.InMemoryAgentStateStore());
+    }
+
+    /**
+     * 创建使用外部 AgentStateStore 的可恢复运行时。
+     *
+     * <p>生产实现应提供加密持久化 Store；内存 Store 仅适用于本地和测试。State Store 的
+     * userId/sessionId 均由适配器从可信租户、主体和 runId 构造，不能由浏览器指定。</p>
+     */
+    public static AgentScopeRuntimeAdapter create(
+            ModelCredentialProvider credentialProvider,
+            ToolInvocationGateway toolGateway,
+            AgentScopeRuntimeOptions options,
+            Clock clock,
+            AgentStateStore stateStore
+    ) {
         return new AgentScopeRuntimeAdapter(
                 credentialProvider,
                 toolGateway,
-                new AgentScopeReActExecutor(options, new AgentScopeModelFactory()),
+                new AgentScopeReActExecutor(options, new AgentScopeModelFactory(), stateStore),
                 clock);
     }
 
@@ -138,7 +157,7 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
                     execution.output(),
                     execution.toolCalls(),
                     startedAt,
-                    clock.instant(),
+                    execution.status() == RunStatus.WAITING_APPROVAL ? null : clock.instant(),
                     execution.errorMessage());
         } catch (ModelCredentialUnavailableException exception) {
             // 凭据解析失败被映射为受控失败终态，此 catch 是该失败唯一可观察的应用日志位置；
@@ -205,8 +224,9 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
                     toRunSpec(request), credential, toolGateway, outputDeltaConsumer, progressConsumer);
             AgentRunResult run = new AgentRunResult(
                     request.runId(), execution.status(), execution.output(), execution.toolCalls(),
-                    startedAt, clock.instant(), execution.errorMessage());
-            return new AgentRuntimeResult(run, execution.assistantMessage());
+                    startedAt, execution.status() == RunStatus.WAITING_APPROVAL ? null : clock.instant(),
+                    execution.errorMessage());
+            return new AgentRuntimeResult(run, execution.assistantMessage(), execution.pendingApproval());
         } catch (ModelCredentialUnavailableException exception) {
             // 同 run()：结构化运行路径的凭据失败也不会再向上传播，必须在此处留下 WARN。
             log.warn("模型凭据不可用。runId={}, tenantId={}, modelConfigId={}, exceptionType={}",
@@ -215,5 +235,27 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
                     request.runId(), RunStatus.FAILED, "", List.of(), startedAt, clock.instant(),
                     "模型凭据不可用"), null);
         }
+    }
+
+    @Override
+    public AgentRuntimeResult resumeStructured(
+            AgentRunRequest request,
+            RuntimeApprovalDecisions decisions,
+            Consumer<AgentTextDelta> outputDeltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
+        Objects.requireNonNull(request, "request 不能为空");
+        Objects.requireNonNull(decisions, "decisions 不能为空");
+        Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
+        Objects.requireNonNull(progressConsumer, "progressConsumer 不能为空");
+        Instant startedAt = clock.instant();
+        ModelCredential credential = credentialProvider.resolve(request.tenantId(), request.modelConfig().id());
+        AgentScopeExecutionResult execution = executor.resumeStructured(
+                toRunSpec(request), credential, toolGateway, decisions, outputDeltaConsumer, progressConsumer);
+        AgentRunResult run = new AgentRunResult(
+                request.runId(), execution.status(), execution.output(), execution.toolCalls(),
+                startedAt, execution.status() == RunStatus.WAITING_APPROVAL ? null : clock.instant(),
+                execution.errorMessage());
+        return new AgentRuntimeResult(run, execution.assistantMessage(), execution.pendingApproval());
     }
 }

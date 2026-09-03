@@ -16,7 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolBase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.agentscope.core.tool.ToolCallParam;
@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 /**
- * 将 CM Agent 工具定义桥接为 AgentScope {@link AgentTool}，同时保留企业治理边界。
+ * 将 CM Agent 工具定义桥接为 AgentScope {@link ToolBase}，同时保留企业治理边界。
  *
  * <p>AgentScope 只看到工具名称、描述和输入 Schema；模型实际发起调用时，本桥接器不会根据工具
  * endpoint 自行联网，而是使用领域请求中已经校验的租户、Agent、主体和运行标识构造
@@ -45,7 +45,7 @@ import java.util.function.Consumer;
  * 工具记录与完成标识使用并发容器，是因为 AgentScope 的工具 Publisher 可能在异步执行链上回调；
  * 对外只能取得不可变快照。</p>
  */
-public class AgentScopeToolBridge implements AgentTool {
+public class AgentScopeToolBridge extends ToolBase {
 
     private static final Logger log = LoggerFactory.getLogger(AgentScopeToolBridge.class);
 
@@ -59,7 +59,6 @@ public class AgentScopeToolBridge implements AgentTool {
     private final ObjectMapper objectMapper;
     private final AgentScopeRunGate runGate;
     private final Consumer<AgentProgressEvent> progressConsumer;
-    private final Map<String, Object> parameters;
     private final ConcurrentLinkedQueue<ToolCallRecord> records = new ConcurrentLinkedQueue<>();
     private final Set<String> completedToolCallIds = ConcurrentHashMap.newKeySet();
     private final AtomicLong fallbackToolCallSequence = new AtomicLong();
@@ -124,37 +123,20 @@ public class AgentScopeToolBridge implements AgentTool {
             AgentScopeRunGate runGate,
             Consumer<AgentProgressEvent> progressConsumer
     ) {
+        // AgentScope 2.0.2 只对 ToolBase 执行 Permission Engine；若继续实现普通 AgentTool，
+        // 即使 ReActAgent 配置 permissionContext 也会直接放行，HIGH 工具将绕过 ASK。
+        super(ToolBase.builder()
+                .name(Objects.requireNonNull(tool, "tool 不能为空").name())
+                .description(tool.description())
+                .inputSchema(parseParameters(objectMapper, tool.inputSchema()))
+                .readOnly(false)
+                .concurrencySafe(false));
         this.request = Objects.requireNonNull(request, "request 不能为空");
-        this.tool = Objects.requireNonNull(tool, "tool 不能为空");
+        this.tool = tool;
         this.gateway = Objects.requireNonNull(gateway, "gateway 不能为空");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
         this.runGate = Objects.requireNonNull(runGate, "runGate 不能为空");
         this.progressConsumer = Objects.requireNonNull(progressConsumer, "progressConsumer 不能为空");
-        this.parameters = parseParameters(tool.inputSchema());
-    }
-
-    /**
-     * @return 注册到本次 AgentScope Toolkit 的工具名称
-     */
-    @Override
-    public String getName() {
-        return tool.name();
-    }
-
-    /**
-     * @return 提供给模型选择工具时使用的描述
-     */
-    @Override
-    public String getDescription() {
-        return tool.description();
-    }
-
-    /**
-     * @return 构造阶段已校验且不可修改的工具输入 JSON Schema
-     */
-    @Override
-    public Map<String, Object> getParameters() {
-        return parameters;
     }
 
     /**
@@ -358,7 +340,8 @@ public class AgentScopeToolBridge implements AgentTool {
      * @return 保持原字段顺序的不可变参数定义
      * @throws IllegalArgumentException Schema 不是合法 JSON object 时抛出
      */
-    private Map<String, Object> parseParameters(String inputSchema) {
+    private static Map<String, Object> parseParameters(ObjectMapper objectMapper, String inputSchema) {
+        Objects.requireNonNull(objectMapper, "objectMapper 不能为空");
         try {
             JsonNode root = objectMapper.readTree(inputSchema);
             if (root == null || !root.isObject()) {

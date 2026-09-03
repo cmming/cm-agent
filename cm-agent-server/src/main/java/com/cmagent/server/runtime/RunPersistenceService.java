@@ -109,6 +109,49 @@ public class RunPersistenceService {
     }
 
     /**
+     * 将 RUNNING Run 转换为 WAITING_APPROVAL 并记录安全审计。
+     *
+     * <p>该步骤不写完成时间，也不持久化 ASK 前的非最终模型文本。调用方必须随后保存审批请求；
+     * 审批持久化失败时应把 Run 收口为失败，避免留下不可恢复的悬挂状态。</p>
+     */
+    public RunRecord waitForApproval(PrincipalRef principal, RunRecord runningRun) {
+        return waitForApproval(principal, runningRun, List.of(), List.of());
+    }
+
+    /**
+     * 保存本执行片段已发生的工具调用，并将运行保持在等待审批状态。
+     *
+     * <p>ASK 之前可能已经执行 LOW/MEDIUM 工具；这些事实必须在暂停时保存，不能等恢复后仅保存
+     * 新片段而丢失。重复 ASK 只保存新片段，不重复迁移 Run 状态；JDBC 下与等待审计共享短事务。</p>
+     *
+     * @param principal 当前认证主体
+     * @param runningRun 首次执行或上次暂停的运行记录
+     * @param authorizedTools 本片段的授权工具快照
+     * @param records 本片段已完成的工具调用，不包含历史片段
+     * @return 等待审批的运行记录
+     */
+    public RunRecord waitForApproval(PrincipalRef principal, RunRecord runningRun,
+                                     List<ToolDefinition> authorizedTools, List<ToolCallRecord> records) {
+        Objects.requireNonNull(principal, "principal 不能为空");
+        Objects.requireNonNull(runningRun, "runningRun 不能为空");
+        List<RunToolCall> toolCalls = mapToolCalls(principal.tenantId(), runningRun.id(), authorizedTools, records, Instant.now());
+        if (transactionTemplate == null) {
+            appendAudit(principal, runningRun, RunStatus.WAITING_APPROVAL, "Agent 运行等待工具审批");
+            RunRecord waiting = runningRun.status() == RunStatus.WAITING_APPROVAL ? runningRun
+                    : runRepository.waitForApproval(principal.tenantId(), runningRun.id());
+            toolCallRepository.saveAll(principal.tenantId(), new RunToolCallBatch(principal.tenantId(), toolCalls));
+            return waiting;
+        }
+        return requireResult(transactionTemplate.execute(status -> {
+            RunRecord waiting = runningRun.status() == RunStatus.WAITING_APPROVAL ? runningRun
+                    : runRepository.waitForApproval(principal.tenantId(), runningRun.id());
+            toolCallRepository.saveAll(principal.tenantId(), new RunToolCallBatch(principal.tenantId(), toolCalls));
+            appendAudit(principal, waiting, RunStatus.WAITING_APPROVAL, "Agent 运行等待工具审批");
+            return waiting;
+        }));
+    }
+
+    /**
      * 将运行记录更新为成功完成，并保存工具调用批次。
      *
      * @param principal  当前认证主体
@@ -370,7 +413,7 @@ public class RunPersistenceService {
      * @param status 当前处理状态，用于驱动状态分支或记录结果。
      */
     private static RunStatus finalStatus(RunStatus status) {
-        return status == null || status == RunStatus.RUNNING ? RunStatus.FAILED : status;
+        return status == null || status.isActive() ? RunStatus.FAILED : status;
     }
 
     /**

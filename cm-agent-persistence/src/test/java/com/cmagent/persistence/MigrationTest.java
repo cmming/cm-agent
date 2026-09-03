@@ -45,7 +45,10 @@ class MigrationTest {
             "messages",
             "runs",
             "tool_calls",
-            "audit_events"
+            "audit_events",
+            "tool_approval_requests",
+            "tool_approval_items",
+            "runtime_checkpoints"
     );
 
     @Container
@@ -85,7 +88,7 @@ class MigrationTest {
      * @param password 测试辅助方法使用的 password 参数
      */
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(10);
+        assertThat(migrationsExecuted).isEqualTo(11);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
@@ -114,6 +117,11 @@ class MigrationTest {
             assertThat(indexNames(connection, "conversations")).contains("idx_conversations_tenant_agent_updated");
             assertThat(indexNames(connection, "messages")).contains(
                     "ux_messages_tenant_conversation_sequence", "idx_messages_tenant_run");
+            assertThat(indexNames(connection, "tool_approval_requests")).contains(
+                    "idx_tool_approvals_pending", "idx_tool_approvals_run");
+            assertThat(indexNames(connection, "tool_approval_items")).contains("ux_tool_approval_items_call");
+            assertThat(indexNames(connection, "runtime_checkpoints")).contains(
+                    "ux_runtime_checkpoints_slot", "idx_runtime_checkpoints_expiry");
             assertThat(indexColumns(connection, "runs", "idx_runs_tenant_agent_started"))
                     .containsExactly("tenant_id", "agent_id", "started_at", "id");
             assertThat(indexColumns(connection, "tool_calls", "idx_tool_calls_tenant_run"))
@@ -139,6 +147,11 @@ class MigrationTest {
             assertThat(importedKeyTargets(connection, "tool_http_configs")).contains("tool_definitions");
             assertThat(importedKeyTargets(connection, "tool_mcp_publications")).contains("tool_definitions");
             assertThat(importedKeyTargets(connection, "messages")).contains("conversations", "runs");
+            assertThat(importedKeyTargets(connection, "tool_approval_requests")).contains(
+                    "tenants", "agent_definitions", "conversations", "runs");
+            assertThat(importedKeyTargets(connection, "tool_approval_items")).contains(
+                    "tool_approval_requests", "tenants", "tool_definitions");
+            assertThat(importedKeyTargets(connection, "runtime_checkpoints")).contains("tenants");
         } catch (SQLException e) {
             throw new AssertionError("验证迁移后的 schema 失败", e);
         }

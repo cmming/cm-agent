@@ -15,8 +15,12 @@ import com.cmagent.core.repository.ToolCallRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.repository.McpToolPublicationRepository;
+import com.cmagent.core.repository.ToolApprovalRepository;
+import com.cmagent.core.repository.RuntimeCheckpointRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import com.cmagent.server.store.InMemoryConversationStore;
+import com.cmagent.server.store.InMemoryToolApprovalRepository;
+import com.cmagent.server.store.InMemoryRuntimeCheckpointRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
@@ -156,6 +160,22 @@ public class ServerRepositoryConfiguration {
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
     public RunRepository memoryRunRepository(InMemoryPlatformStore store) {
         return store;
+    }
+
+    /** 创建仅供 memory profile 使用的审批 Repository。 */
+    @Bean
+    @ConditionalOnMissingBean(ToolApprovalRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    public ToolApprovalRepository memoryToolApprovalRepository() {
+        return new InMemoryToolApprovalRepository();
+    }
+
+    /** 创建仅供 memory profile 使用的加密检查点 Repository。 */
+    @Bean
+    @ConditionalOnMissingBean(RuntimeCheckpointRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    public RuntimeCheckpointRepository memoryRuntimeCheckpointRepository() {
+        return new InMemoryRuntimeCheckpointRepository();
     }
 
     /**

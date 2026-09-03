@@ -54,11 +54,24 @@
         conversations: [],
         selectedConversationId: "",
         conversationAgentId: "",
+        pendingApprovals: new Map(),
+        approvalSubmissions: new Set(),
+        approvalFeedback: new Map(),
+        approvalHistory: [],
+        approvalHistoryCursor: "",
+        approvalHistoryBusy: false,
+        approvalHistoryError: "",
+        chatBusy: false,
+        chatLoading: false,
         auditEvents: [],
         auditCursor: ""
     };
     const toolPublicationLock = core.createToolPublicationLock();
+    const approvalDrafts = core.createApprovalDraftStore();
     const toolLoadRevision = core.createLoadRevisionGate();
+    const chatLoadRevision = core.createLoadRevisionGate();
+    const approvalHistoryRevision = core.createLoadRevisionGate();
+    const conversationLoadRevision = core.createLoadRevisionGate();
     const agentDetailRevision = core.createLoadRevisionGate();
     const modelConfigLoadRevision = core.createLoadRevisionGate();
     const modelConfigDetailRevision = core.createLoadRevisionGate();
@@ -265,6 +278,14 @@
         state.conversations = [];
         state.selectedConversationId = "";
         state.conversationAgentId = "";
+        state.pendingApprovals.clear();
+        state.approvalSubmissions.clear();
+        state.approvalFeedback.clear();
+        approvalDrafts.clear();
+        resetApprovalHistory();
+        state.chatLoading = false;
+        chatLoadRevision.invalidate();
+        conversationLoadRevision.invalidate();
         if (isMultiPage) {
             state.editingToolId = "";
             state.runs = [];
@@ -1802,7 +1823,11 @@
 
     async function loadConversations(agentId) {
         if (!agentId) return;
+        const session = sessionEpoch.capture();
+        const revision = conversationLoadRevision.issue();
         const page = await api.request(`/api/agents/${encodeURIComponent(agentId)}/conversations?limit=50`);
+        if (!sessionEpoch.isCurrent(session) || !conversationLoadRevision.isCurrent(revision)
+                || state.selectedAgentId !== agentId) return;
         state.conversations = Array.isArray(page?.items) ? page.items : [];
         state.conversationAgentId = agentId;
         if (!state.conversations.some((item) => item.id === state.selectedConversationId)) {
@@ -1913,7 +1938,7 @@
     }
 
     async function selectChatConversation(conversationId) {
-        if (!conversationId || $("chatSendBtn")?.disabled) return;
+        if (!conversationId || state.chatBusy) return;
         state.selectedConversationId = conversationId;
         renderChatConversations();
         await loadChatMessages(state.selectedAgentId, conversationId);
@@ -1936,9 +1961,455 @@
     }
 
     async function loadChatMessages(agentId, conversationId) {
-        if (!conversationId || !$("chatMessageList")) return;
-        const page = await api.request(`/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/messages?limit=200`);
-        renderChatMessages(Array.isArray(page?.items) ? page.items : []);
+        const session = sessionEpoch.capture();
+        const revision = chatLoadRevision.issue();
+        const isCurrent = () => sessionEpoch.isCurrent(session) && chatLoadRevision.isCurrent(revision)
+                && state.selectedAgentId === agentId && state.selectedConversationId === conversationId;
+        if (!isCurrent()) return false;
+        if (!conversationId || !$("chatMessageList")) {
+            state.pendingApprovals.clear();
+            resetApprovalHistory();
+            renderApprovalHistory();
+            renderChatApprovals();
+            return false;
+        }
+        const base = `/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}`;
+        // 查询结束前不开放发送，防止页面刷新时短暂绕过待审批发送锁。
+        state.chatLoading = true;
+        state.pendingApprovals.clear();
+        resetApprovalHistory();
+        const historyRevision = approvalHistoryRevision.issue();
+        state.approvalHistoryBusy = true;
+        renderApprovalHistory();
+        renderChatApprovals();
+        try {
+            const [page, approvalPage, historyResult] = await Promise.all([
+                api.request(`${base}/messages?limit=200`),
+                api.request(`${base}/approvals?status=PENDING`),
+                // 历史读取失败不能伪装为空历史，也不影响已确认安全的待办发送状态。
+                api.request(`${base}/approvals/history?limit=20`).then((page) => ({page}), (error) => ({error}))
+            ]);
+            if (!isCurrent()) return false;
+            renderChatMessages(Array.isArray(page?.items) ? page.items : []);
+            state.pendingApprovals = new Map((Array.isArray(approvalPage?.items) ? approvalPage.items : [])
+                .map((approval) => [approval.approvalId, approval]));
+            if (approvalHistoryRevision.isCurrent(historyRevision)) {
+                state.approvalHistory = core.mergeApprovalHistory([], historyResult.page?.items || [], agentId, conversationId);
+                state.approvalHistoryCursor = historyResult.page?.nextCursor || "";
+                state.approvalHistoryError = historyResult.error?.message || "";
+                state.approvalHistoryBusy = false;
+            }
+            state.chatLoading = false;
+            renderChatApprovals();
+            renderApprovalHistory();
+            return true;
+        } catch (error) {
+            if (!isCurrent()) return false;
+            // 无法确认服务端状态时保持发送关闭，用户刷新后再建立权威状态。
+            setStatus($("chatFormStatus"), `${error.message} 请刷新会话后重试。`, "error");
+            state.approvalHistoryBusy = false;
+            state.approvalHistoryError = "会话未能完整加载，请重新加载当前会话后查看审批历史。";
+            renderApprovalHistory();
+            throw error;
+        }
+    }
+
+    function renderChatApprovals() {
+        const region = $("chatApprovalRegion");
+        const container = $("chatApprovalList");
+        if (!region || !container) return;
+        const approvals = [...state.pendingApprovals.values()].filter((approval) => approval.status === "PENDING"
+            || state.approvalSubmissions.has(approval.approvalId)
+            || state.approvalFeedback.get(approval.approvalId)?.phase === "UNKNOWN");
+        const focused = document.activeElement;
+        const focusedApproval = focused?.closest(".chat-approval-card")?.dataset.approvalId;
+        const focusedId = focused?.id;
+        region.hidden = approvals.length === 0;
+        if ($("chatApprovalHeading")) $("chatApprovalHeading").textContent = approvals.some((item) => item.status === "PENDING")
+            ? "待审批操作" : "审批处理记录";
+        container.replaceChildren();
+        approvals.forEach((approval) => container.append(createApprovalCard(approval)));
+        updateChatSendAvailability();
+        // 流事件重绘卡片时保留键盘位置；控件变为禁用后将焦点交给同一请求的状态提示。
+        if (focusedApproval) {
+            const replacement = focusedId ? $(focusedId) : null;
+            (replacement && !replacement.matches(":disabled") ? replacement : $(`approval-status-${focusedApproval}`))?.focus({preventScroll: true});
+        }
+    }
+
+    function createApprovalCard(approval) {
+        const submitting = state.approvalSubmissions.has(approval.approvalId);
+        const feedback = state.approvalFeedback.get(approval.approvalId);
+        const ui = core.approvalUiState(approval, feedback?.phase);
+        const card = element("article", {className: "chat-approval-card"});
+        card.dataset.approvalId = approval.approvalId;
+        card.dataset.status = approval.status;
+        card.setAttribute("aria-busy", String(submitting));
+        const title = element("div", {className: "chat-approval-card-title"});
+        title.append(
+            element("strong", {text: ui.label}),
+            element("span", {text: `发起人：${approval.requestedByDisplayName || "—"} · 过期：${core.formatDateTime(approval.expiresAt)}`})
+        );
+        card.append(title);
+        const explanation = element("p", {className: "chat-approval-explanation", text: ui.message});
+        card.append(explanation);
+        const form = element("form", {className: "chat-approval-form"});
+        const items = Array.isArray(approval.items) ? approval.items : [];
+        const choices = new Map(approvalDrafts.read(approval).map((item) => [item.itemId, item.decision]));
+        const details = element("details", {className: "chat-approval-details"});
+        details.open = !ui.terminal;
+        details.append(element("summary", {text: ui.terminal ? `查看 ${items.length} 项调用与决定` : `核对 ${items.length} 项调用参数`}),
+            element("p", {className: "chat-approval-call", text: `运行编号：${approval.runId || "—"}`}));
+        items.forEach((item) => details.append(createApprovalItem(approval,
+            {...item, decision: item.decision || choices.get(item.itemId)}, submitting || !ui.editable)));
+        form.append(details);
+        const actions = element("div", {className: "chat-approval-actions"});
+        if (approval.canDecide && approval.status === "PENDING" && feedback?.phase !== "UNKNOWN") {
+            const selectionSummary = element("p", {className: "chat-approval-selection"});
+            selectionSummary.id = `approval-selection-${approval.approvalId}`;
+            selectionSummary.setAttribute("role", "status");
+            selectionSummary.setAttribute("aria-live", "polite");
+            const submit = element("button", {className: "button primary compact", type: "submit"});
+            submit.setAttribute("aria-describedby", selectionSummary.id);
+            submit.id = `approval-submit-${approval.approvalId}`;
+            const updateChoices = () => {
+                const decisions = collectApprovalChoices(approval, form);
+                approvalDrafts.write(approval, decisions);
+                updateApprovalSubmitAvailability(approval, decisions, submit, selectionSummary, submitting);
+                if (submitting) submit.textContent = ui.label;
+            };
+            if (items.length > 1) {
+                for (const [decision, label] of [["APPROVE", "全部选为允许"], ["DENY", "全部选为拒绝"]]) {
+                    const button = element("button", {className: "button ghost compact", type: "button", text: label});
+                    button.disabled = submitting;
+                    button.addEventListener("click", () => { setApprovalChoices(form, decision); updateChoices(); });
+                    actions.append(button);
+                }
+                form.append(element("p", {className: "chat-approval-batch-note", text: "批量按钮仅更改选择，不会提交；请核对下方汇总后再确认。"}));
+            }
+            form.addEventListener("change", updateChoices);
+            form.append(selectionSummary);
+            actions.append(submit);
+            updateChoices();
+            form.addEventListener("submit", (event) => {
+                event.preventDefault();
+                const interactionSession = sessionEpoch.capture();
+                submitApprovalDecision(approval, form).catch((error) => {
+                    if (!sessionEpoch.isCurrent(interactionSession) || state.selectedAgentId !== approval.agentId
+                            || state.selectedConversationId !== approval.conversationId) return;
+                    const previous = state.approvalFeedback.get(approval.approvalId);
+                    state.approvalFeedback.set(approval.approvalId, {phase: previous?.phase === "UNKNOWN" ? "UNKNOWN" : "ERROR", message: error.message, tone: "error"});
+                    // 404 权威查询可能已经移除卡片，此时仍需在会话区域保留可读错误和错误编号。
+                    if (!state.pendingApprovals.has(approval.approvalId)) setStatus($("chatFormStatus"), error.message, "error");
+                    renderChatApprovals();
+                });
+            });
+        } else if (ui.terminal) {
+            actions.append(element("p", {className: "chat-approval-readonly", text: `决定时间：${core.formatDateTime(approval.decidedAt)}`}));
+        }
+        if (!submitting && (!ui.editable || feedback?.phase === "ERROR")) {
+            const refresh = element("button", {className: "button ghost compact", type: "button", text: "刷新审批状态"});
+            refresh.id = `approval-refresh-${approval.approvalId}`;
+            refresh.addEventListener("click", () => refreshApprovalFromCard(approval));
+            actions.append(refresh);
+        }
+        form.append(actions);
+        card.append(form);
+        const status = element("p", {className: "form-status chat-approval-status", text: feedback?.message || ""});
+        status.id = `approval-status-${approval.approvalId}`;
+        status.tabIndex = -1;
+        status.dataset.tone = feedback?.tone || "neutral";
+        status.setAttribute("role", feedback?.tone === "error" ? "alert" : "status");
+        status.setAttribute("aria-live", feedback?.tone === "error" ? "assertive" : "polite");
+        card.append(status);
+        return card;
+    }
+
+    function createApprovalItem(approval, item, disabled) {
+        const fieldset = element("fieldset", {className: "chat-approval-item"});
+        fieldset.dataset.itemId = item.itemId;
+        fieldset.disabled = disabled || !approval.canDecide || approval.status !== "PENDING";
+        const legend = element("legend");
+        legend.append(
+            element("strong", {text: item.toolName || "未命名工具"}),
+            element("span", {className: "risk-badge chat-approval-risk", text: item.riskLevel || "HIGH"})
+        );
+        const callId = element("p", {className: "chat-approval-call", text: `调用标识：${item.toolCallId || "—"}`});
+        const summaryLabel = element("p", {className: "chat-approval-parameter-label", text: "调用参数（已脱敏，仅供核对，不可编辑）"});
+        const summary = element("pre", {className: "chat-approval-summary", text: item.inputSummary || "未提供可展示参数。"});
+        const choices = element("div", {className: "chat-approval-decisions"});
+        [
+            ["APPROVE", "允许本次调用"],
+            ["DENY", "拒绝本次调用"]
+        ].forEach(([value, label]) => {
+            const wrapper = element("label");
+            const input = element("input", {type: "radio", value});
+            input.id = `approval-choice-${approval.approvalId}-${item.itemId}-${value}`;
+            input.name = `approval-${approval.approvalId}-${item.itemId}`;
+            input.dataset.itemId = item.itemId;
+            if (item.decision === value) input.checked = true;
+            wrapper.append(input, document.createTextNode(label));
+            choices.append(wrapper);
+        });
+        fieldset.append(legend, callId, summaryLabel, summary, choices);
+        return fieldset;
+    }
+
+    function setApprovalChoices(form, decision) {
+        form.querySelectorAll(`input[type="radio"][value="${decision}"]`).forEach((input) => {
+            input.checked = true;
+        });
+    }
+
+    function collectApprovalChoices(approval, form) {
+        return (approval.items || []).map((item) => {
+            const selected = form.querySelector(`input[data-item-id="${item.itemId}"]:checked`);
+            return selected ? {itemId: item.itemId, decision: selected.value} : null;
+        }).filter(Boolean);
+    }
+
+    function updateApprovalSubmitAvailability(approval, decisions, submit, summary, submitting) {
+        const selection = core.summarizeApprovalChoices(approval.items, decisions);
+        summary.textContent = `已选择 ${selection.selected}/${selection.total} 项 · 允许 ${selection.approved} 项 · 拒绝 ${selection.denied} 项`;
+        submit.disabled = submitting || !selection.ready;
+        submit.textContent = submitting ? "正在提交决定…" : selection.submitLabel;
+    }
+
+    async function submitApprovalDecision(approval, form) {
+        if (state.approvalSubmissions.has(approval.approvalId)) return;
+        const session = sessionEpoch.capture();
+        const isCurrent = () => sessionEpoch.isCurrent(session) && state.selectedAgentId === approval.agentId
+                && state.selectedConversationId === approval.conversationId;
+        if (!isCurrent()) return;
+        const decisions = collectApprovalChoices(approval, form);
+        const payload = core.buildApprovalDecisionPayload(approval, decisions);
+        state.approvalSubmissions.add(approval.approvalId);
+        state.approvalFeedback.set(approval.approvalId, {phase: "SUBMITTING", message: "正在提交审批决定，请勿重复点击。"});
+        renderChatApprovals();
+        $(`approval-status-${approval.approvalId}`)?.focus({preventScroll: true});
+        const streamMessage = appendChatStreamingMessage();
+        let streamedOutput = "";
+        let completed = false;
+        let nextApproval = null;
+        let decisionAccepted = false;
+        try {
+            const base = `/api/agents/${encodeURIComponent(approval.agentId)}/conversations/${encodeURIComponent(approval.conversationId)}`;
+            await api.stream(`${base}/approvals/${encodeURIComponent(approval.approvalId)}/decision/stream`, {
+                method: "POST",
+                body: JSON.stringify(payload)
+            }, (event) => {
+                if (event.type === "approval-decision") {
+                    decisionAccepted = true;
+                    approvalDrafts.remove(approval.approvalId);
+                    if (isCurrent()) {
+                        state.pendingApprovals.set(approval.approvalId, {...approval, ...event.data, canDecide: false,
+                            items: approval.items.map((item) => ({...item, decision: payload.decisions.find((choice) => choice.itemId === item.itemId)?.decision}))});
+                        state.approvalFeedback.set(approval.approvalId, {phase: "RESUMING", message: "决定已接受，正在处理原运行；无需再次提交。"});
+                        renderChatApprovals();
+                    }
+                } else if (event.type === "delta") {
+                    streamedOutput += String(event.data?.delta || "");
+                    if (isCurrent()) renderMarkdown(streamMessage.output, streamedOutput);
+                } else if (event.type === "progress") {
+                    if (isCurrent()) renderChatProgress(streamMessage, event.data);
+                } else if (event.type === "approval-required") {
+                    nextApproval = event.data;
+                } else if (event.type === "completed") {
+                    completed = true;
+                } else if (event.type === "error") {
+                    throw streamEventError(event.data, "审批恢复失败");
+                }
+            });
+            if (!completed && !nextApproval) {
+                throw new Error("审批恢复未返回最终状态，请刷新会话确认。");
+            }
+            if (isCurrent()) {
+                await loadConversations(approval.agentId);
+                await refreshApprovalState(approval, isCurrent);
+                if (isCurrent()) state.approvalFeedback.set(approval.approvalId, {phase: "DONE",
+                    message: nextApproval ? "本次决定已处理，运行又提出了新的调用，请继续核对新审批。" : "本次审批流程已结束，执行结果请查看会话回答或运行记录。", tone: "success"});
+            }
+        } catch (error) {
+            if (isCurrent()) {
+                try {
+                    await refreshApprovalState(approval, isCurrent);
+                } catch {
+                    if (isCurrent()) {
+                        // 网络结果不确定时禁止盲目重试；下一次页面刷新再查询服务端权威状态。
+                        state.pendingApprovals.set(approval.approvalId, {...approval, canDecide: false});
+                        state.chatLoading = true;
+                        state.approvalFeedback.set(approval.approvalId, {phase: "UNKNOWN"});
+                        error.message += " 无法确认审批状态，请刷新页面后再操作。";
+                    }
+                }
+            }
+            if (decisionAccepted) {
+                error.message = `${error.message} 决定已经被服务端接受，请勿重复提交。`;
+            }
+            throw error;
+        } finally {
+            state.approvalSubmissions.delete(approval.approvalId);
+            streamMessage.article.remove();
+            if (isCurrent()) renderChatApprovals();
+        }
+    }
+
+    // 此操作只查询 GET，不重放决定；查询失败继续锁定，避免把断线误当作服务端未接收。
+    async function refreshApprovalFromCard(approval) {
+        if (state.approvalSubmissions.has(approval.approvalId)) return;
+        const session = sessionEpoch.capture();
+        const isCurrent = () => sessionEpoch.isCurrent(session) && state.selectedAgentId === approval.agentId
+            && state.selectedConversationId === approval.conversationId;
+        if (!isCurrent()) return;
+        state.approvalSubmissions.add(approval.approvalId);
+        state.approvalFeedback.set(approval.approvalId, {phase: "CHECKING", message: "正在查询服务端权威状态…"});
+        renderChatApprovals();
+        try {
+            await refreshApprovalState(approval, isCurrent);
+            if (isCurrent()) {
+                state.approvalFeedback.delete(approval.approvalId);
+                if (!state.pendingApprovals.has(approval.approvalId)
+                        && !state.approvalHistory.some((item) => item.approvalId === approval.approvalId)) {
+                    setStatus($("chatFormStatus"), "该审批不存在或已不可访问，已刷新当前会话。", "neutral");
+                }
+            }
+        } catch (error) {
+            if (isCurrent()) {
+                state.chatLoading = true;
+                state.pendingApprovals.set(approval.approvalId, {...approval, canDecide: false});
+                state.approvalFeedback.set(approval.approvalId, {phase: "UNKNOWN", message: `${error.message} 未确认结果前不会重新提交决定。`, tone: "error"});
+            }
+        } finally {
+            state.approvalSubmissions.delete(approval.approvalId);
+            if (isCurrent()) renderChatApprovals();
+        }
+    }
+
+    async function refreshApprovalState(approval, isCurrent) {
+        if (!isCurrent()) return;
+        await loadChatMessages(approval.agentId, approval.conversationId);
+        if (!isCurrent()) return;
+        try {
+            const authoritative = await api.request(`/api/agents/${encodeURIComponent(approval.agentId)}/conversations/${encodeURIComponent(approval.conversationId)}/approvals/${encodeURIComponent(approval.approvalId)}`);
+            if (isCurrent()) {
+                if (authoritative.status === "PENDING") {
+                    state.pendingApprovals.set(approval.approvalId, authoritative);
+                } else {
+                    state.pendingApprovals.delete(approval.approvalId);
+                    state.approvalHistory = core.mergeApprovalHistory(state.approvalHistory, [authoritative], approval.agentId, approval.conversationId);
+                }
+            }
+        } catch (error) {
+            if (error.status !== 404) throw error;
+            if (isCurrent()) {
+                state.pendingApprovals.delete(approval.approvalId);
+                state.approvalHistory = state.approvalHistory.filter((item) => item.approvalId !== approval.approvalId);
+            }
+        }
+        if (isCurrent()) { renderChatApprovals(); renderApprovalHistory(); }
+    }
+
+    function resetApprovalHistory() {
+        approvalHistoryRevision.invalidate();
+        state.approvalHistory = [];
+        state.approvalHistoryCursor = "";
+        state.approvalHistoryBusy = false;
+        state.approvalHistoryError = "";
+    }
+
+    // 分页失败保留已加载记录和原游标；只在当前会话与加载代次仍一致时更新页面。
+    async function loadApprovalHistory(older = false) {
+        if (state.approvalHistoryBusy || !state.selectedConversationId || (older && !state.approvalHistoryCursor)) return;
+        const agentId = state.selectedAgentId;
+        const conversationId = state.selectedConversationId;
+        const session = sessionEpoch.capture();
+        const revision = approvalHistoryRevision.issue();
+        const isCurrent = () => sessionEpoch.isCurrent(session) && approvalHistoryRevision.isCurrent(revision)
+            && state.selectedAgentId === agentId && state.selectedConversationId === conversationId;
+        const cursor = older ? state.approvalHistoryCursor : "";
+        state.approvalHistoryBusy = true;
+        state.approvalHistoryError = "";
+        renderApprovalHistory();
+        try {
+            const base = `/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/approvals/history`;
+            const page = await api.request(core.buildCursorPath(base, 20, cursor));
+            if (!isCurrent()) return;
+            state.approvalHistory = core.mergeApprovalHistory(older ? state.approvalHistory : [], page.items || [], agentId, conversationId);
+            state.approvalHistoryCursor = page.nextCursor || "";
+        } catch (error) {
+            if (isCurrent()) state.approvalHistoryError = error.message;
+        } finally {
+            if (isCurrent()) { state.approvalHistoryBusy = false; renderApprovalHistory(); }
+        }
+    }
+
+    function renderApprovalHistory() {
+        const region = $("chatApprovalHistoryRegion");
+        const list = $("chatApprovalHistoryList");
+        const messages = $("chatMessageList");
+        if (!region || !list || !messages) return;
+        region.hidden = !state.selectedConversationId;
+        const openedRuns = new Set([...document.querySelectorAll(".chat-approval-history-run[open]")].map((node) => node.dataset.runId));
+        messages.querySelectorAll(".chat-approval-history-inline").forEach((node) => node.remove());
+        list.replaceChildren();
+        const anchors = [...messages.querySelectorAll(".chat-message[data-run-id]")].reverse();
+        let unlinked = 0;
+        for (const group of core.groupApprovalHistory(state.approvalHistory)) {
+            const node = createApprovalHistoryGroup(group);
+            node.open = openedRuns.has(group.runId);
+            const anchor = anchors.find((message) => message.dataset.runId === group.runId);
+            if (anchor) {
+                node.classList.add("chat-approval-history-inline");
+                anchor.append(node);
+            } else {
+                unlinked += group.items.length;
+                list.append(node);
+            }
+        }
+        $("chatApprovalHistorySummary").textContent = state.approvalHistory.length
+            ? `已加载 ${state.approvalHistory.length} 条审批，${state.approvalHistory.length - unlinked} 条位于对应消息下方。${unlinked ? `另有 ${unlinked} 条对应消息不在当前窗口，展示如下。` : ""}`
+            : state.approvalHistoryBusy ? "正在读取审批历史…"
+                : state.approvalHistoryError ? "审批历史暂时不可用，可重试；这不表示没有历史记录。" : "当前会话暂无已处理审批。";
+        const more = $("loadMoreApprovalHistoryBtn");
+        if (more) { more.hidden = !state.approvalHistoryCursor; more.disabled = state.approvalHistoryBusy; }
+        const refresh = $("refreshApprovalHistoryBtn");
+        if (refresh) { refresh.disabled = state.approvalHistoryBusy; refresh.textContent = state.approvalHistoryError ? "重试加载历史" : "刷新记录"; }
+        setStatus($("chatApprovalHistoryStatus"), state.approvalHistoryError, "error");
+    }
+
+    // 独立只读渲染器不复用决定表单，历史记录即使携带 canDecide=true 也不显示操作控件。
+    function createApprovalHistoryGroup(group) {
+        const details = element("details", {className: "chat-approval-history-run"});
+        details.dataset.runId = group.runId;
+        details.append(element("summary", {text: `审批记录 · ${group.items.length} 次确认 · 运行 ${shortIdentifier(group.runId)}`}));
+        details.append(element("p", {className: "chat-approval-call", text: `运行编号：${group.runId}。审批允许不等于工具执行成功。`}));
+        for (const approval of group.items) {
+            const entry = element("article", {className: "chat-approval-history-entry"});
+            entry.dataset.approvalId = approval.approvalId;
+            entry.append(element("strong", {text: `${core.approvalUiState(approval).label} · ${core.formatDateTime(approval.decidedAt)}`}),
+                element("p", {className: "chat-approval-call", text: `发起人：${approval.requestedByDisplayName || "—"} · 审批人：${approval.decidedByDisplayName || "—"} · 审批编号：${approval.approvalId}`}));
+            for (const item of approval.items || []) {
+                const call = element("details", {className: "chat-approval-history-item"});
+                const decision = item.decision === "APPROVE" ? "已允许" : item.decision === "DENY" ? "已拒绝" : "未作决定";
+                call.append(element("summary", {text: `${item.toolName || "未命名工具"} · ${decision}`}),
+                    element("p", {className: "chat-approval-call", text: `调用标识：${item.toolCallId || "—"} · 调用参数（已脱敏）`}),
+                    element("pre", {className: "chat-approval-summary", text: item.inputSummary || "未提供可展示参数。"}));
+                entry.append(call);
+            }
+            details.append(entry);
+        }
+        return details;
+    }
+
+    function streamEventError(data, fallback) {
+        const code = data?.code ? `（错误码：${data.code}）` : "";
+        const errorId = data?.errorId ? `（错误编号：${data.errorId}）` : "";
+        return new Error(`${data?.message || fallback}${code}${errorId}`);
+    }
+
+    function shortIdentifier(value) {
+        const text = String(value || "—");
+        return text.length > 8 ? text.slice(0, 8) : text;
     }
 
     function renderChatMessages(messages) {
@@ -1972,6 +2443,7 @@
     function createChatMessage(message) {
         const isUser = message.role === "USER";
         const article = element("article", {className: `chat-message ${isUser ? "chat-message-user" : "chat-message-agent"}`});
+        if (message.runId) article.dataset.runId = message.runId;
         const label = isUser ? "你" : (message.senderName || "Agent");
         article.append(element("p", {className: "chat-message-label", text: label}));
         const bubble = element("div", {className: "chat-message-bubble"});
@@ -2074,6 +2546,7 @@
     function chatToolStatusText(status, durationMillis = null) {
         const labels = {
             RUNNING: "执行中",
+            WAITING_APPROVAL: "等待审批",
             SUCCEEDED: "执行成功",
             FAILED: "执行失败",
             DENIED: "已拒绝"
@@ -2169,16 +2642,37 @@
     }
 
     function setChatBusy(busy) {
+        state.chatBusy = busy;
         [$("chatAgentSelect"), $("newChatConversationBtn"), $("chatSendBtn")].filter(Boolean)
             .forEach((control) => { control.disabled = busy; });
+        updateChatSendAvailability();
+    }
+
+    function updateChatSendAvailability() {
+        const waiting = [...state.pendingApprovals.values()]
+            .some((approval) => approval.status === "PENDING");
+        const sendButton = $("chatSendBtn");
+        const input = $("chatInput");
+        const resuming = [...state.approvalSubmissions].some((id) => state.pendingApprovals.has(id)
+            || state.approvalHistory.some((approval) => approval.approvalId === id));
+        if (sendButton) sendButton.disabled = state.chatBusy || state.chatLoading || waiting || resuming;
+        if (input) input.disabled = state.chatBusy || state.chatLoading || waiting || resuming;
         const liveStatus = $("chatLiveStatus");
         if (liveStatus) {
-            liveStatus.textContent = busy ? "正在生成" : "已就绪";
-            liveStatus.classList.toggle("is-streaming", busy);
+            const activePhase = [...state.pendingApprovals.values(), ...state.approvalHistory]
+                .filter((approval) => state.approvalSubmissions.has(approval.approvalId))
+                .map((approval) => state.approvalFeedback.get(approval.approvalId)?.phase);
+            liveStatus.textContent = state.chatBusy ? "正在生成" : activePhase.includes("RESUMING") ? "正在恢复运行"
+                : activePhase.includes("CHECKING") ? "正在核对审批状态" : resuming ? "正在提交审批"
+                    : state.chatLoading ? "正在确认会话状态" : waiting ? "请先处理待审批操作" : "已就绪";
+            liveStatus.classList.toggle("is-streaming", state.chatBusy);
         }
     }
 
     async function sendChatMessage() {
+        if (state.chatBusy || state.chatLoading || [...state.pendingApprovals.values()]
+                .some((approval) => approval.status === "PENDING" || state.approvalSubmissions.has(approval.approvalId))
+                || state.approvalHistory.some((approval) => state.approvalSubmissions.has(approval.approvalId))) return;
         const agentId = $("chatAgentSelect")?.value;
         const input = $("chatInput")?.value.trim();
         if (!agentId || !input) {
@@ -2199,6 +2693,7 @@
                 $("chatInput").value = "";
                 setStatus($("chatFormStatus"), "正在接收回答…", "neutral");
                 let result = null;
+                let approvalRequired = null;
                 await api.stream(`/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/messages/stream`, {
                     method: "POST",
                     body: JSON.stringify({input})
@@ -2213,16 +2708,18 @@
                         renderChatProgress(streamMessage, event.data);
                     } else if (event.type === "completed") {
                         result = event.data;
+                    } else if (event.type === "approval-required") {
+                        approvalRequired = event.data;
                     } else if (event.type === "error") {
-                        const code = event.data?.code ? `（错误码：${event.data.code}）` : "";
-                        const errorId = event.data?.errorId ? `（错误编号：${event.data.errorId}）` : "";
-                        throw new Error(`${event.data?.message || "会话运行失败"}${code}${errorId}`);
+                        throw streamEventError(event.data, "会话运行失败");
                     }
                 });
-                if (!result) throw new Error("运行未返回最终结果，请刷新会话确认状态。");
+                if (!result && !approvalRequired) throw new Error("运行未返回最终结果，请刷新会话确认状态。");
                 await loadConversations(agentId);
                 await loadChatMessages(agentId, conversationId);
-                setStatus($("chatFormStatus"), "回答已完成。", "success");
+                setStatus($("chatFormStatus"), approvalRequired
+                    ? "运行已暂停，请处理下方高风险工具审批。"
+                    : "回答已完成。", approvalRequired ? "neutral" : "success");
             });
         } catch (error) {
             setStatus($("chatFormStatus"), error.message, "error");
@@ -2748,10 +3245,19 @@
                 .catch((error) => setStatus($("runFormStatus"), error.message, "error"));
         });
         bind("chatForm", "submit", (event) => { event.preventDefault(); sendChatMessage(); });
+        bind("loadMoreApprovalHistoryBtn", "click", () => loadApprovalHistory(true));
+        bind("refreshApprovalHistoryBtn", "click", () => loadApprovalHistory(false));
         bind("chatAgentSelect", "change", () => {
             const agentId = $("chatAgentSelect").value;
             state.selectedAgentId = agentId;
             state.selectedConversationId = "";
+            state.pendingApprovals.clear();
+            approvalDrafts.clear();
+            resetApprovalHistory();
+            renderApprovalHistory();
+            state.chatLoading = false;
+            chatLoadRevision.invalidate();
+            renderChatApprovals();
             loadConversations(agentId)
                 .then(() => state.selectedConversationId
                     ? loadChatMessages(agentId, state.selectedConversationId)

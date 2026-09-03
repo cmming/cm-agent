@@ -1,6 +1,6 @@
 # CM Agent
 
-CM Agent 是基于 AgentScope Java 的企业级智能体开源底座。第一阶段完成 Java SDK、Spring Boot Starter、独立服务端、轻量控制台、工具治理、多租户和 RBAC 基线；阶段2完成生产持久化与安全收口；阶段3已接入 AgentScope Java 2.0.0 真实运行时。
+CM Agent 是基于 AgentScope Java 的企业级智能体开源底座。第一阶段完成 Java SDK、Spring Boot Starter、独立服务端、轻量控制台、工具治理、多租户和 RBAC 基线；阶段2完成生产持久化与安全收口；阶段3已接入 AgentScope Java 2.0.2 真实运行时。
 
 ## 快速开始
 
@@ -64,18 +64,28 @@ v2 控制台按版本化 URL 拆分为登录、能力总览、Agent 管理、模
 mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-agent.config.jwt-secret=<local-dev-only-jwt-secret> --cm-agent.config.bootstrap-admin-enabled=true --cm-agent.config.bootstrap-admin-password=<local-dev-only-password>"
 ```
 
-真实 Runtime 支持 AgentScope 2.0.0 的 OpenAI Compatible 与 DashScope Provider。启用时必须同时关闭 fake runtime；模型 API Key 由模型配置管理接口加密写入数据库，运行时按 `tenantId + modelConfigId` 读取：
+真实 Runtime 支持 AgentScope 2.0.2 的 OpenAI Compatible 与 DashScope Provider。启用时必须同时关闭 fake runtime；模型 API Key 由模型配置管理接口加密写入数据库，运行时按 `tenantId + modelConfigId` 读取：
 
 ```yaml
 cm-agent:
   fake-runtime-enabled: false
   agentscope:
     enabled: true
+    permission-enabled: true
+    approval-ttl: 15m
   model-credentials:
     encryption-key: ${CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY}
 ```
 
 `CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY` 是 Base64 编码的 256 位 AES 主密钥，不是模型 API Key，必须由部署环境或密钥管理系统提供。模型 API Key 只以 AES/GCM 密文写入 `model_configs`，创建时必填、更新时可轮换，所有读取接口均不会回显。生产也可以提供自定义 `ModelCredentialProvider` 对接外部密钥管理系统。
+
+`permission-enabled` 默认关闭，开启后 LOW/MEDIUM 工具继续执行，HIGH 工具在真正进入治理网关前暂停并在聊天页显示逐调用审批卡片。审批人必须是本轮发起人且同时拥有 `agent:run` 和 `agent:approve`；决定绑定当前 `toolCallId`、原工具 `toolId` 与输入哈希，恢复时仍会重新执行 ToolGrant、租户和工具状态校验。检查点使用与模型凭据相同的外部 AES 主密钥进行 AES/GCM 加密，`approval-ttl` 默认 15 分钟、最大 24 小时。当前只开放在线会话审批，不提供无人值守暂停、长期记住规则或独立审批中心；进程中断后的自动接管和主动过期扫描尚未实现，上线前须评估[运维限制](docs/operations.md)。
+
+聊天页的人工确认需要先核对参数、逐项选择，再显式提交。多项的“全部选为允许/拒绝”只改变选择，按钮下方汇总会显示允许与拒绝数量；未选完不能提交。提交后区分“正在提交决定”和“决定已接受”，批准不等于工具执行成功。只读或网络结果不确定时使用“刷新审批状态”重新查询指定请求，不会再次发起决定。当前页面可短暂保留同一审批快照的选择，刷新页面后不保留，也不形成长期授权。
+
+审批完成后，在**会话聊天 → 选择原会话 → 对应消息下方“审批记录”**展开查看；同一次运行多轮确认全部保留，每项决定及脱敏参数可单独展开。页面下方“审批历史”可刷新记录、加载更早审批；对应消息不在当前窗口的记录在该区域展示。默认加载最新 20 条，历史始终只读，刷新或重新进入会话会从服务端恢复。只需 `agent:read` 即可查看有权访问会话的审批历史，无需审批权限。JDBC 模式支持跨服务重启保存，memory 模式仅进程内保存。历史加载失败会显示原因及错误编号，可重试，不会自动重放工具。
+
+完整交互与验证边界见[人工确认 UI 说明](docs/superpowers/implementation/2026-09-03-tool-approval-ui-ux-implementation-design.md)和[审批历史回显说明](docs/superpowers/implementation/2026-09-03-tool-approval-history-implementation-design.md)。
 
 ## AgentScope Studio 本地调试
 
@@ -91,11 +101,11 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 - 第一阶段：已交付工程骨架、核心领域接口、Starter、控制台、工具治理、多租户/RBAC 基线和 fake runtime。
 - 阶段2：已交付 Run、ToolCall、Audit 的 JDBC Repository 与 Flyway V2/V3 查询索引，租户隔离、严格审计、JWT/profile/bootstrap/error/redaction 安全收口，以及运行启动/完成两段事务和 cursor 查询。
-- 阶段3：已交付 AgentScope Java 2.0.0 真实运行、OpenAI Compatible/DashScope 模型适配、外部模型凭据、受治理工具调用、超时中止与结果映射；并交付消息一等公民的持久化会话、会话 SSE、动态 HTTP 工具、控制台调试与可选 MCP 发布。工具每次调用都会重新授权，endpoint 元数据不会被自动执行。
+- 阶段3：已交付 AgentScope Java 2.0.2 真实运行、OpenAI Compatible/DashScope 模型适配、外部模型凭据、受治理工具调用、HIGH 工具在线逐调用审批、超时中止与结果映射；并交付消息一等公民的持久化会话、会话 SSE、动态 HTTP 工具、控制台调试与可选 MCP 发布。工具每次调用都会重新授权，endpoint 元数据不会被自动执行。
 - 阶段4：可观测性与运维增强尚未交付。
 - 阶段5：交付与稳定性工程尚未交付。
 
-当前会话只持久化脱敏文本和受治理工具摘要，不提供消息编辑/删除、会话归档、附件、多模态、HITL、自动摘要、手动取消或写请求幂等重放。模型与工具调用失败、审计严格失败以及外部副作用的重试/幂等边界见[配置说明](docs/configuration.md)和[运维说明](docs/operations.md)。
+当前会话只持久化脱敏文本、受治理工具摘要和加密的待恢复 AgentState，不提供消息编辑/删除、会话归档、附件、多模态、独立审批中心、自动摘要、手动取消或写请求幂等重放。模型与工具调用失败、审计严格失败以及外部副作用的重试/幂等边界见[配置说明](docs/configuration.md)和[运维说明](docs/operations.md)。
 
 完整范围和后续依赖见[中文路线图](docs/roadmap.md)。
 

@@ -70,7 +70,9 @@ public class ApiExceptionHandler {
      * @param ignored 仅用于满足回调签名、不参与业务判断的参数。
      */
     public ResponseEntity<ApiErrorResponse> validationFailure(Exception ignored, HttpServletRequest request) {
-        return response(HttpStatus.BAD_REQUEST, ApiErrorCode.VALIDATION_FAILED, "请求参数不合法", request);
+        return response(HttpStatus.BAD_REQUEST,
+                approvalDecisionRequest(request) ? ApiErrorCode.TOOL_APPROVAL_INVALID_DECISION : ApiErrorCode.VALIDATION_FAILED,
+                "请求参数不合法", request);
     }
 
     @ExceptionHandler(DataAccessException.class)
@@ -108,7 +110,7 @@ public class ApiExceptionHandler {
             // 保留其原因可让控制台区分停用模型、工具类型等可操作失败，同时仍经过脱敏。
             case BAD_REQUEST -> response(
                     status,
-                    ApiErrorCode.VALIDATION_FAILED,
+                    approvalDecisionRequest(request) ? ApiErrorCode.TOOL_APPROVAL_INVALID_DECISION : ApiErrorCode.VALIDATION_FAILED,
                     exception.getReason() == null || exception.getReason().isBlank()
                             ? "请求参数不合法"
                             : exception.getReason(),
@@ -118,18 +120,35 @@ public class ApiExceptionHandler {
             case FORBIDDEN -> response(status, ApiErrorCode.FORBIDDEN, "没有权限执行该操作", request);
             case CONFLICT -> response(
                     status,
-                    ApiErrorCode.VALIDATION_FAILED,
+                    approvalRequest(request) ? ApiErrorCode.TOOL_APPROVAL_CONFLICT : ApiErrorCode.VALIDATION_FAILED,
                     exception.getReason() == null || exception.getReason().isBlank()
                             ? "请求资源冲突"
                             : exception.getReason(),
                     request
             );
-            case NOT_FOUND -> request.getRequestURI().contains("/conversations")
+            // 历史集合没有单个审批资源；此处 404 表示会话或 Agent 不可见，而不是历史记录为空。
+            case NOT_FOUND -> request.getRequestURI().endsWith("/approvals/history")
                     ? response(status, ApiErrorCode.CONVERSATION_NOT_FOUND, "会话或 Agent 不存在", request)
-                    : response(status, ApiErrorCode.RUNTIME_ERROR, "请求资源不存在", request);
+                    : approvalRequest(request)
+                    ? response(status, ApiErrorCode.TOOL_APPROVAL_NOT_FOUND, "审批请求不存在", request)
+                    : request.getRequestURI().contains("/conversations")
+                        ? response(status, ApiErrorCode.CONVERSATION_NOT_FOUND, "会话或 Agent 不存在", request)
+                        : response(status, ApiErrorCode.RUNTIME_ERROR, "请求资源不存在", request);
+            case GONE -> approvalRequest(request)
+                    ? response(status, ApiErrorCode.TOOL_APPROVAL_EXPIRED, "审批请求已过期", request)
+                    : response(status, ApiErrorCode.VALIDATION_FAILED, "请求资源已失效", request);
             default -> failedResponse(HttpStatus.INTERNAL_SERVER_ERROR, ApiErrorCode.INTERNAL_ERROR,
                     "服务内部错误", exception, request);
         };
+    }
+
+    private static boolean approvalRequest(HttpServletRequest request) {
+        return request.getRequestURI().contains("/approvals");
+    }
+
+    /** 历史查询的分页错误不是审批决定错误，只有写入决定的入口使用决定专属错误码。 */
+    private static boolean approvalDecisionRequest(HttpServletRequest request) {
+        return approvalRequest(request) && request.getRequestURI().endsWith("/decision/stream");
     }
 
     @ExceptionHandler(RuntimeException.class)
@@ -156,7 +175,13 @@ public class ApiExceptionHandler {
                                                             Throwable failure,
                                                             HttpServletRequest request) {
         String errorId = RequestCorrelationFilter.errorIdOf(request);
-        diagnosticLogger.error(ErrorDiagnosticLogger.DiagnosticContext.api(errorId, code.name(), request.getRequestURI()), failure);
+        // 此属性只由已认证 Controller 写入，不读取任何客户端 tenant/资源头；未提供时保持既有通用日志边界。
+        Object supplied = request.getAttribute(ErrorDiagnosticLogger.DiagnosticContext.class.getName());
+        var context = supplied instanceof ErrorDiagnosticLogger.DiagnosticContext trusted
+                ? new ErrorDiagnosticLogger.DiagnosticContext(errorId, trusted.boundary(), code.name(), trusted.tenantId(),
+                    trusted.principalId(), trusted.agentId(), trusted.runId(), trusted.toolId(), trusted.toolCallId(), trusted.source())
+                : ErrorDiagnosticLogger.DiagnosticContext.api(errorId, code.name(), request.getRequestURI());
+        diagnosticLogger.error(context, failure);
         return response(status, code, message, errorId);
     }
 

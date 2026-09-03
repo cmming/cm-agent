@@ -34,6 +34,7 @@ public class AuthController {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final List<String> PERMISSIONS = List.of(
             "agent:run",
+            "agent:approve",
             "agent:read",
             "agent:write",
             "agent:delete",

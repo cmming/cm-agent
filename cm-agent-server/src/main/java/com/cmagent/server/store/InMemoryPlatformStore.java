@@ -781,6 +781,18 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     }
 
     @Override
+    public RunRecord waitForApproval(UUID tenantId, UUID runId) {
+        Objects.requireNonNull(tenantId, "tenantId 不能为空");
+        RunRecord existing = findByTenantAndId(tenantId, runId)
+                .orElseThrow(() -> new NoSuchElementException("Run 不存在"));
+        RunRecord waiting = existing.waitForApproval();
+        if (!runs.replace(runId, existing, waiting)) {
+            throw new NoSuchElementException("Run 不存在或状态已变化");
+        }
+        return waiting;
+    }
+
+    @Override
     /**
      * 完成当前状态转换并返回最终结果。
      *

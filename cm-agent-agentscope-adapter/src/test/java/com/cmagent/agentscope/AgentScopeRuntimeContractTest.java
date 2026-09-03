@@ -129,6 +129,82 @@ class AgentScopeRuntimeContractTest {
                 .doesNotContain(INVALID_TEST_CREDENTIAL);
     }
 
+    @Test
+    void 高风险工具在确认前暂停且确认后只执行一次() {
+        AtomicInteger calls = new AtomicInteger();
+        AgentRuntime runtime = runtime(invocation -> {
+            calls.incrementAndGet();
+            return ToolInvocationResult.succeeded("已完成");
+        }, new AgentScopeRuntimeOptions(Duration.ofSeconds(2), Duration.ofSeconds(1), 1, true));
+        AgentRunRequest request = approvalRequest();
+
+        var waiting = runtime.runStructured(request, ignored -> {}, ignored -> {});
+
+        assertThat(waiting.run().status()).isEqualTo(RunStatus.WAITING_APPROVAL);
+        assertThat(waiting.assistantMessage()).isNull();
+        assertThat(calls).hasValue(0);
+        var item = waiting.pendingApproval().items().getFirst();
+        var decisions = new com.cmagent.core.runtime.RuntimeApprovalDecisions(List.of(
+                new com.cmagent.core.runtime.RuntimeApprovalDecisions.Item(item.toolCallId(), item.toolId(), item.inputHash(),
+                        com.cmagent.core.domain.ToolApprovalDecision.APPROVE)));
+        var completed = runtime.resumeStructured(request, decisions, ignored -> {}, ignored -> {});
+
+        assertThat(completed.run().status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(calls).hasValue(1);
+        assertThat(requestCount).hasValue(2);
+        assertThatThrownBy(() -> runtime.resumeStructured(request, decisions, ignored -> {}, ignored -> {}))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(calls).hasValue(1);
+    }
+
+    @Test
+    void 输入哈希不匹配时恢复拒绝且不会调用工具() {
+        AtomicInteger calls = new AtomicInteger();
+        AgentRuntime runtime = runtime(invocation -> {
+            calls.incrementAndGet();
+            return ToolInvocationResult.succeeded("已完成");
+        }, new AgentScopeRuntimeOptions(Duration.ofSeconds(2), Duration.ofSeconds(1), 1, true));
+        AgentRunRequest request = approvalRequest();
+        var waiting = runtime.runStructured(request, ignored -> {}, ignored -> {});
+        var item = waiting.pendingApproval().items().getFirst();
+
+        assertThatThrownBy(() -> runtime.resumeStructured(request,
+                new com.cmagent.core.runtime.RuntimeApprovalDecisions(List.of(
+                        new com.cmagent.core.runtime.RuntimeApprovalDecisions.Item(item.toolCallId(), item.toolId(), "0".repeat(64),
+                                com.cmagent.core.domain.ToolApprovalDecision.APPROVE))), ignored -> {}, ignored -> {}))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("输入已变化");
+        assertThat(calls).hasValue(0);
+    }
+
+    @Test
+    void 同名工具被替换后不能继承原工具的审批决定() {
+        AtomicInteger calls = new AtomicInteger();
+        AgentRuntime runtime = runtime(invocation -> {
+            calls.incrementAndGet();
+            return ToolInvocationResult.succeeded("已完成");
+        }, new AgentScopeRuntimeOptions(Duration.ofSeconds(2), Duration.ofSeconds(1), 1, true));
+        AgentRunRequest original = approvalRequest();
+        var pending = runtime.runStructured(original, ignored -> {}, ignored -> {}).pendingApproval().items().getFirst();
+        var replacement = new ToolDefinition(UUID.randomUUID(), TENANT_ID, "echo", "替换后的工具", ToolType.LOCAL,
+                tool().inputSchema(), ToolRiskLevel.HIGH, true, "", "tester", "tester");
+        var changed = new AgentRunRequest(original.runId(), original.tenantId(), original.agent(), original.modelConfig(),
+                original.principal(), original.input(), List.of(replacement), original.conversationId());
+        var decisions = new com.cmagent.core.runtime.RuntimeApprovalDecisions(List.of(
+                new com.cmagent.core.runtime.RuntimeApprovalDecisions.Item(pending.toolCallId(), pending.toolId(), pending.inputHash(),
+                        com.cmagent.core.domain.ToolApprovalDecision.APPROVE)));
+        assertThatThrownBy(() -> runtime.resumeStructured(changed, decisions, ignored -> {}, ignored -> {}))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("工具已变更或失去授权");
+        assertThat(calls).hasValue(0);
+    }
+
+    private AgentRunRequest approvalRequest() {
+        ToolDefinition high = new ToolDefinition(TOOL_ID, TENANT_ID, "echo", "高风险测试工具", ToolType.LOCAL,
+                tool().inputSchema(), ToolRiskLevel.HIGH, true, "", "tester", "tester");
+        AgentRunRequest base = request(List.of(high));
+        return new AgentRunRequest(base.runId(), base.tenantId(), base.agent(), base.modelConfig(), base.principal(),
+                base.input(), base.tools(), UUID.randomUUID());
+    }
+
     /**
      * 验证 AgentScope 的最终回答文本块会在运行完成前按增量回调传递给上层。
      */

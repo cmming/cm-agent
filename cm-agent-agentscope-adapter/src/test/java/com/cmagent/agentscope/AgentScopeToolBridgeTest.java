@@ -22,6 +22,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.ToolBase;
 import org.junit.jupiter.api.Test;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
@@ -72,6 +73,9 @@ class AgentScopeToolBridgeTest {
 
         assertThat(bridge.getName()).isEqualTo("echo");
         assertThat(bridge.getDescription()).isEqualTo("回显输入");
+        assertThat(bridge).isInstanceOf(ToolBase.class);
+        assertThat(bridge.isReadOnly()).isFalse();
+        assertThat(bridge.isConcurrencySafe()).isFalse();
         assertThat(bridge.getParameters())
                 .containsEntry("type", "object")
                 .containsKey("properties");

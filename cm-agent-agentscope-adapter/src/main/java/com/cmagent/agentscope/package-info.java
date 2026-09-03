@@ -1,5 +1,5 @@
 /**
- * CM Agent 领域运行时与 AgentScope 2.0.0 之间的适配层。
+ * CM Agent 领域运行时与当前实际解析的 AgentScope 2.0.2 之间的适配层。
  *
  * <p>{@link com.cmagent.agentscope.AgentScopeRuntimeAdapter} 实现 Core 的 {@code AgentRuntime}
  * 同步契约，内部通过 {@link com.cmagent.agentscope.AgentScopeReActExecutor} 驱动

@@ -4,6 +4,7 @@ import com.cmagent.core.runtime.ModelCredential;
 import com.cmagent.core.runtime.ToolInvocationGateway;
 import com.cmagent.core.domain.AgentTextDelta;
 import com.cmagent.core.domain.AgentProgressEvent;
+import com.cmagent.core.runtime.RuntimeApprovalDecisions;
 
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -84,5 +85,17 @@ interface AgentScopeExecutor {
     ) {
         Objects.requireNonNull(progressConsumer, "progressConsumer 不能为空");
         return executeStructured(spec, credential, toolGateway, outputDeltaConsumer);
+    }
+
+    /** 使用持久化 AgentState 和全量 ConfirmResult 恢复暂停运行。 */
+    default AgentScopeExecutionResult resumeStructured(
+            AgentScopeRunSpec spec,
+            ModelCredential credential,
+            ToolInvocationGateway toolGateway,
+            RuntimeApprovalDecisions decisions,
+            Consumer<AgentTextDelta> outputDeltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
+        throw new UnsupportedOperationException("当前 AgentScope 执行器不支持审批恢复");
     }
 }

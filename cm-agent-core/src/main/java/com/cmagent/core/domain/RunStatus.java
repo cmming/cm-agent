@@ -7,6 +7,9 @@ public enum RunStatus {
     /** 运行或工具调用已启动但尚未收口；持久化记录处于该状态时不允许出现完成时间。 */
     RUNNING,
 
+    /** AgentScope 已暂停并等待人工审批；该状态仍是非终态，不允许出现完成时间。 */
+    WAITING_APPROVAL,
+
     /** 正常完成，输出摘要已脱敏。 */
     SUCCEEDED,
 
@@ -14,5 +17,14 @@ public enum RunStatus {
     FAILED,
 
     /** 被授权策略拒绝；作为独立终态与失败区分，便于审计区分越权尝试与执行故障。 */
-    DENIED
+    DENIED;
+
+    /**
+     * 判断状态是否仍可能继续推进。
+     *
+     * @return RUNNING 或 WAITING_APPROVAL 时返回 {@code true}
+     */
+    public boolean isActive() {
+        return this == RUNNING || this == WAITING_APPROVAL;
+    }
 }
