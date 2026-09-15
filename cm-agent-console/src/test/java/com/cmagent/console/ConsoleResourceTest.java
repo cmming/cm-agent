@@ -76,6 +76,11 @@ class ConsoleResourceTest {
         assertThat(audit)
                 .contains("data-page=\"auditPage\"", "id=\"auditPage\"", "id=\"auditList\"")
                 .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"");
+
+        for (String page : new String[]{overview, agents, modelConfigs, tools, chat, runs, audit}) {
+            assertThat(page.indexOf("href=\"/console/v2/model-configs.html\""))
+                    .isLessThan(page.indexOf("href=\"/console/v2/agents.html\""));
+        }
     }
 
     @Test
