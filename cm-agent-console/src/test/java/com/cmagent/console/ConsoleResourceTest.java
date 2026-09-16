@@ -101,7 +101,7 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.17", "/assets/console-core.js?v=2.0.11", "/assets/styles.css?v=2.0.17")
+                    .contains("/assets/app.js?v=2.0.18", "/assets/console-core.js?v=2.0.11", "/assets/styles.css?v=2.0.17")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }
@@ -166,12 +166,13 @@ class ConsoleResourceTest {
                 "id=\"modelConfigList\"", "id=\"modelConfigDetail\"", "id=\"modelConfigForm\"",
                 "value=\"OPENAI_COMPATIBLE\"", "value=\"DASHSCOPE_NATIVE\"",
                 "id=\"cancelModelConfigEditBtn\"", "不要在地址中嵌入用户名、密码、Token 或 API Key",
-                "id=\"modelConfigApiKey\"", "type=\"password\"", "不会在详情、列表或编辑表单中回显"
+                "id=\"modelConfigApiKey\"", "type=\"password\"", "不会在详情、列表或编辑表单中回显",
+                "id=\"modelCatalogOptions\"", "id=\"discoverModelNamesBtn\"", "id=\"modelCatalogStatus\""
         ).doesNotContain("name=\"encryptedApiKey\"");
         assertThat(script)
-                .contains("loadModelConfigs", "selectModelConfig", "submitModelConfig", "deleteModelConfig")
+                .contains("loadModelConfigs", "selectModelConfig", "submitModelConfig", "deleteModelConfig", "discoverModelCatalog")
                 .contains("const method = editingId ? \"PUT\" : \"POST\"", "{method: \"DELETE\"}",
-                        "if (apiKey) payload.apiKey = apiKey", "现有密钥不会回显")
+                        "if (apiKey) payload.apiKey = apiKey", "现有密钥不会回显", "/discover-models")
                 .doesNotContain(".innerHTML");
     }
 

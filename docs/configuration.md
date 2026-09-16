@@ -49,6 +49,11 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 | `cm-agent.http-tools.max-timeout` | `30s` | 单工具最大总超时；请求、重定向和 Secret 解析共用该时限 |
 | `cm-agent.http-tools.max-response-bytes` | `262144` | 脱敏前后均受约束的响应上限，超过上限返回固定受控失败 |
 | `cm-agent.http-tools.max-redirects` | `3` | 同源重定向最大次数；每跳均重新校验协议、主机与地址安全性 |
+| `cm-agent.model-catalog-discovery.allow-http` | `false` | 是否允许模型目录发现使用明文 HTTP；生产应保持 `false` |
+| `cm-agent.model-catalog-discovery.allowed-hosts` | OpenAI 与 DashScope 官方主机 | 模型目录发现的精确主机白名单；自建网关必须显式加入 |
+| `cm-agent.model-catalog-discovery.timeout` | `5s` | 单次目录请求的连接与读取超时，必须为正数 |
+| `cm-agent.model-catalog-discovery.max-response-bytes` | `131072` | 目录响应体上限，超过后返回受控失败 |
+| `cm-agent.model-catalog-discovery.max-models` | `200` | 单次返回给控制台的模型名称上限 |
 
 ## 模型配置管理
 
@@ -65,6 +70,26 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 ```
 
 `baseUrl` 必须是没有用户信息和 URL 片段的 HTTP(S) 绝对地址。创建请求必须包含 `apiKey`，更新请求省略该字段或传 `null` 时保留原值，提供非空值时轮换密钥。API Key 在进入仓储前以 AES/GCM 加密写入 `encrypted_api_key`，响应、列表、详情、审计和日志均不包含 API Key 或密文。仍被 Agent 引用的模型配置不能删除，接口会返回明确的 `409 Conflict`；启动初始化器维护的固定系统默认配置也不能删除，但可以停用或更新。
+
+## 模型目录发现
+
+v2 模型配置表单提供“获取模型列表”。它只调用 CM Agent 的同源接口，浏览器不会向供应商域名发送 API Key。创建前或编辑时更改了 Provider、基础地址的草稿，使用 `POST /api/model-configs/discover-models` 并只在本次服务端调用期间使用请求中的 API Key；未修改 Provider 和基础地址的已保存配置，使用 `POST /api/model-configs/{id}/discover-models`，服务端只会在当前 tenant 内读取已保存密文。两者均需要 `model:write`。
+
+响应为 `{ "items": ["model-a", "model-b"] }`；服务端只接收并返回 `data[].id`，会去重、排序并限制到 `max-models`。第一版仅读取供应商返回的首个目录响应，不自动追页、不持久化或缓存模型目录。`404`、`405` 或目录结构不兼容会返回可手工回退的稳定错误码；页面不会覆盖当前已填模型名。
+
+目录发现独立使用 `cm-agent.model-catalog-discovery.*`，避免继承动态 HTTP 工具的“默认拒绝所有主机”语义。默认仅允许 `api.openai.com`、`dashscope.aliyuncs.com` 和 `dashscope-intl.aliyuncs.com`；其他 OpenAI Compatible 网关应由部署者显式配置精确主机名，例如：
+
+```yaml
+cm-agent:
+  model-catalog-discovery:
+    allowed-hosts:
+      - models.example.com
+    timeout: 5s
+    max-response-bytes: 131072
+    max-models: 200
+```
+
+请求不跟随重定向，地址仍经过协议、主机和解析地址安全校验。不得在此配置、日志、审计或浏览器中放置 API Key；目录发现失败时使用 `errorCode` 与 `errorId` 关联日志，并改为手工填写模型名称。
 
 ## 动态 HTTP 工具
 

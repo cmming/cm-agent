@@ -75,6 +75,14 @@ JDBC 模式下，运行启动阶段写入 `RUNNING` Run 和启动审计；运行
 
 为需要外部副作用的 HTTP 工具配置业务幂等键。网络超时、线程中断或调用端重试不表示下游操作已经停止或回滚；应在下游查询业务结果后再重试，避免重复扣款、通知或写入。调试同样可能触发真实下游调用，只授予受信人员 `tool:debug`，并对 HIGH 风险工具执行工具名称完全匹配的二次确认。
 
+## 模型目录发现运维
+
+模型目录发现是携带模型 API Key 的受控出站读取能力，不是通用代理。控制台仅在使用者点击“获取模型列表”时调用同源 CM Agent API；服务端分别处理草稿临时凭据和已保存配置凭据。已保存凭据绝不能因浏览器修改 Provider 或基础地址而发送到新主机。
+
+生产环境保持 `cm-agent.model-catalog-discovery.allow-http=false`，并将 `allowed-hosts` 配为精确的模型供应商主机名。默认白名单只覆盖 OpenAI 和 DashScope 官方主机；接入私有网关前必须由部署人员审核并显式加入目标主机。请求禁止重定向，受 `timeout`、`max-response-bytes` 与 `max-models` 限制；第一版不自动分页和缓存。
+
+服务端会拒绝回环、链路本地、私网和其他受限解析地址，但域名解析与实际连接之间仍可能有 DNS TOCTOU 风险。生产网络必须通过 egress 防火墙、受控 DNS 或受控代理限制实际出站目的地。监控 `MODEL_CATALOG_DISCOVERY` 审计失败和 `MODEL_DISCOVERY_*` 错误码；排障仅使用响应中的 `errorId`，不得记录或索取 API Key、Authorization、完整供应商响应或完整 URL。
+
 MCP 默认关闭。启用 `cm-agent.mcp.enabled=true` 时，同时设置允许的 Origin/Host 白名单，并在反向代理层只公开配置的端点。`POST /mcp` 需要有效 Bearer JWT 和 `tool:mcp:invoke`；`GET /mcp` 固定为 `405`，关闭时为 `404`。每次 MCP 请求都会重新加载当前租户发布目录，取消发布、禁用或 HTTP/LOCAL 配置漂移无需等待缓存失效即可生效。MCP 调用、HTTP 工具和调试的错误与审计文字只应保留受控摘要，排障时不得要求输出 Authorization、Cookie、API Key、完整 URL 或堆栈。
 
 ## Flyway 运维

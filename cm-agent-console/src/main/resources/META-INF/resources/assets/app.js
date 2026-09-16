@@ -46,6 +46,8 @@
         selectedModelConfigId: "",
         selectedModelConfig: null,
         editingModelConfigId: "",
+        editingModelConfigOrigin: null,
+        modelCatalogItems: [],
         selectedToolId: "",
         editingToolId: "",
         runs: [],
@@ -75,6 +77,7 @@
     const agentDetailRevision = core.createLoadRevisionGate();
     const modelConfigLoadRevision = core.createLoadRevisionGate();
     const modelConfigDetailRevision = core.createLoadRevisionGate();
+    const modelCatalogDiscoveryRevision = core.createLoadRevisionGate();
     const localExampleInstallLock = core.createToolPublicationLock();
     const localExampleLoadRevision = core.createLoadRevisionGate();
     const localExampleInstallRevision = core.createKeyedLoadRevisionGate();
@@ -212,6 +215,7 @@
         agentDetailRevision.invalidate();
         modelConfigLoadRevision.invalidate();
         modelConfigDetailRevision.invalidate();
+        modelCatalogDiscoveryRevision.invalidate();
         localExampleLoadRevision.invalidate();
         localExampleInstallRevision.invalidateAll();
         const nextNodes = Array.from(nextDocument.body.children)
@@ -261,6 +265,7 @@
         agentDetailRevision.invalidate();
         modelConfigLoadRevision.invalidate();
         modelConfigDetailRevision.invalidate();
+        modelCatalogDiscoveryRevision.invalidate();
         localExampleLoadRevision.invalidate();
         localExampleInstallRevision.invalidateAll();
         state.token = "";
@@ -811,6 +816,10 @@
 
     function editModelConfig(config) {
         state.editingModelConfigId = config.id;
+        state.editingModelConfigOrigin = {
+            providerType: config.providerType || "OPENAI_COMPATIBLE",
+            baseUrl: config.baseUrl || ""
+        };
         $("modelConfigDisplayName").value = config.displayName || "";
         $("modelConfigProviderType").value = config.providerType || "OPENAI_COMPATIBLE";
         $("modelConfigBaseUrl").value = config.baseUrl || "";
@@ -819,6 +828,8 @@
         $("modelConfigApiKey").required = false;
         $("modelConfigApiKeyHelp").textContent = "留空保留当前 API Key；填写新值将轮换密钥，现有密钥不会回显。";
         $("modelConfigEnabled").checked = config.enabled === true;
+        setModelCatalogItems([]);
+        updateDiscoverModelCatalogButton();
         $("modelConfigFormEyebrow").textContent = "编辑";
         $("modelConfigFormTitle").textContent = "更新模型配置";
         $("saveModelConfigBtn").textContent = "保存修改";
@@ -829,6 +840,7 @@
 
     function resetModelConfigForm() {
         state.editingModelConfigId = "";
+        state.editingModelConfigOrigin = null;
         const form = $("modelConfigForm");
         if (!form) return;
         form.reset();
@@ -837,11 +849,75 @@
         $("modelConfigApiKey").value = "";
         $("modelConfigApiKey").required = true;
         $("modelConfigApiKeyHelp").textContent = "创建时必填。平台仅加密保存，不会在详情、列表或编辑表单中回显。";
+        setModelCatalogItems([]);
+        updateDiscoverModelCatalogButton();
         $("modelConfigFormEyebrow").textContent = "新建";
         $("modelConfigFormTitle").textContent = "创建模型配置";
         $("saveModelConfigBtn").textContent = "创建模型配置";
         $("cancelModelConfigEditBtn").hidden = true;
         setStatus($("modelConfigFormStatus"));
+    }
+
+    function modelCatalogCanUseSavedCredential() {
+        const origin = state.editingModelConfigOrigin;
+        return Boolean(state.editingModelConfigId && origin
+            && $("modelConfigProviderType").value === origin.providerType
+            && $("modelConfigBaseUrl").value.trim() === origin.baseUrl);
+    }
+
+    function updateDiscoverModelCatalogButton() {
+        const button = $("discoverModelNamesBtn");
+        if (!button) return;
+        const hasRequiredConnection = Boolean($("modelConfigProviderType").value && $("modelConfigBaseUrl").value.trim());
+        const hasDraftCredential = Boolean($("modelConfigApiKey").value.trim());
+        const canUseSavedCredential = modelCatalogCanUseSavedCredential();
+        button.disabled = !hasRequiredConnection || (!hasDraftCredential && !canUseSavedCredential);
+        button.textContent = canUseSavedCredential && !hasDraftCredential ? "使用已保存凭据获取模型列表" : "获取模型列表";
+    }
+
+    function setModelCatalogItems(items) {
+        state.modelCatalogItems = Array.isArray(items) ? [...new Set(items.filter((item) => typeof item === "string" && item.trim()))]
+            .sort((first, second) => first.localeCompare(second)) : [];
+        const options = $("modelCatalogOptions");
+        if (!options) return;
+        options.replaceChildren(...state.modelCatalogItems.map((item) => element("option", {value: item})));
+    }
+
+    async function discoverModelCatalog() {
+        const providerType = $("modelConfigProviderType").value;
+        const baseUrl = $("modelConfigBaseUrl").value.trim();
+        const apiKey = $("modelConfigApiKey").value;
+        const canUseSavedCredential = modelCatalogCanUseSavedCredential() && !apiKey.trim();
+        if (!providerType || !baseUrl || (!apiKey.trim() && !canUseSavedCredential)) {
+            setStatus($("modelCatalogStatus"), "请先填写 Provider、服务地址和 API Key；仅未改动地址的已保存配置可使用原凭据。", "error");
+            updateDiscoverModelCatalogButton();
+            return;
+        }
+        const revision = modelCatalogDiscoveryRevision.issue();
+        const path = canUseSavedCredential
+            ? `/api/model-configs/${encodeURIComponent(state.editingModelConfigId)}/discover-models`
+            : "/api/model-configs/discover-models";
+        const options = canUseSavedCredential ? {method: "POST"} : {
+            method: "POST",
+            body: JSON.stringify({providerType, baseUrl, apiKey})
+        };
+        try {
+            await withSubmitState($("discoverModelNamesBtn"), async () => {
+                setStatus($("modelCatalogStatus"), "正在从模型服务获取目录…", "neutral");
+                const response = await api.request(path, options);
+                if (!modelCatalogDiscoveryRevision.isCurrent(revision)) return;
+                setModelCatalogItems(response?.items);
+                const message = state.modelCatalogItems.length
+                    ? `已获取 ${state.modelCatalogItems.length} 个模型名称，可搜索选择或继续手动填写。`
+                    : "模型服务未返回可用模型名称，可继续手动填写。";
+                setStatus($("modelCatalogStatus"), message, state.modelCatalogItems.length ? "success" : "neutral");
+            });
+        } catch (error) {
+            if (!modelCatalogDiscoveryRevision.isCurrent(revision)) return;
+            setStatus($("modelCatalogStatus"), `${error.message} 可继续手动填写模型名称。`, "error");
+        } finally {
+            updateDiscoverModelCatalogButton();
+        }
     }
 
     async function submitModelConfig() {
@@ -3218,6 +3294,10 @@
         bind("cancelAgentEditBtn", "click", resetAgentForm);
         bind("modelConfigForm", "submit", (event) => { event.preventDefault(); submitModelConfig(); });
         bind("cancelModelConfigEditBtn", "click", resetModelConfigForm);
+        bind("discoverModelNamesBtn", "click", discoverModelCatalog);
+        bind("modelConfigProviderType", "change", updateDiscoverModelCatalogButton);
+        bind("modelConfigBaseUrl", "input", updateDiscoverModelCatalogButton);
+        bind("modelConfigApiKey", "input", updateDiscoverModelCatalogButton);
         bind("toolForm", "submit", (event) => { event.preventDefault(); submitTool(); });
         bind("cancelToolEditBtn", "click", () => resetToolForm());
         bind("fillHttpExampleBtn", "click", fillHttpToolExample);

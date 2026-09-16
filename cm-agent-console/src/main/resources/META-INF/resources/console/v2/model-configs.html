@@ -41,7 +41,10 @@
                         <input id="modelConfigBaseUrl" name="baseUrl" type="url" maxlength="500" placeholder="https://dashscope.aliyuncs.com/api/v1" required>
                         <p class="field-help">只允许 HTTP(S) 绝对地址；不要在地址中嵌入用户名、密码、Token 或 API Key。</p>
                         <label for="modelConfigModelName">默认模型名称</label>
-                        <input id="modelConfigModelName" name="modelName" maxlength="160" placeholder="qwen-plus" required>
+                        <input id="modelConfigModelName" name="modelName" maxlength="160" list="modelCatalogOptions" placeholder="qwen-plus" required>
+                        <datalist id="modelCatalogOptions"></datalist>
+                        <div class="tool-actions"><button id="discoverModelNamesBtn" class="button ghost" type="button" disabled>获取模型列表</button></div>
+                        <p id="modelCatalogStatus" class="field-help" aria-live="polite">填写 Provider、服务地址和 API Key 后，可从服务端获取模型列表；未提供目录时仍可手动填写。</p>
                         <label for="modelConfigApiKey">API Key</label>
                         <input id="modelConfigApiKey" name="apiKey" type="password" maxlength="2048" autocomplete="new-password" required>
                         <p id="modelConfigApiKeyHelp" class="field-help">创建时必填。平台仅加密保存，不会在详情、列表或编辑表单中回显。</p>
@@ -56,6 +59,6 @@
     </main>
 </div>
 <script src="/assets/console-core.js?v=2.0.11"></script>
-<script src="/assets/app.js?v=2.0.17"></script>
+<script src="/assets/app.js?v=2.0.18"></script>
 </body>
 </html>

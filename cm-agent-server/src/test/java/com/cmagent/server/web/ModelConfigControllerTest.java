@@ -5,11 +5,16 @@ import com.cmagent.server.CmAgentServerApplication;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import com.cmagent.server.runtime.ModelCredentialCipher;
+import com.cmagent.server.service.ModelCatalogDiscoveryException;
+import com.cmagent.server.service.ModelCatalogDiscoveryService;
+import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
@@ -20,6 +25,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -44,6 +51,8 @@ class ModelConfigControllerTest {
     private InMemoryPlatformStore store;
     @Autowired
     private ModelCredentialCipher credentialCipher;
+    @MockBean
+    private ModelCatalogDiscoveryService catalogDiscoveryService;
 
     @Test
     void 完整Crud保持租户隔离且不暴露密钥字段() throws Exception {
@@ -164,6 +173,61 @@ class ModelConfigControllerTest {
                 .andExpect(jsonPath("$.message").value("请求参数不合法"));
 
         assertThat(store.listModelConfigs(TENANT_A)).hasSize(1);
+    }
+
+    @Test
+    void 模型目录接口仅返回名称且使用写权限() throws Exception {
+        String token = token(TENANT_A, List.of("model:write"));
+        when(catalogDiscoveryService.discoverDraft(any(), any(), any(), any(), any()))
+                .thenReturn(List.of("gpt-mini", "gpt-pro"));
+
+        mockMvc.perform(post("/api/model-configs/discover-models")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"providerType":"OPENAI_COMPATIBLE","baseUrl":"https://api.openai.com/v1","apiKey":"unit-test-model-key"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0]").value("gpt-mini"))
+                .andExpect(jsonPath("$.apiKey").doesNotExist());
+
+        mockMvc.perform(post("/api/model-configs/discover-models")
+                        .header("Authorization", "Bearer " + token(TENANT_A, List.of("model:read")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"providerType":"OPENAI_COMPATIBLE","baseUrl":"https://api.openai.com/v1","apiKey":"unit-test-model-key"}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    void 模型目录失败返回稳定错误码和关联编号且不回显密钥() throws Exception {
+        String token = token(TENANT_A, List.of("model:write"));
+        ModelCatalogDiscoveryException failure = new ModelCatalogDiscoveryException(
+                HttpStatus.BAD_GATEWAY,
+                com.cmagent.api.ApiErrorCode.MODEL_DISCOVERY_UPSTREAM_ERROR,
+                "模型目录获取失败，请稍后重试或手动填写模型名称",
+                new ErrorDiagnosticLogger.DiagnosticContext("catalog-web-001", "MODEL_CATALOG_DISCOVERY",
+                        "MODEL_DISCOVERY_UPSTREAM_ERROR", TENANT_A.toString(), "model-admin", "-", "-", "draft", "-",
+                        "MODEL_CATALOG_DISCOVERY"),
+                new IllegalStateException("Authorization: Bearer unit-test-model-key")
+        );
+        when(catalogDiscoveryService.discoverDraft(any(), any(), any(), any(), any())).thenThrow(failure);
+
+        mockMvc.perform(post("/api/model-configs/discover-models")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Request-Id", "catalog-web-001")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"providerType":"OPENAI_COMPATIBLE","baseUrl":"https://api.openai.com/v1","apiKey":"unit-test-model-key"}
+                                """))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("MODEL_DISCOVERY_UPSTREAM_ERROR"))
+                .andExpect(jsonPath("$.errorId").value("catalog-web-001"))
+                .andExpect(jsonPath("$.message").value("模型目录获取失败，请稍后重试或手动填写模型名称"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("unit-test-model-key"))));
     }
 
     private String token(UUID tenantId, List<String> permissions) {

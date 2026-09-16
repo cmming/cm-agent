@@ -23,6 +23,18 @@ public enum ApiErrorCode {
     TOOL_NOT_FOUND,
     TOOL_NOT_GRANTED,
     VALIDATION_FAILED,
+    /** 模型供应商拒绝目录请求或当前保存的模型凭据不可用。 */
+    MODEL_DISCOVERY_AUTH_FAILED,
+    /** 模型目录目标未通过协议、白名单或公网地址校验。 */
+    MODEL_DISCOVERY_TARGET_REJECTED,
+    /** 模型供应商未实现当前协议约定的目录接口。 */
+    MODEL_DISCOVERY_UNSUPPORTED,
+    /** 模型目录请求超过受控时间上限。 */
+    MODEL_DISCOVERY_TIMEOUT,
+    /** 模型供应商返回的目录结构或体积不符合受控边界。 */
+    MODEL_DISCOVERY_RESPONSE_INVALID,
+    /** 模型供应商网络不可用或返回了未分类错误。 */
+    MODEL_DISCOVERY_UPSTREAM_ERROR,
     RUNTIME_ERROR,
     AUDIT_UNAVAILABLE,
     PERSISTENCE_UNAVAILABLE,

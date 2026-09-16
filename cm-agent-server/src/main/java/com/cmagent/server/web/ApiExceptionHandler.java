@@ -3,6 +3,7 @@ package com.cmagent.server.web;
 import com.cmagent.api.ApiErrorCode;
 import com.cmagent.api.ApiErrorResponse;
 import com.cmagent.server.audit.AuditPersistenceException;
+import com.cmagent.server.service.ModelCatalogDiscoveryException;
 import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import com.cmagent.server.security.SensitiveDataRedactor;
 import com.cmagent.server.security.ToolOutputSanitizer;
@@ -140,6 +141,25 @@ public class ApiExceptionHandler {
             default -> failedResponse(HttpStatus.INTERNAL_SERVER_ERROR, ApiErrorCode.INTERNAL_ERROR,
                     "服务内部错误", exception, request);
         };
+    }
+
+    /**
+     * 将模型目录发现的受控失败转换为可操作响应，并使用同一 errorId 写入脱敏诊断日志。
+     *
+     * <p>该异常已经完成供应商错误分类，不能落入通用运行时处理而丢失稳定错误码；其消息不包含
+     * API Key、完整 URL 或供应商响应正文。</p>
+     *
+     * @param failure 已分类的模型目录发现失败
+     * @param request 当前 HTTP 请求，用于保持响应关联编号
+     * @return 包含稳定错误码和脱敏提示的响应
+     */
+    @ExceptionHandler(ModelCatalogDiscoveryException.class)
+    public ResponseEntity<ApiErrorResponse> modelCatalogDiscoveryFailure(
+            ModelCatalogDiscoveryException failure,
+            HttpServletRequest request
+    ) {
+        diagnosticLogger.error(failure.diagnosticContext(), failure);
+        return response(failure.status(), failure.errorCode(), failure.getMessage(), request);
     }
 
     private static boolean approvalRequest(HttpServletRequest request) {

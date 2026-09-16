@@ -9,6 +9,8 @@ import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.service.ModelConfigCommandService;
+import com.cmagent.server.service.ModelCatalogDiscoveryService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -38,17 +40,20 @@ import java.util.UUID;
 public class ModelConfigController {
     private final ModelConfigRepository repository;
     private final ModelConfigCommandService commandService;
+    private final ModelCatalogDiscoveryService catalogDiscoveryService;
     private final PermissionEvaluator permissionEvaluator;
     private final AuditAppender auditAppender;
 
     public ModelConfigController(
             ModelConfigRepository repository,
             ModelConfigCommandService commandService,
+            ModelCatalogDiscoveryService catalogDiscoveryService,
             PermissionEvaluator permissionEvaluator,
             AuditAppender auditAppender
     ) {
         this.repository = repository;
         this.commandService = commandService;
+        this.catalogDiscoveryService = catalogDiscoveryService;
         this.permissionEvaluator = permissionEvaluator;
         this.auditAppender = auditAppender;
     }
@@ -95,6 +100,54 @@ public class ModelConfigController {
                 principal, id, request.providerType(), request.displayName(), request.baseUrl(),
                 request.modelName(), request.enabled(), request.apiKey()
         );
+    }
+
+    /**
+     * 使用创建前或修改后的表单草稿获取可选择的模型名称。
+     *
+     * <p>API Key 只在本次服务端出站调用中使用；浏览器不会直接访问模型供应商，也不会收到密钥、
+     * 请求头或原始供应商响应。</p>
+     *
+     * @param request 已完成字段校验的草稿连接信息
+     * @param authentication 由 JWT 过滤器建立的可信认证会话
+     * @param servletRequest 当前请求，用于取得可关联的 errorId
+     * @return 已过滤、去重且可作为模型名称选择的目录响应
+     */
+    @PostMapping("/discover-models")
+    public ModelCatalogResponse discoverModels(
+            @Valid @RequestBody ModelCatalogDiscoveryRequest request,
+            Authentication authentication,
+            HttpServletRequest servletRequest
+    ) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "model:write", "discover-draft");
+        return new ModelCatalogResponse(catalogDiscoveryService.discoverDraft(
+                principal, request.providerType(), request.baseUrl(), request.apiKey(),
+                RequestCorrelationFilter.errorIdOf(servletRequest)
+        ));
+    }
+
+    /**
+     * 使用当前租户内已保存配置的密文获取模型名称。
+     *
+     * <p>请求不接收客户端传入的地址或 Provider，确保已保存密钥只能发送至该配置原有的受控目标。</p>
+     *
+     * @param id 当前 tenant 内的模型配置标识
+     * @param authentication 由 JWT 过滤器建立的可信认证会话
+     * @param servletRequest 当前请求，用于取得可关联的 errorId
+     * @return 已过滤、去重且可作为模型名称选择的目录响应
+     */
+    @PostMapping("/{id}/discover-models")
+    public ModelCatalogResponse discoverSavedModels(
+            @PathVariable("id") UUID id,
+            Authentication authentication,
+            HttpServletRequest servletRequest
+    ) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "model:write", id.toString());
+        return new ModelCatalogResponse(catalogDiscoveryService.discoverSaved(
+                principal, id, RequestCorrelationFilter.errorIdOf(servletRequest)
+        ));
     }
 
     /** 删除未被 Agent 引用的模型配置。 */
@@ -145,5 +198,30 @@ public class ModelConfigController {
             boolean enabled,
             @Pattern(regexp = ".*\\S.*") @Size(max = 2048) String apiKey
     ) {
+    }
+
+    /**
+     * 创建前模型目录发现的临时请求。
+     *
+     * @param providerType 决定使用的模型目录协议
+     * @param baseUrl 仅本次请求使用的模型服务基础地址
+     * @param apiKey 仅本次服务端请求使用的 API Key，不会被保存或返回
+     */
+    public record ModelCatalogDiscoveryRequest(
+            @NotNull ModelProviderType providerType,
+            @NotBlank @Size(max = 500) String baseUrl,
+            @NotBlank @Size(max = 2048) String apiKey
+    ) {
+    }
+
+    /**
+     * 模型目录的受控响应。
+     *
+     * @param items 已过滤、去重且可作为 modelName 保存的模型名称
+     */
+    public record ModelCatalogResponse(List<String> items) {
+        public ModelCatalogResponse {
+            items = List.copyOf(items == null ? List.of() : items);
+        }
     }
 }
