@@ -101,7 +101,7 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.18", "/assets/console-core.js?v=2.0.11", "/assets/styles.css?v=2.0.17")
+                    .contains("/assets/app.js?v=2.0.20", "/assets/console-core.js?v=2.0.11", "/assets/styles.css?v=2.0.17")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }
@@ -123,7 +123,12 @@ class ConsoleResourceTest {
         String v2Css = resource("META-INF/resources/console/v2/assets/multipage.css");
         assertThat(v2Css)
                 .contains("body[data-console-version=\"v2\"] .page-view", ".quick-action", ".stat-card::before")
-                .contains("@media (max-width: 600px)");
+                .contains(
+                        "@media (max-width: 600px)",
+                        "height: clamp(620px, calc(100vh - 196px), 760px)",
+                        "body[data-console-version=\"v2\"] #auditPage .table-scroll",
+                        "body[data-console-version=\"v2\"] .overview-grid,\n    body[data-console-version=\"v2\"] .chat-page"
+                );
     }
 
     @Test
@@ -305,6 +310,19 @@ class ConsoleResourceTest {
                 "id=\"loadMoreApprovalHistoryBtn\"", "id=\"refreshApprovalHistoryBtn\"", "id=\"chatApprovalHistoryStatus\"");
         assertThat(app).contains("/approvals/history", "createApprovalHistoryGroup", "mergeApprovalHistory",
                 "groupApprovalHistory", "article.dataset.runId = message.runId", "审批允许不等于工具执行成功");
+    }
+
+    @Test
+    void 管理页将详情与双列表单放在连续右栏() throws IOException {
+        for (String page : new String[]{"agents", "model-configs"}) {
+            String html = resource("META-INF/resources/console/v2/" + page + ".html");
+            assertThat(html).contains("class=\"management-detail-stack\"",
+                    "class=\"management-form-grid\"", "class=\"management-field\"",
+                    "class=\"management-field management-field-full\"");
+        }
+        String css = resource("META-INF/resources/console/v2/assets/multipage.css");
+        assertThat(css).contains("grid-template-columns: 300px minmax(0, 1fr)",
+                ".management-form-grid", "repeat(2, minmax(0, 1fr))");
     }
 
     private String resource(String path) throws IOException {

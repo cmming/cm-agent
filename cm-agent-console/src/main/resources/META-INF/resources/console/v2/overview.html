@@ -6,7 +6,7 @@
     <meta name="referrer" content="same-origin">
     <title>能力总览 | CM Agent 控制台 v2</title>
     <link rel="stylesheet" href="/assets/styles.css?v=2.0.17">
-    <link rel="stylesheet" href="/console/v2/assets/multipage.css">
+    <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.2.0">
 </head>
 <body data-console-version="v2" data-page="overviewPage">
 <div class="console-layout">
@@ -24,9 +24,10 @@
         <div class="sidebar-links"><span>版本与系统</span><a href="/console/v1/">旧版 v1 <b aria-hidden="true">↗</b></a><a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI <b aria-hidden="true">↗</b></a><a href="/actuator/health" target="_blank" rel="noreferrer">健康检查 <b aria-hidden="true">↗</b></a></div>
     </aside>
     <main class="workspace">
-        <header class="workspace-header"><div><p class="eyebrow">当前工作区</p><h1 id="pageTitle">能力总览</h1><p class="muted">查看当前租户已交付的 Agent 能力与最近活动。</p></div><div class="user-actions"><span class="online-dot" aria-label="已登录"></span><span id="currentUser">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
+        <header class="workspace-header"><p class="workspace-crumb">当前工作区 <span aria-hidden="true">/</span> <b id="pageTitle">能力总览</b></p><div class="user-actions"><span class="online-dot" aria-label="系统运行正常"></span><span class="system-status">系统运行正常</span><span class="user-avatar" aria-hidden="true">管</span><span id="currentUser" class="sr-only">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
         <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
         <section id="overviewPage" class="page-view" aria-labelledby="pageTitle">
+            <div class="page-intro"><div><p class="eyebrow">当前工作区</p><h1>能力总览</h1><p>查看当前租户已交付的 Agent 能力、运行健康度与最近活动。</p></div><a class="button primary" href="/console/v2/runs.html">进入调试工作台</a></div>
             <div class="stats-grid">
                 <article class="stat-card"><span>Agent 总数</span><strong id="overviewAgentCount">0</strong><a href="/console/v2/agents.html">管理 Agent →</a></article>
                 <article class="stat-card"><span>Tool 总数</span><strong id="overviewToolCount">0</strong><a href="/console/v2/tools.html">管理工具 →</a></article>
@@ -40,6 +41,6 @@
     </main>
 </div>
 <script src="/assets/console-core.js?v=2.0.11"></script>
-<script src="/assets/app.js?v=2.0.18"></script>
+<script src="/assets/app.js?v=2.0.20"></script>
 </body>
 </html>

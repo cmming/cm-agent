@@ -2719,7 +2719,7 @@
 
     function setChatBusy(busy) {
         state.chatBusy = busy;
-        [$("chatAgentSelect"), $("newChatConversationBtn"), $("chatSendBtn")].filter(Boolean)
+        [$("chatAgentSelect"), $("newChatConversationBtn"), $("newChatConversationTopBtn"), $("chatSendBtn")].filter(Boolean)
             .forEach((control) => { control.disabled = busy; });
         updateChatSendAvailability();
     }
@@ -3287,6 +3287,13 @@
         if (target) target.addEventListener(eventName, listener);
     }
 
+    function centerActiveNavigation() {
+        const activeItem = document.querySelector("#sidebarNav .nav-item.active");
+        if (!activeItem || !window.matchMedia("(max-width: 900px)").matches) return;
+        // 移动端导航横向滚动，将当前页面居中可避免用户进入后续页面后看不到当前位置。
+        activeItem.scrollIntoView({block: "nearest", inline: "center"});
+    }
+
     function bindPageControls() {
         bind("loginForm", "submit", (event) => { event.preventDefault(); login(); });
         bind("logoutBtn", "click", () => logout());
@@ -3346,10 +3353,13 @@
         });
         bind("newChatConversationBtn", "click", () => createChatConversation()
             .catch((error) => setStatus($("chatFormStatus"), error.message, "error")));
+        bind("newChatConversationTopBtn", "click", () => createChatConversation()
+            .catch((error) => setStatus($("chatFormStatus"), error.message, "error")));
         bind("refreshAuditBtn", "click", () => loadAudit({append: false}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
         bind("loadMoreAuditBtn", "click", () => loadAudit({append: true}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
         document.querySelectorAll("button[data-page]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));
         document.querySelectorAll("button[data-navigate]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.navigate)));
+        centerActiveNavigation();
     }
 
     function handleMultiPageLink(event) {
