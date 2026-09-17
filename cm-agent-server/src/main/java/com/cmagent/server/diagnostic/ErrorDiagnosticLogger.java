@@ -31,17 +31,32 @@ public class ErrorDiagnosticLogger {
      * @param failure 原始失败，用于保留堆栈位置
      */
     public void error(DiagnosticContext context, Throwable failure) {
+        error(context, failure, null);
+    }
+
+    /**
+     * 记录失败原因、原始异常堆栈位置和可供排查的上游返回内容。
+     *
+     * <p>上游返回内容仅写入服务端日志，且会经过与普通失败原因一致的脱敏处理；调用方不得将其
+     * 透传到 API 响应、审计事件或其他面向用户的输出。</p>
+     *
+     * @param context 可检索的上下文
+     * @param failure 原始失败，用于保留堆栈位置
+     * @param upstreamResponse 上游响应正文；没有响应正文时传入 {@code null}
+     */
+    public void error(DiagnosticContext context, Throwable failure, String upstreamResponse) {
         Objects.requireNonNull(context, "context 不能为空");
         Objects.requireNonNull(failure, "failure 不能为空");
         String safeReason = SQL_STATEMENT.matcher(sanitizer.sanitize(redactor.redact(failure.getMessage()), List.of()))
                 .replaceAll("<已脱敏SQL>");
+        String safeUpstreamResponse = safeReason(upstreamResponse);
         RuntimeException safeFailure = new RuntimeException(safeReason.isBlank() ? "未提供异常消息" : safeReason);
         safeFailure.setStackTrace(failure.getStackTrace());
         log.error(
-                "操作失败。errorId={}, boundary={}, errorCode={}, tenantId={}, principalId={}, agentId={}, runId={}, toolId={}, toolCallId={}, source={}, exceptionType={}, reason={}",
+                "操作失败。errorId={}, boundary={}, errorCode={}, tenantId={}, principalId={}, agentId={}, runId={}, toolId={}, toolCallId={}, source={}, exceptionType={}, reason={}, upstreamResponse={}",
                 context.errorId(), context.boundary(), context.errorCode(), context.tenantId(), context.principalId(),
                 context.agentId(), context.runId(), context.toolId(), context.toolCallId(), context.source(),
-                failure.getClass().getName(), safeReason, safeFailure
+                failure.getClass().getName(), safeReason, safeUpstreamResponse, safeFailure
         );
     }
 

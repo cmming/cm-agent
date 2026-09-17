@@ -91,6 +91,7 @@ class ModelCatalogDiscoveryServiceTest {
                     ModelCatalogDiscoveryException failure = (ModelCatalogDiscoveryException) exception;
                     assertThat(failure.errorCode()).isEqualTo(ApiErrorCode.MODEL_DISCOVERY_UNSUPPORTED);
                     assertThat(failure.status()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                    assertThat(failure.upstreamResponse()).isEqualTo("provider secret response");
                     assertThat(failure.getMessage()).doesNotContain("secret", "example.test", "draft-model-key");
                 });
         verify(auditAppender).append(TENANT_ID, "model-admin", "MODEL_CONFIG_MODEL_DISCOVERY", "MODEL_CONFIG", "draft",

@@ -25,6 +25,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -151,7 +152,8 @@ public class ModelCatalogDiscoveryService {
             return names;
         } catch (CatalogFailure failure) {
             auditFailure(principal, resourceId, failure.errorCode());
-            throw failure(principal, resourceId, errorId, failure.errorCode(), failure.status(), failure.getMessage(), failure.getCause());
+            throw failure(principal, resourceId, errorId, failure.errorCode(), failure.status(), failure.getMessage(),
+                    failure.getCause(), failure.upstreamResponse());
         } catch (IllegalArgumentException exception) {
             auditFailure(principal, resourceId, ApiErrorCode.MODEL_DISCOVERY_TARGET_REJECTED);
             throw failure(principal, resourceId, errorId, ApiErrorCode.MODEL_DISCOVERY_TARGET_REJECTED,
@@ -166,22 +168,22 @@ public class ModelCatalogDiscoveryService {
     private List<String> parseResponse(ModelProviderType providerType, CatalogHttpResponse response) {
         if (response.statusCode() == 401 || response.statusCode() == 403) {
             throw new CatalogFailure(ApiErrorCode.MODEL_DISCOVERY_AUTH_FAILED, HttpStatus.BAD_GATEWAY,
-                    "模型服务认证失败，请检查 API Key", null);
+                    "模型服务认证失败，请检查 API Key", null, response.bodyAsText());
         }
         if (response.statusCode() == 404 || response.statusCode() == 405) {
             throw new CatalogFailure(ApiErrorCode.MODEL_DISCOVERY_UNSUPPORTED, HttpStatus.UNPROCESSABLE_ENTITY,
-                    "当前模型服务不支持获取模型目录，请手动填写模型名称", null);
+                    "当前模型服务不支持获取模型目录，请手动填写模型名称", null, response.bodyAsText());
         }
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new CatalogFailure(ApiErrorCode.MODEL_DISCOVERY_UPSTREAM_ERROR, HttpStatus.BAD_GATEWAY,
-                    "模型服务暂时不可用，请稍后重试或手动填写模型名称", null);
+                    "模型服务暂时不可用，请稍后重试或手动填写模型名称", null, response.bodyAsText());
         }
         try {
             JsonNode root = objectMapper.readTree(response.body());
             JsonNode data = root == null ? null : root.get("data");
             if (data == null || !data.isArray()) {
                 throw new CatalogFailure(ApiErrorCode.MODEL_DISCOVERY_RESPONSE_INVALID, HttpStatus.BAD_GATEWAY,
-                        "模型服务返回的目录格式无法识别，请手动填写模型名称", null);
+                        "模型服务返回的目录格式无法识别，请手动填写模型名称", null, response.bodyAsText());
             }
             Set<String> unique = new LinkedHashSet<>();
             for (JsonNode item : data) {
@@ -196,7 +198,7 @@ public class ModelCatalogDiscoveryService {
             return unique.stream().sorted(Comparator.naturalOrder()).limit(properties.getMaxModels()).toList();
         } catch (IOException exception) {
             throw new CatalogFailure(ApiErrorCode.MODEL_DISCOVERY_RESPONSE_INVALID, HttpStatus.BAD_GATEWAY,
-                    "模型服务返回的目录格式无法识别，请手动填写模型名称", exception);
+                    "模型服务返回的目录格式无法识别，请手动填写模型名称", exception, response.bodyAsText());
         }
     }
 
@@ -228,9 +230,29 @@ public class ModelCatalogDiscoveryService {
             String message,
             Throwable cause
     ) {
+        return failure(principal, resourceId, errorId, errorCode, status, message, cause, null);
+    }
+
+    /**
+     * 将供应商调用失败转换为不会向浏览器泄露细节的受控异常。
+     *
+     * <p>响应正文必须只沿着 {@code upstreamResponse} 传递到服务端诊断日志，并由统一日志器脱敏；
+     * 不能拼接到 {@code message}，否则异常处理器会将其返回给浏览器。</p>
+     */
+    private ModelCatalogDiscoveryException failure(
+            PrincipalRef principal,
+            String resourceId,
+            String errorId,
+            ApiErrorCode errorCode,
+            HttpStatus status,
+            String message,
+            Throwable cause,
+            String upstreamResponse
+    ) {
         return new ModelCatalogDiscoveryException(status, errorCode, message,
                 new ErrorDiagnosticLogger.DiagnosticContext(errorId, "MODEL_CATALOG_DISCOVERY", errorCode.name(),
-                        principal.tenantId().toString(), principal.principalId(), "-", "-", resourceId, "-", SOURCE), cause);
+                        principal.tenantId().toString(), principal.principalId(), "-", "-", resourceId, "-", SOURCE),
+                cause, upstreamResponse);
     }
 
     private static CatalogTransport createTransport(ModelCatalogDiscoveryProperties properties) {
@@ -251,11 +273,6 @@ public class ModelCatalogDiscoveryService {
                     .build();
             try {
                 HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-                if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                    try (InputStream ignored = response.body()) {
-                        return new CatalogHttpResponse(response.statusCode(), new byte[0]);
-                    }
-                }
                 try (InputStream input = response.body()) {
                     return new CatalogHttpResponse(response.statusCode(), readBounded(input, maxResponseBytes));
                 }
@@ -305,16 +322,36 @@ public class ModelCatalogDiscoveryService {
         CatalogHttpResponse {
             body = body == null ? new byte[0] : body.clone();
         }
+
+        /**
+         * 将已经受长度限制的供应商响应按 UTF-8 解码，供失败诊断日志记录。
+         *
+         * <p>目录协议约定 JSON 文本，因此使用固定 UTF-8；该文本只能在统一日志器脱敏后输出，
+         * 不能作为对外错误消息。</p>
+         *
+         * @return 供应商响应正文的 UTF-8 表示
+         */
+        String bodyAsText() {
+            return new String(body, StandardCharsets.UTF_8);
+        }
     }
 
     private static final class CatalogFailure extends RuntimeException {
         private final ApiErrorCode errorCode;
         private final HttpStatus status;
 
+        private final String upstreamResponse;
+
         private CatalogFailure(ApiErrorCode errorCode, HttpStatus status, String message, Throwable cause) {
+            this(errorCode, status, message, cause, null);
+        }
+
+        private CatalogFailure(ApiErrorCode errorCode, HttpStatus status, String message, Throwable cause,
+                               String upstreamResponse) {
             super(message, cause);
             this.errorCode = errorCode;
             this.status = status;
+            this.upstreamResponse = upstreamResponse;
         }
 
         private ApiErrorCode errorCode() {
@@ -323,6 +360,10 @@ public class ModelCatalogDiscoveryService {
 
         private HttpStatus status() {
             return status;
+        }
+
+        private String upstreamResponse() {
+            return upstreamResponse;
         }
     }
 }

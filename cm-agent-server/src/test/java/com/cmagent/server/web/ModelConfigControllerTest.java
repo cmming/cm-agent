@@ -26,6 +26,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -53,6 +56,8 @@ class ModelConfigControllerTest {
     private ModelCredentialCipher credentialCipher;
     @MockBean
     private ModelCatalogDiscoveryService catalogDiscoveryService;
+    @MockBean
+    private ErrorDiagnosticLogger diagnosticLogger;
 
     @Test
     void 完整Crud保持租户隔离且不暴露密钥字段() throws Exception {
@@ -204,6 +209,7 @@ class ModelConfigControllerTest {
     @Test
     void 模型目录失败返回稳定错误码和关联编号且不回显密钥() throws Exception {
         String token = token(TENANT_A, List.of("model:write"));
+        String upstreamResponse = "{\"error\":{\"message\":\"provider secret response\"}}";
         ModelCatalogDiscoveryException failure = new ModelCatalogDiscoveryException(
                 HttpStatus.BAD_GATEWAY,
                 com.cmagent.api.ApiErrorCode.MODEL_DISCOVERY_UPSTREAM_ERROR,
@@ -211,11 +217,12 @@ class ModelConfigControllerTest {
                 new ErrorDiagnosticLogger.DiagnosticContext("catalog-web-001", "MODEL_CATALOG_DISCOVERY",
                         "MODEL_DISCOVERY_UPSTREAM_ERROR", TENANT_A.toString(), "model-admin", "-", "-", "draft", "-",
                         "MODEL_CATALOG_DISCOVERY"),
-                new IllegalStateException("Authorization: Bearer unit-test-model-key")
+                new IllegalStateException("Authorization: Bearer unit-test-model-key"),
+                upstreamResponse
         );
-        when(catalogDiscoveryService.discoverDraft(any(), any(), any(), any(), any())).thenThrow(failure);
+        when(catalogDiscoveryService.discoverSaved(any(), any(), any())).thenThrow(failure);
 
-        mockMvc.perform(post("/api/model-configs/discover-models")
+        mockMvc.perform(post("/api/model-configs/{id}/discover-models", DEFAULT_MODEL_ID)
                         .header("Authorization", "Bearer " + token)
                         .header("X-Request-Id", "catalog-web-001")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -227,7 +234,11 @@ class ModelConfigControllerTest {
                 .andExpect(jsonPath("$.errorId").value("catalog-web-001"))
                 .andExpect(jsonPath("$.message").value("模型目录获取失败，请稍后重试或手动填写模型名称"))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
-                        .string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("unit-test-model-key"))));
+                        .string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("unit-test-model-key"))))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("provider secret response"))));
+
+        verify(diagnosticLogger).error(eq(failure.diagnosticContext()), same(failure), eq(upstreamResponse));
     }
 
     private String token(UUID tenantId, List<String> permissions) {

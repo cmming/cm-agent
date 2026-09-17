@@ -16,6 +16,7 @@ public class ModelCatalogDiscoveryException extends RuntimeException {
     private final HttpStatus status;
     private final ApiErrorCode errorCode;
     private final ErrorDiagnosticLogger.DiagnosticContext diagnosticContext;
+    private final String upstreamResponse;
 
     /**
      * 创建已完成供应商失败归类的异常。
@@ -25,18 +26,21 @@ public class ModelCatalogDiscoveryException extends RuntimeException {
      * @param message 不含密钥、完整地址和供应商正文的中文提示
      * @param diagnosticContext 仅包含可信服务端上下文的诊断字段
      * @param cause 原始失败原因，仅供服务端脱敏诊断定位
+     * @param upstreamResponse 仅供服务端脱敏日志记录的供应商响应正文，绝不能返回给浏览器
      */
     public ModelCatalogDiscoveryException(
             HttpStatus status,
             ApiErrorCode errorCode,
             String message,
             ErrorDiagnosticLogger.DiagnosticContext diagnosticContext,
-            Throwable cause
+            Throwable cause,
+            String upstreamResponse
     ) {
         super(message, cause);
         this.status = Objects.requireNonNull(status, "status 不能为空");
         this.errorCode = Objects.requireNonNull(errorCode, "errorCode 不能为空");
         this.diagnosticContext = Objects.requireNonNull(diagnosticContext, "diagnosticContext 不能为空");
+        this.upstreamResponse = upstreamResponse;
     }
 
     /**
@@ -58,5 +62,17 @@ public class ModelCatalogDiscoveryException extends RuntimeException {
      */
     public ErrorDiagnosticLogger.DiagnosticContext diagnosticContext() {
         return diagnosticContext;
+    }
+
+    /**
+     * 返回仅供服务端诊断日志使用的供应商响应正文。
+     *
+     * <p>该内容仍可能含有供应商返回的敏感字段，必须经过 {@link ErrorDiagnosticLogger} 脱敏后才能记录，
+     * 且不得用于构造 HTTP 响应或审计事件。</p>
+     *
+     * @return 供应商响应正文；调用尚未收到响应时返回 {@code null}
+     */
+    public String upstreamResponse() {
+        return upstreamResponse;
     }
 }
