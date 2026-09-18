@@ -75,21 +75,24 @@
 - Spring Boot: 3.5.0；使用 Web MVC、Security、Actuator、Validation、Auto Configure。
 - API 文档: springdoc OpenAPI 2.8.9。
 - JWT: JJWT 0.13.0。
-- AgentScope: `agentscope-core` 2.0.0；Provider 扩展由 adapter 模块按需引入，并保持 optional 依赖。
-- MCP: `io.modelcontextprotocol.sdk:mcp-core`/`mcp-json-jackson2` 2.0.0；用于将已发布工具以 MCP Streamable HTTP 方式对外提供，Server 端实现见 `cm-agent-server` 的 `com.cmagent.server.mcp` 包。
+- AgentScope: `agentscope-core` 2.0.2；Provider 扩展由 adapter 模块按需引入，并保持 optional 依赖；父 POM 另管理 `agentscope-extensions-model-openai`/`agentscope-extensions-model-dashscope`，server 额外依赖 `agentscope-extensions-studio`（AgentScope Studio 集成，见 `cm-agent-server` 的 `com.cmagent.server.config.AgentScopeStudioConfiguration`）。
+- MCP: `io.modelcontextprotocol.sdk:mcp-core`/`mcp-json-jackson2` 2.0.0；用于将已发布工具以 MCP Streamable HTTP 方式对外提供，Server 端实现见 `cm-agent-server` 的 `com.cmagent.server.mcp` 包。注意：`cm-agent-examples/dashscope-mcp-agent` 因与 agentscope-core 2.0.x 存在 `NoSuchMethodError` 级不兼容，示例内将 MCP SDK 锁回 0.17.0（见该模块 `pom.xml` 注释），不要在主工程随意升级/降级 MCP SDK。
 - 数据库: 默认 memory，可通过 `cm-agent.persistence.mode=jdbc` 使用 JDBC/Flyway；目标为 PostgreSQL/Supabase PostgreSQL 和 MySQL。
-- 本地数据库: `docker-compose.yml` 提供 PostgreSQL 16-alpine 和 MySQL 8.4。
-- 测试: Spring Boot Test、JUnit Jupiter 5.12.2、AssertJ 3.27.3、Mockito 5.17.0、MockMvc、Spring Security Test、Testcontainers。Testcontainers 通过父 `pom.xml` 的 `testcontainers-bom` 管理，当前为 2.0.5；升级前必须用 `mvn -pl <module> dependency:tree` 复核。
+- 本地数据库: `docker compose up -d mysql postgres`（如需 Redis agent state 示例再加 `redis`）。
+- 本地启动必须显式选择 profile（local/test），无 profile 不会自动加载 local；可用环境变量 `$env:CM_AGENT_PROFILE='test'; mvn -pl cm-agent-server -am spring-boot:run`，或 `--spring.profiles.active=local` 参数方式。
+- AgentScope Studio 本地调试约定见 `README.md`（server 已集成 `agentscope-extensions-studio`）。
+- 依赖核对: `mvn -pl <module> dependency:tree`，版本异常时以实际解析结果为准。
 
 ## 目录结构约定
 - `cm-agent-api`: 对外共享 API 类型，如分页、租户上下文、主体引用、错误码。
 - `cm-agent-core`: 领域模型、运行时接口、工具接口、安全策略和 Repository 接口。
 - `cm-agent-persistence`: JDBC Repository 实现、Flyway 迁移和数据库集成测试。
 - `cm-agent-spring-boot-starter`: Starter 自动配置、`cm-agent` 配置属性和默认 Bean。
-- `cm-agent-server`: Spring Boot 应用入口、Web Controller、安全配置、运行配置、审计、memory store、MCP Streamable HTTP 端点（`com.cmagent.server.mcp`）。
-- `cm-agent-console`: 轻量控制台模块，由 server 引入。
-- `cm-agent-agentscope-adapter`: AgentScope 运行时适配层。
-- `cm-agent-examples`: 示例工程，当前包含 `starter-local-tool` 和 `http-tool-client`（动态 HTTP 工具创建与调用示例客户端）。
+- `cm-agent-server`: Spring Boot 应用入口、Web Controller（`com.cmagent.server.web`）、安全配置（`com.cmagent.server.security`，含 `SecurityConfig`、`JwtAuthenticationFilter`、`BootstrapAdminConfiguration`、`ProfileSafetyValidator`）、运行编排（`com.cmagent.server.runtime`，含 `RunExecutionService`、`ConversationService`、`ToolApprovalService`、`GovernedToolExecutionService`）、配置（`com.cmagent.server.config`，含 AgentScope Studio 集成与模型凭据加密）、审计、memory store、诊断日志（`com.cmagent.server.diagnostic.ErrorDiagnosticLogger`）、MCP Streamable HTTP 端点（`com.cmagent.server.mcp`）。
+- `cm-agent-console`: 轻量控制台模块，由 server 引入；控制台 v1/v2 双版本共存，默认入口重定向到 `/console/v2/login.html`，旧版为 `/console/v1/`。
+- `cm-agent-agentscope-adapter`: AgentScope 运行时适配层；零 Spring/JDBC 依赖，AgentScope 依赖均为 optional，嵌入式使用者须自行装配；模型/工具超时默认 60s/30s，模型重试 1-5 次，工具固定单次尝试不重试，工具桥接器不得按 endpoint 自动联网、必须经 `ToolInvocationGateway` 二次授权（详见该模块 README）。
+- `cm-agent-examples`: 示例工程，当前包含 `starter-local-tool`、`http-tool-client`（动态 HTTP 工具创建与调用示例客户端）和 `dashscope-mcp-agent`（AgentScope 智能体经 MCP Streamable HTTP 调用外部工具 + DashScope 通义千问模型自动决策的最小示例，另含 Redis/JSON 文件 agent state 存储示例类）。
+- `scripts/`: 辅助脚本，如 `export-commit-files.ps1`（提交文件导出工作流）。
 - 包名保持在 `com.cmagent` 下；新增代码放入最贴近职责的现有包，不为少量代码新建宽泛包。
 
 ## Controller 规则
@@ -176,8 +179,9 @@
 - 单模块测试: `mvn -pl cm-agent-core -am test`。
 - 服务端测试: `mvn -pl cm-agent-server -am test`。
 - 持久化测试: `mvn -pl cm-agent-persistence -am test`，需要 Docker/Testcontainers。
-- 本地数据库: `docker compose up -d mysql postgres`。
-- 本地 test profile 启动: `$env:CM_AGENT_PROFILE='test'; mvn -pl cm-agent-server -am spring-boot:run`。
+- 本地数据库: `docker compose up -d mysql postgres`（如需 Redis agent state 示例再加 `redis`）。
+- 本地启动必须显式选择 profile（local/test），无 profile 不会自动加载 local；可用环境变量 `$env:CM_AGENT_PROFILE='test'; mvn -pl cm-agent-server -am spring-boot:run`，或 `--spring.profiles.active=local` 参数方式。
+- AgentScope Studio 本地调试约定见 `README.md`（server 已集成 `agentscope-extensions-studio`）。
 - 依赖核对: `mvn -pl <module> dependency:tree`，版本异常时以实际解析结果为准。
 
 ## 文档规则
@@ -213,3 +217,23 @@
 3. 影响范围：说明涉及的模块、接口、数据库、配置或文档。
 4. 风险与注意事项：说明兼容性、安全、迁移、运行环境限制。
 5. 后续建议：只列与本次任务直接相关的下一步。
+
+````
+This is the description of what the code block changes:
+<changeDescription>
+更新技术栈节：agentscope 版本、MCP 兼容性坑、redis、测试依赖 BOM 管理、新增依赖
+</changeDescription>
+
+This is the code block that represents the suggested code change:
+```markdown
+- AgentScope: `agentscope-core` 2.0.2；Provider 扩展由 adapter 模块按需引入，并保持 optional 依赖；父 POM 另管理 `agentscope-extensions-model-openai`/`agentscope-extensions-model-dashscope`，server 额外依赖 `agentscope-extensions-studio`（AgentScope Studio 集成，见 `cm-agent-server` 的 `com.cmagent.server.config.AgentScopeStudioConfiguration`）。
+- MCP: `io.modelcontextprotocol.sdk:mcp-core`/`mcp-json-jackson2` 2.0.0；用于将已发布工具以 MCP Streamable HTTP 方式对外提供，Server 端实现见 `cm-agent-server` 的 `com.cmagent.server.mcp` 包。注意：`cm-agent-examples/dashscope-mcp-agent` 因与 agentscope-core 2.0.x 存在 `NoSuchMethodError` 级不兼容，示例内将 MCP SDK 锁回 0.17.0（见该模块 `pom.xml` 注释），不要在主工程随意升级/降级 MCP SDK。
+- 数据库: 默认 memory，可通过 `cm-agent.persistence.mode=jdbc` 使用 JDBC/Flyway；目标为 PostgreSQL/Supabase PostgreSQL 和 MySQL。
+- 本地数据库: `docker compose up -d mysql postgres`（如需 Redis agent state 示例再加 `redis`）。
+- 本地启动必须显式选择 profile（local/test），无 profile 不会自动加载 local；可用环境变量 `$env:CM_AGENT_PROFILE='test'; mvn -pl cm-agent-server -am spring-boot:run`，或 `--spring.profiles.active=local` 参数方式。
+- AgentScope Studio 本地调试约定见 `README.md`（server 已集成 `agentscope-extensions-studio`）。
+- 依赖核对: `mvn -pl <module> dependency:tree`，版本异常时以实际解析结果为准。
+```
+<userPrompt>
+Provide the fully rewritten file, incorporating the suggested code change. You must produce the complete file.
+</userPrompt>
