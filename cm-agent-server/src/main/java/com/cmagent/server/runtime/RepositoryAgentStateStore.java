@@ -65,6 +65,11 @@ public final class RepositoryAgentStateStore implements AgentStateStore {
     @Override
     public <T extends State> Optional<T> get(
             String userId, String sessionId, String key, Class<T> type) {
+        // AgentScope 2.0.0 在绑定 RuntimeContext 前会探测一次默认状态槽，传入 null userId；
+        // 该槽不具备可信租户归属，必须只按“不存在”处理，绝不能允许后续读取、写入或删除绕过租户校验。
+        if (userId == null) {
+            return Optional.empty();
+        }
         UUID tenantId = tenantId(userId);
         RuntimeCheckpoint checkpoint = repository.find(tenantId, userId, sessionId, key).orElse(null);
         if (checkpoint == null || checkpoint.listPayload()) {

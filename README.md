@@ -77,6 +77,8 @@ cm-agent:
     encryption-key: ${CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY}
 ```
 
+当 `OPENAI_COMPATIBLE` 的基础地址主机精确为 `opencode.ai` 时，CM Agent 会为每次运行自动附加 OpenCode Go 所需的 `x-opencode-session` 请求头，值为服务端创建的 `runId`。无需在模型配置、浏览器或提示词中填写该 Header；其他兼容网关不会收到它。
+
 `CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY` 是 Base64 编码的 256 位 AES 主密钥，不是模型 API Key，必须由部署环境或密钥管理系统提供。模型 API Key 只以 AES/GCM 密文写入 `model_configs`，创建时必填、更新时可轮换，所有读取接口均不会回显。生产也可以提供自定义 `ModelCredentialProvider` 对接外部密钥管理系统。
 
 `permission-enabled` 默认关闭，开启后 LOW/MEDIUM 工具继续执行，HIGH 工具在真正进入治理网关前暂停并在聊天页显示逐调用审批卡片。审批人必须是本轮发起人且同时拥有 `agent:run` 和 `agent:approve`；决定绑定当前 `toolCallId`、原工具 `toolId` 与输入哈希，恢复时仍会重新执行 ToolGrant、租户和工具状态校验。检查点使用与模型凭据相同的外部 AES 主密钥进行 AES/GCM 加密，`approval-ttl` 默认 15 分钟、最大 24 小时。当前只开放在线会话审批，不提供无人值守暂停、长期记住规则或独立审批中心；进程中断后的自动接管和主动过期扫描尚未实现，上线前须评估[运维限制](docs/operations.md)。

@@ -55,6 +55,18 @@ class RepositoryAgentStateStoreTest {
                 .hasMessage("AgentScope userId 缺少可信租户前缀");
     }
 
+    @Test
+    void AgentScope默认槽读取不会被当成租户状态处理() {
+        InMemoryRuntimeCheckpointRepository repository = new InMemoryRuntimeCheckpointRepository();
+        RepositoryAgentStateStore store = store(repository, cipher(), Duration.ofMinutes(15));
+
+        assertThat(store.get(null, "run-1", "agent_state", TestState.class)).isEmpty();
+        assertThat(repository.listSessionIds(TENANT_ID, USER_ID)).isEmpty();
+        assertThatThrownBy(() -> store.save(null, "run-1", "agent_state", new TestState("不应保存")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("AgentScope userId 不能为空");
+    }
+
     private static RepositoryAgentStateStore store(
             InMemoryRuntimeCheckpointRepository repository,
             ModelCredentialCipher cipher,

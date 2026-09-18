@@ -310,7 +310,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             });
 
             Model model = modelFactory.create(
-                    spec.request().modelConfig(), spec.request().agent(), credential);
+                    spec.request().modelConfig(), spec.request().agent(), credential, spec.runId());
             ExecutionConfig modelConfig = ExecutionConfig.builder()
                     .timeout(options.modelTimeout())
                     .maxAttempts(options.modelMaxAttempts())

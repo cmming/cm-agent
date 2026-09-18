@@ -187,6 +187,12 @@ cm-agent:
 
 `model_configs` 表保存模型 Provider、`baseUrl`、`modelName`、启用状态与 API Key 密文。明文 API Key 不得进入 DTO、日志、审计或异常，也不支持接口回显。
 
+### OpenCode Go 会话路由
+
+OpenCode Go 的基础地址使用 `https://opencode.ai/zen/go/v1` 时，供应商要求聊天请求携带 `x-opencode-session` 才能完成路由。CM Agent 对主机名精确为 `opencode.ai` 的 `OPENAI_COMPATIBLE` 配置自动使用本次服务端已创建的 `runId` 作为该 Header 值；同一次运行的重试复用同一个值。此 Header 不是模型配置字段，不能由浏览器、提示词或 API 请求指定，且不会附加到其他 OpenAI Compatible 网关。更新部署包后重启服务即可生效，无需重新保存 API Key。
+
+AgentScope 2.0.0 在绑定可信 `RuntimeContext` 前可能探测无用户标识的默认状态槽。CM Agent 将这种只读探测视为未命中；任何实际状态读取、写入或删除仍要求 `tenantId:principalId` 格式的可信运行身份，不能因该兼容处理跨租户访问检查点。
+
 真实运行同时提供兼容的单轮 Run API 和持久化会话 API。会话接口位于 `/api/agents/{agentId}/conversations`；续聊时固定读取最近 40 条、最多 60,000 字符的完整消息历史，不做自动摘要。该限制当前不是外部配置项，避免不同实例产生不一致的上下文边界。会话流式接口发送最终回答文本增量、受控执行进度及审批事件，不发送工具原始参数或工具原始输出。
 
 `permission-enabled` 默认 `false`，用于保持已有工具放行策略的兼容升级；只有明确设为 `true` 时，HIGH 工具才按每次具体调用进入 `WAITING_APPROVAL`。`approval-ttl` 默认 `15m`，必须大于 0 且不超过 24 小时。审批请求保存脱敏摘要及原工具 ID、调用 ID、输入哈希，AgentScope 状态通过 AES/GCM 加密写入 `runtime_checkpoints`，终态或过期处理后删除。第一版只允许原运行发起人且同时拥有 `agent:run`、`agent:approve` 的主体决定，不支持独立审批人、长期预授权规则或无人值守暂停。模式固定在线 DEFAULT、无会话 DONT_ASK，没有 `permission.*` 嵌套配置。
