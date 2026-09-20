@@ -3,7 +3,7 @@
 ## 状态与文档索引
 
 - 主题日期：2026-09-20；本次更新：2026-09-21。
-- 当前阶段：设计与规划完成；用户已选择 A，由主代理顺序执行；Task 1～Task 3 已完成，Task 4 即将开始。
+- 当前阶段：设计与规划完成；用户已选择 A，由主代理顺序执行；Task 1～Task 4 已完成，Task 5 即将开始。
 - 本阶段新增及修改的四文档内容：未提交。此前两个设计提交仅在本地，未推送。
 - 关联：[设计规格](../specs/2026-09-20-skill-support-design.md)、[实施计划](../plans/2026-09-20-skill-support.md)、[实现说明](../implementation/2026-09-20-skill-support-implementation-design.md)。
 
@@ -28,7 +28,7 @@
 | T1 | 领域、错误码和运行契约 | 无 | 已完成；提交说明为“feat: 定义技能领域与运行契约” |
 | T2 | 无落盘技能包校验与配置 | T1 | 已完成；提交说明为“feat: 增加受限技能包解析与配置” |
 | T3 | Repository 合同和 memory 工作单元 | T1 | 已完成；提交说明为“feat: 增加技能仓储与内存工作单元” |
-| T4 | V12 双数据库迁移、JDBC 合同 | T3 | 未开始 |
+| T4 | V12 双数据库迁移、JDBC 合同 | T3 | 已完成；提交说明为“feat: 持久化技能版本与运行读取记录” |
 | T5 | 管理 API、权限和严格审计事务 | T2～T4 | 未开始 |
 | T6 | Run 固定快照、读时治理和审批恢复 | T3～T5 | 未开始 |
 | T7 | 原生技能加载及致命故障门控 | T1、T6 | 未开始 |
@@ -53,7 +53,7 @@
 | --- | --- | --- |
 | 新增 Java 单元/接口测试 | 未执行 | 尚无 Skill 实现与测试；按 T1～T7、T11 在 Java 21 环境执行 |
 | 新增前端 Node 测试 | 未执行 | 尚无技能页面和组件；按 T8～T10 执行 |
-| JDBC/Flyway/Testcontainers 双库验证 | 未执行 | 本阶段仅文档；实施时只在 `ssh rocky` 的指定 Maven 容器内执行，并核对 Git 提交 |
+| JDBC/Flyway/Testcontainers 双库验证 | 已通过 | Rocky Linux Docker 23.0.6；指定 Maven/JDK 21 容器；PostgreSQL 16 与 MySQL 8.4 共 4 项测试通过 |
 | 浏览器完整闭环与响应式验证 | 未执行 | 尚无 Skill 页面；历史截图不计入验收证据 |
 | 全量构建和回归 | 未执行 | 未改业务代码；安排在 T11 对实际实现执行 |
 
@@ -63,16 +63,18 @@ Task 2 实际验证：首次目标测试因解析器、限制类型和配置属�
 
 Task 3 实际验证：首次目标测试因 `InMemorySkillStore` 缺失而在编译期红灯；实现六个仓储视图和统一工作单元后，目标测试通过 9 项用例。单独加载 `ServerRepositoryConfigurationTest` 首次暴露底层存储 Bean 位于错误配置边界，调整后与目标测试合并通过。扩大执行 `mvn -q -pl cm-agent-server -am test` 时，既有 persistence Testcontainers 测试因本机无可用 Docker 中止；按仓库规则不在本机运行 JDBC 集成验证，T4/T11 将在 `ssh rocky` 指定容器中执行。
 
+Task 4 实际验证：红灯提交 `d26b9081ed2b0e269498e8ef3324dc54054f9a3e` 在 Rocky 指定容器中因六个 JDBC Repository 类缺失而于测试编译阶段失败，属于预期功能缺失。初版实现提交 `b3a7513955fc16f74b76c9fed3634465b1098fce` 的双库测试 4 项通过；补充 V11→V12 既有 Run 空快照回填、模型调用唯一键和并发绑定上限后，最终精确提交 `38c9c38f67a5a9017111eea538bc73515b3351a5` 再次运行 `MigrationTest,JdbcSkillRepositoriesTest`，结果为 4 项通过、0 失败、0 错误。环境为 Rocky Linux 9.3、Docker 23.0.6、`maven:3.9.9-eclipse-temurin-21`、PostgreSQL 16-alpine 与 MySQL 8.4。
+
 ## 提交与保护范围
 
 - `326c86a`：初版设计规格，已本地提交、未推送。
 - `d68599c`：前端范围与验收，已本地提交、未推送。
-- 当前规格澄清、实施计划、实现说明和本账本：未提交、未推送。
+- Task 4 前的规格、计划、实现说明和账本已随前序任务提交；本次 Task 4 状态更新待提交，均未推送。
 - 未修改用户已有 `application.yml`、`application-mysql.yml`、`application-ok.yml`、`.codex/`、`.impeccable/critique/`、`.workbuddy/`。
 - 本次没有业务行为和发布变化，因此未修改正式发布说明；T11 在功能实际完成后更新。
 
 ## 下一步与主要边界
 
-用户已选择主代理顺序实施。隔离工作树已创建，下一步实现 T4 的双数据库迁移与 JDBC 合同；不派生逐任务实现子代理，最终执行一次独立整体验证和评审。
+用户已选择主代理顺序实施。隔离工作树中的 T4 双数据库迁移与 JDBC 合同已完成，下一步实现 T5 管理 API、权限和严格审计事务；不派生逐任务实现子代理，最终执行一次独立整体验证和评审。
 
 执行阶段重点守住版本和撤销边界、严格审计提交后再交付正文、框架吞错防护、前端会话与迟到响应隔离。所有预期验收结果都仍属于待验证事项，不据此宣称 Skill 已可用。

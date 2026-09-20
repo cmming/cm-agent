@@ -396,7 +396,7 @@ FROM skill_definitions
 WHERE tenant_id = :tenantId AND id = :skillId FOR UPDATE;
 ```
 
-- [ ] **1. 编写迁移和 Repository 红灯：** 将六表加入现有 `REQUIRED_TABLES`，迁移数量从 11 改为 12；保留现有逐表逐字段注释断言。增加 PostgreSQL 和 MySQL 两个入口，委托同一个 `verifyContracts(DataSource)`。
+- [x] **1. 编写迁移和 Repository 红灯：** 将六表加入现有 `REQUIRED_TABLES`，迁移数量从 11 改为 12；保留现有逐表逐字段注释断言。增加 PostgreSQL 和 MySQL 两个入口，委托同一个 `verifyContracts(DataSource)`。
 
 ```java
 @Test
@@ -413,8 +413,8 @@ void mysql技能表满足合同() {
 
 测试类分别使用现有 `PostgreSQLContainer<>("postgres:16-alpine")` 和 `MySQLContainer<>("mysql:8.4")`。`verifyContracts` 迁移后创建两个测试租户和相应 Agent/Run，再按 T3 接口断言跨租户找不到、同名隔离、版本只插入、CAS 更新冲突、重复绑定拒绝、读取记录同调用幂等和事务回滚。连接串只由容器生成，不输出。
 
-- [ ] **2. 保存红灯测试提交并远程运行：** 使用前述提交传递流程运行 `MigrationTest,JdbcSkillRepositoriesTest`，预期新表/实现缺失，不接受因 SSH 或 Docker 不可用产生的失败作为红灯证据。
-- [ ] **3. 编写迁移：** 完整字段采用设计第 6 节和契约字典，UUID 统一既有 `varchar(36)`；PG 正文/JSON 使用 text，MySQL 正文/JSON 使用 longtext，时间和布尔类型沿用相邻迁移。为每张表及每个字段添加原生中文注释。
+- [x] **2. 保存红灯测试提交并远程运行：** 使用前述提交传递流程运行 `MigrationTest,JdbcSkillRepositoriesTest`，预期新表/实现缺失，不接受因 SSH 或 Docker 不可用产生的失败作为红灯证据。
+- [x] **3. 编写迁移：** 完整字段采用设计第 6 节和契约字典，UUID 统一既有 `varchar(36)`；PG 正文/JSON 使用 text，MySQL 正文/JSON 使用 longtext，时间和布尔类型沿用相邻迁移。为每张表及每个字段添加原生中文注释。
 
 关键键与索引必须逐项落地：
 
@@ -445,8 +445,8 @@ SELECT tenant_id, id, agent_id, 1, '[]', started_at FROM runs;
 
 旧 Run 空快照回填发生在停写迁移窗口，不采用“缺失时动态使用最新技能”。新增索引支持租户列表、Agent 绑定、Run 读取时间/ID 排序。硬删除带绑定 Agent 前在现有 Agent 删除命令同事务删除其绑定，不能留下悬挂关联或仅依赖外键报 500。
 
-- [ ] **4. 实现 JDBC 并双库验证：** 构造器统一采用 `JdbcClient`、需要 JSON 的仓储加 `ObjectMapper`；mapper 必须保持领域校验。新增测试覆盖 V11 已有运行升级、资源路径 utf8、绑定上限并发竞争、严格审计回滚和唯一键冲突映射。
-- [ ] **5. 提交与远程绿灯记录：** `git commit -m "feat: 持久化技能版本与运行读取记录"`，传递该提交后再次运行双库测试，账本记录实际 SHA 和结果。
+- [x] **4. 实现 JDBC 并双库验证：** 构造器统一采用 `JdbcClient`、需要 JSON 的仓储加 `ObjectMapper`；mapper 必须保持领域校验。新增测试覆盖 V11 已有运行升级、资源路径 utf8、绑定上限并发竞争、严格审计回滚和唯一键冲突映射。
+- [x] **5. 提交与远程绿灯记录：** `git commit -m "feat: 持久化技能版本与运行读取记录"`，传递该提交后再次运行双库测试，账本记录实际 SHA 和结果。
 
 ## Task 5：交付管理 API、权限、事务与中文诊断
 

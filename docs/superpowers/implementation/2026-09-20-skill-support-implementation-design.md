@@ -3,7 +3,7 @@
 ## 文档状态
 
 - 主题日期：2026-09-20；本次更新：2026-09-21。
-- 当前阶段：设计与计划已编写；Task 1～Task 3 已实现，Task 4～Task 11 尚未开始。
+- 当前阶段：设计与计划已编写；Task 1～Task 4 已实现，Task 5～Task 11 尚未开始。
 - 本文记录本阶段实际交付及拟接入位置；后续实施时用实际代码、验证结果和方案差异更新，不能将下述拟实现内容作为功能已上线的依据。
 - 配套文档：[设计规格](../specs/2026-09-20-skill-support-design.md)、[实施计划](../plans/2026-09-20-skill-support.md)、[进度账本](../progress/2026-09-20-skill-support-ledger.md)。
 
@@ -16,6 +16,8 @@ Task 1 已新增 10 个技能领域类型、4 个运行时契约和 10 个稳定
 Task 2 已增加默认关闭的 `cm-agent.skills` 有界配置和无落盘 ZIP 解析器。解析器使用 Commons Compress 1.27.1 的中央目录及内存可寻址通道，SnakeYAML 2.4 使用安全构造器；两项依赖均固定为当前已解析版本，没有升级框架依赖。
 
 Task 3 已增加六个技能 Repository 合同和单一 memory 工作单元。所有写操作必须在工作单元的暂存副本中完成，只有最外层正常返回才发布；嵌套工作单元复用同一副本，异常后清理线程上下文。空技能列表会作为有效 Run 快照持久化，绑定唯一性、分页顺序、停用状态可见性和读取记录顺序均有回归测试。
+
+Task 4 已增加 V12 PostgreSQL/MySQL 双方言迁移、六个 JDBC Repository 和 JDBC 技能工作单元。旧 Run 在迁移窗口回填格式版本 1 的空技能快照；定义、版本、资源、绑定、快照和读取记录均保持 tenant 条件及数据库约束。Agent 硬删除会在同一事务先移除技能绑定，避免遗留悬挂关联。
 
 设计文档此前分别形成两个本地提交：`326c86a`（设计规格）、`d68599c`（前端交付范围与验收）。当前补充的计划、实现说明、进度账本及规格澄清未提交，未推送。
 
@@ -64,6 +66,14 @@ Task 3 已增加六个技能 Repository 合同和单一 memory 工作单元。�
 - 定义分页按更新时间和标识稳定倒序，读取详情按创建时间倒序，预算累计按尝试序号正序。
 - 内存存储 Bean 与六个仓储视图统一由 `ServerRepositoryConfiguration` 装配，确保独立加载该配置时共享同一工作单元。
 
+### Task 4 实际实现
+
+- PostgreSQL 与 MySQL 的 V12 迁移分别创建六张技能表，并为表及所有字段写入原生中文注释；名称和资源路径唯一性在 MySQL 使用二进制排序规则保持大小写敏感语义。
+- 数据库约束覆盖租户内技能名、版本号、资源路径、Agent 绑定、Run 快照和模型调用读取记录的唯一性；复合外键约束资源版本、Agent 绑定与 Run 归属，当前版本继续采用事务内验证的软指针。
+- 六个 JDBC Repository 复用 Core 合同，行锁查询始终包含 tenant 条件；定义版本更新使用期望版本指针进行 CAS，快照和读取记录不会动态回退到当前版本。
+- `JdbcPersistenceConfiguration` 使用现有 `TransactionTemplate` 提供技能工作单元，与同数据源上的审计写入共享事务边界。该装配放在 JDBC 条件配置中，因此无需修改仅负责通用限额 Bean 的 `SkillConfiguration`。
+- `JdbcAgentDefinitionRepository` 删除 Agent 前先删除同租户绑定；并发绑定测试通过锁定 Agent 行串行计算数量，验证 20 个上限不会被竞争绕过。
+
 ## 拟实现的数据与调用链
 
 ### 管理与绑定
@@ -99,7 +109,7 @@ Task 3 已增加六个技能 Repository 合同和单一 memory 工作单元。�
 
 规划阶段完成了代码结构、依赖接口和文档一致性核对。Task 1 已按红绿循环执行 `SkillDomainTest`、`AgentRunRequestTest`，并完成 Core 全模块回归。历史页面截图仅用于理解原有风格，不属于本次 Skill 功能的浏览器验证。
 
-已运行 Task 1 领域测试、Task 2 解析/配置测试、Task 3 memory 工作单元测试和仓储 Spring 装配测试。Task 3 的目标测试与配置回归均通过；本机扩大执行 `cm-agent-server -am test` 时在既有 persistence Testcontainers 测试处因没有可用 Docker 中止，按仓库规则留待 Rocky 环境验证。尚未运行后续管理、运行时、JavaScript 功能测试、双数据库迁移测试或浏览器闭环，因为对应代码尚未实现。
+已运行 Task 1 领域测试、Task 2 解析/配置测试、Task 3 memory 工作单元测试和仓储 Spring 装配测试。Task 4 在 Rocky Linux 的 `maven:3.9.9-eclipse-temurin-21` 容器中，使用 PostgreSQL 16 与 MySQL 8.4 完成迁移和 JDBC 合同验证；精确提交 `38c9c38f67a5a9017111eea538bc73515b3351a5` 共执行 4 项测试且全部通过。本机扩大执行 `cm-agent-server -am test` 时仍会在既有 persistence Testcontainers 测试处因没有可用 Docker 中止。尚未运行后续管理、运行时、JavaScript 功能测试或浏览器闭环，因为对应代码尚未实现。
 
 实施计划已安排 Java 21 本地快速测试，以及 Rocky 上 PostgreSQL 16/MySQL 8.4 的 JDBC/Flyway/Testcontainers 验证；执行前核对远端提交与本地一致。实际命令和结果持续写入进度账本。
 
