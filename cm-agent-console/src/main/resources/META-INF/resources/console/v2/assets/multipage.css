@@ -163,6 +163,13 @@ body[data-console-version="v2"] .overview-grid > .panel:first-child { min-height
 
 body[data-console-version="v2"] .quick-actions { gap: 10px; }
 body[data-console-version="v2"] .quick-actions .panel-heading { margin-bottom: 4px; }
+body[data-console-version="v2"] .onboarding-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+body[data-console-version="v2"] .onboarding-steps { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; counter-reset: onboarding-step; }
+body[data-console-version="v2"] .onboarding-steps li { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+body[data-console-version="v2"] .onboarding-steps li::before { display: grid; width: 18px; height: 18px; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: var(--muted); content: counter(onboarding-step); counter-increment: onboarding-step; font-size: 11px; }
+body[data-console-version="v2"] .onboarding-steps li[aria-current="true"] { color: var(--text); font-weight: 700; }
+body[data-console-version="v2"] .onboarding-steps li[aria-current="true"]::before { border-color: var(--accent); background: var(--accent); color: #fff; }
+body[data-console-version="v2"] .onboarding-steps li.is-complete::before { border-color: #348261; background: #e8f5ef; color: #236348; content: "✓"; }
 
 .quick-action {
     display: grid;

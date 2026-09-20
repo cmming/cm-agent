@@ -329,7 +329,8 @@
                 description: String(fields.description || "").trim(),
                 type: tool?.type,
                 riskLevel: fields.riskLevel,
-                mcpPublished: Boolean(fields.mcpPublished)
+                // LOCAL 普通编辑保持当前发布状态，发布和取消发布由独立操作完成。
+                mcpPublished: tool?.type === "LOCAL" ? Boolean(tool.mcpPublished) : Boolean(fields.mcpPublished)
             };
         return {...payload, type: tool?.type, enabled: Boolean(fields.enabled)};
     }

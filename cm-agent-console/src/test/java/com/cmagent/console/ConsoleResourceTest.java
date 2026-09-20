@@ -39,12 +39,13 @@ class ConsoleResourceTest {
         String chat = resource("META-INF/resources/console/v2/chat.html");
         String runs = resource("META-INF/resources/console/v2/runs.html");
         String audit = resource("META-INF/resources/console/v2/audit.html");
+        String app = resource("META-INF/resources/assets/app.js");
 
         assertThat(login)
                 .contains("data-console-version=\"v2\"", "id=\"loginForm\"", "/console/v1/")
                 .doesNotContain("id=\"overviewPage\"", "id=\"agentsPage\"");
         assertThat(overview)
-                .contains("data-page=\"overviewPage\"", "id=\"overviewPage\"", "class=\"quick-action primary\"", "配置模型、提示词与可用工具")
+                .contains("data-page=\"overviewPage\"", "id=\"overviewPage\"", "id=\"overviewPrimaryAction\"", "配置首个模型", "完成首个 Agent")
                 .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
         assertThat(agents)
                 .contains(
@@ -57,7 +58,10 @@ class ConsoleResourceTest {
                 .contains("创建时必填。平台仅加密保存，不会在详情、列表或编辑表单中回显")
                 .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
         assertThat(tools)
-                .contains("data-page=\"toolsPage\"", "id=\"toolsPage\"", "id=\"toolForm\"", "id=\"debugToolForm\"")
+                .contains(
+                        "data-page=\"toolsPage\"", "id=\"toolsPage\"", "id=\"toolForm\"", "id=\"debugToolForm\"",
+                        "id=\"startToolCreateBtn\"", "id=\"toolDetailPanel\"", "id=\"toolDetail\""
+                )
                 .doesNotContain("id=\"agentsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
         assertThat(chat)
                 .contains(
@@ -81,6 +85,10 @@ class ConsoleResourceTest {
             assertThat(page.indexOf("href=\"/console/v2/model-configs.html\""))
                     .isLessThan(page.indexOf("href=\"/console/v2/agents.html\""));
         }
+        assertThat(app).contains(
+                "loadModelConfigs(undefined, session)", "function updateOverviewOnboarding", "overviewPrimaryAction",
+                "function renderToolDetail", "function showToolWorkspace", "startToolCreateBtn"
+        );
     }
 
     @Test
@@ -101,7 +109,7 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.20", "/assets/console-core.js?v=2.0.11", "/assets/styles.css?v=2.0.17")
+                    .contains("/assets/app.js?v=2.0.25", "/assets/console-core.js?v=2.0.12", "/assets/styles.css?v=2.0.17")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }
@@ -127,7 +135,8 @@ class ConsoleResourceTest {
                         "@media (max-width: 600px)",
                         "height: clamp(620px, calc(100vh - 196px), 760px)",
                         "body[data-console-version=\"v2\"] #auditPage .table-scroll",
-                        "body[data-console-version=\"v2\"] .overview-grid,\n    body[data-console-version=\"v2\"] .chat-page"
+                        "body[data-console-version=\"v2\"] .overview-grid,",
+                        "body[data-console-version=\"v2\"] .chat-page"
                 );
     }
 
@@ -283,6 +292,7 @@ class ConsoleResourceTest {
         String html = resource("META-INF/resources/index.html");
         String core = resource("META-INF/resources/assets/console-core.js");
         String script = resource("META-INF/resources/assets/app.js");
+        String renderTools = script.substring(script.indexOf("function renderTools"), script.indexOf("function nextParameterId"));
 
         assertThat(html).contains(
                 "id=\"localExampleSection\"", "id=\"localExampleList\"", "id=\"localExampleStatus\"",
@@ -293,8 +303,11 @@ class ConsoleResourceTest {
         );
         assertThat(script).contains(
                 "/api/tools/local-examples", "loadLocalExamples", "installLocalExample",
-                "调用/调试", "未注册执行器", "getSessionEpoch: () => sessionEpoch.capture()"
+                "调用/调试", "未注册执行器", "getSessionEpoch: () => sessionEpoch.capture()",
+                "暂无 Tool，可点击注册 Tool 添加。",
+                "每次重绘普通 Tool 后都恢复内置示例"
         ).doesNotContain(".innerHTML");
+        assertThat(renderTools).contains("renderLocalExamples();");
     }
 
     /**

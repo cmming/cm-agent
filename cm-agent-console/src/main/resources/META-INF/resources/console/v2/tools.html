@@ -6,7 +6,7 @@
     <meta name="referrer" content="same-origin">
     <title>工具治理 | CM Agent 控制台 v2</title>
     <link rel="stylesheet" href="/assets/styles.css?v=2.0.17">
-    <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.2.0">
+    <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.2.1">
 </head>
 <body data-console-version="v2" data-page="toolsPage">
 <div class="console-layout">
@@ -27,12 +27,13 @@
         <header class="workspace-header"><p class="workspace-crumb">当前工作区 <span aria-hidden="true">/</span> <b>工具治理</b></p><div class="user-actions"><span class="online-dot" aria-label="系统运行正常"></span><span class="system-status">系统运行正常</span><span class="user-avatar" aria-hidden="true">管</span><span id="currentUser" class="sr-only">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
         <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
         <section id="toolsPage" class="page-view">
-            <div class="page-intro"><div><p class="eyebrow">能力接入</p><h1>工具治理</h1><p>注册 Tool，并向指定 Agent 授予受控的使用权限。</p></div><a class="button primary" href="#toolForm">注册 Tool</a></div>
+            <div class="page-intro"><div><p class="eyebrow">能力接入</p><h1>工具治理</h1><p>注册 Tool，并向指定 Agent 授予受控的使用权限。</p></div><button id="startToolCreateBtn" class="button primary" type="button">注册 Tool</button></div>
             <div class="management-grid">
                 <article class="panel">
                     <div class="panel-heading"><div><p class="eyebrow">资源</p><h2>Tool 列表</h2></div><button id="refreshToolsBtn" class="button ghost" type="button">刷新</button></div>
                     <div id="toolList" class="resource-list"><p class="empty-state">正在加载 Tool。</p></div>
                 </article>
+                <article id="toolDetailPanel" class="panel detail-panel"><div id="toolDetail"><p class="empty-state">选择 Tool 查看详情。</p></div></article>
                 <article class="panel form-panel">
                     <div class="panel-heading"><div><p id="toolFormEyebrow" class="eyebrow">新建</p><h2 id="toolFormTitle">注册 Tool</h2></div></div>
                     <form id="toolForm">
@@ -58,6 +59,7 @@ payload                  ARRAY  · BODY_ROOT
                         </div>
                         <label id="toolEnabledField" class="checkbox-label" for="toolEnabled" hidden><input id="toolEnabled" type="checkbox" checked> 启用 Tool</label>
                         <label id="mcpPublicationField" class="checkbox-label" for="toolMcpPublished" hidden><input id="toolMcpPublished" type="checkbox"> 发布为 MCP Tool</label>
+                        <p id="localMcpPublicationHelp" class="field-help" hidden>此处仅展示 MCP 发布状态。请返回工具详情，使用“发布为 MCP Tool”或“取消 MCP 发布”操作。</p>
                         <div class="tool-actions"><button id="createToolBtn" class="button primary" type="submit">注册 Tool</button><button id="cancelToolEditBtn" class="button ghost" type="button" hidden>取消编辑</button></div>
                         <p id="toolFormStatus" class="form-status" aria-live="polite"></p>
                     </form>
@@ -69,7 +71,7 @@ payload                  ARRAY  · BODY_ROOT
         </section>
     </main>
 </div>
-<script src="/assets/console-core.js?v=2.0.11"></script>
-<script src="/assets/app.js?v=2.0.20"></script>
+<script src="/assets/console-core.js?v=2.0.12"></script>
+<script src="/assets/app.js?v=2.0.25"></script>
 </body>
 </html>

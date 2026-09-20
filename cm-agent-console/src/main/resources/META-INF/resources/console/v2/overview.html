@@ -6,7 +6,7 @@
     <meta name="referrer" content="same-origin">
     <title>能力总览 | CM Agent 控制台 v2</title>
     <link rel="stylesheet" href="/assets/styles.css?v=2.0.17">
-    <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.2.0">
+    <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.2.1">
 </head>
 <body data-console-version="v2" data-page="overviewPage">
 <div class="console-layout">
@@ -35,12 +35,12 @@
             </div>
             <div class="overview-grid">
                 <article class="panel"><div class="panel-heading"><div><p class="eyebrow">活动</p><h2>最近运行</h2></div><a class="text-link" href="/console/v2/runs.html">查看全部 →</a></div><div id="overviewRuns" class="list-region"><p class="empty-state">正在加载最近运行。</p></div></article>
-                <article class="panel quick-actions"><div class="panel-heading"><div><p class="eyebrow">开始使用</p><h2>快捷操作</h2></div></div><a class="quick-action primary" href="/console/v2/agents.html"><span class="quick-action-icon" aria-hidden="true">◇</span><span><strong>创建 Agent</strong><small>配置模型、提示词与可用工具</small></span><b aria-hidden="true">→</b></a><a class="quick-action" href="/console/v2/model-configs.html"><span class="quick-action-icon" aria-hidden="true">◉</span><span><strong>管理模型配置</strong><small>维护 Provider、地址与默认模型</small></span><b aria-hidden="true">→</b></a><a class="quick-action" href="/console/v2/tools.html"><span class="quick-action-icon" aria-hidden="true">⬡</span><span><strong>注册 Tool</strong><small>接入并治理可调用的能力</small></span><b aria-hidden="true">→</b></a><a class="quick-action" href="/console/v2/chat.html"><span class="quick-action-icon" aria-hidden="true">◌</span><span><strong>开始会话</strong><small>连续聊天并保留上下文</small></span><b aria-hidden="true">→</b></a><a class="quick-action" href="/console/v2/runs.html"><span class="quick-action-icon" aria-hidden="true">▷</span><span><strong>执行 Agent</strong><small>发起调试并查看运行结果</small></span><b aria-hidden="true">→</b></a></article>
+                <article class="panel quick-actions"><div class="panel-heading"><div><p class="eyebrow">开始使用</p><h2>完成首个 Agent</h2></div></div><p id="overviewOnboardingHint" class="onboarding-hint">先添加并启用模型配置，随后创建 Agent 并发起一次调试运行。</p><ol id="overviewOnboardingSteps" class="onboarding-steps"><li data-step="model" aria-current="step">添加并启用模型配置</li><li data-step="agent">创建 Agent</li><li data-step="run">发起一次调试运行</li></ol><a id="overviewPrimaryAction" class="quick-action primary" href="/console/v2/model-configs.html"><span class="quick-action-icon" aria-hidden="true">◉</span><span><strong id="overviewPrimaryActionTitle">配置首个模型</strong><small id="overviewPrimaryActionDescription">添加 Provider、地址与默认模型</small></span><b aria-hidden="true">→</b></a><a class="quick-action" href="/console/v2/model-configs.html"><span class="quick-action-icon" aria-hidden="true">◉</span><span><strong>管理模型配置</strong><small>维护 Provider、地址与默认模型</small></span><b aria-hidden="true">→</b></a><a class="quick-action" href="/console/v2/tools.html"><span class="quick-action-icon" aria-hidden="true">⬡</span><span><strong>注册 Tool</strong><small>接入并治理可调用的能力</small></span><b aria-hidden="true">→</b></a><a class="quick-action" href="/console/v2/chat.html"><span class="quick-action-icon" aria-hidden="true">◌</span><span><strong>开始会话</strong><small>连续聊天并保留上下文</small></span><b aria-hidden="true">→</b></a><a class="quick-action" href="/console/v2/runs.html"><span class="quick-action-icon" aria-hidden="true">▷</span><span><strong>执行 Agent</strong><small>发起调试并查看运行结果</small></span><b aria-hidden="true">→</b></a></article>
             </div>
         </section>
     </main>
 </div>
-<script src="/assets/console-core.js?v=2.0.11"></script>
-<script src="/assets/app.js?v=2.0.20"></script>
+<script src="/assets/console-core.js?v=2.0.12"></script>
+<script src="/assets/app.js?v=2.0.25"></script>
 </body>
 </html>

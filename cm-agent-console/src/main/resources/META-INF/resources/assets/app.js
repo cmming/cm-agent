@@ -413,7 +413,7 @@
     async function loadCurrentPage(session) {
         switch (currentPage) {
             case "overviewPage":
-                await Promise.all([loadAgents(session), loadTools(undefined, session)]);
+                await Promise.all([loadAgents(session), loadTools(undefined, session), loadModelConfigs(undefined, session)]);
                 if (sessionEpoch.isCurrent(session) && state.selectedAgentId) {
                     await loadRuns({append: false});
                 }
@@ -520,6 +520,8 @@
     }
 
     function renderAgentDetail(agent) {
+        $("agentDetailPanel")?.removeAttribute("hidden");
+        $("agentFormPanel")?.setAttribute("hidden", "");
         const container = $("agentDetail");
         if (!container) return;
         const heading = element("div", {className: "panel-heading"});
@@ -629,6 +631,8 @@
     }
 
     function editAgent(agent) {
+        $("agentDetailPanel")?.setAttribute("hidden", "");
+        $("agentFormPanel")?.removeAttribute("hidden");
         state.editingAgentId = agent.id;
         $("agentName").value = agent.name || "";
         $("systemPrompt").value = agent.systemPrompt || "";
@@ -654,6 +658,17 @@
         $("createAgentBtn").textContent = "创建 Agent";
         $("cancelAgentEditBtn").hidden = true;
         setStatus($("agentFormStatus"));
+        if (state.selectedAgentId) {
+            $("agentDetailPanel")?.removeAttribute("hidden");
+            $("agentFormPanel")?.setAttribute("hidden", "");
+        }
+    }
+
+    function startAgentCreate() {
+        resetAgentForm();
+        $("agentDetailPanel")?.setAttribute("hidden", "");
+        $("agentFormPanel")?.removeAttribute("hidden");
+        $("agentName")?.focus();
     }
 
     async function createAgent() {
@@ -726,6 +741,7 @@
             resetModelConfigForm();
         }
         renderModelConfigs();
+        updateOverview();
         if (state.selectedModelConfigId) {
             await selectModelConfig(state.selectedModelConfigId, undefined, session);
         } else {
@@ -998,6 +1014,9 @@
             resetToolForm();
         }
         renderTools();
+        const selectedTool = state.tools.find((tool) => tool.id === state.selectedToolId);
+        if (selectedTool) renderToolDetail(selectedTool);
+        showToolWorkspace(selectedTool ? "detail" : "definition");
         if (state.selectedAgent?.id === state.selectedAgentId) {
             renderAgentDetail(state.selectedAgent);
         }
@@ -1018,16 +1037,16 @@
                 return false;
             }
             state.localExamples = Array.isArray(examples) ? examples : [];
-            renderLocalExamples();
+            renderTools();
             return true;
         } catch (error) {
             if (!sessionEpoch.isCurrent(session) || !localExampleLoadRevision.isCurrent(revision)) {
                 return false;
             }
             state.localExamples = [];
-            $("localExampleSection").hidden = false;
-            $("localExampleList").replaceChildren(emptyState("内置 LOCAL 示例目录加载失败。"));
-            setStatus($("localExampleStatus"), error.message, "error");
+            renderTools();
+            $("localExampleSection").hidden = true;
+            setStatus($("globalStatus"), `内置 LOCAL 示例目录加载失败：${error.message}`, "error");
             if (throwOnError) {
                 throw error;
             }
@@ -1037,27 +1056,44 @@
 
     function renderLocalExamples() {
         const section = $("localExampleSection");
-        const container = $("localExampleList");
+        const container = $("toolList");
         if (!section || !container) return;
-        section.hidden = state.localExamples.length === 0;
-        container.replaceChildren();
+        // 内置示例与普通 Tool 共用左侧资源列表；右侧不再为示例保留独立工作区。
+        section.hidden = true;
+        container.querySelectorAll(".local-example-card").forEach((card) => card.remove());
         state.localExamples.forEach((example) => {
-            const card = element("article", {className: "local-example-card"});
-            card.append(element("strong", {text: example.name}));
-            card.append(element("span", {text: example.description}));
-            card.append(element("span", {
-                className: example.runtimeReady ? "runtime-ready" : "runtime-unavailable",
-                text: example.installed
-                    ? (example.runtimeReady ? "已安装 · 运行时已就绪" : "已安装 · 未注册执行器")
-                    : "未安装"
+            // installed 表示与模板完全一致；实际存在但已修改的工具也不能重复安装。
+            const registeredTool = state.tools.find((tool) => tool.id === example.toolId);
+            const card = element("article", {className: "tool-card local-example-card"});
+            const item = element("div", {className: "resource-item"});
+            item.classList.toggle("active", registeredTool?.id === state.selectedToolId);
+            item.append(element("strong", {text: `${registeredTool?.name || example.name}（内置工具）`}));
+            item.append(element("span", {text: registeredTool?.description || example.description}));
+            item.append(element("span", {
+                className: registeredTool?.runtimeReady ? "runtime-ready" : "runtime-unavailable",
+                text: registeredTool
+                    ? `${registeredTool.riskLevel} · ${registeredTool.enabled ? "已启用" : "已停用"} · ${registeredTool.runtimeReady ? "运行时已就绪" : "未注册执行器"}`
+                    : (example.installed ? "已添加，请刷新工具列表" : "尚未添加")
             }));
+            card.append(item);
             const button = element("button", {
                 className: "button",
                 type: "button",
-                text: example.installed ? "已安装" : "添加示例工具"
+                text: registeredTool ? "查看详情" : (example.installed ? "已添加" : "添加示例工具")
             });
-            button.disabled = Boolean(example.installed);
-            button.addEventListener("click", () => installLocalExample(example, button));
+            button.disabled = !registeredTool && example.installed;
+            button.addEventListener("click", () => {
+                if (!registeredTool) {
+                    installLocalExample(example, button);
+                    return;
+                }
+                state.selectedToolId = registeredTool.id;
+                renderTools();
+                $("grantToolSelect").value = registeredTool.id;
+                $("debugToolSelect").value = registeredTool.id;
+                renderToolDetail(registeredTool);
+                showToolWorkspace("detail");
+            });
             card.append(button);
             container.append(card);
         });
@@ -1089,13 +1125,13 @@
                 }
                 $("debugToolSelect").value = installed.toolId;
                 $("debugInput").value = core.formatJsonInput(installed.sampleInput);
-                $("debugToolForm").scrollIntoView({behavior: "smooth", block: "start"});
+                showToolWorkspace("debug");
                 $("debugInput").focus();
-                setStatus($("localExampleStatus"), `示例“${installed.name}”已安装，可调用调试。`, "success");
+                setStatus($("globalStatus"), `示例“${installed.name}”已安装，可调用调试。`, "success");
             });
         } catch (error) {
             if (!sessionEpoch.isCurrent(installSession)) return;
-            setStatus($("localExampleStatus"), error.message, "error");
+            setStatus($("globalStatus"), error.message, "error");
         } finally {
             if (sessionEpoch.isCurrent(installSession)
                     && localExampleInstallRevision.isCurrent(example.key, installRevision)) {
@@ -1109,11 +1145,11 @@
         const container = $("toolList");
         if (!container) return;
         container.replaceChildren();
-        if (!state.tools.length) {
-            container.append(emptyState("暂无 Tool，可在右侧注册。"));
-            return;
+        if (!state.tools.length && !state.localExamples.length) {
+            container.append(emptyState("暂无 Tool，可点击注册 Tool 添加。"));
         }
         state.tools.forEach((tool) => {
+            if (state.localExamples.some((example) => example.toolId === tool.id)) return;
             const card = element("article", {className: "tool-card"});
             const item = element("button", {className: "resource-item", type: "button"});
             item.classList.toggle("active", tool.id === state.selectedToolId);
@@ -1132,6 +1168,8 @@
                 renderTools();
                 $("grantToolSelect").value = tool.id;
                 $("debugToolSelect").value = tool.id;
+                renderToolDetail(tool);
+                showToolWorkspace("detail");
             });
             card.append(item);
             const actions = element("div", {className: "tool-actions"});
@@ -1142,6 +1180,13 @@
             });
             editButton.addEventListener("click", () => beginToolEdit(tool));
             actions.append(editButton);
+            const grantButton = element("button", {className: "button ghost", type: "button", text: "授权"});
+            grantButton.addEventListener("click", () => {
+                state.selectedToolId = tool.id;
+                $("grantToolSelect").value = tool.id;
+                showToolWorkspace("grant");
+            });
+            actions.append(grantButton);
             if (tool.type === "HTTP" || tool.type === "LOCAL") {
                 const publicationButton = element("button", {
                     className: tool.mcpPublished ? "button ghost" : "button",
@@ -1162,7 +1207,7 @@
                     debugButton.addEventListener("click", () => {
                         state.selectedToolId = tool.id;
                         $("debugToolSelect").value = tool.id;
-                        $("debugToolForm").scrollIntoView({behavior: "smooth", block: "start"});
+                        showToolWorkspace("debug");
                         $("debugInput").focus();
                     });
                     actions.append(debugButton);
@@ -1178,6 +1223,8 @@
             card.append(actions);
             container.append(card);
         });
+        // 每次重绘普通 Tool 后都恢复内置示例，避免选择 Tool 时把示例卡片一并清空。
+        renderLocalExamples();
     }
 
     function nextParameterId() {
@@ -1461,6 +1508,7 @@
     }
 
     function beginToolEdit(tool) {
+        showToolWorkspace("definition");
         state.editingToolId = tool.id;
         state.selectedToolId = tool.id;
         $("toolName").value = tool.name || "";
@@ -1487,7 +1535,7 @@
         toggleHttpConfigFields();
         renderTools();
         setStatus($("toolFormStatus"), "类型不可修改；LOCAL Tool 名称也保持锁定。");
-        $("toolForm").scrollIntoView({behavior: "smooth", block: "start"});
+        $("toolForm").closest("article").scrollIntoView({behavior: "smooth", block: "start"});
         $("toolDescription").focus();
     }
 
@@ -1504,6 +1552,16 @@
         $("cancelToolEditBtn").hidden = true;
         toggleHttpConfigFields();
         if (clearStatus) setStatus($("toolFormStatus"));
+        if (currentPage === "toolsPage" && state.selectedToolId) {
+            showToolWorkspace("detail");
+        }
+    }
+
+    /** 从工具页主操作进入注册阶段；保留左侧选中项，便于取消后继续查看详情。 */
+    function startToolCreate() {
+        resetToolForm();
+        showToolWorkspace("definition");
+        $("toolName").focus();
     }
 
     function fillHttpToolExample() {
@@ -1695,11 +1753,17 @@
     function toggleHttpConfigFields() {
         if (!$("toolType")) return;
         const isHttp = $("toolType").value === "HTTP";
-        const supportsMcp = isHttp || (state.editingToolId && $("toolType").value === "LOCAL");
+        const isLocalEdit = Boolean(state.editingToolId) && $("toolType").value === "LOCAL";
+        const supportsMcp = isHttp || isLocalEdit;
         $("httpConfigFields").hidden = !isHttp;
         $("toolEnabledField").hidden = !state.editingToolId;
         $("mcpPublicationField").hidden = !supportsMcp;
-        $("toolMcpPublished").disabled = !supportsMcp;
+        // LOCAL 发布需经专用接口校验执行器；编辑表单只回显状态，不能切换发布状态。
+        $("toolMcpPublished").disabled = !isHttp;
+        if (isLocalEdit) {
+            $("toolMcpPublished").checked = Boolean(state.tools.find((tool) => tool.id === state.editingToolId)?.mcpPublished);
+        }
+        $("localMcpPublicationHelp")?.toggleAttribute("hidden", !isLocalEdit);
         if (!supportsMcp) $("toolMcpPublished").checked = false;
         ["httpUrlTemplate", "httpSecretHeaders", "httpTimeoutMillis"].forEach((id) => {
             $(id).required = isHttp;
@@ -1802,6 +1866,7 @@
 
     function updateOverview() {
         if (!$("overviewAgentCount")) return;
+        updateOverviewOnboarding();
         $("overviewAgentCount").textContent = String(state.agents.length);
         $("overviewToolCount").textContent = String(state.tools.length);
         const latestRun = state.runs[0];
@@ -1826,6 +1891,90 @@
                 loadRunDetail(run.id);
             });
             container.append(row);
+        });
+    }
+
+    /** 渲染已选 Tool 的只读摘要；危险操作仍通过既有表单和服务端权限校验执行。 */
+    function renderToolDetail(tool) {
+        const container = $("toolDetail");
+        if (!container) return;
+        const heading = element("div", {className: "panel-heading"});
+        const titleGroup = element("div");
+        titleGroup.append(
+            element("p", {className: "eyebrow", text: "Tool 详情"}),
+            element("h2", {text: tool.name || "未命名 Tool"})
+        );
+        heading.append(titleGroup);
+        const details = definitionList([
+            ["类型", tool.type || "—"], ["风险级别", tool.riskLevel || "—"], ["状态", tool.enabled ? "已启用" : "已停用"],
+            ["MCP 发布", tool.mcpPublished ? "已发布" : "未发布"], ["运行时", tool.runtimeReady ? "已就绪" : "未就绪"]
+        ]);
+        const actions = element("div", {className: "tool-actions"});
+        const editButton = element("button", {className: "button", type: "button", text: "编辑"});
+        editButton.addEventListener("click", () => beginToolEdit(tool));
+        const grantButton = element("button", {className: "button ghost", type: "button", text: "授权"});
+        grantButton.addEventListener("click", () => showToolWorkspace("grant"));
+        actions.append(editButton, grantButton);
+        if (tool.type === "HTTP" || tool.type === "LOCAL") {
+            const publicationButton = element("button", {
+                className: "button ghost",
+                type: "button",
+                text: tool.mcpPublished ? "取消 MCP 发布" : "发布为 MCP Tool"
+            });
+            publicationButton.addEventListener("click", () => {
+                const action = tool.mcpPublished ? unpublishMcpTool : publishMcpTool;
+                action(tool, publicationButton);
+            });
+            actions.append(publicationButton);
+        }
+        if (tool.runtimeReady === true && (core.canDebugTool(tool, "") || tool.riskLevel === "HIGH")) {
+            const debugButton = element("button", {className: "button ghost", type: "button", text: "调用/调试"});
+            debugButton.addEventListener("click", () => showToolWorkspace("debug"));
+            actions.append(debugButton);
+        }
+        container.replaceChildren(heading, details, actions);
+    }
+
+    /** 右侧工作区一次只展示 Tool 生命周期中的一个阶段，减少定义、授权和调试的决策干扰。 */
+    function showToolWorkspace(stage) {
+        $("toolDetailPanel")?.toggleAttribute("hidden", stage !== "detail");
+        $("toolForm")?.closest("article")?.toggleAttribute("hidden", stage !== "definition");
+        $("grantForm")?.closest("article")?.toggleAttribute("hidden", stage !== "grant");
+        $("debugToolForm")?.closest("article")?.toggleAttribute("hidden", stage !== "debug");
+    }
+
+    /**
+     * 按当前租户真实可用资源更新首次成功路径。
+     * Agent 创建必须绑定已启用模型配置，不能仅因页面加载顺序而把用户带到无法提交的表单；
+     * 已具备前置条件的管理员仍可直接进入创建或调试，不会被强制完成引导。
+     */
+    function updateOverviewOnboarding() {
+        const primaryAction = $("overviewPrimaryAction");
+        if (!primaryAction) return;
+        const hasModelConfig = state.modelConfigs.length > 0;
+        const hasEnabledModelConfig = state.modelConfigs.some((config) => config.enabled);
+        const hasAgent = state.agents.length > 0;
+        const title = $("overviewPrimaryActionTitle");
+        const description = $("overviewPrimaryActionDescription");
+        const hint = $("overviewOnboardingHint");
+        const steps = $("overviewOnboardingSteps");
+
+        primaryAction.href = hasEnabledModelConfig ? "/console/v2/agents.html" : "/console/v2/model-configs.html";
+        title.textContent = hasEnabledModelConfig ? "创建 Agent" : (hasModelConfig ? "启用模型配置" : "配置首个模型");
+        description.textContent = hasEnabledModelConfig
+            ? "选择已启用模型，配置提示词与可用工具"
+            : (hasModelConfig ? "启用至少一个模型配置后即可创建 Agent" : "添加 Provider、地址与默认模型");
+        hint.hidden = hasAgent;
+        steps.hidden = hasAgent;
+        steps.querySelectorAll("li").forEach((step) => {
+            const current = step.dataset.step === "model"
+                ? !hasEnabledModelConfig
+                : (step.dataset.step === "agent" ? hasEnabledModelConfig && !hasAgent : hasAgent);
+            const complete = step.dataset.step === "model"
+                ? hasEnabledModelConfig
+                : (step.dataset.step === "agent" ? hasAgent : false);
+            step.classList.toggle("is-complete", complete);
+            step.toggleAttribute("aria-current", current);
         });
     }
 
@@ -3298,6 +3447,7 @@
         bind("loginForm", "submit", (event) => { event.preventDefault(); login(); });
         bind("logoutBtn", "click", () => logout());
         bind("agentForm", "submit", (event) => { event.preventDefault(); createAgent(); });
+        bind("startAgentCreateBtn", "click", startAgentCreate);
         bind("cancelAgentEditBtn", "click", resetAgentForm);
         bind("modelConfigForm", "submit", (event) => { event.preventDefault(); submitModelConfig(); });
         bind("cancelModelConfigEditBtn", "click", resetModelConfigForm);
@@ -3306,6 +3456,7 @@
         bind("modelConfigBaseUrl", "input", updateDiscoverModelCatalogButton);
         bind("modelConfigApiKey", "input", updateDiscoverModelCatalogButton);
         bind("toolForm", "submit", (event) => { event.preventDefault(); submitTool(); });
+        bind("startToolCreateBtn", "click", startToolCreate);
         bind("cancelToolEditBtn", "click", () => resetToolForm());
         bind("fillHttpExampleBtn", "click", fillHttpToolExample);
         bind("addHttpParameterBtn", "click", () => addHttpParameter());
@@ -3315,7 +3466,8 @@
         bind("toolType", "change", toggleHttpConfigFields);
         bind("refreshAgentsBtn", "click", () => loadAgents().catch((error) => setStatus($("globalStatus"), error.message, "error")));
         bind("refreshModelConfigsBtn", "click", () => loadModelConfigs().catch((error) => setStatus($("globalStatus"), error.message, "error")));
-        bind("refreshToolsBtn", "click", () => loadTools().catch((error) => setStatus($("globalStatus"), error.message, "error")));
+        bind("refreshToolsBtn", "click", () => Promise.all([loadTools(), loadLocalExamples(undefined, true)])
+            .catch((error) => setStatus($("globalStatus"), error.message, "error")));
         bind("refreshRunsBtn", "click", () => loadRuns({append: false}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
         bind("loadMoreRunsBtn", "click", () => loadRuns({append: true}).catch((error) => setStatus($("runFormStatus"), error.message, "error")));
         bind("runAgentSelect", "change", () => {

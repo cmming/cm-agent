@@ -260,7 +260,7 @@ test("构建 HTTP 工具更新载荷时只提交最新参数定义", () => {
 });
 
 test("构建 LOCAL 工具更新载荷时拒绝改名", () => {
-    const localTool = {id: "tool-2", type: "LOCAL", name: "echo"};
+    const localTool = {id: "tool-2", type: "LOCAL", name: "echo", mcpPublished: true};
     const fields = {name: "echo", description: "本地回显", riskLevel: "LOW", enabled: true, mcpPublished: true};
 
     assert.throws(() => core.buildToolUpdatePayload(localTool, {...fields, name: "renamed"}), /LOCAL/);
@@ -272,6 +272,18 @@ test("构建 LOCAL 工具更新载荷时拒绝改名", () => {
         enabled: true,
         mcpPublished: true
     });
+});
+
+test("LOCAL 编辑忽略表单发布切换并保留已有发布状态", () => {
+    for (const published of [false, true]) {
+        const tool = {id: "tool-local", type: "LOCAL", name: "echo", mcpPublished: published};
+        const payload = core.buildToolFormPayload(tool, {
+            name: "echo", description: "更新描述", riskLevel: "LOW", enabled: true,
+            mcpPublished: !published
+        });
+        assert.equal(payload.mcpPublished, published);
+        assert.equal(payload.description, "更新描述");
+    }
 });
 
 test("工具更新、删除和解除关联路径会编码资源标识", () => {

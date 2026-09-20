@@ -1,0 +1,8 @@
+{
+  "files": [
+    "cm-agent-console/target/classes/META-INF/resources/console/v2/**/*.html"
+  ],
+  "insertBefore": "</body>",
+  "commentSyntax": "html",
+  "cspChecked": true
+}

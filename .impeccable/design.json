@@ -1,0 +1,219 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-20T16:21:57.1305588+08:00",
+  "title": "Design System: CM Agent",
+  "extensions": {
+    "colorMeta": {
+      "workspace-frost": {
+        "role": "neutral",
+        "displayName": "工作区霜白",
+        "canonical": "#f3f6fa",
+        "tonalRamp": ["oklch(15% 0.012 255)", "oklch(27% 0.012 255)", "oklch(39% 0.012 255)", "oklch(51% 0.012 255)", "oklch(63% 0.012 255)", "oklch(75% 0.012 255)", "oklch(87% 0.012 255)", "oklch(95% 0.012 255)"]
+      },
+      "surface-white": {
+        "role": "neutral",
+        "displayName": "操作面白",
+        "canonical": "#ffffff",
+        "tonalRamp": ["oklch(15% 0.004 255)", "oklch(27% 0.004 255)", "oklch(39% 0.004 255)", "oklch(51% 0.004 255)", "oklch(63% 0.004 255)", "oklch(75% 0.004 255)", "oklch(87% 0.004 255)", "oklch(95% 0.004 255)"]
+      },
+      "surface-soft": {
+        "role": "neutral",
+        "displayName": "柔和表面",
+        "canonical": "#f7f9fc",
+        "tonalRamp": ["oklch(15% 0.008 255)", "oklch(27% 0.008 255)", "oklch(39% 0.008 255)", "oklch(51% 0.008 255)", "oklch(63% 0.008 255)", "oklch(75% 0.008 255)", "oklch(87% 0.008 255)", "oklch(95% 0.008 255)"]
+      },
+      "panel-stroke": {
+        "role": "neutral",
+        "displayName": "面板描边",
+        "canonical": "#dbe2ec",
+        "tonalRamp": ["oklch(15% 0.018 255)", "oklch(27% 0.018 255)", "oklch(39% 0.018 255)", "oklch(51% 0.018 255)", "oklch(63% 0.018 255)", "oklch(75% 0.018 255)", "oklch(87% 0.018 255)", "oklch(95% 0.018 255)"]
+      },
+      "border-cool": {
+        "role": "neutral",
+        "displayName": "冷灰边界",
+        "canonical": "#dce3ec",
+        "tonalRamp": ["oklch(15% 0.016 255)", "oklch(27% 0.016 255)", "oklch(39% 0.016 255)", "oklch(51% 0.016 255)", "oklch(63% 0.016 255)", "oklch(75% 0.016 255)", "oklch(87% 0.016 255)", "oklch(95% 0.016 255)"]
+      },
+      "border-strong": {
+        "role": "neutral",
+        "displayName": "强化边界",
+        "canonical": "#c8d2df",
+        "tonalRamp": ["oklch(15% 0.022 255)", "oklch(27% 0.022 255)", "oklch(39% 0.022 255)", "oklch(51% 0.022 255)", "oklch(63% 0.022 255)", "oklch(75% 0.022 255)", "oklch(87% 0.022 255)", "oklch(95% 0.022 255)"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "主墨色",
+        "canonical": "#172238",
+        "tonalRamp": ["oklch(15% 0.035 255)", "oklch(27% 0.035 255)", "oklch(39% 0.035 255)", "oklch(51% 0.035 255)", "oklch(63% 0.035 255)", "oklch(75% 0.035 255)", "oklch(87% 0.035 255)", "oklch(95% 0.035 255)"]
+      },
+      "muted-steel": {
+        "role": "neutral",
+        "displayName": "钢灰说明",
+        "canonical": "#68768a",
+        "tonalRamp": ["oklch(15% 0.025 255)", "oklch(27% 0.025 255)", "oklch(39% 0.025 255)", "oklch(51% 0.025 255)", "oklch(63% 0.025 255)", "oklch(75% 0.025 255)", "oklch(87% 0.025 255)", "oklch(95% 0.025 255)"]
+      },
+      "nav-deep": {
+        "role": "neutral",
+        "displayName": "深海军蓝",
+        "canonical": "#182a42",
+        "tonalRamp": ["oklch(15% 0.045 255)", "oklch(27% 0.045 255)", "oklch(39% 0.045 255)", "oklch(51% 0.045 255)", "oklch(63% 0.045 255)", "oklch(75% 0.045 255)", "oklch(87% 0.045 255)", "oklch(95% 0.045 255)"]
+      },
+      "nav-muted": {
+        "role": "neutral",
+        "displayName": "导航柔灰",
+        "canonical": "#b7c4d4",
+        "tonalRamp": ["oklch(15% 0.026 255)", "oklch(27% 0.026 255)", "oklch(39% 0.026 255)", "oklch(51% 0.026 255)", "oklch(63% 0.026 255)", "oklch(75% 0.026 255)", "oklch(87% 0.026 255)", "oklch(95% 0.026 255)"]
+      },
+      "accent-blue": {
+        "role": "primary",
+        "displayName": "治理蓝",
+        "canonical": "#2865d8",
+        "tonalRamp": ["oklch(15% 0.17 258)", "oklch(27% 0.17 258)", "oklch(39% 0.17 258)", "oklch(51% 0.17 258)", "oklch(63% 0.17 258)", "oklch(75% 0.14 258)", "oklch(87% 0.08 258)", "oklch(95% 0.035 258)"]
+      },
+      "accent-deep": {
+        "role": "primary",
+        "displayName": "深治理蓝",
+        "canonical": "#1e50b0",
+        "tonalRamp": ["oklch(15% 0.16 258)", "oklch(27% 0.16 258)", "oklch(39% 0.16 258)", "oklch(51% 0.16 258)", "oklch(63% 0.16 258)", "oklch(75% 0.13 258)", "oklch(87% 0.075 258)", "oklch(95% 0.03 258)"]
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "通过绿",
+        "canonical": "#168054",
+        "tonalRamp": ["oklch(15% 0.105 157)", "oklch(27% 0.105 157)", "oklch(39% 0.105 157)", "oklch(51% 0.105 157)", "oklch(63% 0.105 157)", "oklch(75% 0.085 157)", "oklch(87% 0.05 157)", "oklch(95% 0.022 157)"]
+      },
+      "warning": {
+        "role": "tertiary",
+        "displayName": "警示琥珀",
+        "canonical": "#a76509",
+        "tonalRamp": ["oklch(15% 0.12 68)", "oklch(27% 0.12 68)", "oklch(39% 0.12 68)", "oklch(51% 0.12 68)", "oklch(63% 0.12 68)", "oklch(75% 0.1 68)", "oklch(87% 0.06 68)", "oklch(95% 0.025 68)"]
+      },
+      "error": {
+        "role": "tertiary",
+        "displayName": "失败红",
+        "canonical": "#b42318",
+        "tonalRamp": ["oklch(15% 0.15 28)", "oklch(27% 0.15 28)", "oklch(39% 0.15 28)", "oklch(51% 0.15 28)", "oklch(63% 0.15 28)", "oklch(75% 0.12 28)", "oklch(87% 0.07 28)", "oklch(95% 0.03 28)"]
+      }
+    },
+    "typographyMeta": {
+      "display": {"displayName": "展示标题", "purpose": "仅用于登录页产品主张。"},
+      "headline": {"displayName": "页面标题", "purpose": "用于每个业务页面的唯一主标题。"},
+      "title": {"displayName": "面板标题", "purpose": "用于面板、资源与局部任务标题。"},
+      "body": {"displayName": "正文", "purpose": "用于表单输入和主要说明。"},
+      "label": {"displayName": "标签", "purpose": "用于眉题、表头和短状态标签。"}
+    },
+    "shadows": [
+      {"name": "panel-ambient", "value": "0 4px 14px rgba(25, 47, 79, .04)", "purpose": "让常规面板从霜白工作区中轻微抬升。"},
+      {"name": "resource-hover", "value": "0 6px 16px rgba(31, 66, 118, .06)", "purpose": "表示资源项可以选择。"},
+      {"name": "primary-action", "value": "0 8px 17px rgba(46, 110, 234, .17)", "purpose": "仅用于页面级主要动作。"},
+      {"name": "entry-focus", "value": "0 14px 38px rgba(23, 34, 56, .09)", "purpose": "用于登录卡片等独立入口表面。"}
+    ],
+    "motion": [
+      {"name": "state-standard", "value": "160ms ease", "purpose": "按钮、资源项、边框和背景的短状态过渡。"},
+      {"name": "reduced-motion", "value": "none", "purpose": "用户选择减少动态效果时停用非必要过渡和脉冲动画。"}
+    ],
+    "breakpoints": [
+      {"name": "compact", "value": "600px"},
+      {"name": "tool-stack", "value": "760px"},
+      {"name": "navigation-collapse", "value": "900px"},
+      {"name": "management-compress", "value": "1200px"}
+    ]
+  },
+  "components": [
+    {
+      "name": "主要按钮",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "用于页面级唯一主要动作或提交当前任务。",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">保存修改</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; justify-content:center; min-height:37px; padding:0 13px; border:1px solid var(--accent, #2865d8); border-radius:9px; background:var(--accent, #2865d8); color:#fff; font:600 16px/1.5 \"Segoe UI\", \"Microsoft YaHei\", sans-serif; cursor:pointer; transition:background .16s ease, border-color .16s ease; } .ds-btn-primary:hover { border-color:var(--accent-strong, #1e50b0); background:var(--accent-strong, #1e50b0); } .ds-btn-primary:focus-visible { outline:2px solid #245bc8; outline-offset:2px; } .ds-btn-primary:active { transform:translateY(0); }"
+    },
+    {
+      "name": "次要按钮",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "用于刷新、取消和不会改变主要流程方向的动作。",
+      "html": "<button class=\"ds-btn-ghost\" type=\"button\">刷新</button>",
+      "css": ".ds-btn-ghost { display:inline-flex; align-items:center; justify-content:center; min-height:37px; padding:0 13px; border:1px solid #d9e1ec; border-radius:9px; background:#fff; color:#435169; font:600 13px/1.5 \"Segoe UI\", \"Microsoft YaHei\", sans-serif; cursor:pointer; transition:background .16s ease, border-color .16s ease, color .16s ease; } .ds-btn-ghost:hover { border-color:#b7c1cf; background:#f8fafc; color:#172238; } .ds-btn-ghost:focus-visible { outline:2px solid #245bc8; outline-offset:2px; }"
+    },
+    {
+      "name": "危险按钮",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "仅用于删除等破坏性操作。",
+      "html": "<button class=\"ds-btn-danger\" type=\"button\">删除</button>",
+      "css": ".ds-btn-danger { display:inline-flex; align-items:center; justify-content:center; min-height:37px; padding:0 13px; border:1px solid #e2aaa5; border-radius:9px; background:#fff7f6; color:var(--error, #b42318); font:600 16px/1.5 \"Segoe UI\", \"Microsoft YaHei\", sans-serif; cursor:pointer; transition:background .16s ease, border-color .16s ease; } .ds-btn-danger:hover { border-color:var(--error, #b42318); background:#fdeceb; } .ds-btn-danger:focus-visible { outline:2px solid var(--error, #b42318); outline-offset:2px; }"
+    },
+    {
+      "name": "文本字段",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "用于资源名称、地址和其他管理表单输入。",
+      "html": "<label class=\"ds-field\">Tool 名称<input type=\"text\" value=\"echo\"></label>",
+      "css": ".ds-field { display:grid; gap:7px; color:#435169; font:650 13px/1.5 \"Segoe UI\", \"Microsoft YaHei\", sans-serif; } .ds-field input { width:100%; padding:10px 12px; border:1px solid var(--border-strong, #c8d2df); border-radius:9px; background:#fff; color:var(--text, #172238); font:400 16px/1.5 \"Segoe UI\", \"Microsoft YaHei\", sans-serif; transition:border-color .16s ease, box-shadow .16s ease; } .ds-field input:hover { border-color:#aeb9c8; } .ds-field input:focus { border-color:var(--accent, #2865d8); box-shadow:0 0 0 3px rgba(40,101,216,.1); outline:0; } .ds-field input:focus-visible { outline:2px solid #245bc8; outline-offset:2px; }"
+    },
+    {
+      "name": "活动导航",
+      "kind": "nav",
+      "refersTo": "nav-active",
+      "description": "表示当前业务页面的深色侧栏入口。",
+      "html": "<nav class=\"ds-nav-shell\"><a class=\"ds-nav-item\" href=\"#\" aria-current=\"page\"><span aria-hidden=\"true\">⬡</span>工具治理</a></nav>",
+      "css": ".ds-nav-shell { padding:10px; background:#182a42; } .ds-nav-item { display:flex; align-items:center; gap:10px; min-height:38px; padding:8px 11px; border-radius:8px; background:linear-gradient(135deg, #2865d8, #3c7dea); color:#fff; font:650 16px/1.5 \"Segoe UI\", \"Microsoft YaHei\", sans-serif; text-decoration:none; } .ds-nav-item:hover { background:linear-gradient(135deg, #1e50b0, #2865d8); } .ds-nav-item:focus-visible { outline:2px solid #fff; outline-offset:-3px; } .ds-nav-item span { width:18px; text-align:center; }"
+    },
+    {
+      "name": "成功状态徽标",
+      "kind": "chip",
+      "refersTo": "status-success",
+      "description": "用于成功、启用或运行时就绪等已验证状态。",
+      "html": "<span class=\"ds-status-success\">已启用</span>",
+      "css": ".ds-status-success { display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; background:#e8f7f0; color:var(--success, #168054); font:700 11px/1.5 \"Segoe UI\", \"Microsoft YaHei\", sans-serif; font-variant-numeric:tabular-nums; }"
+    },
+    {
+      "name": "任务面板",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "承载一个清晰任务、详情或局部信息分组。",
+      "html": "<section class=\"ds-panel\"><p class=\"ds-panel-eyebrow\">资源</p><h3>Tool 列表</h3><p>选择一个 Tool 查看详情与可用操作。</p></section>",
+      "css": ".ds-panel { padding:18px; border:1px solid #dbe2ec; border-radius:12px; background:#fff; color:var(--text, #172238); box-shadow:0 4px 14px rgba(25,47,79,.04); font:400 16px/1.5 \"Segoe UI\", \"Microsoft YaHei\", sans-serif; } .ds-panel-eyebrow { margin:0 0 4px; color:var(--accent, #2865d8); font-size:11px; font-weight:800; letter-spacing:.05em; } .ds-panel h3 { margin:0; font-size:16px; } .ds-panel p:last-child { margin:10px 0 0; color:var(--muted, #68768a); font-size:13px; }"
+    },
+    {
+      "name": "资源列表项",
+      "kind": "custom",
+      "refersTo": "resource-item",
+      "description": "在左侧列表中保持对象名称、类型和状态上下文。",
+      "html": "<button class=\"ds-resource-item\" type=\"button\"><strong>echo（内置工具）</strong><span>LOCAL · LOW · 已启用</span></button>",
+      "css": ".ds-resource-item { display:block; width:100%; padding:11px 12px; border:1px solid #dce4ef; border-radius:9px; background:#fff; color:var(--text, #172238); text-align:left; cursor:pointer; transition:border-color .16s ease, background .16s ease, box-shadow .16s ease; } .ds-resource-item strong { display:block; overflow:hidden; font:700 16px/1.5 \"Segoe UI\", \"Microsoft YaHei\", sans-serif; text-overflow:ellipsis; white-space:nowrap; } .ds-resource-item span { display:block; margin-top:3px; overflow:hidden; color:var(--muted, #68768a); font:400 12px/1.5 \"Segoe UI\", \"Microsoft YaHei\", sans-serif; text-overflow:ellipsis; white-space:nowrap; } .ds-resource-item:hover { border-color:#aac2e7; background:#f8fbff; box-shadow:0 6px 16px rgba(31,66,118,.06); } .ds-resource-item:focus-visible { outline:2px solid #245bc8; outline-offset:2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "受控工作台",
+    "overview": "CM Agent 的视觉系统像平台工程人员长期使用的精密操作台：安静、可信、状态清楚。深色导航稳定工作边界，冷白内容区承载高密度资源与运行信息，蓝色只在当前状态、主要动作和焦点处建立方向感。\n\n这是一套面向操作的界面，而不是展示型仪表盘。它用紧凑但不拥挤的间距、轻量分层和明确的列表—详情关系帮助使用者持续判断“当前对象、当前状态、下一步动作”。用户已确认沿用当前克制风格；新增页面应扩展既有语法，不引入抢占业务信息的装饰。",
+    "keyCharacteristics": [
+      "深海军蓝导航与冷白工作区形成稳定的操作边界。",
+      "内容层级依赖留白、细边框和低强度阴影，不依赖厚重拟物效果。",
+      "蓝色强调稀少而明确，状态色只表达运行结果、风险或反馈。",
+      "桌面端保留高效的列表—详情并列关系，窄屏按任务顺序折叠为单列。",
+      "中文信息优先可扫描性，技术标识和代码内容使用等宽字体补充区分。"
+    ],
+    "rules": [
+      {"name": "The One Operational Accent Rule", "body": "每个局部工作区只让一个主要动作占据最强蓝色层级；其余动作使用描边或文本层级。", "section": "colors"},
+      {"name": "The Semantic Color Rule", "body": "绿色、琥珀色和红色必须对应真实状态，不作为分类装饰或品牌点缀。", "section": "colors"},
+      {"name": "The Scan Before Read Rule", "body": "页面标题、对象名称、状态和下一步动作必须先于说明文字进入视线；长说明不得与标题争夺字重。", "section": "typography"},
+      {"name": "The Flat by Default Rule", "body": "静态层级优先使用背景、边框和留白；阴影只说明可交互、当前焦点或独立入口。", "section": "elevation"}
+    ],
+    "dos": [
+      "Do 使用深色导航、冷白工作区、白色面板和治理蓝强调维持现有“受控工作台”关系。",
+      "Do 让当前对象、状态和主要动作在首屏可扫描，并让帮助文字紧邻对应字段或操作。",
+      "Do 在桌面端保留列表上下文，在窄屏按任务顺序折叠为单列。",
+      "Do 为悬停、键盘焦点、禁用、成功和失败提供明确且一致的状态反馈。",
+      "Do 尊重 `prefers-reduced-motion`，动效仅用于状态变化，常规过渡保持约 160ms。"
+    ],
+    "donts": [
+      "Don't 同时使用多个高饱和主色，或让绿色、琥珀色、红色承担装饰用途。",
+      "Don't 用重阴影、玻璃拟态、大面积渐变或夸张动效覆盖资源和运行信息。",
+      "Don't 把创建、编辑、详情、授权和调试表单全部平铺在同一视图中。",
+      "Don't 在窄屏隐藏关键操作、改变权限语义或依靠悬停才能发现功能。",
+      "Don't 新增未经当前代码或明确产品决策支持的视觉语言、字体或组件变体。"
+    ]
+  }
+}
