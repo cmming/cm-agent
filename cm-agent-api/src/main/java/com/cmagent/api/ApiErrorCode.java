@@ -35,6 +35,26 @@ public enum ApiErrorCode {
     MODEL_DISCOVERY_RESPONSE_INVALID,
     /** 模型供应商网络不可用或返回了未分类错误。 */
     MODEL_DISCOVERY_UPSTREAM_ERROR,
+    /** 技能包结构、frontmatter、名称或路径不符合约定。 */
+    SKILL_PACKAGE_INVALID,
+    /** 技能包包含不支持的脚本、二进制或其他资源类型。 */
+    SKILL_RESOURCE_UNSUPPORTED,
+    /** 技能包、解压内容、文件数或单文件大小超过限制。 */
+    SKILL_PACKAGE_TOO_LARGE,
+    /** 技能名称、版本、绑定或内部工具名称发生冲突。 */
+    SKILL_CONFLICT,
+    /** 技能功能关闭，当前写操作不可执行。 */
+    SKILL_FEATURE_DISABLED,
+    /** 技能、版本或资源不存在，或不属于可信租户边界。 */
+    SKILL_NOT_FOUND,
+    /** 运行快照引用的技能已停用、解绑或纪元失效。 */
+    SKILL_ACCESS_REVOKED,
+    /** 运行技能快照缺失、版本缺失或无法一致恢复。 */
+    SKILL_SNAPSHOT_UNAVAILABLE,
+    /** 技能预载或按需读取次数、字节预算已耗尽。 */
+    SKILL_LOAD_LIMIT_EXCEEDED,
+    /** 技能原生加载或未分类运行链路失败。 */
+    SKILL_LOAD_FAILED,
     RUNTIME_ERROR,
     AUDIT_UNAVAILABLE,
     PERSISTENCE_UNAVAILABLE,

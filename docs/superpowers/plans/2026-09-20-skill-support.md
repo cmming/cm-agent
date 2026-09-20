@@ -162,7 +162,7 @@ docker run --rm \
 
 ---
 
-## T1：定义技能领域、错误与运行契约
+## Task 1：定义技能领域、错误与运行契约
 
 **文件：**
 
@@ -175,7 +175,7 @@ docker run --rm \
 
 **输出：** 契约字典中的完整签名；`SkillAccessException` 和十个技能错误码：`SKILL_PACKAGE_INVALID`、`SKILL_RESOURCE_UNSUPPORTED`、`SKILL_PACKAGE_TOO_LARGE`、`SKILL_CONFLICT`、`SKILL_FEATURE_DISABLED`、`SKILL_NOT_FOUND`、`SKILL_ACCESS_REVOKED`、`SKILL_SNAPSHOT_UNAVAILABLE`、`SKILL_LOAD_LIMIT_EXCEEDED`、`SKILL_LOAD_FAILED`。
 
-- [ ] **1. 写失败测试：** 在 `SkillDomainTest` 中增加空快照与集合不可变测试，再在既有请求测试增加混租户技能拒绝和旧构造器空列表断言。
+- [x] **1. 写失败测试：** 在 `SkillDomainTest` 中增加空快照与集合不可变测试，再在既有请求测试增加混租户技能拒绝和旧构造器空列表断言。
 
 ```java
 @Test
@@ -191,8 +191,8 @@ void 空快照有效且构造后不能被外部集合修改() {
 }
 ```
 
-- [ ] **2. 执行红灯：** `mvn -pl cm-agent-core -am -Dtest=SkillDomainTest,AgentRunRequestTest -Dsurefire.failIfNoSpecifiedTests=false test`。预期新增类型缺失或断言失败，核对不是 JDK 版本错误。
-- [ ] **3. 实现领域校验：** 严格使用契约字典签名。版本号从 1 开始，纪元非负；资源 byteLength 必须等于 UTF-8 实际长度；快照只接受格式版本 1；嵌套 metadata 必须递归冻结，不能仅复制最外层 Map。
+- [x] **2. 执行红灯：** `mvn -pl cm-agent-core -am -Dtest=SkillDomainTest,AgentRunRequestTest -Dsurefire.failIfNoSpecifiedTests=false test`。预期新增类型缺失或断言失败，核对不是 JDK 版本错误。
+- [x] **3. 实现领域校验：** 严格使用契约字典签名。版本号从 1 开始，纪元非负；资源 byteLength 必须等于 UTF-8 实际长度；快照只接受格式版本 1；嵌套 metadata 必须递归冻结，不能仅复制最外层 Map。
 
 ```java
 public RunSkillSnapshot {
@@ -214,10 +214,10 @@ public RunSkillSnapshot {
 this(runId, tenantId, agent, modelConfig, principal, input, tools, conversationId, List.of());
 ```
 
-- [ ] **4. 同命令执行绿灯：** 增加空值、负纪元、混版本资源、重复技能、metadata 嵌套修改以及旧构造器测试后一次性执行。
-- [ ] **5. 检查本任务差异并提交：** `git commit -m "feat: 定义技能领域与运行契约"`。
+- [x] **4. 同命令执行绿灯：** 增加空值、负纪元、混版本资源、重复技能、metadata 嵌套修改以及旧构造器测试后一次性执行。
+- [x] **5. 检查本任务差异并提交：** `git commit -m "feat: 定义技能领域与运行契约"`。
 
-## T2：实现无落盘的技能包校验与配置
+## Task 2：实现无落盘的技能包校验与配置
 
 **文件：**
 
@@ -289,7 +289,7 @@ Yaml yaml = new Yaml(new SafeConstructor(options));
 - [ ] **4. 验证：** 同命令绿灯，增加真正中央目录 symlink、加密标志、未知长度、截断 ZIP、两个 SKILL.md、非法 UTF-8、大小写冲突、标量 alias、禁用对象 tag 和“相同内容不同 ZIP 时间戳摘要相同”测试。
 - [ ] **5. 提交：** `git commit -m "feat: 增加受限技能包解析与配置"`。
 
-## T3：实现 Repository 契约和 memory 工作单元
+## Task 3：实现 Repository 契约和 memory 工作单元
 
 **文件：**
 
@@ -378,7 +378,7 @@ try {
 - [ ] **4. 同命令验证绿灯：** 加入并发重复绑定、撤销与读取顺序、嵌套事务、分页稳定性和异常后 ThreadLocal 清理测试。
 - [ ] **5. 提交：** `git commit -m "feat: 增加技能仓储与内存工作单元"`。
 
-## T4：实现双数据库结构、迁移和 JDBC 合同
+## Task 4：实现双数据库结构、迁移和 JDBC 合同
 
 **文件：**
 
@@ -448,7 +448,7 @@ SELECT tenant_id, id, agent_id, 1, '[]', started_at FROM runs;
 - [ ] **4. 实现 JDBC 并双库验证：** 构造器统一采用 `JdbcClient`、需要 JSON 的仓储加 `ObjectMapper`；mapper 必须保持领域校验。新增测试覆盖 V11 已有运行升级、资源路径 utf8、绑定上限并发竞争、严格审计回滚和唯一键冲突映射。
 - [ ] **5. 提交与远程绿灯记录：** `git commit -m "feat: 持久化技能版本与运行读取记录"`，传递该提交后再次运行双库测试，账本记录实际 SHA 和结果。
 
-## T5：交付管理 API、权限、事务与中文诊断
+## Task 5：交付管理 API、权限、事务与中文诊断
 
 **文件：**
 
@@ -517,7 +517,7 @@ SkillDefinition next = new SkillDefinition(current.id(), current.tenantId(), cur
 - [ ] **4. 绿灯与双库事务检查：** 同本地命令；远程 `mvn -pl cm-agent-server -am -Dtest=SkillManagementJdbcPersistenceTest -Dsurefire.failIfNoSpecifiedTests=false test`，验证审计失败不产生新版本、资源或绑定。用测试日志捕获器注入包含模拟 JWT/内部 URL 的异常，断言响应与受控日志均不泄露且能通过 errorId 关联。
 - [ ] **5. 提交：** `git commit -m "feat: 提供技能管理与 Agent 绑定接口"`。
 
-## T6：固定 Run 技能快照并治理每次读取
+## Task 6：固定 Run 技能快照并治理每次读取
 
 **文件：**
 
@@ -598,7 +598,7 @@ if (attempts >= limits.getMaxLoadAttempts()
 - [ ] **5. 验证绿灯与竞态：** 同命令；远程执行 `SkillRuntimeJdbcPersistenceTest`，用屏障控制读取与停用的事务先后，验证提交界限、读取记录去重、预算竞争、回滚不交付正文；两种数据库均执行。
 - [ ] **6. 提交：** `git commit -m "feat: 固定运行技能版本并治理读取与恢复"`。
 
-## T7：接入原生技能加载并防止框架吞掉致命失败
+## Task 7：接入原生技能加载并防止框架吞掉致命失败
 
 **文件：**
 
@@ -677,7 +677,7 @@ try {
 - [ ] **5. 绿灯和真实链验证：** 增加审计失败后模型尝试调用业务工具但网关调用次数为 0、资源不存在可恢复、跨租户/撤销致命、无目录写入/进程/额外联网、每次运行注册表独立、审批恢复再次读取原版本、内部名称冲突、无技能旧工厂回归。
 - [ ] **6. 提交：** `git commit -m "feat: 接入受治理的 AgentScope 原生技能加载"`。
 
-## T8：让前端请求支持 multipart 并保持会话隔离
+## Task 8：让前端请求支持 multipart 并保持会话隔离
 
 **文件：**
 
@@ -724,7 +724,7 @@ else if (!headers.has("Content-Type")) headers.set("Content-Type", "application/
 - [ ] **4. 绿灯回归：** 追加 JSON 仍为 application/json、调用方传错 multipart 头也由封装移除、旧会话 401 不退出新会话、503 保留错误编号、SSE 流读取仍正常的测试，再执行同命令。
 - [ ] **5. 提交：** `git commit -m "feat: 支持技能上传的 multipart 请求"`。
 
-## T9：交付技能工作区与完整导航生命周期
+## Task 9：交付技能工作区与完整导航生命周期
 
 **文件：**
 
@@ -791,7 +791,7 @@ function createRequestScope(getSessionEpoch) {
 - [ ] **4. 验证：** 运行两个测试命令，增加功能关闭、只读权限、同名/版本冲突、提交中双击、网络不确定、分页重置、纯文本 XSS 和重复 mount/dispose 测试。使用真实浏览器检查 1440×900/390×844 的页面骨架和导航；按 Impeccable 要求读取 craft-floor 后才开始本任务 UI 实现。
 - [ ] **5. 提交：** `git commit -m "feat: 新增技能管理工作区与导航"`。
 
-## T10：接通 Agent 绑定、聊天失败与运行读取详情
+## Task 10：接通 Agent 绑定、聊天失败与运行读取详情
 
 **文件：**
 
@@ -840,7 +840,7 @@ renderRunDetail 先显示已有运行主体，再挂载 `runSkillLoadsRegion`；
 - [ ] **4. 绿灯并操作验证：** 执行 JS 测试和 ConsoleResourceTest；浏览器分别以管理、只读、仅可运行三种权限验证可见操作。覆盖快速切换 Agent/Run、网络查询失败恢复、长路径窄屏以及无技能 Agent/普通审批卡片回归。
 - [ ] **5. 提交：** `git commit -m "feat: 接通技能绑定与运行读取详情"`。
 
-## T11：完成前后端闭环、回归与正式说明
+## Task 11：完成前后端闭环、回归与正式说明
 
 **文件：**
 
