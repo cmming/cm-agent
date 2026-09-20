@@ -242,7 +242,7 @@ record ParsedSkillPackage(String name, String description, Map<String, Object> m
 ParsedSkillPackage parse(InputStream input, SkillPackageLimits limits);
 ```
 
-- [ ] **1. 写红灯测试：** 测试类增加以下 ZIP 辅助函数（仅用于测试，不输出凭据），参数化校验逃逸、重复路径、脚本、二进制及限额。
+- [x] **1. 写红灯测试：** 测试类增加以下 ZIP 辅助函数（仅用于测试，不输出凭据），参数化校验逃逸、重复路径、脚本、二进制及限额。
 
 ```java
 private static byte[] zip(Map<String, String> files) throws IOException {
@@ -268,8 +268,8 @@ void 拒绝压缩包中的父目录路径() throws Exception {
 }
 ```
 
-- [ ] **2. 执行：** `mvn -pl cm-agent-server -am -Dtest=SkillPackageParserTest,SkillPropertiesTest -Dsurefire.failIfNoSpecifiedTests=false test`。
-- [ ] **3. 实现：** 将输入限制为 zipBytes + 1 后拒绝超限；使用 Commons Compress 中央目录读取链接属性，使用内存可寻址通道，不用 `Files.createTempDirectory`。当前本地依赖中 Commons Compress 为 1.27.1，显式声明相同版本以固定接口，不借本任务升级；SnakeYAML 2.4 由 Spring Boot BOM 管理，作为直接依赖声明。
+- [x] **2. 执行：** `mvn -pl cm-agent-server -am -Dtest=SkillPackageParserTest,SkillPropertiesTest -Dsurefire.failIfNoSpecifiedTests=false test`。
+- [x] **3. 实现：** 将输入限制为 zipBytes + 1 后拒绝超限；使用 Commons Compress 中央目录读取链接属性，使用内存可寻址通道，不用 `Files.createTempDirectory`。当前本地依赖中 Commons Compress 为 1.27.1，显式声明相同版本以固定接口，不借本任务升级；SnakeYAML 2.4 由 Spring Boot BOM 管理，作为直接依赖声明。
 
 ```java
 LoaderOptions options = new LoaderOptions();
@@ -286,8 +286,8 @@ Yaml yaml = new Yaml(new SafeConstructor(options));
 
 配置使用 `cm-agent.skills.enabled=false`，其余属性为 `max-zip-bytes`、`max-expanded-bytes`、`max-files`、`max-instruction-bytes`、`max-resource-bytes`、`max-path-length`、`max-bound-skills`、`max-run-bytes`、`max-load-attempts`、`max-loaded-bytes`。只允许 1 到设计默认值的范围，若未来需要放大限制须重新评估而非默许无上限配置；properties.validate 在启动时执行。
 
-- [ ] **4. 验证：** 同命令绿灯，增加真正中央目录 symlink、加密标志、未知长度、截断 ZIP、两个 SKILL.md、非法 UTF-8、大小写冲突、标量 alias、禁用对象 tag 和“相同内容不同 ZIP 时间戳摘要相同”测试。
-- [ ] **5. 提交：** `git commit -m "feat: 增加受限技能包解析与配置"`。
+- [x] **4. 验证：** 同命令绿灯，增加真正中央目录 symlink、加密标志、未知长度、截断 ZIP、两个 SKILL.md、非法 UTF-8、大小写冲突、标量 alias、禁用对象 tag 和“相同内容不同 ZIP 时间戳摘要相同”测试。
+- [x] **5. 提交：** `git commit -m "feat: 增加受限技能包解析与配置"`。
 
 ## Task 3：实现 Repository 契约和 memory 工作单元
 
