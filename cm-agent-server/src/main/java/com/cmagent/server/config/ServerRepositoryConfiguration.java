@@ -17,7 +17,14 @@ import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.core.repository.ToolApprovalRepository;
 import com.cmagent.core.repository.RuntimeCheckpointRepository;
+import com.cmagent.core.repository.AgentSkillBindingRepository;
+import com.cmagent.core.repository.RunSkillSnapshotRepository;
+import com.cmagent.core.repository.SkillDefinitionRepository;
+import com.cmagent.core.repository.SkillLoadRecordRepository;
+import com.cmagent.core.repository.SkillResourceRepository;
+import com.cmagent.core.repository.SkillVersionRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
+import com.cmagent.server.store.InMemorySkillStore;
 import com.cmagent.server.store.InMemoryConversationStore;
 import com.cmagent.server.store.InMemoryToolApprovalRepository;
 import com.cmagent.server.store.InMemoryRuntimeCheckpointRepository;
@@ -42,6 +49,69 @@ import java.util.UUID;
 public class ServerRepositoryConfiguration {
     private static final Logger log = LoggerFactory.getLogger(ServerRepositoryConfiguration.class);
     private static final String MEMORY_MODE_LOG = "当前使用 memory 持久化，重启后数据全部丢失，禁止用于生产";
+
+    /**
+     * 创建仅供本地和测试使用的技能内存工作单元。
+     *
+     * <p>底层存储和六个仓储视图必须在同一配置边界内装配，保证单独加载仓储配置时也共享
+     * 同一个暂存状态和提交锁。</p>
+     *
+     * @return 同时提供六个仓储视图和原子暂存发布的内存存储
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    InMemorySkillStore inMemorySkillStore() {
+        return new InMemorySkillStore();
+    }
+
+    /** @return memory 模式下的技能定义仓储 */
+    @Bean
+    @ConditionalOnMissingBean(SkillDefinitionRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    SkillDefinitionRepository memorySkillDefinitionRepository(InMemorySkillStore store) {
+        return store.definitions();
+    }
+
+    /** @return memory 模式下的技能版本仓储 */
+    @Bean
+    @ConditionalOnMissingBean(SkillVersionRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    SkillVersionRepository memorySkillVersionRepository(InMemorySkillStore store) {
+        return store.versions();
+    }
+
+    /** @return memory 模式下的技能资源仓储 */
+    @Bean
+    @ConditionalOnMissingBean(SkillResourceRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    SkillResourceRepository memorySkillResourceRepository(InMemorySkillStore store) {
+        return store.resources();
+    }
+
+    /** @return memory 模式下的 Agent 技能绑定仓储 */
+    @Bean
+    @ConditionalOnMissingBean(AgentSkillBindingRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    AgentSkillBindingRepository memoryAgentSkillBindingRepository(InMemorySkillStore store) {
+        return store.bindings();
+    }
+
+    /** @return memory 模式下的 Run 技能快照仓储 */
+    @Bean
+    @ConditionalOnMissingBean(RunSkillSnapshotRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    RunSkillSnapshotRepository memoryRunSkillSnapshotRepository(InMemorySkillStore store) {
+        return store.snapshots();
+    }
+
+    /** @return memory 模式下的技能读取记录仓储 */
+    @Bean
+    @ConditionalOnMissingBean(SkillLoadRecordRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    SkillLoadRecordRepository memorySkillLoadRecordRepository(InMemorySkillStore store) {
+        return store.loads();
+    }
 
     @Bean
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)

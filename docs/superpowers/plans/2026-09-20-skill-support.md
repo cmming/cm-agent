@@ -337,7 +337,7 @@ ApiPageResponse<SkillLoadRecord> list(UUID tenantId, UUID runId, ApiPageRequest 
 
 `lock*` 只能在工作单元内调用，找不到抛对应受控异常；分页、更新冲突与重复插入不以空成功表示。
 
-- [ ] **1. 写失败测试：** 相同名字不同租户隔离、同租户重名拒绝、解绑重绑 ID 变化、空快照存在、工作单元异常不发布写入。
+- [x] **1. 写失败测试：** 相同名字不同租户隔离、同租户重名拒绝、解绑重绑 ID 变化、空快照存在、工作单元异常不发布写入。
 
 ```java
 @Test
@@ -355,8 +355,8 @@ void 工作单元失败不能发布快照() {
 }
 ```
 
-- [ ] **2. 执行：** `mvn -pl cm-agent-server -am -Dtest=InMemorySkillStoreTest -Dsurefire.failIfNoSpecifiedTests=false test`。
-- [ ] **3. 实现：** Store 暴露 `definitions()/versions()/resources()/bindings()/snapshots()/loads()` 六个接口视图及 `execute`。使用一把可重入锁和当前事务的暂存数据副本；正常返回时发布，异常时丢弃，禁止每个仓储独立提交。
+- [x] **2. 执行：** `mvn -pl cm-agent-server -am -Dtest=InMemorySkillStoreTest -Dsurefire.failIfNoSpecifiedTests=false test`。
+- [x] **3. 实现：** Store 暴露 `definitions()/versions()/resources()/bindings()/snapshots()/loads()` 六个接口视图及 `execute`。使用一把可重入锁和当前事务的暂存数据副本；正常返回时发布，异常时丢弃，禁止每个仓储独立提交。
 
 ```java
 // execute 的事务边界；copyState/currentState 为 Store 内部状态，审计由调用服务在最后写入。
@@ -375,8 +375,8 @@ try {
 
 `State` 是 InMemorySkillStore 的私有类，持有六个按 tenant 复合键索引的 Map，`copy()` 复制容器而共享不可变领域值。嵌套 execute 复用现有事务，不能覆盖 ThreadLocal；读操作在同一锁下读取当前事务视图。memory 审计不宣称数据库级回滚，服务必须把审计放在所有可失败业务准备之后、状态发布之前。
 
-- [ ] **4. 同命令验证绿灯：** 加入并发重复绑定、撤销与读取顺序、嵌套事务、分页稳定性和异常后 ThreadLocal 清理测试。
-- [ ] **5. 提交：** `git commit -m "feat: 增加技能仓储与内存工作单元"`。
+- [x] **4. 同命令验证绿灯：** 加入并发重复绑定、撤销与读取顺序、嵌套事务、分页稳定性和异常后 ThreadLocal 清理测试。
+- [x] **5. 提交：** `git commit -m "feat: 增加技能仓储与内存工作单元"`。
 
 ## Task 4：实现双数据库结构、迁移和 JDBC 合同
 
