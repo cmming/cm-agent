@@ -7,12 +7,14 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -68,10 +70,9 @@ class MigrationTest {
      * 验证 {@code migratePostgreSQL} 所描述的业务行为。
      */
     void migratePostgreSQL() {
-        Flyway flyway = CmAgentFlyway.configure(new DriverManagerDataSource(
-                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())).load();
-
-        assertSchemaContract(flyway.migrate().migrationsExecuted, postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+        verifyUpgradeAndSchema(new DriverManagerDataSource(
+                        postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword()),
+                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
     }
 
     @Test
@@ -79,10 +80,58 @@ class MigrationTest {
      * 验证 {@code migrateMySQL} 所描述的业务行为。
      */
     void migrateMySQL() {
-        Flyway flyway = CmAgentFlyway.configure(new DriverManagerDataSource(
-                mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())).load();
+        verifyUpgradeAndSchema(new DriverManagerDataSource(
+                        mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword()),
+                mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
+    }
 
-        assertSchemaContract(flyway.migrate().migrationsExecuted, mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
+    private static void verifyUpgradeAndSchema(
+            DriverManagerDataSource dataSource, String jdbcUrl, String username, String password) {
+        int firstStage = CmAgentFlyway.configure(dataSource).target("11").load().migrate().migrationsExecuted;
+        seedLegacyRun(dataSource);
+        int secondStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
+
+        assertThat(firstStage).isEqualTo(11);
+        assertThat(secondStage).isEqualTo(1);
+        assertSchemaContract(firstStage + secondStage, jdbcUrl, username, password);
+        assertThat(JdbcClient.create(dataSource).sql("""
+                        SELECT skills_json FROM run_skill_snapshots
+                        WHERE tenant_id = '90000000-0000-0000-0000-000000000001'
+                          AND run_id = '90000000-0000-0000-0000-000000000004'
+                        """).query(String.class).single()).isEqualTo("[]");
+    }
+
+    private static void seedLegacyRun(DriverManagerDataSource dataSource) {
+        JdbcClient jdbc = JdbcClient.create(dataSource);
+        Timestamp now = Timestamp.from(java.time.Instant.parse("2026-09-21T00:00:00Z"));
+        jdbc.sql("""
+                INSERT INTO tenants (id, code, name, enabled, created_at)
+                VALUES ('90000000-0000-0000-0000-000000000001', 'legacy-skill', 'legacy-skill', true, :now)
+                """).param("now", now).update();
+        jdbc.sql("""
+                INSERT INTO model_configs (id, tenant_id, provider_type, display_name, base_url, model_name,
+                    encrypted_api_key, enabled, created_at)
+                VALUES ('90000000-0000-0000-0000-000000000002',
+                    '90000000-0000-0000-0000-000000000001', 'OPENAI_COMPATIBLE', 'legacy',
+                    'https://example.invalid', 'legacy', 'not-configured', true, :now)
+                """).param("now", now).update();
+        jdbc.sql("""
+                INSERT INTO agent_definitions (id, tenant_id, name, description, system_prompt, model_provider_id,
+                    model_name, temperature, max_iterations, enabled, tool_ids_json, created_by, updated_by,
+                    created_at, updated_at)
+                VALUES ('90000000-0000-0000-0000-000000000003',
+                    '90000000-0000-0000-0000-000000000001', 'legacy-agent', '', 'test',
+                    '90000000-0000-0000-0000-000000000002', 'legacy', 0.2, 6, true, '[]',
+                    'tester', 'tester', :now, :now)
+                """).param("now", now).update();
+        jdbc.sql("""
+                INSERT INTO runs (id, tenant_id, agent_id, principal_id, status, input_text,
+                    output_text, error_message, started_at, finished_at)
+                VALUES ('90000000-0000-0000-0000-000000000004',
+                    '90000000-0000-0000-0000-000000000001',
+                    '90000000-0000-0000-0000-000000000003', 'tester', 'RUNNING', 'legacy',
+                    NULL, NULL, :now, NULL)
+                """).param("now", now).update();
     }
 
     /**

@@ -29,6 +29,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,18 +58,18 @@ class JdbcSkillRepositoriesTest {
     static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4");
 
     @Test
-    void postgres技能仓储满足合同() {
+    void postgres技能仓储满足合同() throws Exception {
         verifyContracts(new DriverManagerDataSource(
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword()));
     }
 
     @Test
-    void mysql技能仓储满足合同() {
+    void mysql技能仓储满足合同() throws Exception {
         verifyContracts(new DriverManagerDataSource(
                 mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword()));
     }
 
-    private static void verifyContracts(DataSource dataSource) {
+    private static void verifyContracts(DataSource dataSource) throws Exception {
         CmAgentFlyway.configure(dataSource).load().migrate();
         seedData(dataSource);
         JdbcClient jdbc = JdbcClient.create(dataSource);
@@ -134,6 +137,24 @@ class JdbcSkillRepositoriesTest {
             return null;
         })).isInstanceOf(DataIntegrityViolationException.class);
 
+        UUID competingSkillOne = UUID.randomUUID();
+        UUID competingSkillTwo = UUID.randomUUID();
+        execute(transactions, () -> {
+            definitions.insert(definition(TENANT_B, competingSkillOne, UUID.randomUUID(), "competing-one", true, 0));
+            definitions.insert(definition(TENANT_B, competingSkillTwo, UUID.randomUUID(), "competing-two", true, 0));
+            return null;
+        });
+        CountDownLatch start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<Boolean> first = executor.submit(() -> bindWithinLimit(
+                    transactions, bindings, start, competingSkillOne));
+            Future<Boolean> second = executor.submit(() -> bindWithinLimit(
+                    transactions, bindings, start, competingSkillTwo));
+            start.countDown();
+            assertThat(List.of(first.get(), second.get())).containsExactlyInAnyOrder(true, false);
+        }
+        assertThat(bindings.list(TENANT_B, AGENT_B)).hasSize(1);
+
         RunSkillSnapshot snapshot = new RunSkillSnapshot(
                 TENANT_A, RUN_A, AGENT_A, 1,
                 List.of(new SkillSnapshotRef(skillA, versionA2, binding.id(), 0)), NOW);
@@ -155,6 +176,13 @@ class JdbcSkillRepositoriesTest {
         assertThat(loads.findByCall(TENANT_A, RUN_A, "model-call-1")).contains(success);
         assertThat(loads.listForBudget(TENANT_A, RUN_A)).containsExactly(success);
         assertThat(loads.list(TENANT_A, RUN_A, new ApiPageRequest(0, 20)).items()).containsExactly(success);
+        assertThatThrownBy(() -> execute(transactions, () -> {
+            loads.insert(new SkillLoadRecord(
+                    UUID.randomUUID(), TENANT_A, RUN_A, "model-call-1", 2,
+                    skillA, versionA2, "SKILL.md", SkillLoadStatus.SUCCEEDED,
+                    4, 1, null, null, NOW.plusSeconds(4)));
+            return null;
+        })).isInstanceOf(DataIntegrityViolationException.class);
 
         SkillLoadRecord denied = new SkillLoadRecord(
                 UUID.randomUUID(), TENANT_B, RUN_B, "model-call-denied", 1,
@@ -176,6 +204,24 @@ class JdbcSkillRepositoriesTest {
 
     private static <T> T execute(TransactionTemplate transactions, Supplier<T> operation) {
         return transactions.execute(status -> operation.get());
+    }
+
+    private static boolean bindWithinLimit(
+            TransactionTemplate transactions,
+            JdbcAgentSkillBindingRepository bindings,
+            CountDownLatch start,
+            UUID skillId
+    ) throws InterruptedException {
+        start.await();
+        return execute(transactions, () -> {
+            bindings.lockAgent(TENANT_B, AGENT_B);
+            if (!bindings.list(TENANT_B, AGENT_B).isEmpty()) {
+                return false;
+            }
+            bindings.insert(new AgentSkillBinding(
+                    UUID.randomUUID(), TENANT_B, AGENT_B, skillId, "tester", NOW));
+            return true;
+        });
     }
     private static SkillDefinition definition(
             UUID tenantId, UUID skillId, UUID versionId, String name, boolean enabled, long accessEpoch) {

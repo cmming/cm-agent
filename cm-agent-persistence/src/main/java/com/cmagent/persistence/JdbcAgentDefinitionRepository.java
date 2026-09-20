@@ -242,13 +242,24 @@ public class JdbcAgentDefinitionRepository implements AgentDefinitionRepository 
      * @return 实际删除记录时为 {@code true}
      */
     public boolean delete(UUID tenantId, UUID agentId) {
-        return jdbcClient.sql("""
-                        DELETE FROM agent_definitions
-                        WHERE tenant_id = :tenantId AND id = :id
-                        """)
-                .param("tenantId", tenantId.toString())
-                .param("id", agentId.toString())
-                .update() > 0;
+        // 绑定使用严格外键防止悬挂授权；硬删除 Agent 时必须在同一事务先清理绑定，
+        // 不能依赖外键异常变成 500，也不能在删除失败后留下半完成状态。
+        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
+            jdbcClient.sql("""
+                            DELETE FROM agent_skill_bindings
+                            WHERE tenant_id = :tenantId AND agent_id = :id
+                            """)
+                    .param("tenantId", tenantId.toString())
+                    .param("id", agentId.toString())
+                    .update();
+            return jdbcClient.sql("""
+                            DELETE FROM agent_definitions
+                            WHERE tenant_id = :tenantId AND id = :id
+                            """)
+                    .param("tenantId", tenantId.toString())
+                    .param("id", agentId.toString())
+                    .update() > 0;
+        }));
     }
 
     @Override
