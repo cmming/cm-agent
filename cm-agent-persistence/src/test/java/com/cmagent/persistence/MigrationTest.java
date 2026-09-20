@@ -48,7 +48,13 @@ class MigrationTest {
             "audit_events",
             "tool_approval_requests",
             "tool_approval_items",
-            "runtime_checkpoints"
+            "runtime_checkpoints",
+            "skill_definitions",
+            "skill_versions",
+            "skill_resources",
+            "agent_skill_bindings",
+            "run_skill_snapshots",
+            "skill_load_records"
     );
 
     @Container
@@ -88,7 +94,7 @@ class MigrationTest {
      * @param password 测试辅助方法使用的 password 参数
      */
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(11);
+        assertThat(migrationsExecuted).isEqualTo(12);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
@@ -122,6 +128,16 @@ class MigrationTest {
             assertThat(indexNames(connection, "tool_approval_items")).contains("ux_tool_approval_items_call");
             assertThat(indexNames(connection, "runtime_checkpoints")).contains(
                     "ux_runtime_checkpoints_slot", "idx_runtime_checkpoints_expiry");
+            assertThat(indexNames(connection, "skill_definitions")).contains(
+                    "ux_skill_definitions_tenant_name", "idx_skill_definitions_tenant_updated");
+            assertThat(indexNames(connection, "skill_versions")).contains(
+                    "ux_skill_versions_tenant_number", "ux_skill_versions_tenant_identity");
+            assertThat(indexNames(connection, "skill_resources")).contains("ux_skill_resources_tenant_path");
+            assertThat(indexNames(connection, "agent_skill_bindings")).contains(
+                    "ux_agent_skill_bindings_tenant_agent_skill", "idx_agent_skill_bindings_tenant_skill");
+            assertThat(indexNames(connection, "run_skill_snapshots")).contains("ux_run_skill_snapshots_tenant_run");
+            assertThat(indexNames(connection, "skill_load_records")).contains(
+                    "ux_skill_load_records_tenant_call", "idx_skill_load_records_tenant_run_time");
             assertThat(indexColumns(connection, "runs", "idx_runs_tenant_agent_started"))
                     .containsExactly("tenant_id", "agent_id", "started_at", "id");
             assertThat(indexColumns(connection, "tool_calls", "idx_tool_calls_tenant_run"))
@@ -139,6 +155,9 @@ class MigrationTest {
             assertThat(isNullable(connection, "conversations", "updated_at")).isFalse();
             assertThat(isNullable(connection, "messages", "sequence_no")).isFalse();
             assertThat(isNullable(connection, "messages", "content_blocks_json")).isFalse();
+            assertThat(isNullable(connection, "skill_definitions", "current_version_id")).isFalse();
+            assertThat(isNullable(connection, "skill_load_records", "skill_id")).isTrue();
+            assertThat(isNullable(connection, "skill_load_records", "version_id")).isTrue();
             assertThat(columnExists(connection, "tool_http_configs", "input_schema")).isFalse();
             assertThat(columnExists(connection, "tool_http_configs", "parameter_mappings")).isFalse();
             assertThat(importedKeyTargets(connection, "tool_grants")).doesNotContain("roles");
@@ -152,6 +171,12 @@ class MigrationTest {
             assertThat(importedKeyTargets(connection, "tool_approval_items")).contains(
                     "tool_approval_requests", "tenants", "tool_definitions");
             assertThat(importedKeyTargets(connection, "runtime_checkpoints")).contains("tenants");
+            assertThat(importedKeyTargets(connection, "skill_versions")).contains("skill_definitions");
+            assertThat(importedKeyTargets(connection, "skill_resources")).contains("skill_versions");
+            assertThat(importedKeyTargets(connection, "agent_skill_bindings")).contains(
+                    "agent_definitions", "skill_definitions");
+            assertThat(importedKeyTargets(connection, "run_skill_snapshots")).contains("runs");
+            assertThat(importedKeyTargets(connection, "skill_load_records")).contains("runs");
         } catch (SQLException e) {
             throw new AssertionError("验证迁移后的 schema 失败", e);
         }
