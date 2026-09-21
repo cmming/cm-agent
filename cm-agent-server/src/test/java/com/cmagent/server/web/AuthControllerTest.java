@@ -57,6 +57,8 @@ class AuthControllerTest {
             "tool:delete",
             "tool:debug",
             "tool:mcp:invoke",
+            "skill:read",
+            "skill:write",
             "audit:read",
             "apikey:write"
     };

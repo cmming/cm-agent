@@ -4,6 +4,7 @@ import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.ModelConfig;
 import com.cmagent.core.repository.AgentDefinitionRepository;
+import com.cmagent.core.repository.AgentSkillBindingRepository;
 import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.server.audit.AuditAppender;
@@ -30,6 +31,8 @@ public class AgentDefinitionCommandService {
     private final AgentDefinitionRepository agentRepository;
     private final ModelConfigRepository modelConfigRepository;
     private final ToolGrantRepository toolGrantRepository;
+    private final AgentSkillBindingRepository skillBindingRepository;
+    private final SkillUnitOfWork skillUnitOfWork;
     private final AuditAppender auditAppender;
     private final TransactionTemplate transactionTemplate;
 
@@ -39,6 +42,8 @@ public class AgentDefinitionCommandService {
      * @param agentRepository Agent 定义仓储
      * @param modelConfigRepository 模型配置仓储
      * @param toolGrantRepository 工具授权仓储
+     * @param skillBindingRepository 技能绑定仓储
+     * @param skillUnitOfWork 技能绑定的原子工作单元
      * @param auditAppender 严格审计写入器
      * @param transactionTemplate JDBC 模式下的事务模板；内存模式可为空
      */
@@ -46,12 +51,16 @@ public class AgentDefinitionCommandService {
             AgentDefinitionRepository agentRepository,
             ModelConfigRepository modelConfigRepository,
             ToolGrantRepository toolGrantRepository,
+            AgentSkillBindingRepository skillBindingRepository,
+            SkillUnitOfWork skillUnitOfWork,
             AuditAppender auditAppender,
             @Nullable TransactionTemplate transactionTemplate
     ) {
         this.agentRepository = Objects.requireNonNull(agentRepository, "agentRepository 不能为空");
         this.modelConfigRepository = Objects.requireNonNull(modelConfigRepository, "modelConfigRepository 不能为空");
         this.toolGrantRepository = Objects.requireNonNull(toolGrantRepository, "toolGrantRepository 不能为空");
+        this.skillBindingRepository = Objects.requireNonNull(skillBindingRepository, "skillBindingRepository 不能为空");
+        this.skillUnitOfWork = Objects.requireNonNull(skillUnitOfWork, "skillUnitOfWork 不能为空");
         this.auditAppender = Objects.requireNonNull(auditAppender, "auditAppender 不能为空");
         this.transactionTemplate = transactionTemplate;
     }
@@ -143,11 +152,15 @@ public class AgentDefinitionCommandService {
      */
     public void delete(PrincipalRef principal, UUID agentId) {
         withLock(principal.tenantId(), agentId, () -> {
-            if (transactionTemplate == null) {
-                deleteInternal(principal, agentId);
-            } else {
-                transactionTemplate.executeWithoutResult(status -> deleteInternal(principal, agentId));
-            }
+            // 先取得技能 Store/数据库工作单元，再进入现有 Agent 删除边界，固定锁顺序并避免留下绑定。
+            skillUnitOfWork.execute(() -> {
+                if (transactionTemplate == null) {
+                    deleteInternal(principal, agentId);
+                } else {
+                    transactionTemplate.executeWithoutResult(status -> deleteInternal(principal, agentId));
+                }
+                return null;
+            });
             return null;
         });
     }
@@ -200,6 +213,10 @@ public class AgentDefinitionCommandService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Agent 已有运行或会话历史，不能删除；请停用该 Agent");
         }
         toolGrantRepository.deleteByTenantAndAgentId(principal.tenantId(), agentId);
+        skillBindingRepository.lockAgent(principal.tenantId(), agentId);
+        skillBindingRepository.list(principal.tenantId(), agentId)
+                .forEach(binding -> skillBindingRepository.delete(
+                        principal.tenantId(), agentId, binding.skillId()));
         if (!agentRepository.delete(principal.tenantId(), agentId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在");
         }
