@@ -39,6 +39,7 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 | `cm-agent.agentscope.studio.project` | `cm-agent` | Studio 中归集当前服务实例的项目名称 |
 | `cm-agent.agentscope.studio.run-name` | `cm-agent` | Studio 中当前服务实例的 Run 名称，不对应单个 CM Agent `runId` |
 | `cm-agent.persistence.mode` | `memory` | `memory` 只允许本地开发和测试；生产 profile 必须为 `jdbc` |
+| `cm-agent.skills.enabled` | `false` | 是否允许创建、更新、启用和绑定文本型 Skill；关闭后保留历史读取、停用与解绑，便于受控停写 |
 | `cm-agent.default-tenant-code` | `default` | 默认租户标识 |
 | `cm-agent.mcp.enabled` | `false` | 是否注册无状态 MCP Streamable HTTP 端点；生产启用前必须同时配置来源和主机白名单 |
 | `cm-agent.mcp.endpoint` | `/mcp` | MCP 端点的单一路径，不能包含查询串、片段、通配符或结尾斜杠 |
@@ -54,6 +55,14 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 | `cm-agent.model-catalog-discovery.timeout` | `5s` | 单次目录请求的连接与读取超时，必须为正数 |
 | `cm-agent.model-catalog-discovery.max-response-bytes` | `131072` | 目录响应体上限，超过后返回受控失败 |
 | `cm-agent.model-catalog-discovery.max-models` | `200` | 单次返回给控制台的模型名称上限 |
+
+## Skill 配置与权限
+
+Skill 只接受 ZIP 中的 `SKILL.md` 和受限文本资源；不支持脚本、二进制、网络地址或写入型资源。`cm-agent.skills.enabled` 默认关闭，启用前应先在 `test` 或隔离环境验证包结构、容量和模型上下文成本。服务端公开能力接口会返回当前允许扩展名、归档/解压大小、文件数、单资源/指令上限和单 Agent 绑定上限；浏览器不得自行放宽这些限制。
+
+读取技能需要 `skill:read`，上传、版本更新和启停需要 `skill:write`。Agent 绑定同时要求 `agent:write` 与 `skill:read`，运行本身仍需要既有 `agent:run`；绑定不会授予任何业务 Tool 权限。生产变更权限后，应重新签发 JWT 或等待身份系统的短时令牌刷新，不能依赖前端隐藏按钮作为安全边界。
+
+启用开关后，部署者仍应先备份 JDBC 数据库并完成 Flyway 迁移。新 Run 固定当前版本快照；更新技能不会修改旧 Run。停用、解绑或访问纪元变化会阻止旧 Run 后续读取和审批恢复，页面应提示重新发起，而不是自动重放消息或审批。
 
 ## 模型配置管理
 

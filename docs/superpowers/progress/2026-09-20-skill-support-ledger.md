@@ -3,7 +3,7 @@
 ## 状态与文档索引
 
 - 主题日期：2026-09-20；本次更新：2026-09-21。
-- 当前阶段：用户已选择 A，由主代理顺序执行；Task 1～Task 10 已完成，继续执行 Task 11。
+- 当前阶段：用户已选择 A，由主代理顺序执行；Task 1～Task 11 已完成，等待本地提交。
 - 四份同主题文档随任务持续更新和提交；当前分支仅在本地，未推送。
 - 关联：[设计规格](../specs/2026-09-20-skill-support-design.md)、[实施计划](../plans/2026-09-20-skill-support.md)、[实现说明](../implementation/2026-09-20-skill-support-implementation-design.md)。
 
@@ -34,8 +34,8 @@
 | T7 | 原生技能加载及致命故障门控 | T1、T6 | 已完成；提交 `257fcc6` |
 | T8 | 前端 multipart 与会话隔离 | T5 契约 | 已完成；提交 `5950305` |
 | T9 | 技能工作区和导航生命周期 | T5、T8 | 已完成；提交 `4b35ee3` |
-| T10 | Agent 绑定、聊天错误和运行读取详情 | T6、T8、T9 | 已完成；待提交 |
-| T11 | 前后端联调、全量回归和正式说明 | T1～T10 | 未开始 |
+| T10 | Agent 绑定、聊天错误和运行读取详情 | T6、T8、T9 | 已完成；提交 `9e1751a` |
+| T11 | 前后端联调、全量回归和正式说明 | T1～T10 | 已完成；待提交 |
 
 ## 本阶段实际核对
 
@@ -77,16 +77,18 @@ Task 9 实际验证：`ConsoleResourceTest` 与 `console-core` 脚本测试通�
 
 Task 10 实际验证：先执行 `node --check` 检查 `app.js`、`skills.js` 语法，再执行 `node --test cm-agent-console/src/test/js/console-core.test.cjs`，共 73 项通过、0 失败。Temurin 21 下执行 `mvn -q -pl cm-agent-console -am "-Dtest=ConsoleResourceTest" "-Dsurefire.failIfNoSpecifiedTests=false" test` 退出码为 0。验证覆盖技能脚本在各 v2 独立页可预加载、技能页初始装载顺序、绑定请求的会话/修订门控及读取记录的局部空态/失败态；浏览器实际操作验证留在 T11。
 
+Task 11 实际验证：Temurin 21 下 `mvn -q -pl cm-agent-core,cm-agent-agentscope-adapter,cm-agent-console -am test` 通过；`mvn -q -pl cm-agent-server -am "-Dtest=SkillControllerTest,AgentSkillControllerTest,SkillRuntimeServiceTest,GovernedSkillAccessServiceTest,ToolApprovalServiceTest,ApiExceptionHandlerTest,RunControllerTest,ConversationControllerTest" "-Dsurefire.failIfNoSpecifiedTests=false" test` 通过；`node --test cm-agent-console/src/test/js/console-core.test.cjs` 通过 73 项。缓存版本变更首次使 `ConsoleResourceTest` 暴露旧断言，更新登录页与九页资源断言后转绿。V12/JDBC 双库验证沿用 Task 4、Task 6 的 Rocky 结果，本次未改迁移或 JDBC 代码；未重跑浏览器人工闭环或真实 Provider Stub。
+
 ## 提交与保护范围
 
 - `326c86a`：初版设计规格，已本地提交、未推送。
 - `d68599c`：前端范围与验收，已本地提交、未推送。
 - Task 4 前的规格、计划、实现说明和账本已随前序任务提交；Task 5 代码提交为 `a4c426e`，边界补强提交为 `181468c`；Task 6 代码提交为 `ee70305`；Task 7 代码与同步文档已创建本地提交，均未推送。
 - 未修改用户已有 `application.yml`、`application-mysql.yml`、`application-ok.yml`、`.codex/`、`.impeccable/critique/`、`.workbuddy/`。
-- Skill 整体功能尚未完成，因此暂不发布正式说明；T11 在前后端闭环完成后统一更新。
+- 已更新 `README.md`、配置、运维、发布说明和 Adapter README；本次任务尚未创建新的提交。
 
 ## 下一步与主要边界
 
-用户已选择主代理顺序实施。隔离工作树中的 T1～T10 已按依赖顺序完成，下一步执行 T11 的前后端闭环、浏览器验收、正式说明和整体验证；不派生逐任务实现子代理。
+用户已选择主代理顺序实施。隔离工作树中的 T1～T11 已按依赖顺序完成，下一步仅进行最终差异核对与本地提交；不派生逐任务实现子代理。
 
-执行阶段重点守住版本和撤销边界、严格审计提交后再交付正文、框架吞错防护、前端会话与迟到响应隔离。所有预期验收结果都仍属于待验证事项，不据此宣称 Skill 已可用。
+执行阶段已守住版本和撤销边界、严格审计提交后再交付正文、框架吞错防护、前端会话与迟到响应隔离。真实浏览器与 Provider Stub 演示仍是发布前可补充的运行证据，不影响已通过的代码与契约回归范围。

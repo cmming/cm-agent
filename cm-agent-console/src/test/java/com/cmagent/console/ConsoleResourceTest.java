@@ -98,7 +98,7 @@ class ConsoleResourceTest {
     void v2跨页会话不在浏览器脚本中存储令牌() throws IOException {
         String app = resource("META-INF/resources/assets/app.js");
         String[] pages = {
-                "login.html", "overview.html", "agents.html", "model-configs.html", "tools.html", "chat.html", "runs.html", "audit.html"
+                "login.html", "overview.html", "agents.html", "model-configs.html", "tools.html", "skills.html", "chat.html", "runs.html", "audit.html"
         };
 
         assertThat(app)
@@ -109,7 +109,7 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.25", "/assets/console-core.js?v=2.0.12", "/assets/styles.css?v=2.0.17")
+                    .contains("/assets/app.js?v=2.0.26", "/assets/console-core.js?v=2.0.13", "/assets/styles.css?v=2.0.17")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }

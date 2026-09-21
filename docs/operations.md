@@ -45,6 +45,12 @@ GET /api/agents/<agent-id>/runs/<run-id>
 
 所有 Run、ToolCall、Audit 查询都使用认证主体的 tenant 条件。运维排查跨租户数据时必须通过受控授权和审计流程，不能直接移除 tenant 条件查询。
 
+## Skill 运行与排障
+
+Skill 管理、绑定、读取允许与拒绝都会写入严格审计。排查一次运行时，先查询 Run 详情，再使用 `GET /api/agents/<agent-id>/runs/<run-id>/skill-loads?page=0&size=100` 查看固定版本、路径、状态、字节数、耗时和 `errorId`；该接口不返回技能正文。使用 `errorId` 检索同一租户的服务日志与审计事件，不能通过增加调试日志、导出 ZIP 或记录模型输入来获取正文。
+
+`SKILL_ACCESS_REVOKED` 与 `SKILL_SNAPSHOT_UNAVAILABLE` 表示运行快照不能安全恢复，应新建 Run，不得重新启用后继续旧审批。`SKILL_LOAD_LIMIT_EXCEEDED` 表示本次 Run 的读取次数或字节预算耗尽，应缩小技能资源或调整经过评审的服务端上限；不要在客户端重复请求。关闭 `cm-agent.skills.enabled` 用于受控停止新增和绑定，历史记录仍保留以支持审计和故障定位。
+
 ## 运行数据与生命周期
 
 JDBC 模式下，运行启动阶段写入 `RUNNING` Run 和启动审计；运行完成阶段在同一完成事务边界内更新 Run、写入 ToolCall 和完成审计。运行异常会尝试写入 `FAILED` 收口；审计失败仍按严格错误语义返回 `503`。
