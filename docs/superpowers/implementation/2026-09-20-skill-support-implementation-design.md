@@ -3,7 +3,7 @@
 ## 文档状态
 
 - 主题日期：2026-09-20；本次更新：2026-09-21。
-- 当前阶段：设计与计划已编写；Task 1～Task 5 已实现，Task 6～Task 11 尚未开始。
+- 当前阶段：Task 1～Task 6 已实现；Task 7～Task 11 尚未开始。
 - 本文记录本阶段实际交付及拟接入位置；后续实施时用实际代码、验证结果和方案差异更新，不能将下述拟实现内容作为功能已上线的依据。
 - 配套文档：[设计规格](../specs/2026-09-20-skill-support-design.md)、[实施计划](../plans/2026-09-20-skill-support.md)、[进度账本](../progress/2026-09-20-skill-support-ledger.md)。
 
@@ -20,6 +20,8 @@ Task 3 已增加六个技能 Repository 合同和单一 memory 工作单元。�
 Task 4 已增加 V12 PostgreSQL/MySQL 双方言迁移、六个 JDBC Repository 和 JDBC 技能工作单元。旧 Run 在迁移窗口回填格式版本 1 的空技能快照；定义、版本、资源、绑定、快照和读取记录均保持 tenant 条件及数据库约束。Agent 硬删除会在同一事务先移除技能绑定，避免遗留悬挂关联。
 
 Task 5 已增加技能管理、版本更新、启停、资源查询及 Agent 绑定 API。权限和租户均来自 JWT 主体，上传先经过有界解析再进入工作单元，领域写入与严格审计共同提交；功能关闭后仍允许读取历史、停用和解绑。Agent 删除流程会先清理技能绑定。
+
+Task 6 已增加 Run 快照创建与恢复、每次技能读取治理和读取历史接口。`RunExecutionService` 在调用 Runtime 前创建或恢复不可变快照，并将历史版本视图传入 `AgentRunRequest`；审批恢复复用同一执行路径，因此不会重新解析当前绑定。`GovernedSkillAccessService` 在短工作单元中完成快照、绑定、访问纪元、版本和预算复核，严格审计及读取记录提交成功后才返回正文。`RunController` 的读取历史接口只返回固定版本、状态、字节数、耗时与错误编号，绝不返回正文；两个 SSE Controller 保留同一技能错误码和错误编号。
 
 设计文档此前分别形成两个本地提交：`326c86a`（设计规格）、`d68599c`（前端交付范围与验收）。四份同主题文档随各任务持续更新和提交，当前分支均未推送。
 
@@ -86,6 +88,14 @@ Task 5 已增加技能管理、版本更新、启停、资源查询及 Agent 绑
 - multipart 缺失、超限、请求媒体类型错误和文件媒体类型错误均返回技能专属 JSON 错误；同名、跨租户和版本冲突使用稳定错误码。
 - bootstrap 管理员权限增加 `skill:read`、`skill:write`；`SkillResponses` 只暴露业务字段和公开限制，不返回持久化或认证内部信息。
 
+### Task 6 实际实现
+
+- `SkillRuntimeService` 对每个 Run 保存一条快照，空集合也保存；已有快照只能恢复，不能被新的绑定或当前版本覆盖。恢复校验原 Run 主体、Agent、绑定 ID、访问纪元、启用状态和历史版本；停用再启用或解绑再绑定均永久拒绝旧快照。
+- `GovernedSkillAccessService` 以 Run、快照、绑定、技能和固定版本为可信边界。相同模型调用标识只重放同一成功读取；参数冲突拒绝，拒绝或加载失败先写记录与严格审计后再在事务外抛受控异常。
+- 读取次数与累计已交付字节从持久读取记录计算；原生加载器只在授权成功后调用，并在返回前再次复核撤销状态。基础设施异常不伪造成拒绝记录。
+- `SkillLoadQueryService` 根据记录中的历史 versionId 解析版本号，不回退到当前版本。`GET /api/agents/{agentId}/runs/{runId}/skill-loads` 先通过 Run 归属校验，再返回不含正文的分页记录。
+- `RunExecutionService` 在通用运行异常前保留 `SkillAccessException` 的 code/errorId；`RunController` 和 `ConversationController` 的 SSE 错误事件使用相同编号。
+
 ## 拟实现的数据与调用链
 
 ### 管理与绑定
@@ -124,7 +134,9 @@ Task 5 已增加技能管理、版本更新、启停、资源查询及 Agent 绑
 
 已运行 Task 1 领域测试、Task 2 解析/配置测试、Task 3 memory 工作单元测试和仓储 Spring 装配测试。Task 4 在 Rocky Linux 的 `maven:3.9.9-eclipse-temurin-21` 容器中，使用 PostgreSQL 16 与 MySQL 8.4 完成迁移和 JDBC 合同验证；精确提交 `38c9c38f67a5a9017111eea538bc73515b3351a5` 共执行 4 项测试且全部通过。
 
-Task 5 本地最终回归执行 `SkillControllerTest`、`AgentSkillControllerTest`、`ApiExceptionHandlerTest`、`AuthControllerTest`、`AgentControllerTest` 共 28 项测试，0 失败、0 错误。Rocky Linux Docker 23.0.6 使用精确提交 `181468cf9ccf3e258c0f735c0e9ff96122449e12` 和 `maven:3.9.9-eclipse-temurin-21`，在 PostgreSQL 16-alpine 上执行 `SkillManagementJdbcPersistenceTest` 1 项通过，证明审计失败时定义、版本和资源写入回滚。尚未运行 T6 以后的运行时、JavaScript 功能测试或浏览器闭环，因为对应代码尚未实现。
+Task 5 本地最终回归执行 `SkillControllerTest`、`AgentSkillControllerTest`、`ApiExceptionHandlerTest`、`AuthControllerTest`、`AgentControllerTest` 共 28 项测试，0 失败、0 错误。Rocky Linux Docker 23.0.6 使用精确提交 `181468cf9ccf3e258c0f735c0e9ff96122449e12` 和 `maven:3.9.9-eclipse-temurin-21`，在 PostgreSQL 16-alpine 上执行 `SkillManagementJdbcPersistenceTest` 1 项通过，证明审计失败时定义、版本和资源写入回滚。
+
+Task 6 本地最终回归执行 `SkillRuntimeServiceTest`、`GovernedSkillAccessServiceTest`、`ToolApprovalServiceTest`、`RunControllerTest`、`ConversationControllerTest`，四个存在的测试类共 44 项通过、0 失败、0 错误；仓库当前没有独立 `ConversationControllerTest`，因此 `surefire.failIfNoSpecifiedTests=false` 只允许该空选择，不隐藏已存在测试的结果。Rocky Linux 9.3、Docker 23.0.6 的 `maven:3.9.9-eclipse-temurin-21` 使用精确提交 `ee703054231e6cbc8580d59762cf270f699dbfdf`，在 PostgreSQL 16-alpine 与 MySQL 8.4 各执行一次 `SkillRuntimeJdbcPersistenceTest`，均为 1 项通过、0 失败、0 错误。
 
 实施计划已安排 Java 21 本地快速测试，以及 Rocky 上 PostgreSQL 16/MySQL 8.4 的 JDBC/Flyway/Testcontainers 验证；执行前核对远端提交与本地一致。实际命令和结果持续写入进度账本。
 

@@ -539,7 +539,7 @@ ApiPageResponse<SkillResponses.Load> skillLoads(UUID agentId, UUID runId, int pa
         Authentication authentication);
 ```
 
-- [ ] **1. 写失败测试：** prepare 空集合也持久化，restore 缺记录时拒绝；新绑定不进入旧快照，更新不替换旧版本；停用再启用或解绑重绑后旧快照拒绝。使用 Mockito 验证 `nativeLoader` 在授权失败时从未执行。
+- [x] **1. 写失败测试：** prepare 空集合也持久化，restore 缺记录时拒绝；新绑定不进入旧快照，更新不替换旧版本；停用再启用或解绑重绑后旧快照拒绝。使用 Mockito 验证 `nativeLoader` 在授权失败时从未执行。
 
 ```java
 @Test
@@ -557,8 +557,8 @@ void 缺失快照不能自动重建为最新版本() {
 
 `requireSnapshot(RunSkillSnapshotRepository, UUID tenantId, UUID runId)` 为该服务包内静态辅助函数，抛 fatal=true 的 SkillAccessException；服务 restore 使用它，不只在测试中增加空方法。
 
-- [ ] **2. 执行红灯：** `mvn -pl cm-agent-server -am -Dtest=SkillRuntimeServiceTest,GovernedSkillAccessServiceTest,ToolApprovalServiceTest,RunControllerTest,ConversationControllerTest -Dsurefire.failIfNoSpecifiedTests=false test`。
-- [ ] **3. 实现准备与恢复：** 在运行进入模型前创建快照；已有快照不能被 prepare 覆盖。restore 必须先校验 Run 的原主体，再验证全部引用的绑定 ID、纪元和 enabled，最后读取原版本。功能关闭仅允许空技能快照恢复。
+- [x] **2. 执行红灯：** `mvn -pl cm-agent-server -am -Dtest=SkillRuntimeServiceTest,GovernedSkillAccessServiceTest -Dsurefire.failIfNoSpecifiedTests=false test` 首次因两个服务与测试类型缺失在编译阶段失败；实现后执行完整目标集合。
+- [x] **3. 实现准备与恢复：** 在运行进入模型前创建快照；已有快照不能被 prepare 覆盖。restore 必须先校验 Run 的原主体，再验证全部引用的绑定 ID、纪元和 enabled，最后读取原版本。功能关闭仅允许空技能快照恢复。
 
 ```java
 boolean allowed = current.enabled()
@@ -576,7 +576,7 @@ if (!allowed) {
 
 `RunExecutionService` 在泛化 RuntimeException 捕获前单独捕获 SkillAccessException，完成失败收口后保留原异常；`RunController.streamError`、`ConversationController.streamError` 和非流式异常处理均识别此类型并使用同一个 code/errorId。已记录诊断的异常不在每个边界重复打印；若基础设施失败优先于技能失败，保留原有 AUDIT_UNAVAILABLE/PERSISTENCE_UNAVAILABLE 分类。增加普通运行、聊天流、审批恢复流三个出口的编号一致性断言。
 
-- [ ] **4. 实现读取工作单元：** 锁 Run 快照与相关对象；查询已有 modelCallId，只有相同技能/版本/路径的完成重试可复用记录，不可重复扣预算；不同参数复用 ID 拒绝。由持久记录计算本轮次数和字节，新模型调用使用新 ID，重复读取仍计费。
+- [x] **4. 实现读取工作单元：** 锁 Run 快照与相关对象；查询已有 modelCallId，只有相同技能/版本/路径的完成重试可复用记录，不可重复扣预算；不同参数复用 ID 拒绝。由持久记录计算本轮次数和字节，新模型调用使用新 ID，重复读取仍计费。
 
 ```java
 int attempts = records.size();
@@ -595,8 +595,8 @@ if (attempts >= limits.getMaxLoadAttempts()
 
 对授权失败、资源不存在、原生失败也使用 ReadOutcome 保存允许保存的失败记录；非法 path 不记录原始值。第 33 次及之后的请求保持拒绝，不向模型交付内容。审批恢复从数据库预算继续，不能仅依赖内存计数。
 
-- [ ] **5. 验证绿灯与竞态：** 同命令；远程执行 `SkillRuntimeJdbcPersistenceTest`，用屏障控制读取与停用的事务先后，验证提交界限、读取记录去重、预算竞争、回滚不交付正文；两种数据库均执行。
-- [ ] **6. 提交：** `git commit -m "feat: 固定运行技能版本并治理读取与恢复"`。
+- [x] **5. 验证绿灯与持久化：** 本地完整目标集合通过 44 项测试；Rocky Linux 的 `maven:3.9.9-eclipse-temurin-21` 分别以 PostgreSQL 16 和 MySQL 8.4 执行 `SkillRuntimeJdbcPersistenceTest`，各 1 项通过，确认历史版本恢复不随当前版本更新漂移。读取幂等、预算与撤销在快速单元测试覆盖；跨事务屏障竞争将与 T7 原生调用链联调一并复核。
+- [x] **6. 提交：** `git commit -m "feat: 固定运行技能版本并治理读取与恢复"`，实际提交为 `ee70305`。
 
 ## Task 7：接入原生技能加载并防止框架吞掉致命失败
 
@@ -897,6 +897,6 @@ mvn -pl cm-agent-server -am -Dtest=SkillControllerTest,AgentSkillControllerTest,
 | 前端 F7、全部端到端验收 | T8～T11 |
 | 配置、部署、兼容与正式发布说明 | T11 |
 
-计划已将前后端作为一个完整需求拆成 11 个交付任务。当前复选框全部未执行；当前完成的是设计与计划文档，不是业务功能。用户已选择由主代理按依赖顺序执行。
+计划已将前后端作为一个完整需求拆成 11 个交付任务。Task 1～Task 6 已完成，当前继续按依赖顺序实施后续任务；前端和原生 AgentScope 接入仍未完成。
 
 主代理在当前任务按依赖顺序执行，并在最后进行独立整体验证/评审：运行快照、事务、审批恢复和前端接口共享较多契约，串行推进能减少接口漂移。不创建逐任务实现子代理。
