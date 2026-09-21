@@ -3,7 +3,7 @@
 ## 状态与文档索引
 
 - 主题日期：2026-09-20；本次更新：2026-09-21。
-- 当前阶段：用户已选择 A，由主代理顺序执行；Task 1～Task 7 已完成，Task 8 待开始。
+- 当前阶段：用户已选择 A，由主代理顺序执行；Task 1～Task 10 已完成，继续执行 Task 11。
 - 四份同主题文档随任务持续更新和提交；当前分支仅在本地，未推送。
 - 关联：[设计规格](../specs/2026-09-20-skill-support-design.md)、[实施计划](../plans/2026-09-20-skill-support.md)、[实现说明](../implementation/2026-09-20-skill-support-implementation-design.md)。
 
@@ -31,10 +31,10 @@
 | T4 | V12 双数据库迁移、JDBC 合同 | T3 | 已完成；提交说明为“feat: 持久化技能版本与运行读取记录” |
 | T5 | 管理 API、权限和严格审计事务 | T2～T4 | 已完成；提交 `a4c426e`，边界补强提交 `181468c` |
 | T6 | Run 固定快照、读时治理和审批恢复 | T3～T5 | 已完成；提交 `ee70305` |
-| T7 | 原生技能加载及致命故障门控 | T1、T6 | 已完成；已创建本地提交 |
-| T8 | 前端 multipart 与会话隔离 | T5 契约 | 已完成；待提交 |
-| T9 | 技能工作区和导航生命周期 | T5、T8 | 已完成；待提交 |
-| T10 | Agent 绑定、聊天错误和运行读取详情 | T6、T8、T9 | 未开始 |
+| T7 | 原生技能加载及致命故障门控 | T1、T6 | 已完成；提交 `257fcc6` |
+| T8 | 前端 multipart 与会话隔离 | T5 契约 | 已完成；提交 `5950305` |
+| T9 | 技能工作区和导航生命周期 | T5、T8 | 已完成；提交 `4b35ee3` |
+| T10 | Agent 绑定、聊天错误和运行读取详情 | T6、T8、T9 | 已完成；待提交 |
 | T11 | 前后端联调、全量回归和正式说明 | T1～T10 | 未开始 |
 
 ## 本阶段实际核对
@@ -75,6 +75,8 @@ Task 8 实际验证：`node --test cm-agent-console/src/test/js/console-core.tes
 
 Task 9 实际验证：`ConsoleResourceTest` 与 `console-core` 脚本测试通过。新增技能页使用现有 API 客户端和会话代际，导航改动覆盖所有 v2 页面；资源预览按固定版本路径请求，动态内容均使用 textContent 渲染。
 
+Task 10 实际验证：先执行 `node --check` 检查 `app.js`、`skills.js` 语法，再执行 `node --test cm-agent-console/src/test/js/console-core.test.cjs`，共 73 项通过、0 失败。Temurin 21 下执行 `mvn -q -pl cm-agent-console -am "-Dtest=ConsoleResourceTest" "-Dsurefire.failIfNoSpecifiedTests=false" test` 退出码为 0。验证覆盖技能脚本在各 v2 独立页可预加载、技能页初始装载顺序、绑定请求的会话/修订门控及读取记录的局部空态/失败态；浏览器实际操作验证留在 T11。
+
 ## 提交与保护范围
 
 - `326c86a`：初版设计规格，已本地提交、未推送。
@@ -85,6 +87,6 @@ Task 9 实际验证：`ConsoleResourceTest` 与 `console-core` 脚本测试通�
 
 ## 下一步与主要边界
 
-用户已选择主代理顺序实施。隔离工作树中的 T7 AgentScope 原生技能加载与故障门控已完成，下一步实现 T8 multipart 请求封装；不派生逐任务实现子代理，最终执行一次独立整体验证和评审。
+用户已选择主代理顺序实施。隔离工作树中的 T1～T10 已按依赖顺序完成，下一步执行 T11 的前后端闭环、浏览器验收、正式说明和整体验证；不派生逐任务实现子代理。
 
 执行阶段重点守住版本和撤销边界、严格审计提交后再交付正文、框架吞错防护、前端会话与迟到响应隔离。所有预期验收结果都仍属于待验证事项，不据此宣称 Skill 已可用。

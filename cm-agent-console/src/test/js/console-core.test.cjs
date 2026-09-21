@@ -1182,3 +1182,10 @@ test("历史详情逐项只读展示且HTML样参数始终作为纯文本", () =
     assert.ok(nodes.some((item) => item.textContent.includes("已允许")));
     assert.ok(nodes.some((item) => item.textContent.includes("审批允许不等于工具执行成功")));
 });
+
+test("技能读取状态只显示摘要、失败原因或空态", () => {
+    assert.equal(core.formatSkillLoadState({loading: true, error: "", items: []}), "正在加载技能读取记录…");
+    assert.equal(core.formatSkillLoadState({loading: false, error: "error-1", items: []}), "技能读取记录加载失败：error-1");
+    assert.equal(core.formatSkillLoadState({loading: false, error: "", items: []}), "本轮未读取技能");
+    assert.equal(core.formatSkillLoadState({loading: false, error: "", items: [{id: "one"}]}), "已加载 1 条技能读取记录");
+});

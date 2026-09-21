@@ -674,6 +674,13 @@
         return values[status] || {label: status || "未知", tone: "neutral"};
     }
 
+    // 运行详情只用该状态文案描述受控读取记录，避免将技能正文或原始失败载荷写进页面提示。
+    function formatSkillLoadState({loading, error, items}) {
+        if (loading) return "正在加载技能读取记录…";
+        if (error) return `技能读取记录加载失败：${error}`;
+        return items?.length ? `已加载 ${items.length} 条技能读取记录` : "本轮未读取技能";
+    }
+
     return {
         formatError,
         buildApprovalDecisionPayload,
@@ -707,6 +714,7 @@
         createSessionEpochGate,
         createSubmitStateGuard,
         formatDateTime,
-        statusMeta
+        statusMeta,
+        formatSkillLoadState
     };
 });
