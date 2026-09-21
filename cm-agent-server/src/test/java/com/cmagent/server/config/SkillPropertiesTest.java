@@ -3,6 +3,8 @@ package com.cmagent.server.config;
 import com.cmagent.server.service.SkillPackageLimits;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -20,6 +22,8 @@ class SkillPropertiesTest {
         assertThat(properties.getMaxRunBytes()).isEqualTo(8 * 1024 * 1024);
         assertThat(properties.getMaxLoadAttempts()).isEqualTo(32);
         assertThat(properties.getMaxLoadedBytes()).isEqualTo(256 * 1024);
+        assertThat(properties.getAllowedResourceTypes()).containsExactly(
+                ".md", ".txt", ".json", ".yaml", ".yml", ".csv");
     }
 
     @Test
@@ -47,5 +51,22 @@ class SkillPropertiesTest {
         assertThatThrownBy(expanded::validate)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("max-zip-bytes");
+    }
+
+    @Test
+    void 拒绝空资源类型和非扩展名() {
+        SkillProperties empty = new SkillProperties();
+        empty.setAllowedResourceTypes(List.of());
+
+        assertThatThrownBy(empty::validate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("allowed-resource-types");
+
+        SkillProperties invalid = new SkillProperties();
+        invalid.setAllowedResourceTypes(List.of("md"));
+
+        assertThatThrownBy(invalid::validate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("allowed-resource-types");
     }
 }

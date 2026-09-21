@@ -19,6 +19,6 @@ public class SkillConfiguration {
     @Bean
     SkillPackageParser skillPackageParser(SkillProperties properties) {
         properties.validate();
-        return new SkillPackageParser();
+        return new SkillPackageParser(properties.getAllowedResourceTypes());
     }
 }

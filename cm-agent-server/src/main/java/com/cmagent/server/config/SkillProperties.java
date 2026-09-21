@@ -3,8 +3,10 @@ package com.cmagent.server.config;
 import com.cmagent.server.service.SkillPackageLimits;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.List;
+
 /**
- * 技能上传和运行预算配置；第一版只允许从经过评审的默认值向下收紧。
+ * 技能上传和运行预算配置；容量类限制只允许从经过评审的默认值向下收紧。
  *
  * <p>限制不能由技能包元数据覆盖。若未来需要放大默认值，必须重新评估内存、模型上下文
  * 和拒绝服务风险，而不是通过部署配置静默扩大。</p>
@@ -13,6 +15,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class SkillProperties {
 
     private boolean enabled;
+    private List<String> allowedResourceTypes = List.of(
+            ".md", ".txt", ".json", ".yaml", ".yml", ".csv");
     private int maxZipBytes = 2 * 1024 * 1024;
     private int maxExpandedBytes = 4 * 1024 * 1024;
     private int maxFiles = 64;
@@ -28,6 +32,12 @@ public class SkillProperties {
     public boolean isEnabled() { return enabled; }
     /** @param enabled 是否启用技能写入能力 */
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    /** @return ZIP 内允许的文本资源扩展名；入口文件 {@code SKILL.md} 始终保留 */
+    public List<String> getAllowedResourceTypes() { return allowedResourceTypes; }
+    /** @param allowedResourceTypes 部署环境显式允许的文本资源扩展名 */
+    public void setAllowedResourceTypes(List<String> allowedResourceTypes) {
+        this.allowedResourceTypes = List.copyOf(allowedResourceTypes);
+    }
     /** @return ZIP 上传字节上限 */
     public int getMaxZipBytes() { return maxZipBytes; }
     /** @param value ZIP 上传字节上限 */
@@ -70,11 +80,20 @@ public class SkillProperties {
     public void setMaxLoadedBytes(int value) { this.maxLoadedBytes = value; }
 
     /**
-     * 校验所有限制处于 1 到默认值之间。
+     * 校验数值限制处于 1 到默认值之间，并确认资源扩展名格式可安全用于后缀匹配。
      *
      * @throws IllegalStateException 任一限制为零、负数或超过第一版默认值时抛出
      */
     public void validate() {
+        if (allowedResourceTypes.isEmpty()) {
+            throw new IllegalStateException("cm-agent.skills.allowed-resource-types 不能为空");
+        }
+        for (String resourceType : allowedResourceTypes) {
+            if (resourceType == null || !resourceType.startsWith(".") || resourceType.length() < 2) {
+                throw new IllegalStateException(
+                        "cm-agent.skills.allowed-resource-types 必须是以点号开头的扩展名");
+            }
+        }
         check("max-zip-bytes", maxZipBytes, 2 * 1024 * 1024);
         check("max-expanded-bytes", maxExpandedBytes, 4 * 1024 * 1024);
         check("max-files", maxFiles, 64);

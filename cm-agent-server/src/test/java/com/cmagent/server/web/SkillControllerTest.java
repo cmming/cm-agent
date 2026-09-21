@@ -21,6 +21,7 @@ import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -179,6 +180,7 @@ class SkillControllerTest {
                         .header("Authorization", "Bearer " + token(TENANT_ID, "skill:read")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.allowedExtensions", hasItem(".html")))
                 .andExpect(jsonPath("$.maxBoundSkills").value(20));
     }
 
