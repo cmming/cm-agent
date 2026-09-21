@@ -2,6 +2,7 @@ package com.cmagent.server.web;
 
 import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.repository.AgentDefinitionRepository;
+import com.cmagent.core.repository.AgentSkillBindingRepository;
 import com.cmagent.server.CmAgentServerApplication;
 import com.cmagent.server.security.JwtService;
 import com.jayway.jsonpath.JsonPath;
@@ -42,6 +43,7 @@ class AgentSkillControllerTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private JwtService jwtService;
     @Autowired private AgentDefinitionRepository agents;
+    @Autowired private AgentSkillBindingRepository bindings;
 
     @BeforeEach
     void createAgent() {
@@ -78,6 +80,21 @@ class AgentSkillControllerTest {
         mockMvc.perform(delete("/api/agents/{agentId}/skills/{skillId}", AGENT_ID, skillId)
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void 删除Agent会在同一流程清理技能绑定() throws Exception {
+        String skillId = createAndEnableSkill();
+        String bindToken = token("agent:read", "agent:write", "skill:read");
+        mockMvc.perform(put("/api/agents/{agentId}/skills/{skillId}", AGENT_ID, skillId)
+                        .header("Authorization", "Bearer " + bindToken))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/agents/{id}", AGENT_ID)
+                        .header("Authorization", "Bearer " + token("agent:delete")))
+                .andExpect(status().isNoContent());
+
+        org.assertj.core.api.Assertions.assertThat(bindings.list(TENANT_ID, AGENT_ID)).isEmpty();
     }
 
     private String createAndEnableSkill() throws Exception {

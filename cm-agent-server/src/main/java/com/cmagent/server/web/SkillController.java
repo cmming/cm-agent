@@ -34,6 +34,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
@@ -143,6 +144,15 @@ public class SkillController {
         if (file == null || file.isEmpty()) {
             throw new SkillAccessException(ApiErrorCode.SKILL_PACKAGE_INVALID,
                     "请选择非空技能 ZIP", UUID.randomUUID().toString(), false);
+        }
+        String contentType = file.getContentType();
+        if (contentType != null && !contentType.isBlank()) {
+            String normalized = contentType.toLowerCase(Locale.ROOT);
+            if (!Set.of("application/zip", "application/x-zip-compressed", "application/octet-stream")
+                    .contains(normalized)) {
+                throw new SkillAccessException(ApiErrorCode.SKILL_PACKAGE_INVALID,
+                        "技能包必须是 ZIP 文件", UUID.randomUUID().toString(), false);
+            }
         }
         try {
             return parser.parse(file.getInputStream(), properties.toPackageLimits());

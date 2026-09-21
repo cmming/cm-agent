@@ -1,6 +1,7 @@
 package com.cmagent.server.web;
 
 import com.cmagent.server.CmAgentServerApplication;
+import com.cmagent.server.config.SkillProperties;
 import com.cmagent.server.security.JwtService;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,8 @@ class SkillControllerTest {
     private MockMvc mockMvc;
     @Autowired
     private JwtService jwtService;
+    @Autowired
+    private SkillProperties properties;
 
     @Test
     void 只有运行权限不能上传技能() throws Exception {
@@ -110,6 +113,64 @@ class SkillControllerTest {
                         .header("Authorization", "Bearer " + token(UUID.randomUUID(), "skill:read")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("SKILL_NOT_FOUND"));
+    }
+
+    @Test
+    void 同租户同名技能被拒绝且非Zip媒体类型返回技能错误() throws Exception {
+        String token = token(TENANT_ID, "skill:write", "skill:read");
+        mockMvc.perform(multipart("/api/skills")
+                        .file(file("duplicate", "首次上传", "正文", Map.of()))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(multipart("/api/skills")
+                        .file(file("duplicate", "重复上传", "另一份正文", Map.of()))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SKILL_CONFLICT"));
+
+        MockMultipartFile text = new MockMultipartFile(
+                "file", "not-zip.txt", "text/plain", "普通文本".getBytes(StandardCharsets.UTF_8));
+        mockMvc.perform(multipart("/api/skills").file(text)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("SKILL_PACKAGE_INVALID"))
+                .andExpect(jsonPath("$.message").value("技能包必须是 ZIP 文件"));
+    }
+
+    @Test
+    void 功能关闭后仍可读取历史并停用技能但拒绝新增() throws Exception {
+        String token = token(TENANT_ID, "skill:write", "skill:read");
+        String created = mockMvc.perform(multipart("/api/skills")
+                        .file(file("history", "历史技能", "历史正文", Map.of()))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String skillId = JsonPath.read(created, "$.summary.id");
+        mockMvc.perform(put("/api/skills/{id}/enabled", skillId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json").content("{\"enabled\":true}"))
+                .andExpect(status().isOk());
+
+        properties.setEnabled(false);
+        mockMvc.perform(get("/api/skills/capabilities")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(false));
+        mockMvc.perform(get("/api/skills/{id}", skillId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").value("历史正文"));
+        mockMvc.perform(multipart("/api/skills")
+                        .file(file("blocked", "关闭后上传", "正文", Map.of()))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("SKILL_FEATURE_DISABLED"));
+        mockMvc.perform(put("/api/skills/{id}/enabled", skillId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json").content("{\"enabled\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(false));
     }
 
     @Test

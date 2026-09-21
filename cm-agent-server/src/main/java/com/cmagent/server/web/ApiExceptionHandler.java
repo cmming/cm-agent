@@ -27,6 +27,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 
 import java.time.Instant;
 
@@ -123,15 +124,22 @@ public class ApiExceptionHandler {
     }
 
     /** 技能 multipart 缺失或超过容器限制时仍返回 JSON 和稳定技能错误码。 */
-    @ExceptionHandler({MissingServletRequestPartException.class, MaxUploadSizeExceededException.class})
+    @ExceptionHandler({
+            MissingServletRequestPartException.class,
+            MaxUploadSizeExceededException.class,
+            HttpMediaTypeNotSupportedException.class
+    })
     public ResponseEntity<ApiErrorResponse> skillMultipartFailure(Exception failure, HttpServletRequest request) {
         if (!request.getRequestURI().startsWith("/api/skills")) {
             return validationFailure(failure, request);
         }
         boolean tooLarge = failure instanceof MaxUploadSizeExceededException;
+        boolean unsupported = failure instanceof HttpMediaTypeNotSupportedException;
         return response(tooLarge ? HttpStatus.PAYLOAD_TOO_LARGE : HttpStatus.BAD_REQUEST,
                 tooLarge ? ApiErrorCode.SKILL_PACKAGE_TOO_LARGE : ApiErrorCode.SKILL_PACKAGE_INVALID,
-                tooLarge ? "技能 ZIP 超过上传限制" : "缺少技能 ZIP 文件", request);
+                tooLarge ? "技能 ZIP 超过上传限制"
+                        : unsupported ? "请求必须使用 multipart/form-data 上传技能 ZIP" : "缺少技能 ZIP 文件",
+                request);
     }
 
     @ExceptionHandler(ResponseStatusException.class)
