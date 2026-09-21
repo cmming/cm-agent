@@ -492,7 +492,13 @@
 
         async function request(path, options = {}) {
             const headers = new Headers(options.headers || {});
-            headers.set("Content-Type", "application/json");
+            // FormData 的边界由浏览器生成；手工设置 JSON 或 multipart Content-Type 都会破坏 ZIP 上传。
+            const isMultipart = typeof FormData !== "undefined" && options.body instanceof FormData;
+            if (isMultipart) {
+                headers.delete("Content-Type");
+            } else if (!headers.has("Content-Type")) {
+                headers.set("Content-Type", "application/json");
+            }
             const token = getToken();
             const sessionEpoch = getSessionEpoch();
             if (token) {
@@ -520,6 +526,10 @@
                 }
                 const error = new Error(formatError(response.status, body, rawBody));
                 error.status = response.status;
+                if (body && typeof body === "object") {
+                    if (typeof body.code === "string") error.code = body.code;
+                    if (typeof body.errorId === "string") error.errorId = body.errorId;
+                }
                 throw error;
             }
             return body;
@@ -664,6 +674,13 @@
         return values[status] || {label: status || "未知", tone: "neutral"};
     }
 
+    // 运行详情只用该状态文案描述受控读取记录，避免将技能正文或原始失败载荷写进页面提示。
+    function formatSkillLoadState({loading, error, items}) {
+        if (loading) return "正在加载技能读取记录…";
+        if (error) return `技能读取记录加载失败：${error}`;
+        return items?.length ? `已加载 ${items.length} 条技能读取记录` : "本轮未读取技能";
+    }
+
     return {
         formatError,
         buildApprovalDecisionPayload,
@@ -697,6 +714,7 @@
         createSessionEpochGate,
         createSubmitStateGuard,
         formatDateTime,
-        statusMeta
+        statusMeta,
+        formatSkillLoadState
     };
 });

@@ -7,12 +7,14 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -48,7 +50,13 @@ class MigrationTest {
             "audit_events",
             "tool_approval_requests",
             "tool_approval_items",
-            "runtime_checkpoints"
+            "runtime_checkpoints",
+            "skill_definitions",
+            "skill_versions",
+            "skill_resources",
+            "agent_skill_bindings",
+            "run_skill_snapshots",
+            "skill_load_records"
     );
 
     @Container
@@ -62,10 +70,9 @@ class MigrationTest {
      * 验证 {@code migratePostgreSQL} 所描述的业务行为。
      */
     void migratePostgreSQL() {
-        Flyway flyway = CmAgentFlyway.configure(new DriverManagerDataSource(
-                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())).load();
-
-        assertSchemaContract(flyway.migrate().migrationsExecuted, postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+        verifyUpgradeAndSchema(new DriverManagerDataSource(
+                        postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword()),
+                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
     }
 
     @Test
@@ -73,10 +80,58 @@ class MigrationTest {
      * 验证 {@code migrateMySQL} 所描述的业务行为。
      */
     void migrateMySQL() {
-        Flyway flyway = CmAgentFlyway.configure(new DriverManagerDataSource(
-                mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())).load();
+        verifyUpgradeAndSchema(new DriverManagerDataSource(
+                        mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword()),
+                mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
+    }
 
-        assertSchemaContract(flyway.migrate().migrationsExecuted, mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
+    private static void verifyUpgradeAndSchema(
+            DriverManagerDataSource dataSource, String jdbcUrl, String username, String password) {
+        int firstStage = CmAgentFlyway.configure(dataSource).target("11").load().migrate().migrationsExecuted;
+        seedLegacyRun(dataSource);
+        int secondStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
+
+        assertThat(firstStage).isEqualTo(11);
+        assertThat(secondStage).isEqualTo(1);
+        assertSchemaContract(firstStage + secondStage, jdbcUrl, username, password);
+        assertThat(JdbcClient.create(dataSource).sql("""
+                        SELECT skills_json FROM run_skill_snapshots
+                        WHERE tenant_id = '90000000-0000-0000-0000-000000000001'
+                          AND run_id = '90000000-0000-0000-0000-000000000004'
+                        """).query(String.class).single()).isEqualTo("[]");
+    }
+
+    private static void seedLegacyRun(DriverManagerDataSource dataSource) {
+        JdbcClient jdbc = JdbcClient.create(dataSource);
+        Timestamp now = Timestamp.from(java.time.Instant.parse("2026-09-21T00:00:00Z"));
+        jdbc.sql("""
+                INSERT INTO tenants (id, code, name, enabled, created_at)
+                VALUES ('90000000-0000-0000-0000-000000000001', 'legacy-skill', 'legacy-skill', true, :now)
+                """).param("now", now).update();
+        jdbc.sql("""
+                INSERT INTO model_configs (id, tenant_id, provider_type, display_name, base_url, model_name,
+                    encrypted_api_key, enabled, created_at)
+                VALUES ('90000000-0000-0000-0000-000000000002',
+                    '90000000-0000-0000-0000-000000000001', 'OPENAI_COMPATIBLE', 'legacy',
+                    'https://example.invalid', 'legacy', 'not-configured', true, :now)
+                """).param("now", now).update();
+        jdbc.sql("""
+                INSERT INTO agent_definitions (id, tenant_id, name, description, system_prompt, model_provider_id,
+                    model_name, temperature, max_iterations, enabled, tool_ids_json, created_by, updated_by,
+                    created_at, updated_at)
+                VALUES ('90000000-0000-0000-0000-000000000003',
+                    '90000000-0000-0000-0000-000000000001', 'legacy-agent', '', 'test',
+                    '90000000-0000-0000-0000-000000000002', 'legacy', 0.2, 6, true, '[]',
+                    'tester', 'tester', :now, :now)
+                """).param("now", now).update();
+        jdbc.sql("""
+                INSERT INTO runs (id, tenant_id, agent_id, principal_id, status, input_text,
+                    output_text, error_message, started_at, finished_at)
+                VALUES ('90000000-0000-0000-0000-000000000004',
+                    '90000000-0000-0000-0000-000000000001',
+                    '90000000-0000-0000-0000-000000000003', 'tester', 'RUNNING', 'legacy',
+                    NULL, NULL, :now, NULL)
+                """).param("now", now).update();
     }
 
     /**
@@ -88,7 +143,7 @@ class MigrationTest {
      * @param password 测试辅助方法使用的 password 参数
      */
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(11);
+        assertThat(migrationsExecuted).isEqualTo(12);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
@@ -122,6 +177,16 @@ class MigrationTest {
             assertThat(indexNames(connection, "tool_approval_items")).contains("ux_tool_approval_items_call");
             assertThat(indexNames(connection, "runtime_checkpoints")).contains(
                     "ux_runtime_checkpoints_slot", "idx_runtime_checkpoints_expiry");
+            assertThat(indexNames(connection, "skill_definitions")).contains(
+                    "ux_skill_definitions_tenant_name", "idx_skill_definitions_tenant_updated");
+            assertThat(indexNames(connection, "skill_versions")).contains(
+                    "ux_skill_versions_tenant_number", "ux_skill_versions_tenant_identity");
+            assertThat(indexNames(connection, "skill_resources")).contains("ux_skill_resources_tenant_path");
+            assertThat(indexNames(connection, "agent_skill_bindings")).contains(
+                    "ux_agent_skill_bindings_tenant_agent_skill", "idx_agent_skill_bindings_tenant_skill");
+            assertThat(indexNames(connection, "run_skill_snapshots")).contains("ux_run_skill_snapshots_tenant_run");
+            assertThat(indexNames(connection, "skill_load_records")).contains(
+                    "ux_skill_load_records_tenant_call", "idx_skill_load_records_tenant_run_time");
             assertThat(indexColumns(connection, "runs", "idx_runs_tenant_agent_started"))
                     .containsExactly("tenant_id", "agent_id", "started_at", "id");
             assertThat(indexColumns(connection, "tool_calls", "idx_tool_calls_tenant_run"))
@@ -139,6 +204,9 @@ class MigrationTest {
             assertThat(isNullable(connection, "conversations", "updated_at")).isFalse();
             assertThat(isNullable(connection, "messages", "sequence_no")).isFalse();
             assertThat(isNullable(connection, "messages", "content_blocks_json")).isFalse();
+            assertThat(isNullable(connection, "skill_definitions", "current_version_id")).isFalse();
+            assertThat(isNullable(connection, "skill_load_records", "skill_id")).isTrue();
+            assertThat(isNullable(connection, "skill_load_records", "version_id")).isTrue();
             assertThat(columnExists(connection, "tool_http_configs", "input_schema")).isFalse();
             assertThat(columnExists(connection, "tool_http_configs", "parameter_mappings")).isFalse();
             assertThat(importedKeyTargets(connection, "tool_grants")).doesNotContain("roles");
@@ -152,6 +220,12 @@ class MigrationTest {
             assertThat(importedKeyTargets(connection, "tool_approval_items")).contains(
                     "tool_approval_requests", "tenants", "tool_definitions");
             assertThat(importedKeyTargets(connection, "runtime_checkpoints")).contains("tenants");
+            assertThat(importedKeyTargets(connection, "skill_versions")).contains("skill_definitions");
+            assertThat(importedKeyTargets(connection, "skill_resources")).contains("skill_versions");
+            assertThat(importedKeyTargets(connection, "agent_skill_bindings")).contains(
+                    "agent_definitions", "skill_definitions");
+            assertThat(importedKeyTargets(connection, "run_skill_snapshots")).contains("runs");
+            assertThat(importedKeyTargets(connection, "skill_load_records")).contains("runs");
         } catch (SQLException e) {
             throw new AssertionError("验证迁移后的 schema 失败", e);
         }

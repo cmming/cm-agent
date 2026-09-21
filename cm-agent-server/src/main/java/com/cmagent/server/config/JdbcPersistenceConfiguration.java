@@ -13,6 +13,12 @@ import com.cmagent.core.repository.HttpToolConfigRepository;
 import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.core.repository.ToolApprovalRepository;
 import com.cmagent.core.repository.RuntimeCheckpointRepository;
+import com.cmagent.core.repository.AgentSkillBindingRepository;
+import com.cmagent.core.repository.RunSkillSnapshotRepository;
+import com.cmagent.core.repository.SkillDefinitionRepository;
+import com.cmagent.core.repository.SkillLoadRecordRepository;
+import com.cmagent.core.repository.SkillResourceRepository;
+import com.cmagent.core.repository.SkillVersionRepository;
 import com.cmagent.persistence.JdbcAuditEventRepository;
 import com.cmagent.persistence.JdbcAgentDefinitionRepository;
 import com.cmagent.persistence.CmAgentFlyway;
@@ -27,6 +33,13 @@ import com.cmagent.persistence.JdbcHttpToolConfigRepository;
 import com.cmagent.persistence.JdbcMcpToolPublicationRepository;
 import com.cmagent.persistence.JdbcToolApprovalRepository;
 import com.cmagent.persistence.JdbcRuntimeCheckpointRepository;
+import com.cmagent.persistence.JdbcAgentSkillBindingRepository;
+import com.cmagent.persistence.JdbcRunSkillSnapshotRepository;
+import com.cmagent.persistence.JdbcSkillDefinitionRepository;
+import com.cmagent.persistence.JdbcSkillLoadRecordRepository;
+import com.cmagent.persistence.JdbcSkillResourceRepository;
+import com.cmagent.persistence.JdbcSkillVersionRepository;
+import com.cmagent.server.service.SkillUnitOfWork;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import org.flywaydb.core.Flyway;
@@ -122,6 +135,63 @@ public class JdbcPersistenceConfiguration {
     @Bean
     TransactionTemplate cmAgentTransactionTemplate(PlatformTransactionManager cmAgentTransactionManager) {
         return new TransactionTemplate(cmAgentTransactionManager);
+    }
+
+    /**
+     * 创建与审计 Repository 共用事务管理器的技能工作单元。
+     *
+     * <p>管理和运行服务通过该边界组合技能状态与严格审计；嵌套调用沿用 Spring 当前事务，
+     * 不跨模型请求、外部调用或审批等待持有连接。</p>
+     *
+     * @param cmAgentTransactionTemplate CM Agent JDBC 事务模板
+     * @return 技能短事务工作单元
+     */
+    @Bean
+    SkillUnitOfWork jdbcSkillUnitOfWork(TransactionTemplate cmAgentTransactionTemplate) {
+        return new SkillUnitOfWork() {
+            @Override
+            public <T> T execute(java.util.function.Supplier<T> operation) {
+                return cmAgentTransactionTemplate.execute(status -> operation.get());
+            }
+        };
+    }
+
+    /** 创建技能定义 JDBC Repository。 */
+    @Bean
+    SkillDefinitionRepository jdbcSkillDefinitionRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcSkillDefinitionRepository(cmAgentJdbcClient);
+    }
+
+    /** 创建不可变技能版本 JDBC Repository。 */
+    @Bean
+    SkillVersionRepository jdbcSkillVersionRepository(
+            JdbcClient cmAgentJdbcClient, ObjectMapper objectMapper) {
+        return new JdbcSkillVersionRepository(cmAgentJdbcClient, objectMapper);
+    }
+
+    /** 创建技能文本资源 JDBC Repository。 */
+    @Bean
+    SkillResourceRepository jdbcSkillResourceRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcSkillResourceRepository(cmAgentJdbcClient);
+    }
+
+    /** 创建 Agent 技能绑定 JDBC Repository。 */
+    @Bean
+    AgentSkillBindingRepository jdbcAgentSkillBindingRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcAgentSkillBindingRepository(cmAgentJdbcClient);
+    }
+
+    /** 创建 Run 技能快照 JDBC Repository。 */
+    @Bean
+    RunSkillSnapshotRepository jdbcRunSkillSnapshotRepository(
+            JdbcClient cmAgentJdbcClient, ObjectMapper objectMapper) {
+        return new JdbcRunSkillSnapshotRepository(cmAgentJdbcClient, objectMapper);
+    }
+
+    /** 创建技能读取记录 JDBC Repository。 */
+    @Bean
+    SkillLoadRecordRepository jdbcSkillLoadRecordRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcSkillLoadRecordRepository(cmAgentJdbcClient);
     }
 
     /**

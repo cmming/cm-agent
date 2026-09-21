@@ -154,6 +154,34 @@ class AgentRunRequestTest {
         assertThat(request.agentId()).isEqualTo(AGENT_ID);
     }
 
+    @Test
+    void 旧构造器默认使用空技能集合() {
+        AgentRunRequest request = new AgentRunRequest(
+                RUN_ID, TENANT_ID, agent(TENANT_ID), model(TENANT_ID), principal(TENANT_ID),
+                "你好", List.of());
+
+        assertThat(request.skills()).isEmpty();
+    }
+
+    @Test
+    void 拒绝混入其他租户的技能版本() {
+        UUID anotherTenantId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        UUID skillId = UUID.randomUUID();
+        UUID versionId = UUID.randomUUID();
+        SkillDefinition definition = new SkillDefinition(
+                skillId, anotherTenantId, "support-guide", versionId, true, 0,
+                "tester", "tester", java.time.Instant.EPOCH, java.time.Instant.EPOCH);
+        SkillVersion version = new SkillVersion(
+                versionId, anotherTenantId, skillId, 1, "说明", java.util.Map.of(),
+                "正文", "a".repeat(64), "tester", java.time.Instant.EPOCH);
+
+        assertThatThrownBy(() -> new AgentRunRequest(
+                RUN_ID, TENANT_ID, agent(TENANT_ID), model(TENANT_ID), principal(TENANT_ID),
+                "你好", List.of(), null, List.of(new SkillVersionView(definition, version, List.of()))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("技能版本不属于当前租户");
+    }
+
     /**
      * 构造测试 Agent 定义。
      *

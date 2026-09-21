@@ -11,6 +11,7 @@ import com.cmagent.core.runtime.ModelCredential;
 import com.cmagent.core.runtime.ModelCredentialProvider;
 import com.cmagent.core.runtime.ModelCredentialUnavailableException;
 import com.cmagent.core.runtime.ToolInvocationGateway;
+import com.cmagent.core.runtime.SkillAccessGateway;
 import com.cmagent.core.runtime.RuntimeApprovalDecisions;
 import io.agentscope.core.state.AgentStateStore;
 import org.slf4j.Logger;
@@ -103,6 +104,32 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
                 credentialProvider,
                 toolGateway,
                 new AgentScopeReActExecutor(options, new AgentScopeModelFactory(), stateStore),
+                clock);
+    }
+
+    /**
+     * 创建同时接入持久化状态和技能读取治理的运行时。
+     *
+     * @param credentialProvider 按租户和模型配置解析凭据的组件
+     * @param toolGateway 每次实际业务工具调用都必须经过的治理入口
+     * @param options 模型超时、工具超时和模型尝试次数配置
+     * @param clock 提供可测试起止时间的时钟
+     * @param stateStore 由服务端持有的 AgentScope 状态仓储
+     * @param skillGateway 固定快照的技能正文读取治理入口
+     * @return 可直接装配到 Core {@link AgentRuntime} 契约的适配器
+     */
+    public static AgentScopeRuntimeAdapter create(
+            ModelCredentialProvider credentialProvider,
+            ToolInvocationGateway toolGateway,
+            AgentScopeRuntimeOptions options,
+            Clock clock,
+            AgentStateStore stateStore,
+            SkillAccessGateway skillGateway
+    ) {
+        return new AgentScopeRuntimeAdapter(
+                credentialProvider,
+                toolGateway,
+                new AgentScopeReActExecutor(options, new AgentScopeModelFactory(), stateStore, skillGateway),
                 clock);
     }
 

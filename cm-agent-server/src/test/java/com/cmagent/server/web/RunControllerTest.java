@@ -1,6 +1,7 @@
 package com.cmagent.server.web;
 
 import com.cmagent.api.PrincipalRef;
+import com.cmagent.api.ApiErrorCode;
 import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.core.domain.AgentDefinition;
 import com.cmagent.core.domain.AgentMessageSnapshot;
@@ -16,6 +17,8 @@ import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
+import com.cmagent.core.domain.SkillLoadRecord;
+import com.cmagent.core.domain.SkillLoadStatus;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.server.CmAgentServerApplication;
 import com.cmagent.server.audit.AuditAppender;
@@ -23,6 +26,7 @@ import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.store.InMemoryPlatformStore;
+import com.cmagent.server.store.InMemorySkillStore;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -79,6 +83,9 @@ class RunControllerTest {
 
     @Autowired
     private InMemoryPlatformStore store;
+
+    @Autowired
+    private InMemorySkillStore skillStore;
 
     @SpyBean
     private AuditAppender auditAppender;
@@ -463,6 +470,40 @@ class RunControllerTest {
         assertThat(cursor).doesNotContain("|").doesNotContain(runId);
 
         mockMvc.perform(get("/api/agents/{agentId}/runs/{runId}", agentId, runId)
+                        .header("Authorization", bearer(otherTenantToken)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    /** 验证技能读取历史按已校验的 Run 归属分页返回，且不返回任何正文内容。 */
+    void skillLoadsAreScopedToRunAndDoNotExposeContent() throws Exception {
+        String accessToken = loginToken();
+        String agentId = createAgent(accessToken);
+        String runResponse = mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"input\":\"读取历史\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        UUID runId = UUID.fromString(JsonPath.read(runResponse, "$.runId"));
+        skillStore.execute(() -> {
+            skillStore.loads().insert(new SkillLoadRecord(
+                    UUID.randomUUID(), TENANT_ID, runId, "call-history", 1,
+                    null, null, null, SkillLoadStatus.DENIED, 0, 3,
+                    ApiErrorCode.SKILL_ACCESS_REVOKED, "error-history", Instant.now()));
+            return null;
+        });
+
+        mockMvc.perform(get("/api/agents/{agentId}/runs/{runId}/skill-loads", agentId, runId)
+                        .header("Authorization", bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].status").value("DENIED"))
+                .andExpect(jsonPath("$.items[0].errorId").value("error-history"))
+                .andExpect(jsonPath("$.items[0].content").doesNotExist());
+
+        String otherTenantToken = tokenWithPermissions(UUID.randomUUID(), "other-reader", List.of("agent:read"));
+        mockMvc.perform(get("/api/agents/{agentId}/runs/{runId}/skill-loads", agentId, runId)
                         .header("Authorization", bearer(otherTenantToken)))
                 .andExpect(status().isNotFound());
     }

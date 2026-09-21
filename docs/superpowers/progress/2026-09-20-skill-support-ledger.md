@@ -3,8 +3,8 @@
 ## 状态与文档索引
 
 - 主题日期：2026-09-20；本次更新：2026-09-21。
-- 当前阶段：设计与规划完成；用户已选择 A，由主代理顺序执行，功能实现即将开始。
-- 本阶段新增及修改的四文档内容：未提交。此前两个设计提交仅在本地，未推送。
+- 当前阶段：用户已选择 A，由主代理顺序执行；Task 1～Task 11 已完成，等待本地提交。
+- 四份同主题文档随任务持续更新和提交；当前分支仅在本地，未推送。
 - 关联：[设计规格](../specs/2026-09-20-skill-support-design.md)、[实施计划](../plans/2026-09-20-skill-support.md)、[实现说明](../implementation/2026-09-20-skill-support-implementation-design.md)。
 
 ## 需求与决策记录
@@ -25,17 +25,17 @@
 
 | 任务 | 交付内容 | 依赖 | 当前状态 |
 | --- | --- | --- | --- |
-| T1 | 领域、错误码和运行契约 | 无 | 未开始 |
-| T2 | 无落盘技能包校验与配置 | T1 | 未开始 |
-| T3 | Repository 合同和 memory 工作单元 | T1 | 未开始 |
-| T4 | V12 双数据库迁移、JDBC 合同 | T3 | 未开始 |
-| T5 | 管理 API、权限和严格审计事务 | T2～T4 | 未开始 |
-| T6 | Run 固定快照、读时治理和审批恢复 | T3～T5 | 未开始 |
-| T7 | 原生技能加载及致命故障门控 | T1、T6 | 未开始 |
-| T8 | 前端 multipart 与会话隔离 | T5 契约 | 未开始 |
-| T9 | 技能工作区和导航生命周期 | T5、T8 | 未开始 |
-| T10 | Agent 绑定、聊天错误和运行读取详情 | T6、T8、T9 | 未开始 |
-| T11 | 前后端联调、全量回归和正式说明 | T1～T10 | 未开始 |
+| T1 | 领域、错误码和运行契约 | 无 | 已完成；提交说明为“feat: 定义技能领域与运行契约” |
+| T2 | 无落盘技能包校验与配置 | T1 | 已完成；提交说明为“feat: 增加受限技能包解析与配置” |
+| T3 | Repository 合同和 memory 工作单元 | T1 | 已完成；提交说明为“feat: 增加技能仓储与内存工作单元” |
+| T4 | V12 双数据库迁移、JDBC 合同 | T3 | 已完成；提交说明为“feat: 持久化技能版本与运行读取记录” |
+| T5 | 管理 API、权限和严格审计事务 | T2～T4 | 已完成；提交 `a4c426e`，边界补强提交 `181468c` |
+| T6 | Run 固定快照、读时治理和审批恢复 | T3～T5 | 已完成；提交 `ee70305` |
+| T7 | 原生技能加载及致命故障门控 | T1、T6 | 已完成；提交 `257fcc6` |
+| T8 | 前端 multipart 与会话隔离 | T5 契约 | 已完成；提交 `5950305` |
+| T9 | 技能工作区和导航生命周期 | T5、T8 | 已完成；提交 `4b35ee3` |
+| T10 | Agent 绑定、聊天错误和运行读取详情 | T6、T8、T9 | 已完成；提交 `9e1751a` |
+| T11 | 前后端联调、全量回归和正式说明 | T1～T10 | 已完成；功能与文档收口提交 `ff3e2b2`，账本哈希补充见下方说明 |
 
 ## 本阶段实际核对
 
@@ -53,20 +53,42 @@
 | --- | --- | --- |
 | 新增 Java 单元/接口测试 | 未执行 | 尚无 Skill 实现与测试；按 T1～T7、T11 在 Java 21 环境执行 |
 | 新增前端 Node 测试 | 未执行 | 尚无技能页面和组件；按 T8～T10 执行 |
-| JDBC/Flyway/Testcontainers 双库验证 | 未执行 | 本阶段仅文档；实施时只在 `ssh rocky` 的指定 Maven 容器内执行，并核对 Git 提交 |
+| JDBC/Flyway/Testcontainers 双库验证 | 已通过 | Rocky Linux Docker 23.0.6；指定 Maven/JDK 21 容器；PostgreSQL 16 与 MySQL 8.4 共 4 项测试通过 |
 | 浏览器完整闭环与响应式验证 | 未执行 | 尚无 Skill 页面；历史截图不计入验收证据 |
 | 全量构建和回归 | 未执行 | 未改业务代码；安排在 T11 对实际实现执行 |
+
+Task 1 实际验证：首次目标测试在测试编译阶段因 Skill 类型、错误码和 `skills()` 缺失而失败，符合红灯预期；实现后目标命令通过 18 项测试，随后 `mvn -q -pl cm-agent-core -am test` 退出码为 0。PowerShell 下 Maven 的逗号和点号属性需要将完整 `-D...` 参数加引号，测试选择和值未改变。
+
+Task 2 实际验证：首次目标测试因解析器、限制类型和配置属性缺失而红灯；实现基础行为后新增嵌套 YAML null 用例，确认旧实现错误拒绝后改为递归冻结并转绿。最终目标命令通过 13 项测试；依赖树确认直接解析 Commons Compress 1.27.1、SnakeYAML 2.4；`git diff --check` 通过。
+
+Task 3 实际验证：首次目标测试因 `InMemorySkillStore` 缺失而在编译期红灯；实现六个仓储视图和统一工作单元后，目标测试通过 9 项用例。单独加载 `ServerRepositoryConfigurationTest` 首次暴露底层存储 Bean 位于错误配置边界，调整后与目标测试合并通过。扩大执行 `mvn -q -pl cm-agent-server -am test` 时，既有 persistence Testcontainers 测试因本机无可用 Docker 中止；按仓库规则不在本机运行 JDBC 集成验证，T4/T11 将在 `ssh rocky` 指定容器中执行。
+
+Task 4 实际验证：红灯提交 `d26b9081ed2b0e269498e8ef3324dc54054f9a3e` 在 Rocky 指定容器中因六个 JDBC Repository 类缺失而于测试编译阶段失败，属于预期功能缺失。初版实现提交 `b3a7513955fc16f74b76c9fed3634465b1098fce` 的双库测试 4 项通过；补充 V11→V12 既有 Run 空快照回填、模型调用唯一键和并发绑定上限后，最终精确提交 `38c9c38f67a5a9017111eea538bc73515b3351a5` 再次运行 `MigrationTest,JdbcSkillRepositoriesTest`，结果为 4 项通过、0 失败、0 错误。环境为 Rocky Linux 9.3、Docker 23.0.6、`maven:3.9.9-eclipse-temurin-21`、PostgreSQL 16-alpine 与 MySQL 8.4。
+
+Task 5 实际验证：MockMvc 红灯首先以技能路由不存在返回 404；实现管理服务和接口后，补充功能关闭仍可读取历史和停用、同租户同名拒绝、非 ZIP 媒体类型、跨租户隐藏、版本冲突、重复绑定及删除 Agent 清理绑定。最终本地执行 `SkillControllerTest,AgentSkillControllerTest,ApiExceptionHandlerTest,AuthControllerTest,AgentControllerTest` 共 28 项测试，0 失败、0 错误。Rocky Linux Docker 23.0.6 使用精确提交 `181468cf9ccf3e258c0f735c0e9ff96122449e12`，在 `maven:3.9.9-eclipse-temurin-21` 与 PostgreSQL 16-alpine 上执行 `SkillManagementJdbcPersistenceTest` 1 项通过，审计失败响应为稳定错误且写入全部回滚。首次远程依赖下载曾遇到 Maven Central DNS 临时解析失败，重试完成缓存后通过，不属于代码或测试失败。
+
+Task 6 实际验证：红灯命令因 `SkillRuntimeService` 和 `GovernedSkillAccessService` 缺失而在测试编译阶段失败。实现后本地执行 `SkillRuntimeServiceTest,GovernedSkillAccessServiceTest,ToolApprovalServiceTest,RunControllerTest,ConversationControllerTest`，四个存在的测试类共 44 项通过、0 失败、0 错误；不存在独立 `ConversationControllerTest`，参数只允许其空选择。远程独立工作副本的 HEAD 为 `ee703054231e6cbc8580d59762cf270f699dbfdf`，Rocky Linux 9.3 Docker 23.0.6 在 `maven:3.9.9-eclipse-temurin-21` 中分别启动 PostgreSQL 16-alpine 与 MySQL 8.4，`SkillRuntimeJdbcPersistenceTest` 各 1 项通过，验证 Run 快照在更新当前版本后仍恢复版本 1。
+
+Task 7 实际验证：初始 `AgentScopeSkillSessionTest` 因 `AgentScopeSkillRepository` 缺失而失败，符合红灯预期。实现后，Temurin 21 下执行 `mvn -q -pl cm-agent-agentscope-adapter -am "-Dtest=AgentScopeSkillSessionTest,AgentScopeSkillContractTest,AgentScopeRunGateTest,AgentScopeRuntimeContractTest" "-Dsurefire.failIfNoSpecifiedTests=false" test` 退出码为 0。测试覆盖只读内存仓储、无 originDir、原生内部 skillId 到固定版本映射、目录不含正文、未知资源安全拒绝、名称冲突、无技能回归及 fatal 失败门控。随后 `mvn -q -pl cm-agent-server -am -DskipTests compile` 退出码为 0。未改 JDBC/Flyway，本任务不需 Rocky/Testcontainers 验证。
+
+Task 8 实际验证：`node --test cm-agent-console/src/test/js/console-core.test.cjs` 通过 72 项、0 失败。新增断言确认 ZIP FormData 不携带手工 Content-Type、保留 Bearer 与同源 Cookie，且结构化 503 失败仅保留 status/code/errorId，不保存原始 body。
+
+Task 9 实际验证：`ConsoleResourceTest` 与 `console-core` 脚本测试通过。新增技能页使用现有 API 客户端和会话代际，导航改动覆盖所有 v2 页面；资源预览按固定版本路径请求，动态内容均使用 textContent 渲染。
+
+Task 10 实际验证：先执行 `node --check` 检查 `app.js`、`skills.js` 语法，再执行 `node --test cm-agent-console/src/test/js/console-core.test.cjs`，共 73 项通过、0 失败。Temurin 21 下执行 `mvn -q -pl cm-agent-console -am "-Dtest=ConsoleResourceTest" "-Dsurefire.failIfNoSpecifiedTests=false" test` 退出码为 0。验证覆盖技能脚本在各 v2 独立页可预加载、技能页初始装载顺序、绑定请求的会话/修订门控及读取记录的局部空态/失败态；浏览器实际操作验证留在 T11。
+
+Task 11 实际验证：Temurin 21 下 `mvn -q -pl cm-agent-core,cm-agent-agentscope-adapter,cm-agent-console -am test` 通过；`mvn -q -pl cm-agent-server -am "-Dtest=SkillControllerTest,AgentSkillControllerTest,SkillRuntimeServiceTest,GovernedSkillAccessServiceTest,ToolApprovalServiceTest,ApiExceptionHandlerTest,RunControllerTest,ConversationControllerTest" "-Dsurefire.failIfNoSpecifiedTests=false" test` 通过；`node --test cm-agent-console/src/test/js/console-core.test.cjs` 通过 73 项。缓存版本变更首次使 `ConsoleResourceTest` 暴露旧断言，更新登录页与九页资源断言后转绿。V12/JDBC 双库验证沿用 Task 4、Task 6 的 Rocky 结果，本次未改迁移或 JDBC 代码；未重跑浏览器人工闭环或真实 Provider Stub。
 
 ## 提交与保护范围
 
 - `326c86a`：初版设计规格，已本地提交、未推送。
 - `d68599c`：前端范围与验收，已本地提交、未推送。
-- 当前规格澄清、实施计划、实现说明和本账本：未提交、未推送。
+- Task 4 前的规格、计划、实现说明和账本已随前序任务提交；Task 5 代码提交为 `a4c426e`，边界补强提交为 `181468c`；Task 6 代码提交为 `ee70305`；Task 7 代码与同步文档已创建本地提交，均未推送。
 - 未修改用户已有 `application.yml`、`application-mysql.yml`、`application-ok.yml`、`.codex/`、`.impeccable/critique/`、`.workbuddy/`。
-- 本次没有业务行为和发布变化，因此未修改正式发布说明；T11 在功能实际完成后更新。
+- 已更新 `README.md`、配置、运维、发布说明和 Adapter README，并包含在 `ff3e2b2`；该提交已本地创建、未推送。因提交无法在自身内容中提前记录完整哈希，T11 的精确提交哈希由本次文档收口提交补充说明。
 
 ## 下一步与主要边界
 
-用户已选择主代理顺序实施。下一步创建隔离工作树并开始 T1；不派生逐任务实现子代理，最终执行一次独立整体验证和评审。
+用户已选择主代理顺序实施。隔离工作树中的 T1～T11 已按依赖顺序完成，`ff3e2b2` 为功能与文档收口提交；本次文档收口仅修正 T11 的记录口径，不引入代码变更。
 
-执行阶段重点守住版本和撤销边界、严格审计提交后再交付正文、框架吞错防护、前端会话与迟到响应隔离。所有预期验收结果都仍属于待验证事项，不据此宣称 Skill 已可用。
+执行阶段已守住版本和撤销边界、严格审计提交后再交付正文、框架吞错防护、前端会话与迟到响应隔离。真实浏览器与 Provider Stub 演示仍是发布前可补充的运行证据。

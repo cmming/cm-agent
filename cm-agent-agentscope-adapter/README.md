@@ -2,7 +2,7 @@
 
 ## 1. 模块定位
 
-`cm-agent-agentscope-adapter` 是 CM Agent 领域运行契约与 AgentScope Java 2.0.0 之间的适配层。它把 Core 提供的 `AgentRunRequest` 转换为真实的 `ReActAgent` 单轮执行流程，再把模型输出、工具调用记录和失败状态转换回 `AgentRunResult`。
+`cm-agent-agentscope-adapter` 是 CM Agent 领域运行契约与 AgentScope Java 2.0.2 之间的适配层。它把 Core 提供的 `AgentRunRequest` 转换为真实的 `ReActAgent` 单轮执行流程，再把模型输出、工具调用记录和失败状态转换回 `AgentRunResult`。
 
 这个模块的核心价值不是简单调用模型，而是在使用 AgentScope 推理与工具循环的同时，保留 CM Agent 的企业治理边界：
 
@@ -53,9 +53,9 @@ flowchart LR
 模块直接依赖：
 
 - `cm-agent-core`：稳定的领域对象与运行时接口。
-- `agentscope-core:2.0.0`：`ReActAgent`、`RuntimeContext`、Toolkit、事件和模型执行配置。
-- `agentscope-extensions-model-openai:2.0.0`：OpenAI Compatible 模型实现。
-- `agentscope-extensions-model-dashscope:2.0.0`：DashScope 原生模型实现。
+- `agentscope-core:2.0.2`：`ReActAgent`、`RuntimeContext`、Toolkit、事件和模型执行配置。
+- `agentscope-extensions-model-openai:2.0.2`：OpenAI Compatible 模型实现。
+- `agentscope-extensions-model-dashscope:2.0.2`：DashScope 原生模型实现。
 - `jackson-databind`：工具输入 Schema 解析和调用参数序列化。
 - Reactor：由 AgentScope 提供，用于模型事件流和异步工具结果。
 
@@ -160,7 +160,7 @@ ReActAgent 的关键设置：
 
 AgentScope 返回的是 Reactor 事件流，但 Core 的 `AgentRuntime` 当前仍是同步契约。执行器使用 `blockLast()` 等待事件流结束，因此调用线程会阻塞到运行完成或失败。
 
-AgentScope 2.0.0 的 `ReActAgent.close()` 当前为空实现，执行器仍在 `finally` 中统一调用它，以保持稳定生命周期顺序，并兼容后续版本或测试替代实现可能增加的资源释放行为。
+AgentScope 2.0.2 的 `ReActAgent.close()` 当前为空实现，执行器仍在 `finally` 中统一调用它，以保持稳定生命周期顺序，并兼容后续版本或测试替代实现可能增加的资源释放行为。
 
 ### 4.7 `AgentScopeToolBridge`
 
@@ -202,7 +202,7 @@ AgentScope 2.0.0 的 `ReActAgent.close()` 当前为空实现，执行器仍在 `
 3. **抑制迟到结果**：网关调用前后都检查超时和取消状态。即使外部调用忽略中断并迟到返回，也不会再创建成功记录。
 4. **Agent 中断去重**：超时事件和异常处理可能同时请求中断，实际 `interrupt` 最多执行一次；中断失败会被保留。
 
-AgentScope 2.0.0 的工具超时不能只依赖通用取消信号判断。执行器会按 `toolCallId` 聚合 `ToolResultTextDeltaEvent`，在 `ToolResultEndEvent` 到达时，同时检查：
+AgentScope 2.0.2 的工具超时不能只依赖通用取消信号判断。执行器会按 `toolCallId` 聚合 `ToolResultTextDeltaEvent`，在 `ToolResultEndEvent` 到达时，同时检查：
 
 - 该调用尚未由桥接器形成成功、失败或拒绝记录。
 - 完整文本精确等于 AgentScope 根据当前 `toolTimeout` 生成的超时包装。
@@ -280,7 +280,15 @@ sequenceDiagram
 
 适配器支持文本增量回调，但不实现 HTTP。Server 的 `/api/agents/{agentId}/runs/stream` 使用 SSE 将增量发送给浏览器；浏览器断开只停止发送，不代表 AgentScope 运行被取消，后端仍会完成运行、持久化和审计收口。
 
-## 7. 工具结果与运行终态
+## 7. 受治理 Skill 读取
+
+运行携带 Skill 快照时，`AgentScopeSkillSession` 为本次 Run 创建独立只读 `SkillBox`。目录提示只包含技能名称、固定版本和允许路径；`SKILL.md` 与资源正文不会预先拼入系统提示。
+
+`AgentScopeSkillLoadBridge` 取代原生 `load_skill_through_path`：它只接受本次快照的 AgentScope 内部技能标识和已登记路径，先通过 `SkillAccessGateway` 校验 tenant、Agent、Run、版本、撤销状态与预算，再委托内存只读仓储加载内容。保存、删除、代码执行、自动上传和目录写入均不开放。普通拒绝返回受控工具错误；审计、持久化或读取基础设施失败由 `AgentScopeRunGate` 记录为致命失败并中断本次运行。
+
+Skill 不改变 `ToolInvocationGateway` 的业务工具授权语义，也不为模型自动增加 HTTP、LOCAL、MCP 或 Shell 能力。无绑定 Skill 的既有运行仍使用原有执行路径。
+
+## 8. 工具结果与运行终态
 
 | 场景 | ToolCall 状态 | Run 状态 | 对外错误 |
 | --- | --- | --- | --- |
@@ -299,7 +307,7 @@ sequenceDiagram
 - 基础设施失败不能被 AgentScope 响应式链消费后降级成普通工具错误。
 - 授权拒绝决定整个 Run 的 `DENIED` 终态，即使模型随后生成了可读说明。
 
-## 8. 凭据与多租户安全
+## 9. 凭据与多租户安全
 
 适配器依赖 `ModelCredentialProvider`，但不限定凭据存储方式。Server 默认使用 `DatabaseModelCredentialProvider`：
 
@@ -318,7 +326,7 @@ sequenceDiagram
 
 生产环境也可以提供自定义 `ModelCredentialProvider` Bean，对接外部 Secret Manager；适配器无需修改。
 
-## 9. Server 装配与配置
+## 10. Server 装配与配置
 
 `AgentScopeRuntimeConfiguration` 仅在 `cm-agent.agentscope.enabled=true` 时生效，并在没有用户自定义 `AgentRuntime` 时创建 `AgentScopeRuntimeAdapter`。
 
@@ -364,7 +372,7 @@ AgentRuntime runtime = AgentScopeRuntimeAdapter.create(
 
 嵌入式调用方必须自行保证 `ModelCredentialProvider` 和 `ToolInvocationGateway` 的租户隔离、授权、审计、敏感信息保护及失败语义。
 
-## 10. 测试结构
+## 11. 测试结构
 
 模块测试分为四组：
 
@@ -384,11 +392,11 @@ mvn -pl cm-agent-agentscope-adapter -am test
 
 合同测试使用本地 HTTP Stub，不需要真实模型 API Key，也不会访问公网模型服务。
 
-## 11. 当前能力边界
+## 12. 当前能力边界
 
 当前适配器提供：
 
-- AgentScope Java 2.0.0 同步单轮 ReAct 运行。
+- AgentScope Java 2.0.2 同步单轮 ReAct 运行。
 - OpenAI Compatible 和 DashScope Native Provider。
 - 最终回答文本增量回调。
 - 受治理工具调用、工具记录和授权拒绝映射。
@@ -406,7 +414,7 @@ mvn -pl cm-agent-agentscope-adapter -am test
 
 超时或中断只能停止本地执行链继续接受结果，不能证明外部工具副作用已经回滚。具有副作用的工具必须使用 `runId`、`toolCallId` 或业务幂等键完成去重和补偿设计。
 
-## 12. 扩展注意事项
+## 13. 扩展注意事项
 
 ### 新增模型 Provider
 
@@ -445,7 +453,7 @@ mvn -pl cm-agent-agentscope-adapter -am test
 - 中断和关闭失败是否保留正确的主异常与 suppressed exception。
 - 迟到工具结果是否仍被拒绝记录。
 
-## 13. 常见问题
+## 14. 常见问题
 
 ### 为什么 AgentScope 模型已经配置流式，运行方法仍然阻塞？
 
@@ -461,7 +469,7 @@ mvn -pl cm-agent-agentscope-adapter -am test
 
 ### 为什么不能把响应式取消直接当成工具超时？
 
-AgentScope 2.0.0 的取消信号可能来自超时、订阅释放或其他执行控制。适配器只有在桥接器未完成且框架结果文本与当前超时包装精确一致时才认定工具超时，避免误报。
+AgentScope 2.0.2 的取消信号可能来自超时、订阅释放或其他执行控制。适配器只有在桥接器未完成且框架结果文本与当前超时包装精确一致时才认定工具超时，避免误报。
 
 ### 为什么适配器不直接读取数据库中的模型 API Key？
 

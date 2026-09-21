@@ -17,6 +17,7 @@ import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import com.cmagent.server.runtime.ConversationService;
 import com.cmagent.server.runtime.RunExecutionService;
 import com.cmagent.server.runtime.ToolApprovalService;
+import com.cmagent.core.runtime.SkillAccessException;
 import com.cmagent.core.domain.ToolApprovalDecision;
 import com.cmagent.core.domain.ToolApprovalHistoryPageRequest;
 import com.cmagent.server.security.JwtService;
@@ -407,7 +408,11 @@ public class ConversationController {
     ) {
         ApiErrorCode code;
         String message;
-        if (failure instanceof ResponseStatusException statusFailure) {
+        if (failure instanceof SkillAccessException skillFailure) {
+            code = skillFailure.code();
+            message = skillFailure.safeMessage();
+            errorId = skillFailure.errorId();
+        } else if (failure instanceof ResponseStatusException statusFailure) {
             int status = statusFailure.getStatusCode().value();
             if (approvalFlow) {
                 code = switch (HttpStatus.valueOf(status)) {

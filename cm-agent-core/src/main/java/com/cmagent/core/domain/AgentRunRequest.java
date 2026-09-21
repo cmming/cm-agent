@@ -17,6 +17,7 @@ import java.util.UUID;
  * @param input 用户输入文本
  * @param tools 预筛选后的授权工具集合，构造时逐个校验租户归属
  * @param conversationId 可选的持久化会话标识；为空表示单轮无状态运行
+ * @param skills 本次运行已固定版本的技能集合，不包含未绑定或停用技能
  */
 public record AgentRunRequest(
         UUID runId,
@@ -26,7 +27,8 @@ public record AgentRunRequest(
         PrincipalRef principal,
         String input,
         List<ToolDefinition> tools,
-        UUID conversationId
+        UUID conversationId,
+        List<SkillVersionView> skills
 ) {
 
     /** 保留既有单轮调用方式；未提供会话时 Runtime 继续使用 runId 作为 sessionId。 */
@@ -39,7 +41,21 @@ public record AgentRunRequest(
             String input,
             List<ToolDefinition> tools
     ) {
-        this(runId, tenantId, agent, modelConfig, principal, input, tools, null);
+        this(runId, tenantId, agent, modelConfig, principal, input, tools, null, List.of());
+    }
+
+    /** 保留既有带会话调用方式；未显式提供技能时使用空技能集合。 */
+    public AgentRunRequest(
+            UUID runId,
+            UUID tenantId,
+            AgentDefinition agent,
+            ModelConfig modelConfig,
+            PrincipalRef principal,
+            String input,
+            List<ToolDefinition> tools,
+            UUID conversationId
+    ) {
+        this(runId, tenantId, agent, modelConfig, principal, input, tools, conversationId, List.of());
     }
 
     /**
@@ -57,6 +73,7 @@ public record AgentRunRequest(
      * @param input 调用方输入
      * @param tools 本次运行授权的工具集合
      * @param conversationId 可选的持久化会话标识
+     * @param skills 本次运行固定版本的技能集合
      */
     public AgentRunRequest {
         Objects.requireNonNull(runId, "runId 不能为空");
@@ -66,7 +83,9 @@ public record AgentRunRequest(
         Objects.requireNonNull(principal, "principal 不能为空");
         Objects.requireNonNull(input, "input 不能为空");
         Objects.requireNonNull(tools, "tools 不能为空");
+        Objects.requireNonNull(skills, "skills 不能为空");
         tools = List.copyOf(tools);
+        skills = List.copyOf(skills);
         if (!tenantId.equals(agent.tenantId())) {
             throw new IllegalArgumentException("Agent 不属于当前租户");
         }
@@ -84,6 +103,15 @@ public record AgentRunRequest(
         }
         if (tools.stream().anyMatch(tool -> !tenantId.equals(tool.tenantId()))) {
             throw new IllegalArgumentException("工具不属于当前租户");
+        }
+        java.util.Set<String> skillNames = new java.util.HashSet<>();
+        for (SkillVersionView skill : skills) {
+            if (!tenantId.equals(skill.definition().tenantId())) {
+                throw new IllegalArgumentException("技能版本不属于当前租户");
+            }
+            if (!skillNames.add(skill.definition().name())) {
+                throw new IllegalArgumentException("运行技能名称不能重复");
+            }
         }
     }
 

@@ -13,6 +13,7 @@
         agentsPage: "/console/v2/agents.html",
         modelConfigsPage: "/console/v2/model-configs.html",
         toolsPage: "/console/v2/tools.html",
+        skillsPage: "/console/v2/skills.html",
         chatPage: "/console/v2/chat.html",
         runsPage: "/console/v2/runs.html",
         auditPage: "/console/v2/audit.html"
@@ -75,6 +76,8 @@
     const approvalHistoryRevision = core.createLoadRevisionGate();
     const conversationLoadRevision = core.createLoadRevisionGate();
     const agentDetailRevision = core.createLoadRevisionGate();
+    const agentSkillRevision = core.createLoadRevisionGate();
+    const runDetailRevision = core.createLoadRevisionGate();
     const modelConfigLoadRevision = core.createLoadRevisionGate();
     const modelConfigDetailRevision = core.createLoadRevisionGate();
     const modelCatalogDiscoveryRevision = core.createLoadRevisionGate();
@@ -90,6 +93,7 @@
         agentsPage: ["Agent 管理", "创建、编辑或删除 Agent，并从模型配置中选择运行模型。"],
         modelConfigsPage: ["模型配置", "管理 Provider、服务地址和默认模型名称。"],
         toolsPage: ["工具治理", "注册 Tool，并向指定 Agent 授予使用权限。"],
+        skillsPage: ["技能管理", "导入、查看、启停和更新本租户技能版本。"],
         chatPage: ["会话聊天", "选择 Agent，在同一会话中保留上下文并实时查看回答。"],
         runsPage: ["运行记录", "执行 Agent，并查看运行历史、结果与工具调用。"],
         auditPage: ["审计日志", "追踪当前租户的安全事件和资源操作。"]
@@ -432,6 +436,17 @@
                     loadLocalExamples(undefined, false, session)
                 ]);
                 break;
+            case "skillsPage":
+                if (window.CmAgentSkills && !state.skillsPage) {
+                    state.skillsPage = window.CmAgentSkills.createSkillPage({
+                        api,
+                        getSessionEpoch: () => sessionEpoch.capture(),
+                        getPermissions: () => state.currentUser?.permissions || [],
+                        document
+                    });
+                    state.skillsPage.mount();
+                }
+                break;
             case "chatPage":
                 await loadAgents(session);
                 if (sessionEpoch.isCurrent(session)) await initializeChatPage();
@@ -487,6 +502,7 @@
             }
             state.selectedAgent = agent;
             renderAgentDetail(agent);
+            void loadAgentSkillBindings(agent.id, agentSkillRevision.issue(), session);
             return true;
         } catch (error) {
             if (!sessionEpoch.isCurrent(session)
@@ -561,6 +577,12 @@
                 toolsSection.append(row);
             });
         }
+        const skillsSection = element("section", {className: "detail-section"});
+        skillsSection.id = "agentSkillBindings";
+        skillsSection.append(
+                element("h3", {text: "已绑定技能"}),
+                emptyState("正在加载技能绑定。")
+        );
         if ($("agentModelConfigId")) {
             const actions = element("div", {className: "tool-actions"});
             const editButton = element("button", {className: "button", type: "button", text: "编辑"});
@@ -568,10 +590,121 @@
             const deleteButton = element("button", {className: "button danger", type: "button", text: "删除"});
             deleteButton.addEventListener("click", () => deleteAgent(agent, deleteButton));
             actions.append(editButton, deleteButton);
-            container.replaceChildren(heading, dl, toolsSection, actions);
+            container.replaceChildren(heading, dl, toolsSection, skillsSection, actions);
             return;
         }
-        container.replaceChildren(heading, dl, toolsSection);
+        container.replaceChildren(heading, dl, toolsSection, skillsSection);
+    }
+
+    async function loadAgentSkillBindings(agentId, revision, session) {
+        try {
+            const [bindings, page] = await Promise.all([
+                api.request(`/api/agents/${encodeURIComponent(agentId)}/skills`),
+                api.request("/api/skills?page=0&size=100")
+            ]);
+            if (!sessionEpoch.isCurrent(session)
+                    || !agentSkillRevision.isCurrent(revision)
+                    || state.selectedAgentId !== agentId) return;
+            renderAgentSkillBindings(agentId, bindings, page?.items || []);
+        } catch (error) {
+            if (!sessionEpoch.isCurrent(session)
+                    || !agentSkillRevision.isCurrent(revision)
+                    || state.selectedAgentId !== agentId) return;
+            const section = $("agentSkillBindings");
+            if (!section) return;
+            section.replaceChildren(
+                    element("h3", {text: "已绑定技能"}),
+                    emptyState(`技能绑定读取失败：${error.message}`)
+            );
+        }
+    }
+
+    function renderAgentSkillBindings(agentId, bindings, skills) {
+        const section = $("agentSkillBindings");
+        if (!section) return;
+        section.replaceChildren(element("h3", {text: "已绑定技能"}));
+        const items = Array.isArray(bindings) ? bindings : [];
+        if (!items.length) {
+            section.append(emptyState("该 Agent 尚未绑定技能。"));
+        } else {
+            items.forEach((binding) => {
+                const row = element("article", {className: "tool-card"});
+                row.append(element("strong", {text: binding.name || binding.skillId}));
+                row.append(element("p", {
+                    className: "field-help",
+                    text: `${binding.description || "未提供技能说明"} · v${binding.versionNo || "—"}${binding.enabled ? "" : " · 已停用"}`
+                }));
+                if (canManageAgentSkillBindings()) {
+                    const actions = element("div", {className: "tool-actions"});
+                    const unbindButton = element("button", {
+                        className: "button ghost", type: "button", text: "解除绑定"
+                    });
+                    unbindButton.addEventListener("click", () => unbindAgentSkill(agentId, binding, unbindButton));
+                    actions.append(unbindButton);
+                    row.append(actions);
+                }
+                section.append(row);
+            });
+        }
+        if (!canManageAgentSkillBindings()) return;
+        const boundIds = new Set(items.map((item) => item.skillId));
+        const candidates = (Array.isArray(skills) ? skills : [])
+                .filter((skill) => skill.enabled && !boundIds.has(skill.id));
+        if (!candidates.length) {
+            section.append(emptyState("没有可绑定的已启用技能。"));
+            return;
+        }
+        const controls = element("div", {className: "tool-actions"});
+        const select = element("select", {className: "inline-select"});
+        select.setAttribute("aria-label", "选择要绑定的技能");
+        candidates.forEach((skill) => {
+            const candidate = element("option", {text: `${skill.name || skill.id} · v${skill.currentVersionNo || "—"}`});
+            candidate.value = skill.id;
+            select.append(candidate);
+        });
+        const bindButton = element("button", {className: "button", type: "button", text: "绑定技能"});
+        bindButton.addEventListener("click", () => bindAgentSkill(agentId, select.value, bindButton));
+        controls.append(select, bindButton);
+        section.append(controls);
+    }
+
+    function canManageAgentSkillBindings() {
+        const permissions = state.currentUser?.permissions || [];
+        return permissions.includes("agent:write") && permissions.includes("skill:read");
+    }
+
+    async function bindAgentSkill(agentId, skillId, button) {
+        if (!skillId) return;
+        const session = sessionEpoch.capture();
+        try {
+            await withSubmitState(button, async () => {
+                await api.request(`/api/agents/${encodeURIComponent(agentId)}/skills/${encodeURIComponent(skillId)}`, {
+                    method: "PUT"
+                });
+                if (!sessionEpoch.isCurrent(session) || state.selectedAgentId !== agentId) return;
+                await loadAgentSkillBindings(agentId, agentSkillRevision.completeWrite(), session);
+                setStatus($("globalStatus"), "技能已绑定到当前 Agent。", "success");
+            });
+        } catch (error) {
+            if (sessionEpoch.isCurrent(session)) setStatus($("globalStatus"), error.message, "error");
+        }
+    }
+
+    async function unbindAgentSkill(agentId, binding, button) {
+        if (!window.confirm(`确认解除当前 Agent 与技能“${binding.name || binding.skillId}”的绑定吗？`)) return;
+        const session = sessionEpoch.capture();
+        try {
+            await withSubmitState(button, async () => {
+                await api.request(`/api/agents/${encodeURIComponent(agentId)}/skills/${encodeURIComponent(binding.skillId)}`, {
+                    method: "DELETE"
+                });
+                if (!sessionEpoch.isCurrent(session) || state.selectedAgentId !== agentId) return;
+                await loadAgentSkillBindings(agentId, agentSkillRevision.completeWrite(), session);
+                setStatus($("globalStatus"), "技能绑定已解除。", "success");
+            });
+        } catch (error) {
+            if (sessionEpoch.isCurrent(session)) setStatus($("globalStatus"), error.message, "error");
+        }
     }
 
     async function revokeToolGrant(agent, tool, button) {
@@ -3256,12 +3389,21 @@
     async function loadRunDetail(runId) {
         const agentId = $("runAgentSelect")?.value || state.selectedAgentId;
         if (!agentId || !runId) return;
+        const revision = runDetailRevision.issue();
+        const session = sessionEpoch.capture();
         state.selectedRunId = runId;
         renderRuns();
         try {
             const detail = await api.request(`/api/agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}`);
+            if (!sessionEpoch.isCurrent(session)
+                    || !runDetailRevision.isCurrent(revision)
+                    || state.selectedRunId !== runId) return;
             renderRunDetail(detail);
+            void loadRunSkillLoads(agentId, runId, revision, session);
         } catch (error) {
+            if (!sessionEpoch.isCurrent(session)
+                    || !runDetailRevision.isCurrent(revision)
+                    || state.selectedRunId !== runId) return;
             renderMessage($("runDetail"), error.message, true);
         }
     }
@@ -3299,7 +3441,58 @@
         } else {
             toolCalls.forEach((call) => callsSection.append(renderToolCall(call)));
         }
-        container.replaceChildren(heading, inputSection, outputSection, metadataSection, callsSection);
+        const skillsSection = element("section", {className: "detail-section run-skill-loads-section"});
+        skillsSection.id = "runSkillLoads";
+        skillsSection.append(element("h3", {text: "技能读取记录"}), emptyState(core.formatSkillLoadState({loading: true})));
+        container.replaceChildren(heading, inputSection, outputSection, metadataSection, callsSection, skillsSection);
+    }
+
+    async function loadRunSkillLoads(agentId, runId, revision, session) {
+        try {
+            const page = await api.request(`/api/agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}/skill-loads?page=0&size=100`);
+            if (!sessionEpoch.isCurrent(session)
+                    || !runDetailRevision.isCurrent(revision)
+                    || state.selectedRunId !== runId) return;
+            renderRunSkillLoads(page?.items || []);
+        } catch (error) {
+            if (!sessionEpoch.isCurrent(session)
+                    || !runDetailRevision.isCurrent(revision)
+                    || state.selectedRunId !== runId) return;
+            renderRunSkillLoads([], error.message);
+        }
+    }
+
+    function renderRunSkillLoads(loads, errorMessage = "") {
+        const section = $("runSkillLoads");
+        if (!section) return;
+        section.replaceChildren(element("h3", {text: "技能读取记录"}));
+        if (errorMessage) {
+            section.append(emptyState(core.formatSkillLoadState({loading: false, error: errorMessage, items: []})));
+            return;
+        }
+        if (!loads.length) {
+            section.append(emptyState(core.formatSkillLoadState({loading: false, error: "", items: loads})));
+            return;
+        }
+        loads.forEach((load) => {
+            const row = element("article", {className: "tool-card"});
+            const heading = element("div", {className: "tool-call-heading"});
+            heading.append(
+                    element("strong", {text: `${load.name || "未解析技能"} · ${load.path || "—"}`}),
+                    statusBadge(load.status)
+            );
+            const metadata = [
+                `版本 v${load.versionNo || "—"}`,
+                `${load.deliveredBytes ?? 0} 字节`,
+                `${load.durationMillis ?? 0} ms`,
+                core.formatDateTime(load.createdAt)
+            ];
+            if (load.errorCode || load.errorId) {
+                metadata.push(`错误：${load.errorCode || "—"}${load.errorId ? ` / ${load.errorId}` : ""}`);
+            }
+            row.append(heading, element("p", {className: "field-help", text: metadata.join(" · ")}));
+            section.append(row);
+        });
     }
 
     function renderToolCall(call) {

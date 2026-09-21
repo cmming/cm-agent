@@ -159,6 +159,45 @@ test("请求自动附加 Bearer 令牌并显式携带同源 Cookie", async () =>
     assert.equal(credentials, "same-origin");
 });
 
+test("multipart 上传由浏览器设置边界并保留同源认证", async () => {
+    let received;
+    const api = core.createApiClient({
+        fetchImpl: async (_path, options) => {
+            received = options;
+            return response(201, {id: "skill-1"});
+        },
+        getToken: () => "test-token",
+        onUnauthorized: () => assert.fail("上传不能触发退出")
+    });
+    const body = new FormData();
+    body.append("file", new Blob(["test"], {type: "application/zip"}), "test.zip");
+
+    await api.request("/api/skills", {method: "POST", headers: {"Content-Type": "application/json"}, body});
+
+    assert.equal(received.headers.has("Content-Type"), false);
+    assert.equal(received.headers.get("Authorization"), "Bearer test-token");
+    assert.equal(received.credentials, "same-origin");
+    assert.equal(received.body, body);
+});
+
+test("结构化失败保留错误码和错误编号但不保存原始响应", async () => {
+    const api = core.createApiClient({
+        fetchImpl: async () => response(503, {
+            code: "SKILL_LOAD_FAILED", errorId: "err-1", message: "技能内容读取失败", internal: "不应保留"
+        }),
+        getToken: () => "test-token",
+        onUnauthorized: () => {}
+    });
+
+    await assert.rejects(() => api.request("/api/skills"), (error) => {
+        assert.equal(error.status, 503);
+        assert.equal(error.code, "SKILL_LOAD_FAILED");
+        assert.equal(error.errorId, "err-1");
+        assert.equal(Object.hasOwn(error, "body"), false);
+        return true;
+    });
+});
+
 test("日期和运行状态转换为可读中文", () => {
     assert.equal(core.formatDateTime(""), "—");
     assert.deepEqual(core.statusMeta("SUCCEEDED"), {label: "成功", tone: "success"});
@@ -1142,4 +1181,11 @@ test("历史详情逐项只读展示且HTML样参数始终作为纯文本", () =
     assert.ok(nodes.some((item) => item.textContent.includes("已拒绝")));
     assert.ok(nodes.some((item) => item.textContent.includes("已允许")));
     assert.ok(nodes.some((item) => item.textContent.includes("审批允许不等于工具执行成功")));
+});
+
+test("技能读取状态只显示摘要、失败原因或空态", () => {
+    assert.equal(core.formatSkillLoadState({loading: true, error: "", items: []}), "正在加载技能读取记录…");
+    assert.equal(core.formatSkillLoadState({loading: false, error: "error-1", items: []}), "技能读取记录加载失败：error-1");
+    assert.equal(core.formatSkillLoadState({loading: false, error: "", items: []}), "本轮未读取技能");
+    assert.equal(core.formatSkillLoadState({loading: false, error: "", items: [{id: "one"}]}), "已加载 1 条技能读取记录");
 });

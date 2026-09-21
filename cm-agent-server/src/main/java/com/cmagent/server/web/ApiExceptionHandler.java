@@ -2,6 +2,7 @@ package com.cmagent.server.web;
 
 import com.cmagent.api.ApiErrorCode;
 import com.cmagent.api.ApiErrorResponse;
+import com.cmagent.core.runtime.SkillAccessException;
 import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.service.ModelCatalogDiscoveryException;
 import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
@@ -24,6 +25,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 
 import java.time.Instant;
 
@@ -96,6 +100,46 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiErrorResponse> auditPersistenceFailure(AuditPersistenceException failure, HttpServletRequest request) {
         return failedResponse(HttpStatus.SERVICE_UNAVAILABLE, ApiErrorCode.AUDIT_UNAVAILABLE,
                 "审计服务暂不可用", failure, request);
+    }
+
+    /**
+     * 将技能领域的受控失败映射为稳定 HTTP 状态，并保留异常在跨层链路中承诺的错误编号。
+     *
+     * @param failure 已脱敏的技能失败
+     * @return 技能专属错误响应
+     */
+    @ExceptionHandler(SkillAccessException.class)
+    public ResponseEntity<ApiErrorResponse> skillFailure(SkillAccessException failure) {
+        HttpStatus status = switch (failure.code()) {
+            case SKILL_PACKAGE_INVALID, SKILL_RESOURCE_UNSUPPORTED -> HttpStatus.BAD_REQUEST;
+            case SKILL_PACKAGE_TOO_LARGE, SKILL_LOAD_LIMIT_EXCEEDED -> HttpStatus.PAYLOAD_TOO_LARGE;
+            case SKILL_CONFLICT -> HttpStatus.CONFLICT;
+            case SKILL_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case SKILL_ACCESS_REVOKED -> HttpStatus.GONE;
+            case SKILL_FEATURE_DISABLED -> HttpStatus.SERVICE_UNAVAILABLE;
+            case SKILL_SNAPSHOT_UNAVAILABLE, SKILL_LOAD_FAILED -> HttpStatus.INTERNAL_SERVER_ERROR;
+            default -> HttpStatus.INTERNAL_SERVER_ERROR;
+        };
+        return response(status, failure.code(), failure.safeMessage(), failure.errorId());
+    }
+
+    /** 技能 multipart 缺失或超过容器限制时仍返回 JSON 和稳定技能错误码。 */
+    @ExceptionHandler({
+            MissingServletRequestPartException.class,
+            MaxUploadSizeExceededException.class,
+            HttpMediaTypeNotSupportedException.class
+    })
+    public ResponseEntity<ApiErrorResponse> skillMultipartFailure(Exception failure, HttpServletRequest request) {
+        if (!request.getRequestURI().startsWith("/api/skills")) {
+            return validationFailure(failure, request);
+        }
+        boolean tooLarge = failure instanceof MaxUploadSizeExceededException;
+        boolean unsupported = failure instanceof HttpMediaTypeNotSupportedException;
+        return response(tooLarge ? HttpStatus.PAYLOAD_TOO_LARGE : HttpStatus.BAD_REQUEST,
+                tooLarge ? ApiErrorCode.SKILL_PACKAGE_TOO_LARGE : ApiErrorCode.SKILL_PACKAGE_INVALID,
+                tooLarge ? "技能 ZIP 超过上传限制"
+                        : unsupported ? "请求必须使用 multipart/form-data 上传技能 ZIP" : "缺少技能 ZIP 文件",
+                request);
     }
 
     @ExceptionHandler(ResponseStatusException.class)
