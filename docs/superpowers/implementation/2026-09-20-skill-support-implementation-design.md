@@ -3,7 +3,7 @@
 ## 文档状态
 
 - 主题日期：2026-09-20；本次更新：2026-09-21。
-- 当前阶段：设计与计划已编写；Task 1～Task 4 已实现，Task 5～Task 11 尚未开始。
+- 当前阶段：设计与计划已编写；Task 1～Task 5 已实现，Task 6～Task 11 尚未开始。
 - 本文记录本阶段实际交付及拟接入位置；后续实施时用实际代码、验证结果和方案差异更新，不能将下述拟实现内容作为功能已上线的依据。
 - 配套文档：[设计规格](../specs/2026-09-20-skill-support-design.md)、[实施计划](../plans/2026-09-20-skill-support.md)、[进度账本](../progress/2026-09-20-skill-support-ledger.md)。
 
@@ -19,7 +19,9 @@ Task 3 已增加六个技能 Repository 合同和单一 memory 工作单元。�
 
 Task 4 已增加 V12 PostgreSQL/MySQL 双方言迁移、六个 JDBC Repository 和 JDBC 技能工作单元。旧 Run 在迁移窗口回填格式版本 1 的空技能快照；定义、版本、资源、绑定、快照和读取记录均保持 tenant 条件及数据库约束。Agent 硬删除会在同一事务先移除技能绑定，避免遗留悬挂关联。
 
-设计文档此前分别形成两个本地提交：`326c86a`（设计规格）、`d68599c`（前端交付范围与验收）。当前补充的计划、实现说明、进度账本及规格澄清未提交，未推送。
+Task 5 已增加技能管理、版本更新、启停、资源查询及 Agent 绑定 API。权限和租户均来自 JWT 主体，上传先经过有界解析再进入工作单元，领域写入与严格审计共同提交；功能关闭后仍允许读取历史、停用和解绑。Agent 删除流程会先清理技能绑定。
+
+设计文档此前分别形成两个本地提交：`326c86a`（设计规格）、`d68599c`（前端交付范围与验收）。四份同主题文档随各任务持续更新和提交，当前分支均未推送。
 
 ## 当前代码与拟接入位置
 
@@ -37,7 +39,7 @@ Task 4 已增加 V12 PostgreSQL/MySQL 双方言迁移、六个 JDBC Repository �
 | `cm-agent-console/src/main/resources/META-INF/resources/assets/app.js` | 页面路由、数据加载和交互装配 | T9/T10 接入技能工作区、Agent 绑定与运行读取记录 |
 | `cm-agent-console/src/main/resources/META-INF/resources/console/v2/` | 现有七页中文工作区 | T9 新增技能页并同步全部 v2 导航；T10 增加局部组件 |
 
-以上文件是已核对的接入点。Task 1 已修改 `AgentRunRequest`，其余接入点尚未修改；新增类和测试的完整路径见实施计划各任务。
+以上文件是已核对的主要运行和前端接入点。Task 1～Task 5 已完成领域、解析、仓储、持久化和管理接口，运行时及前端接入点仍按 T6～T10 实施；新增类和测试的完整路径见实施计划各任务。
 
 ### Task 1 实际实现
 
@@ -74,6 +76,16 @@ Task 4 已增加 V12 PostgreSQL/MySQL 双方言迁移、六个 JDBC Repository �
 - `JdbcPersistenceConfiguration` 使用现有 `TransactionTemplate` 提供技能工作单元，与同数据源上的审计写入共享事务边界。该装配放在 JDBC 条件配置中，因此无需修改仅负责通用限额 Bean 的 `SkillConfiguration`。
 - `JdbcAgentDefinitionRepository` 删除 Agent 前先删除同租户绑定；并发绑定测试通过锁定 Agent 行串行计算数量，验证 20 个上限不会被竞争绕过。
 
+### Task 5 实际实现
+
+- `SkillManagementService` 将创建、版本更新、启停、绑定和解绑统一放入 `SkillUnitOfWork`，并在同一边界追加严格审计；tenant 只取认证主体。
+- `SkillController` 提供能力、分页、详情、创建、版本更新、启停及固定版本资源查询；`AgentSkillController` 提供 Agent 技能列表、幂等绑定和解绑。
+- 初次上传保持停用；更新采用预期版本指针，名称不可修改，相同摘要不会生成新版本；从启用切到停用才增加访问纪元。
+- 绑定要求目标技能已启用，并在锁定 Agent 后检查 20 个上限；重复绑定返回原绑定，Agent 硬删除在同一管理流程清理绑定。
+- 功能开关关闭时拒绝创建、更新、启用和绑定，保留能力查询、历史读取、停用和解绑，便于安全退出。
+- multipart 缺失、超限、请求媒体类型错误和文件媒体类型错误均返回技能专属 JSON 错误；同名、跨租户和版本冲突使用稳定错误码。
+- bootstrap 管理员权限增加 `skill:read`、`skill:write`；`SkillResponses` 只暴露业务字段和公开限制，不返回持久化或认证内部信息。
+
 ## 拟实现的数据与调用链
 
 ### 管理与绑定
@@ -103,13 +115,16 @@ Task 4 已增加 V12 PostgreSQL/MySQL 双方言迁移、六个 JDBC Repository �
 - 计划自查补充聊天流错误出口与新增 `ConversationControllerTest`，避免后端保留的错误码在会话层丢失。
 - 明确当前版本采用事务内校验的非空软指针，避免定义与版本的即时外键形成循环插入。
 - 明确第一版配置上限只能调低，并限制包含目录在内的总归档条目；这是原有资源限制的具体化。
-- 尚无实际产品实现，因此不存在已验证的实现偏差；后续若修改公开契约，必须同步规格和本说明。
+- T5 将不支持的文件媒体类型在进入 ZIP 解析前拒绝，并允许浏览器常见的 `application/zip`、`application/x-zip-compressed` 和 `application/octet-stream`；这是 multipart 错误边界的具体化，未扩大资源类型。
+- 后续若修改公开契约，必须同步规格和本说明。
 
 ## 验证与未完成边界
 
 规划阶段完成了代码结构、依赖接口和文档一致性核对。Task 1 已按红绿循环执行 `SkillDomainTest`、`AgentRunRequestTest`，并完成 Core 全模块回归。历史页面截图仅用于理解原有风格，不属于本次 Skill 功能的浏览器验证。
 
-已运行 Task 1 领域测试、Task 2 解析/配置测试、Task 3 memory 工作单元测试和仓储 Spring 装配测试。Task 4 在 Rocky Linux 的 `maven:3.9.9-eclipse-temurin-21` 容器中，使用 PostgreSQL 16 与 MySQL 8.4 完成迁移和 JDBC 合同验证；精确提交 `38c9c38f67a5a9017111eea538bc73515b3351a5` 共执行 4 项测试且全部通过。本机扩大执行 `cm-agent-server -am test` 时仍会在既有 persistence Testcontainers 测试处因没有可用 Docker 中止。尚未运行后续管理、运行时、JavaScript 功能测试或浏览器闭环，因为对应代码尚未实现。
+已运行 Task 1 领域测试、Task 2 解析/配置测试、Task 3 memory 工作单元测试和仓储 Spring 装配测试。Task 4 在 Rocky Linux 的 `maven:3.9.9-eclipse-temurin-21` 容器中，使用 PostgreSQL 16 与 MySQL 8.4 完成迁移和 JDBC 合同验证；精确提交 `38c9c38f67a5a9017111eea538bc73515b3351a5` 共执行 4 项测试且全部通过。
+
+Task 5 本地最终回归执行 `SkillControllerTest`、`AgentSkillControllerTest`、`ApiExceptionHandlerTest`、`AuthControllerTest`、`AgentControllerTest` 共 28 项测试，0 失败、0 错误。Rocky Linux Docker 23.0.6 使用精确提交 `181468cf9ccf3e258c0f735c0e9ff96122449e12` 和 `maven:3.9.9-eclipse-temurin-21`，在 PostgreSQL 16-alpine 上执行 `SkillManagementJdbcPersistenceTest` 1 项通过，证明审计失败时定义、版本和资源写入回滚。尚未运行 T6 以后的运行时、JavaScript 功能测试或浏览器闭环，因为对应代码尚未实现。
 
 实施计划已安排 Java 21 本地快速测试，以及 Rocky 上 PostgreSQL 16/MySQL 8.4 的 JDBC/Flyway/Testcontainers 验证；执行前核对远端提交与本地一致。实际命令和结果持续写入进度账本。
 

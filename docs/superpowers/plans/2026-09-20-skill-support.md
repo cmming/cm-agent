@@ -479,7 +479,7 @@ List<SkillResponses.Binding> bindings(PrincipalRef principal, UUID agentId);
 
 `SkillRequests` 定义 `EnabledRequest(boolean enabled)`；multipart 的 file 与 expectedVersionId 使用 `@RequestPart`/`@RequestParam` 显式绑定。读取和管理接口与设计第 8 节完全一致。
 
-- [ ] **1. 写 MockMvc 红灯：** 使用 `@SpringBootTest(properties={"cm-agent.skills.enabled=true", "cm-agent.persistence.mode=memory"})`、`@AutoConfigureMockMvc`、`@ActiveProfiles("test")` 和 `JwtService.createToken`，不以 `@WithMockUser` 替代真实认证主体结构。独立 JDBC 测试类通过容器动态属性覆盖为 jdbc，不套用 memory 属性。
+- [x] **1. 写 MockMvc 红灯：** 使用 `@SpringBootTest(properties={"cm-agent.skills.enabled=true", "cm-agent.persistence.mode=memory"})`、`@AutoConfigureMockMvc`、`@ActiveProfiles("test")` 和 `JwtService.createToken`，不以 `@WithMockUser` 替代真实认证主体结构。独立 JDBC 测试类通过容器动态属性覆盖为 jdbc，不套用 memory 属性。
 
 ```java
 @Test
@@ -496,8 +496,8 @@ void 只有运行权限不能上传技能() throws Exception {
 
 新增完整权限用户测试：非法包 400、合法初次上传 201 且 enabled=false、更新冲突 409、跨租户 404、关闭功能仍能读取 capabilities 和历史内容、停用/解绑允许。测试所需 ZIP 函数复制 T2 的完整辅助实现到本测试类，避免跨包依赖另一个测试类的 private 方法。
 
-- [ ] **2. 本地执行：** `mvn -pl cm-agent-server -am -Dtest=SkillControllerTest,AgentSkillControllerTest,ApiExceptionHandlerTest -Dsurefire.failIfNoSpecifiedTests=false test`。
-- [ ] **3. 实现服务与 Controller：** 先权限后解析包；解析不持有事务，保存开始后锁相关对象并在同一工作单元内写审计。名称不可变；更新先比对 expectedVersionId，再判摘要相同，无变化返回现有版本。相同内容不应先写入再删除。
+- [x] **2. 本地执行：** `mvn -pl cm-agent-server -am -Dtest=SkillControllerTest,AgentSkillControllerTest,ApiExceptionHandlerTest -Dsurefire.failIfNoSpecifiedTests=false test`。
+- [x] **3. 实现服务与 Controller：** 先权限后解析包；解析不持有事务，保存开始后锁相关对象并在同一工作单元内写审计。名称不可变；更新先比对 expectedVersionId，再判摘要相同，无变化返回现有版本。相同内容不应先写入再删除。
 
 ```java
 // setEnabled 的核心：重复停用不增加纪元；从启用切到停用才撤销旧运行。
@@ -514,8 +514,8 @@ SkillDefinition next = new SkillDefinition(current.id(), current.tenantId(), cur
 
 在 ApiExceptionHandler 新增 SkillAccessException 映射；multipart 超限、缺失 file 和不支持内容类型进入技能专用错误处理，不能让容器默认 HTML 413 或通用 500 绕过错误编号。用 RequestCorrelationFilter 的既有编号，诊断和响应必须一致；运行内部生成的 attemptId 不重新替换。
 
-- [ ] **4. 绿灯与双库事务检查：** 同本地命令；远程 `mvn -pl cm-agent-server -am -Dtest=SkillManagementJdbcPersistenceTest -Dsurefire.failIfNoSpecifiedTests=false test`，验证审计失败不产生新版本、资源或绑定。用测试日志捕获器注入包含模拟 JWT/内部 URL 的异常，断言响应与受控日志均不泄露且能通过 errorId 关联。
-- [ ] **5. 提交：** `git commit -m "feat: 提供技能管理与 Agent 绑定接口"`。
+- [x] **4. 绿灯与双库事务检查：** 同本地命令；远程 `mvn -pl cm-agent-server -am -Dtest=SkillManagementJdbcPersistenceTest -Dsurefire.failIfNoSpecifiedTests=false test`，验证审计失败不产生新版本、资源或绑定。用测试日志捕获器注入包含模拟 JWT/内部 URL 的异常，断言响应与受控日志均不泄露且能通过 errorId 关联。
+- [x] **5. 提交：** `git commit -m "feat: 提供技能管理与 Agent 绑定接口"`。
 
 ## Task 6：固定 Run 技能快照并治理每次读取
 

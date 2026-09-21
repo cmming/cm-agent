@@ -3,8 +3,8 @@
 ## 状态与文档索引
 
 - 主题日期：2026-09-20；本次更新：2026-09-21。
-- 当前阶段：设计与规划完成；用户已选择 A，由主代理顺序执行；Task 1～Task 4 已完成，Task 5 即将开始。
-- 本阶段新增及修改的四文档内容：未提交。此前两个设计提交仅在本地，未推送。
+- 当前阶段：设计与规划完成；用户已选择 A，由主代理顺序执行；Task 1～Task 5 已完成，Task 6 即将开始。
+- 四份同主题文档随任务持续更新和提交；当前分支仅在本地，未推送。
 - 关联：[设计规格](../specs/2026-09-20-skill-support-design.md)、[实施计划](../plans/2026-09-20-skill-support.md)、[实现说明](../implementation/2026-09-20-skill-support-implementation-design.md)。
 
 ## 需求与决策记录
@@ -29,7 +29,7 @@
 | T2 | 无落盘技能包校验与配置 | T1 | 已完成；提交说明为“feat: 增加受限技能包解析与配置” |
 | T3 | Repository 合同和 memory 工作单元 | T1 | 已完成；提交说明为“feat: 增加技能仓储与内存工作单元” |
 | T4 | V12 双数据库迁移、JDBC 合同 | T3 | 已完成；提交说明为“feat: 持久化技能版本与运行读取记录” |
-| T5 | 管理 API、权限和严格审计事务 | T2～T4 | 未开始 |
+| T5 | 管理 API、权限和严格审计事务 | T2～T4 | 已完成；提交 `a4c426e`，边界补强提交 `181468c` |
 | T6 | Run 固定快照、读时治理和审批恢复 | T3～T5 | 未开始 |
 | T7 | 原生技能加载及致命故障门控 | T1、T6 | 未开始 |
 | T8 | 前端 multipart 与会话隔离 | T5 契约 | 未开始 |
@@ -65,16 +65,18 @@ Task 3 实际验证：首次目标测试因 `InMemorySkillStore` 缺失而在编
 
 Task 4 实际验证：红灯提交 `d26b9081ed2b0e269498e8ef3324dc54054f9a3e` 在 Rocky 指定容器中因六个 JDBC Repository 类缺失而于测试编译阶段失败，属于预期功能缺失。初版实现提交 `b3a7513955fc16f74b76c9fed3634465b1098fce` 的双库测试 4 项通过；补充 V11→V12 既有 Run 空快照回填、模型调用唯一键和并发绑定上限后，最终精确提交 `38c9c38f67a5a9017111eea538bc73515b3351a5` 再次运行 `MigrationTest,JdbcSkillRepositoriesTest`，结果为 4 项通过、0 失败、0 错误。环境为 Rocky Linux 9.3、Docker 23.0.6、`maven:3.9.9-eclipse-temurin-21`、PostgreSQL 16-alpine 与 MySQL 8.4。
 
+Task 5 实际验证：MockMvc 红灯首先以技能路由不存在返回 404；实现管理服务和接口后，补充功能关闭仍可读取历史和停用、同租户同名拒绝、非 ZIP 媒体类型、跨租户隐藏、版本冲突、重复绑定及删除 Agent 清理绑定。最终本地执行 `SkillControllerTest,AgentSkillControllerTest,ApiExceptionHandlerTest,AuthControllerTest,AgentControllerTest` 共 28 项测试，0 失败、0 错误。Rocky Linux Docker 23.0.6 使用精确提交 `181468cf9ccf3e258c0f735c0e9ff96122449e12`，在 `maven:3.9.9-eclipse-temurin-21` 与 PostgreSQL 16-alpine 上执行 `SkillManagementJdbcPersistenceTest` 1 项通过，审计失败响应为稳定错误且写入全部回滚。首次远程依赖下载曾遇到 Maven Central DNS 临时解析失败，重试完成缓存后通过，不属于代码或测试失败。
+
 ## 提交与保护范围
 
 - `326c86a`：初版设计规格，已本地提交、未推送。
 - `d68599c`：前端范围与验收，已本地提交、未推送。
-- Task 4 前的规格、计划、实现说明和账本已随前序任务提交；本次 Task 4 状态更新待提交，均未推送。
+- Task 4 前的规格、计划、实现说明和账本已随前序任务提交；Task 5 代码提交为 `a4c426e`，边界补强提交为 `181468c`，本次状态更新待提交，均未推送。
 - 未修改用户已有 `application.yml`、`application-mysql.yml`、`application-ok.yml`、`.codex/`、`.impeccable/critique/`、`.workbuddy/`。
-- 本次没有业务行为和发布变化，因此未修改正式发布说明；T11 在功能实际完成后更新。
+- Skill 整体功能尚未完成，因此暂不发布正式说明；T11 在前后端闭环完成后统一更新。
 
 ## 下一步与主要边界
 
-用户已选择主代理顺序实施。隔离工作树中的 T4 双数据库迁移与 JDBC 合同已完成，下一步实现 T5 管理 API、权限和严格审计事务；不派生逐任务实现子代理，最终执行一次独立整体验证和评审。
+用户已选择主代理顺序实施。隔离工作树中的 T5 管理 API、权限和严格审计事务已完成，下一步实现 T6 Run 固定快照、读取治理和审批恢复；不派生逐任务实现子代理，最终执行一次独立整体验证和评审。
 
 执行阶段重点守住版本和撤销边界、严格审计提交后再交付正文、框架吞错防护、前端会话与迟到响应隔离。所有预期验收结果都仍属于待验证事项，不据此宣称 Skill 已可用。
