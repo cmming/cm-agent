@@ -13,6 +13,7 @@
         agentsPage: "/console/v2/agents.html",
         modelConfigsPage: "/console/v2/model-configs.html",
         toolsPage: "/console/v2/tools.html",
+        skillsPage: "/console/v2/skills.html",
         chatPage: "/console/v2/chat.html",
         runsPage: "/console/v2/runs.html",
         auditPage: "/console/v2/audit.html"
@@ -90,6 +91,7 @@
         agentsPage: ["Agent 管理", "创建、编辑或删除 Agent，并从模型配置中选择运行模型。"],
         modelConfigsPage: ["模型配置", "管理 Provider、服务地址和默认模型名称。"],
         toolsPage: ["工具治理", "注册 Tool，并向指定 Agent 授予使用权限。"],
+        skillsPage: ["技能管理", "导入、查看、启停和更新本租户技能版本。"],
         chatPage: ["会话聊天", "选择 Agent，在同一会话中保留上下文并实时查看回答。"],
         runsPage: ["运行记录", "执行 Agent，并查看运行历史、结果与工具调用。"],
         auditPage: ["审计日志", "追踪当前租户的安全事件和资源操作。"]
@@ -431,6 +433,17 @@
                     loadTools(undefined, session),
                     loadLocalExamples(undefined, false, session)
                 ]);
+                break;
+            case "skillsPage":
+                if (window.CmAgentSkills && !state.skillsPage) {
+                    state.skillsPage = window.CmAgentSkills.createSkillPage({
+                        api,
+                        getSessionEpoch: () => sessionEpoch.capture(),
+                        getPermissions: () => state.currentUser?.permissions || [],
+                        document
+                    });
+                    state.skillsPage.mount();
+                }
                 break;
             case "chatPage":
                 await loadAgents(session);

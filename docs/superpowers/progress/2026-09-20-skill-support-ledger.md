@@ -33,7 +33,7 @@
 | T6 | Run 固定快照、读时治理和审批恢复 | T3～T5 | 已完成；提交 `ee70305` |
 | T7 | 原生技能加载及致命故障门控 | T1、T6 | 已完成；已创建本地提交 |
 | T8 | 前端 multipart 与会话隔离 | T5 契约 | 已完成；待提交 |
-| T9 | 技能工作区和导航生命周期 | T5、T8 | 未开始 |
+| T9 | 技能工作区和导航生命周期 | T5、T8 | 已完成；待提交 |
 | T10 | Agent 绑定、聊天错误和运行读取详情 | T6、T8、T9 | 未开始 |
 | T11 | 前后端联调、全量回归和正式说明 | T1～T10 | 未开始 |
 
@@ -72,6 +72,8 @@ Task 6 实际验证：红灯命令因 `SkillRuntimeService` 和 `GovernedSkillAc
 Task 7 实际验证：初始 `AgentScopeSkillSessionTest` 因 `AgentScopeSkillRepository` 缺失而失败，符合红灯预期。实现后，Temurin 21 下执行 `mvn -q -pl cm-agent-agentscope-adapter -am "-Dtest=AgentScopeSkillSessionTest,AgentScopeSkillContractTest,AgentScopeRunGateTest,AgentScopeRuntimeContractTest" "-Dsurefire.failIfNoSpecifiedTests=false" test` 退出码为 0。测试覆盖只读内存仓储、无 originDir、原生内部 skillId 到固定版本映射、目录不含正文、未知资源安全拒绝、名称冲突、无技能回归及 fatal 失败门控。随后 `mvn -q -pl cm-agent-server -am -DskipTests compile` 退出码为 0。未改 JDBC/Flyway，本任务不需 Rocky/Testcontainers 验证。
 
 Task 8 实际验证：`node --test cm-agent-console/src/test/js/console-core.test.cjs` 通过 72 项、0 失败。新增断言确认 ZIP FormData 不携带手工 Content-Type、保留 Bearer 与同源 Cookie，且结构化 503 失败仅保留 status/code/errorId，不保存原始 body。
+
+Task 9 实际验证：`ConsoleResourceTest` 与 `console-core` 脚本测试通过。新增技能页使用现有 API 客户端和会话代际，导航改动覆盖所有 v2 页面；资源预览按固定版本路径请求，动态内容均使用 textContent 渲染。
 
 ## 提交与保护范围
 
