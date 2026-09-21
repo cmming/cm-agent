@@ -2,7 +2,7 @@
 
 ## 未发布：Skill 受治理加载
 
-- 新增文本型 Skill：ZIP 仅接受 `SKILL.md` 与受限文本资源，默认停用；定义、不可变版本、资源、Agent 绑定、Run 快照和读取记录在 memory/JDBC 合同中保持 tenant 隔离。新 Run 固定版本，停用、解绑或访问纪元变化会阻止旧 Run 继续读取或审批恢复。
+- 新增文本型 Skill：ZIP 接受 `SKILL.md` 与配置开放的文本资源，默认停用；定义、不可变版本、资源、Agent 绑定、Run 快照和读取记录在 memory/JDBC 合同中保持 tenant 隔离。新 Run 固定版本，停用、解绑或访问纪元变化会阻止旧 Run 继续读取或审批恢复。
 - 新增技能管理和绑定 API，以及控制台“技能管理”页面。页面支持 ZIP 导入、详情、启停和固定版本资源预览；Agent 详情支持绑定已启用技能，运行详情只显示读取元数据与错误编号，不展示正文。`skill:read`、`skill:write` 与既有 `agent:*` 权限由服务端共同校验，绑定不授予业务工具权限。
 - AgentScope 2.0.2 原生 SkillBox 使用只读内存映射与受治理读取桥接。模型只能按 Run 快照读取登记路径，读取前后均核验预算和撤销状态；原生加载器、审计或持久化基础设施失败会中止运行，不能伪装成普通工具文本。
 - 新增 PostgreSQL/MySQL 方言 V12 技能表与历史 Run 空快照回填。部署前先备份并完成 Flyway 迁移；生产以 `cm-agent.skills.enabled=false` 起步，完成权限、容量和模型上下文验证后再显式开启。完整配置和排障步骤见 `docs/configuration.md` 与 `docs/operations.md`。

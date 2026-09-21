@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -36,6 +37,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * 在有界内存中解析单技能 ZIP，并在返回结果前完成路径、类型、文本和 YAML 校验。
@@ -46,10 +48,25 @@ import java.util.regex.Pattern;
 public final class SkillPackageParser {
 
     private static final int MAX_ARCHIVE_ENTRIES = 256;
-    private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
-            ".md", ".txt", ".json", ".yaml", ".yml", ".csv");
     private static final Pattern FRONTMATTER = Pattern.compile("\\A---\\n(.*?)\\n---(?:\\n|\\z)(.*)\\z", Pattern.DOTALL);
     private static final Pattern NAME = Pattern.compile("[a-z0-9](?:[a-z0-9]|-(?!-)){0,62}[a-z0-9]|[a-z0-9]");
+    private final Set<String> allowedExtensions;
+
+    /**
+     * 创建解析器并固化部署环境允许的文本资源扩展名。
+     *
+     * @param allowedResourceTypes 配置层给出的扩展名；解析前统一转小写，
+     *                             避免包内路径大小写造成同一类型判定不一致
+     */
+    public SkillPackageParser(Collection<String> allowedResourceTypes) {
+        Objects.requireNonNull(allowedResourceTypes, "allowedResourceTypes 不能为空");
+        if (allowedResourceTypes.isEmpty()) {
+            throw new IllegalArgumentException("allowedResourceTypes 不能为空");
+        }
+        this.allowedExtensions = allowedResourceTypes.stream()
+                .map(type -> type.toLowerCase(Locale.ROOT))
+                .collect(Collectors.toUnmodifiableSet());
+    }
 
     /**
      * 解析并校验一个技能 ZIP。
@@ -250,7 +267,7 @@ public final class SkillPackageParser {
 
     private void validateExtension(String path) {
         String lower = path.toLowerCase(Locale.ROOT);
-        if (ALLOWED_EXTENSIONS.stream().noneMatch(lower::endsWith)) {
+        if (allowedExtensions.stream().noneMatch(lower::endsWith)) {
             throw unsupported("技能资源类型不受支持");
         }
     }

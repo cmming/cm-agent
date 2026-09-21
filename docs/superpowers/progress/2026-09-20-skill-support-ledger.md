@@ -79,6 +79,8 @@ Task 10 实际验证：先执行 `node --check` 检查 `app.js`、`skills.js` �
 
 Task 11 实际验证：Temurin 21 下 `mvn -q -pl cm-agent-core,cm-agent-agentscope-adapter,cm-agent-console -am test` 通过；`mvn -q -pl cm-agent-server -am "-Dtest=SkillControllerTest,AgentSkillControllerTest,SkillRuntimeServiceTest,GovernedSkillAccessServiceTest,ToolApprovalServiceTest,ApiExceptionHandlerTest,RunControllerTest,ConversationControllerTest" "-Dsurefire.failIfNoSpecifiedTests=false" test` 通过；`node --test cm-agent-console/src/test/js/console-core.test.cjs` 通过 73 项。缓存版本变更首次使 `ConsoleResourceTest` 暴露旧断言，更新登录页与九页资源断言后转绿。V12/JDBC 双库验证沿用 Task 4、Task 6 的 Rocky 结果，本次未改迁移或 JDBC 代码；未重跑浏览器人工闭环或真实 Provider Stub。
 
+后续配置化调整实际验证：`SkillPropertiesTest`、`SkillPackageParserTest`、`SkillControllerTest` 共 21 项通过、0 失败、0 错误；能力接口断言配置默认包含 `.html`，解析器新增 `.html`、`.js`、`.cjs`、`.sh` 接受用例，同时保留未配置扩展名拒绝用例。
+
 ## 提交与保护范围
 
 - `326c86a`：初版设计规格，已本地提交、未推送。

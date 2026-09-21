@@ -42,6 +42,9 @@ cm-agent:
     enabled: ${cm-agent.config.mcp-enabled:false}
     endpoint: ${cm-agent.config.mcp-endpoint:/mcp}
   default-tenant-code: ${cm-agent.config.default-tenant-code:default}
+  skills:
+    enabled: ${cm-agent.config.skills-enabled:false}
+    allowed-resource-types: ${cm-agent.config.skills-allowed-resource-types:.md,.txt,.json,.yaml,.yml,.csv,.html,.js,.cjs,.sh}
   persistence:
     mode: ${cm-agent.config.persistence-mode:memory}
     jdbc:

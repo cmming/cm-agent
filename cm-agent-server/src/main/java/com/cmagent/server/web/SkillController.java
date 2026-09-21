@@ -33,7 +33,6 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
-import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -67,7 +66,7 @@ public class SkillController {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "skill:read", "capabilities");
         return new SkillResponses.Capabilities(properties.isEnabled(),
-                List.of(".md", ".txt", ".json", ".yaml", ".yml", ".csv"),
+                properties.getAllowedResourceTypes(),
                 properties.getMaxZipBytes(), properties.getMaxExpandedBytes(), properties.getMaxFiles(),
                 properties.getMaxInstructionBytes(), properties.getMaxResourceBytes(),
                 properties.getMaxPathLength(), properties.getMaxBoundSkills());

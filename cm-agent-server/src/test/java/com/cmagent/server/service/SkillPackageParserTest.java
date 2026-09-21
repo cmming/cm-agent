@@ -26,7 +26,8 @@ class SkillPackageParserTest {
     private static final String SKILL = "---\nname: support-guide\ndescription: 故障排查指引\n"
             + "category: support\n---\n读取 references/guide.md。";
 
-    private final SkillPackageParser parser = new SkillPackageParser();
+    private final SkillPackageParser parser = new SkillPackageParser(
+            List.of(".md", ".txt", ".json", ".yaml", ".yml", ".csv"));
 
     @Test
     void 解析单一包装目录并生成稳定摘要() throws Exception {
@@ -59,12 +60,30 @@ class SkillPackageParserTest {
     }
 
     @Test
-    void 拒绝脚本与不支持扩展名() throws Exception {
+    void 拒绝未配置扩展名() throws Exception {
         byte[] bytes = zip(Map.of(
                 "SKILL.md", SKILL.getBytes(StandardCharsets.UTF_8),
                 "run.sh", "echo unsafe".getBytes(StandardCharsets.UTF_8)), LocalDateTime.now());
 
         assertCode(bytes, SkillPackageLimits.defaults(), ApiErrorCode.SKILL_RESOURCE_UNSUPPORTED);
+    }
+
+    @Test
+    void 接受配置开放的文本资源类型() throws Exception {
+        SkillPackageParser configurableParser = new SkillPackageParser(
+                List.of(".md", ".html", ".js", ".cjs", ".sh"));
+        Map<String, byte[]> files = Map.of(
+                "SKILL.md", SKILL.getBytes(StandardCharsets.UTF_8),
+                "page.html", "<p>说明</p>".getBytes(StandardCharsets.UTF_8),
+                "helper.js", "export const name = 'support';".getBytes(StandardCharsets.UTF_8),
+                "server.cjs", "module.exports = {};".getBytes(StandardCharsets.UTF_8),
+                "run.sh", "echo '仅作为文本资源读取'".getBytes(StandardCharsets.UTF_8));
+
+        ParsedSkillPackage parsed = configurableParser.parse(
+                new ByteArrayInputStream(zip(files, LocalDateTime.now())), SkillPackageLimits.defaults());
+
+        assertThat(parsed.resources()).containsOnlyKeys(
+                "page.html", "helper.js", "server.cjs", "run.sh");
     }
 
     @Test
