@@ -32,7 +32,7 @@
 | T5 | 管理 API、权限和严格审计事务 | T2～T4 | 已完成；提交 `a4c426e`，边界补强提交 `181468c` |
 | T6 | Run 固定快照、读时治理和审批恢复 | T3～T5 | 已完成；提交 `ee70305` |
 | T7 | 原生技能加载及致命故障门控 | T1、T6 | 已完成；已创建本地提交 |
-| T8 | 前端 multipart 与会话隔离 | T5 契约 | 未开始 |
+| T8 | 前端 multipart 与会话隔离 | T5 契约 | 已完成；待提交 |
 | T9 | 技能工作区和导航生命周期 | T5、T8 | 未开始 |
 | T10 | Agent 绑定、聊天错误和运行读取详情 | T6、T8、T9 | 未开始 |
 | T11 | 前后端联调、全量回归和正式说明 | T1～T10 | 未开始 |
@@ -70,6 +70,8 @@ Task 5 实际验证：MockMvc 红灯首先以技能路由不存在返回 404；�
 Task 6 实际验证：红灯命令因 `SkillRuntimeService` 和 `GovernedSkillAccessService` 缺失而在测试编译阶段失败。实现后本地执行 `SkillRuntimeServiceTest,GovernedSkillAccessServiceTest,ToolApprovalServiceTest,RunControllerTest,ConversationControllerTest`，四个存在的测试类共 44 项通过、0 失败、0 错误；不存在独立 `ConversationControllerTest`，参数只允许其空选择。远程独立工作副本的 HEAD 为 `ee703054231e6cbc8580d59762cf270f699dbfdf`，Rocky Linux 9.3 Docker 23.0.6 在 `maven:3.9.9-eclipse-temurin-21` 中分别启动 PostgreSQL 16-alpine 与 MySQL 8.4，`SkillRuntimeJdbcPersistenceTest` 各 1 项通过，验证 Run 快照在更新当前版本后仍恢复版本 1。
 
 Task 7 实际验证：初始 `AgentScopeSkillSessionTest` 因 `AgentScopeSkillRepository` 缺失而失败，符合红灯预期。实现后，Temurin 21 下执行 `mvn -q -pl cm-agent-agentscope-adapter -am "-Dtest=AgentScopeSkillSessionTest,AgentScopeSkillContractTest,AgentScopeRunGateTest,AgentScopeRuntimeContractTest" "-Dsurefire.failIfNoSpecifiedTests=false" test` 退出码为 0。测试覆盖只读内存仓储、无 originDir、原生内部 skillId 到固定版本映射、目录不含正文、未知资源安全拒绝、名称冲突、无技能回归及 fatal 失败门控。随后 `mvn -q -pl cm-agent-server -am -DskipTests compile` 退出码为 0。未改 JDBC/Flyway，本任务不需 Rocky/Testcontainers 验证。
+
+Task 8 实际验证：`node --test cm-agent-console/src/test/js/console-core.test.cjs` 通过 72 项、0 失败。新增断言确认 ZIP FormData 不携带手工 Content-Type、保留 Bearer 与同源 Cookie，且结构化 503 失败仅保留 status/code/errorId，不保存原始 body。
 
 ## 提交与保护范围
 

@@ -104,6 +104,11 @@ Task 6 已增加 Run 快照创建与恢复、每次技能读取治理和读取�
 - `AgentScopeRunGate` 让技能读取与业务工具共用公平锁，保留首次致命 `SkillAccessException`，并由执行器在事件和收尾边界重新抛出，避免 AgentScope 把它吞成普通工具文本。
 - `AgentScopeRuntimeAdapter` 新增六参数工厂，Server 的 `AgentScopeRuntimeConfiguration` 注入实际 `SkillAccessGateway`；旧四、五参数入口使用拒绝型网关，空技能运行保持兼容。
 
+### Task 8 实际实现
+
+- `console-core.js` 的 `createApiClient.request` 识别 `FormData`，删除调用方预设的 `Content-Type` 以保留浏览器生成的 multipart 边界；普通 JSON 请求仍保持现有默认头、Bearer 令牌和同源 Cookie。
+- 非成功 JSON 响应只在 Error 对象上保留 `status`、`code` 和 `errorId`，不附加完整响应体，便于技能页面显示可检索错误而不扩大敏感载荷的留存范围。
+
 ## 拟实现的数据与调用链
 
 ### 管理与绑定

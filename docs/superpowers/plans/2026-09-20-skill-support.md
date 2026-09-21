@@ -686,7 +686,7 @@ try {
 
 **接口：** 保持现有 `createApiClient` 配置参数及其 `request(path, options)` 方法；增加错误对象 `code/errorId/status` 字段，保持 `message` 的现有中文格式。`stream()` 不改变协议或请求格式。
 
-- [ ] **1. 增加可执行红灯用例：**
+- [x] **1. 增加可执行红灯用例：** 已增加 FormData 上传与结构化错误字段断言。
 
 ```javascript
 test("multipart 由浏览器设置 Content-Type 并保留同源凭据", async () => {
@@ -709,8 +709,8 @@ test("multipart 由浏览器设置 Content-Type 并保留同源凭据", async ()
 });
 ```
 
-- [ ] **2. 运行：** `node --test cm-agent-console/src/test/js/console-core.test.cjs`，预期 Content-Type 断言失败。
-- [ ] **3. 修改请求封装：**
+- [x] **2. 运行：** 已执行同一命令；实现前由 JSON Content-Type 覆盖 FormData 边界，修复后通过。
+- [x] **3. 修改请求封装：**
 
 ```javascript
 const headers = new Headers(options.headers || {});
@@ -721,8 +721,8 @@ else if (!headers.has("Content-Type")) headers.set("Content-Type", "application/
 
 结构化失败在已有 `new Error(formatError(response.status, body, rawBody))` 后附加受控的 body.code/body.errorId，不把整个 body 存到可随手打印的错误对象；非 JSON 413 映射为明确上传过大提示，编号缺失时不伪造服务端编号。
 
-- [ ] **4. 绿灯回归：** 追加 JSON 仍为 application/json、调用方传错 multipart 头也由封装移除、旧会话 401 不退出新会话、503 保留错误编号、SSE 流读取仍正常的测试，再执行同命令。
-- [ ] **5. 提交：** `git commit -m "feat: 支持技能上传的 multipart 请求"`。
+- [x] **4. 绿灯回归：** 72 项 `console-core` 测试通过，覆盖 JSON、调用方误设头、会话代际 401、503 编号与 SSE 回归。
+- [ ] **5. 提交：** 待同步本任务文档后执行 `git commit -m "feat: 支持技能上传的 multipart 请求"`。
 
 ## Task 9：交付技能工作区与完整导航生命周期
 

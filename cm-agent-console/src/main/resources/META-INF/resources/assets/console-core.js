@@ -492,7 +492,13 @@
 
         async function request(path, options = {}) {
             const headers = new Headers(options.headers || {});
-            headers.set("Content-Type", "application/json");
+            // FormData 的边界由浏览器生成；手工设置 JSON 或 multipart Content-Type 都会破坏 ZIP 上传。
+            const isMultipart = typeof FormData !== "undefined" && options.body instanceof FormData;
+            if (isMultipart) {
+                headers.delete("Content-Type");
+            } else if (!headers.has("Content-Type")) {
+                headers.set("Content-Type", "application/json");
+            }
             const token = getToken();
             const sessionEpoch = getSessionEpoch();
             if (token) {
@@ -520,6 +526,10 @@
                 }
                 const error = new Error(formatError(response.status, body, rawBody));
                 error.status = response.status;
+                if (body && typeof body === "object") {
+                    if (typeof body.code === "string") error.code = body.code;
+                    if (typeof body.errorId === "string") error.errorId = body.errorId;
+                }
                 throw error;
             }
             return body;

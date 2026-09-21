@@ -159,6 +159,45 @@ test("请求自动附加 Bearer 令牌并显式携带同源 Cookie", async () =>
     assert.equal(credentials, "same-origin");
 });
 
+test("multipart 上传由浏览器设置边界并保留同源认证", async () => {
+    let received;
+    const api = core.createApiClient({
+        fetchImpl: async (_path, options) => {
+            received = options;
+            return response(201, {id: "skill-1"});
+        },
+        getToken: () => "test-token",
+        onUnauthorized: () => assert.fail("上传不能触发退出")
+    });
+    const body = new FormData();
+    body.append("file", new Blob(["test"], {type: "application/zip"}), "test.zip");
+
+    await api.request("/api/skills", {method: "POST", headers: {"Content-Type": "application/json"}, body});
+
+    assert.equal(received.headers.has("Content-Type"), false);
+    assert.equal(received.headers.get("Authorization"), "Bearer test-token");
+    assert.equal(received.credentials, "same-origin");
+    assert.equal(received.body, body);
+});
+
+test("结构化失败保留错误码和错误编号但不保存原始响应", async () => {
+    const api = core.createApiClient({
+        fetchImpl: async () => response(503, {
+            code: "SKILL_LOAD_FAILED", errorId: "err-1", message: "技能内容读取失败", internal: "不应保留"
+        }),
+        getToken: () => "test-token",
+        onUnauthorized: () => {}
+    });
+
+    await assert.rejects(() => api.request("/api/skills"), (error) => {
+        assert.equal(error.status, 503);
+        assert.equal(error.code, "SKILL_LOAD_FAILED");
+        assert.equal(error.errorId, "err-1");
+        assert.equal(Object.hasOwn(error, "body"), false);
+        return true;
+    });
+});
+
 test("日期和运行状态转换为可读中文", () => {
     assert.equal(core.formatDateTime(""), "—");
     assert.deepEqual(core.statusMeta("SUCCEEDED"), {label: "成功", tone: "success"});
