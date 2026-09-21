@@ -5,6 +5,7 @@ import com.cmagent.agentscope.AgentScopeRuntimeOptions;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.runtime.ModelCredentialProvider;
 import com.cmagent.core.runtime.ToolInvocationGateway;
+import com.cmagent.core.runtime.SkillAccessGateway;
 import com.cmagent.core.repository.ModelConfigRepository;
 import com.cmagent.core.repository.RuntimeCheckpointRepository;
 import com.cmagent.server.runtime.DatabaseModelCredentialProvider;
@@ -82,6 +83,7 @@ public class AgentScopeRuntimeConfiguration {
      * @param properties         AgentScope 运行时配置
      * @param credentialProvider Spring 管理的模型凭据提供者
      * @param gateway            工具调用治理网关
+     * @param skillGateway       技能正文读取治理网关
      * @return AgentScope AgentRuntime
      * @throws IllegalStateException 未找到模型凭据提供者或运行时配置不合法时抛出
      */
@@ -91,7 +93,8 @@ public class AgentScopeRuntimeConfiguration {
             AgentScopeRuntimeProperties properties,
             ObjectProvider<ModelCredentialProvider> credentialProvider,
             ToolInvocationGateway gateway,
-            AgentStateStore stateStore
+            AgentStateStore stateStore,
+            SkillAccessGateway skillGateway
     ) {
         properties.validate(false);
         ModelCredentialProvider provider = Objects.requireNonNull(
@@ -100,6 +103,7 @@ public class AgentScopeRuntimeConfiguration {
         AgentScopeRuntimeOptions options = new AgentScopeRuntimeOptions(
                 properties.getModelTimeout(), properties.getToolTimeout(), properties.getModelMaxAttempts(),
                 properties.isPermissionEnabled());
-        return AgentScopeRuntimeAdapter.create(provider, gateway, options, Clock.systemUTC(), stateStore);
+        return AgentScopeRuntimeAdapter.create(
+                provider, gateway, options, Clock.systemUTC(), stateStore, skillGateway);
     }
 }

@@ -624,7 +624,7 @@ static AgentScopeRuntimeAdapter create(ModelCredentialProvider credentials,
 
 只读仓库的 save/delete/setWriteable(true) 明确拒绝；close 清理运行内引用，不持有共享可变注册表。原工厂以拒绝型技能网关委托新工厂：无技能仍可运行，有技能时报明确缺失网关错误。
 
-- [ ] **1. 写红灯：** 单元测试验证只有已提供技能进入仓库，setWriteable(true) 失败；契约测试使用本地 OpenAI 兼容 Stub 返回 `load_skill_through_path` 调用，检查首次模型请求只含名称/描述，后续请求才含正文与资源。
+- [x] **1. 写红灯：** 已先执行缺少 `AgentScopeSkillRepository` 的目标测试，确认失败来自待实现类型；随后补充只读仓储、固定快照路径、目录不含正文、未知技能拒绝、工具名称冲突和无技能回归测试。
 
 ```java
 @Test
@@ -639,8 +639,8 @@ void 空技能仓库不可写() {
 
 契约测试在同一类内建立完整测试 Provider fixture：第一次响应 tool call 读取 SKILL.md，第二次读取 `references/guide.md`，第三次给出文本；保存收到的三份请求供断言。使用已有 RuntimeContractTest 的本地 HttpServer 方式实现，不能访问真实模型或写入 Key。
 
-- [ ] **2. 执行：** `mvn -pl cm-agent-agentscope-adapter -am -Dtest=AgentScopeSkillSessionTest,AgentScopeSkillContractTest,AgentScopeRunGateTest,AgentScopeRuntimeContractTest -Dsurefire.failIfNoSpecifiedTests=false test`。
-- [ ] **3. 构建原生会话：** 将平台 UUID+版本映射为运行内原生 ID，source 使用固定非路径说明，不传宿主 originDir。使用 SkillBox 的原生注册、提示和读取工具；不安装默认动态中间件。
+- [x] **2. 执行：** 已使用 Java 21 执行该目标测试集合；同时执行 Server 编译验证装配签名。
+- [x] **3. 构建原生会话：** 平台版本映射到 AgentScope 生成的运行内 ID，source 为固定非路径说明且不传 originDir。SkillBox 禁用自动上传、完整元数据暴露和代码执行；原生读取工具注册后立刻替换为受治理桥接器。
 
 ```java
 Toolkit nativeToolkit = new Toolkit();
@@ -657,7 +657,7 @@ AgentTool delegate = Objects.requireNonNull(nativeToolkit.getTool("load_skill_th
 
 ReActAgent 的 sysPrompt 为 Agent 原提示词加原生目录摘要，不含全量正文。禁止未经编码的 name/description 破坏原生目录标记；发现原生 prompt 对这些字段不转义时在映射前进行纯文本 XML 字符编码，测试覆盖 `</skill>` 等输入。业务工具重名在构建前失败。
 
-- [ ] **4. 扩展共享中止门控：** 现有门控会保留业务工具基础设施异常；技能的 fatal 异常也必须被保留，并与业务工具使用同一调用锁。新增包内方法 `SkillReadResult invokeSkill(SkillAccessGateway, SkillReadRequest, Supplier<String>)`、`void throwIfSkillFailure()`；普通 invoke 调用前后也检查技能 fatal 状态，执行器在事件边界与最终结果前检查它。
+- [x] **4. 扩展共享中止门控：** 新增 `invokeSkill` 和 `throwIfSkillFailure`，致命技能异常与业务工具共享锁和执行器事件边界检查；普通业务工具在调用前后也会观察到已记录的技能致命失败。
 
 ```java
 try {
@@ -674,8 +674,8 @@ try {
 
 以上两类原子字段分别持有 SkillAccessException 和 RuntimeException；`throwIfSkillFailure` 先抛基础设施失败，再抛受控 fatal。执行器将受控技能失败原样抛到 T6 的 Server 失败边界；不能放入只有 errorMessage 的 AgentRunResult 后丢失 code/errorId。业务工具的失败、审批、资源关闭优先级保持既有规则。
 
-- [ ] **5. 绿灯和真实链验证：** 增加审计失败后模型尝试调用业务工具但网关调用次数为 0、资源不存在可恢复、跨租户/撤销致命、无目录写入/进程/额外联网、每次运行注册表独立、审批恢复再次读取原版本、内部名称冲突、无技能旧工厂回归。
-- [ ] **6. 提交：** `git commit -m "feat: 接入受治理的 AgentScope 原生技能加载"`。
+- [x] **5. 绿灯和真实链验证：** 目标集合与既有运行契约通过；新增测试覆盖无 originDir、无技能旧路径、未知资源安全拒绝、内部名称冲突、正文延迟加载和致命失败阻断后续读取。原生 SkillBox 仅接收内存 AgentSkill，且关闭自动上传与代码执行，测试未创建目录、进程或网络调用。
+- [x] **6. 提交：** 已执行 `git commit -m "feat: 接入受治理的 AgentScope 原生技能加载"`，已创建本地提交。
 
 ## Task 8：让前端请求支持 multipart 并保持会话隔离
 

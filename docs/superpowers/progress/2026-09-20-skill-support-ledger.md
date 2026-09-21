@@ -3,7 +3,7 @@
 ## 状态与文档索引
 
 - 主题日期：2026-09-20；本次更新：2026-09-21。
-- 当前阶段：用户已选择 A，由主代理顺序执行；Task 1～Task 6 已完成，Task 7 即将开始。
+- 当前阶段：用户已选择 A，由主代理顺序执行；Task 1～Task 7 已完成，Task 8 待开始。
 - 四份同主题文档随任务持续更新和提交；当前分支仅在本地，未推送。
 - 关联：[设计规格](../specs/2026-09-20-skill-support-design.md)、[实施计划](../plans/2026-09-20-skill-support.md)、[实现说明](../implementation/2026-09-20-skill-support-implementation-design.md)。
 
@@ -31,7 +31,7 @@
 | T4 | V12 双数据库迁移、JDBC 合同 | T3 | 已完成；提交说明为“feat: 持久化技能版本与运行读取记录” |
 | T5 | 管理 API、权限和严格审计事务 | T2～T4 | 已完成；提交 `a4c426e`，边界补强提交 `181468c` |
 | T6 | Run 固定快照、读时治理和审批恢复 | T3～T5 | 已完成；提交 `ee70305` |
-| T7 | 原生技能加载及致命故障门控 | T1、T6 | 未开始 |
+| T7 | 原生技能加载及致命故障门控 | T1、T6 | 已完成；已创建本地提交 |
 | T8 | 前端 multipart 与会话隔离 | T5 契约 | 未开始 |
 | T9 | 技能工作区和导航生命周期 | T5、T8 | 未开始 |
 | T10 | Agent 绑定、聊天错误和运行读取详情 | T6、T8、T9 | 未开始 |
@@ -69,16 +69,18 @@ Task 5 实际验证：MockMvc 红灯首先以技能路由不存在返回 404；�
 
 Task 6 实际验证：红灯命令因 `SkillRuntimeService` 和 `GovernedSkillAccessService` 缺失而在测试编译阶段失败。实现后本地执行 `SkillRuntimeServiceTest,GovernedSkillAccessServiceTest,ToolApprovalServiceTest,RunControllerTest,ConversationControllerTest`，四个存在的测试类共 44 项通过、0 失败、0 错误；不存在独立 `ConversationControllerTest`，参数只允许其空选择。远程独立工作副本的 HEAD 为 `ee703054231e6cbc8580d59762cf270f699dbfdf`，Rocky Linux 9.3 Docker 23.0.6 在 `maven:3.9.9-eclipse-temurin-21` 中分别启动 PostgreSQL 16-alpine 与 MySQL 8.4，`SkillRuntimeJdbcPersistenceTest` 各 1 项通过，验证 Run 快照在更新当前版本后仍恢复版本 1。
 
+Task 7 实际验证：初始 `AgentScopeSkillSessionTest` 因 `AgentScopeSkillRepository` 缺失而失败，符合红灯预期。实现后，Temurin 21 下执行 `mvn -q -pl cm-agent-agentscope-adapter -am "-Dtest=AgentScopeSkillSessionTest,AgentScopeSkillContractTest,AgentScopeRunGateTest,AgentScopeRuntimeContractTest" "-Dsurefire.failIfNoSpecifiedTests=false" test` 退出码为 0。测试覆盖只读内存仓储、无 originDir、原生内部 skillId 到固定版本映射、目录不含正文、未知资源安全拒绝、名称冲突、无技能回归及 fatal 失败门控。随后 `mvn -q -pl cm-agent-server -am -DskipTests compile` 退出码为 0。未改 JDBC/Flyway，本任务不需 Rocky/Testcontainers 验证。
+
 ## 提交与保护范围
 
 - `326c86a`：初版设计规格，已本地提交、未推送。
 - `d68599c`：前端范围与验收，已本地提交、未推送。
-- Task 4 前的规格、计划、实现说明和账本已随前序任务提交；Task 5 代码提交为 `a4c426e`，边界补强提交为 `181468c`；Task 6 代码提交为 `ee70305`，本次状态更新待提交，均未推送。
+- Task 4 前的规格、计划、实现说明和账本已随前序任务提交；Task 5 代码提交为 `a4c426e`，边界补强提交为 `181468c`；Task 6 代码提交为 `ee70305`；Task 7 代码与同步文档已创建本地提交，均未推送。
 - 未修改用户已有 `application.yml`、`application-mysql.yml`、`application-ok.yml`、`.codex/`、`.impeccable/critique/`、`.workbuddy/`。
 - Skill 整体功能尚未完成，因此暂不发布正式说明；T11 在前后端闭环完成后统一更新。
 
 ## 下一步与主要边界
 
-用户已选择主代理顺序实施。隔离工作树中的 T6 Run 固定快照、读取治理和审批恢复已完成，下一步实现 T7 AgentScope 原生技能加载；不派生逐任务实现子代理，最终执行一次独立整体验证和评审。
+用户已选择主代理顺序实施。隔离工作树中的 T7 AgentScope 原生技能加载与故障门控已完成，下一步实现 T8 multipart 请求封装；不派生逐任务实现子代理，最终执行一次独立整体验证和评审。
 
 执行阶段重点守住版本和撤销边界、严格审计提交后再交付正文、框架吞错防护、前端会话与迟到响应隔离。所有预期验收结果都仍属于待验证事项，不据此宣称 Skill 已可用。

@@ -96,6 +96,14 @@ Task 6 已增加 Run 快照创建与恢复、每次技能读取治理和读取�
 - `SkillLoadQueryService` 根据记录中的历史 versionId 解析版本号，不回退到当前版本。`GET /api/agents/{agentId}/runs/{runId}/skill-loads` 先通过 Run 归属校验，再返回不含正文的分页记录。
 - `RunExecutionService` 在通用运行异常前保留 `SkillAccessException` 的 code/errorId；`RunController` 和 `ConversationController` 的 SSE 错误事件使用相同编号。
 
+### Task 7 实际实现
+
+- `AgentScopeSkillRepository` 将每次 Run 的 `SkillVersionView` 映射为只读内存 `AgentSkill`，source 为固定非路径标识且 `originDir` 为空；保存、删除和打开可写状态全部被拒绝。
+- `AgentScopeSkillSession` 为每次运行创建独立 SkillBox，关闭自动上传、代码执行和全量元数据暴露。它使用 AgentScope 生成的内部 skillId 映射固定版本，目录提示不含正文；关闭时只清理内存引用。
+- 原生 `load_skill_through_path` 被 `AgentScopeSkillLoadBridge` 替换。桥接器只接受当前快照中的内部 ID 和 `SKILL.md` 或已登记资源路径，调用 `SkillAccessGateway` 后才委托原生内存加载；普通拒绝返回安全工具错误，fatal 失败交运行门控中断整轮。
+- `AgentScopeRunGate` 让技能读取与业务工具共用公平锁，保留首次致命 `SkillAccessException`，并由执行器在事件和收尾边界重新抛出，避免 AgentScope 把它吞成普通工具文本。
+- `AgentScopeRuntimeAdapter` 新增六参数工厂，Server 的 `AgentScopeRuntimeConfiguration` 注入实际 `SkillAccessGateway`；旧四、五参数入口使用拒绝型网关，空技能运行保持兼容。
+
 ## 拟实现的数据与调用链
 
 ### 管理与绑定
@@ -137,6 +145,8 @@ Task 6 已增加 Run 快照创建与恢复、每次技能读取治理和读取�
 Task 5 本地最终回归执行 `SkillControllerTest`、`AgentSkillControllerTest`、`ApiExceptionHandlerTest`、`AuthControllerTest`、`AgentControllerTest` 共 28 项测试，0 失败、0 错误。Rocky Linux Docker 23.0.6 使用精确提交 `181468cf9ccf3e258c0f735c0e9ff96122449e12` 和 `maven:3.9.9-eclipse-temurin-21`，在 PostgreSQL 16-alpine 上执行 `SkillManagementJdbcPersistenceTest` 1 项通过，证明审计失败时定义、版本和资源写入回滚。
 
 Task 6 本地最终回归执行 `SkillRuntimeServiceTest`、`GovernedSkillAccessServiceTest`、`ToolApprovalServiceTest`、`RunControllerTest`、`ConversationControllerTest`，四个存在的测试类共 44 项通过、0 失败、0 错误；仓库当前没有独立 `ConversationControllerTest`，因此 `surefire.failIfNoSpecifiedTests=false` 只允许该空选择，不隐藏已存在测试的结果。Rocky Linux 9.3、Docker 23.0.6 的 `maven:3.9.9-eclipse-temurin-21` 使用精确提交 `ee703054231e6cbc8580d59762cf270f699dbfdf`，在 PostgreSQL 16-alpine 与 MySQL 8.4 各执行一次 `SkillRuntimeJdbcPersistenceTest`，均为 1 项通过、0 失败、0 错误。
+
+Task 7 本地使用 Temurin 21 执行 `AgentScopeSkillSessionTest`、`AgentScopeSkillContractTest`、`AgentScopeRunGateTest` 和既有 `AgentScopeRuntimeContractTest`，退出码为 0；随后 `mvn -q -pl cm-agent-server -am -DskipTests compile` 退出码为 0，确认 Server 可装配技能读取网关。本任务未改数据库结构，未执行 Rocky/Testcontainers 验证。
 
 实施计划已安排 Java 21 本地快速测试，以及 Rocky 上 PostgreSQL 16/MySQL 8.4 的 JDBC/Flyway/Testcontainers 验证；执行前核对远端提交与本地一致。实际命令和结果持续写入进度账本。
 

@@ -4,12 +4,17 @@ import com.cmagent.core.runtime.ToolInvocationGateway;
 import com.cmagent.core.runtime.ToolInvocationInfrastructureException;
 import com.cmagent.core.runtime.ToolInvocationRequest;
 import com.cmagent.core.runtime.ToolInvocationResult;
+import com.cmagent.core.runtime.SkillAccessException;
+import com.cmagent.core.runtime.SkillAccessGateway;
+import com.cmagent.core.runtime.SkillReadRequest;
+import com.cmagent.core.runtime.SkillReadResult;
 
 import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 /**
  * 在同一次 AgentScope 运行内协调所有工具桥接器的并发与中止状态。
@@ -31,6 +36,7 @@ final class AgentScopeRunGate {
     private final ReentrantLock invocationLock = new ReentrantLock(true);
     private final AtomicReference<ToolInvocationInfrastructureException> infrastructureFailure =
             new AtomicReference<>();
+    private final AtomicReference<SkillAccessException> fatalSkillFailure = new AtomicReference<>();
     private final AtomicBoolean toolTimedOut = new AtomicBoolean();
     private final AtomicBoolean invocationInterrupted = new AtomicBoolean();
     private final AtomicBoolean interrupted = new AtomicBoolean();
@@ -95,6 +101,53 @@ final class AgentScopeRunGate {
     }
 
     /**
+     * 串行读取技能正文，并在致命读取失败后关闭本次运行的后续调用。
+     *
+     * <p>技能读取和业务工具共用同一公平锁，使撤销、快照丢失等致命失败一经观察到，已经等待的
+     * 业务工具也会在进入网关前失败。非致命的资源不存在或预算上限仍会由技能桥接器转换为安全工具结果，
+     * 不影响模型选择其他技能。</p>
+     *
+     * @param gateway 技能读取治理入口
+     * @param request 固定快照解析出的可信读取请求
+     * @param nativeLoader 原生内存加载器
+     * @return 已记录并审计的技能正文
+     */
+    SkillReadResult invokeSkill(
+            SkillAccessGateway gateway,
+            SkillReadRequest request,
+            Supplier<String> nativeLoader
+    ) {
+        try {
+            invocationLock.lockInterruptibly();
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            throw new RunAbortedException(interruptedException);
+        }
+        try {
+            throwIfInfrastructureFailure();
+            throwIfSkillFailure();
+            throwIfToolTimedOut();
+            throwIfInvocationInterrupted();
+            try {
+                SkillReadResult result = gateway.load(request, nativeLoader);
+                throwIfInfrastructureFailure();
+                throwIfSkillFailure();
+                throwIfToolTimedOut();
+                throwIfInvocationInterrupted();
+                return result;
+            } catch (SkillAccessException failure) {
+                if (failure.fatal()) {
+                    fatalSkillFailure.compareAndSet(null, failure);
+                    throw fatalSkillFailure.get();
+                }
+                throw failure;
+            }
+        } finally {
+            invocationLock.unlock();
+        }
+    }
+
+    /**
      * 重新抛出本次运行记录的首次工具基础设施失败。
      *
      * <p>AgentScope 的响应式链可能消费工具 Publisher 的异常，执行器会在事件边界再次调用此方法，
@@ -102,6 +155,19 @@ final class AgentScopeRunGate {
      */
     void throwIfInfrastructureFailure() {
         ToolInvocationInfrastructureException failure = infrastructureFailure.get();
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    /**
+     * 重新抛出本次运行中首次观察到的致命技能访问失败。
+     *
+     * <p>AgentScope 可能把工具 Publisher 的异常包装为普通工具错误，因此执行器在每个事件边界调用
+     * 此方法，确保已撤销的技能不会被吞掉后继续驱动模型或业务工具。</p>
+     */
+    void throwIfSkillFailure() {
+        SkillAccessException failure = fatalSkillFailure.get();
         if (failure != null) {
             throw failure;
         }

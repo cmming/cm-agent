@@ -14,6 +14,9 @@ import com.cmagent.core.runtime.ModelCredential;
 import com.cmagent.core.runtime.RuntimeApprovalDecisions;
 import com.cmagent.core.runtime.ToolInvocationGateway;
 import com.cmagent.core.runtime.ToolInvocationInfrastructureException;
+import com.cmagent.core.runtime.SkillAccessException;
+import com.cmagent.core.runtime.SkillAccessGateway;
+import com.cmagent.api.ApiErrorCode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
@@ -97,6 +100,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
     private final AgentScopeModelFactory modelFactory;
     private final AgentLifecycle lifecycle;
     private final AgentStateStore stateStore;
+    private final SkillAccessGateway skillGateway;
 
     /**
      * 使用真实 AgentScope 中断和关闭操作创建执行器。
@@ -155,16 +159,60 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         });
     }
 
+    /**
+     * 使用真实技能读取网关创建可恢复执行器。
+     *
+     * <p>旧构造器仍注入拒绝型网关，因而没有技能的既有运行保持不变；只有实际出现技能读取时才会得到
+     * 明确的功能未装配错误，避免静默绕过技能治理。</p>
+     */
+    AgentScopeReActExecutor(
+            AgentScopeRuntimeOptions options,
+            AgentScopeModelFactory modelFactory,
+            AgentStateStore stateStore,
+            SkillAccessGateway skillGateway
+    ) {
+        this(options, modelFactory, stateStore, new AgentLifecycle() {
+            @Override
+            public void interrupt(ReActAgent agent, RuntimeContext context) {
+                agent.interrupt(context);
+            }
+
+            @Override
+            public void close(ReActAgent agent) {
+                agent.close();
+            }
+        }, skillGateway);
+    }
+
     AgentScopeReActExecutor(
             AgentScopeRuntimeOptions options,
             AgentScopeModelFactory modelFactory,
             AgentStateStore stateStore,
             AgentLifecycle lifecycle
     ) {
+        this(options, modelFactory, stateStore, lifecycle, rejectingSkillGateway());
+    }
+
+    /** 为合同测试保留可观察生命周期，同时允许注入真实技能治理网关。 */
+    AgentScopeReActExecutor(
+            AgentScopeRuntimeOptions options,
+            AgentScopeModelFactory modelFactory,
+            AgentStateStore stateStore,
+            AgentLifecycle lifecycle,
+            SkillAccessGateway skillGateway
+    ) {
         this.options = Objects.requireNonNull(options, "options 不能为空");
         this.modelFactory = Objects.requireNonNull(modelFactory, "modelFactory 不能为空");
         this.stateStore = Objects.requireNonNull(stateStore, "stateStore 不能为空");
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle 不能为空");
+        this.skillGateway = Objects.requireNonNull(skillGateway, "skillGateway 不能为空");
+    }
+
+    private static SkillAccessGateway rejectingSkillGateway() {
+        return (request, nativeLoader) -> {
+            throw new SkillAccessException(ApiErrorCode.SKILL_FEATURE_DISABLED,
+                    "技能运行组件未配置", request.attemptId().toString(), true);
+        };
     }
 
     /**
@@ -291,6 +339,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         AgentScopeRunGate runGate = new AgentScopeRunGate(options.toolTimeout());
         ReActAgent agent = null;
         RuntimeContext context = null;
+        AgentScopeSkillSession skillSession = null;
         RuntimeException primaryFailure = null;
         boolean preserveCheckpoint = false;
         // 运行级日志使用 runId 作为主关联键，便于与上层 Run 日志及错误 errorId 对照排查。
@@ -308,6 +357,8 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                 bridges.add(bridge);
                 toolkit.registerAgentTool(bridge);
             });
+            skillSession = new AgentScopeSkillSession(
+                    spec.request(), toolkit, runGate, skillGateway);
 
             Model model = modelFactory.create(
                     spec.request().modelConfig(), spec.request().agent(), credential, spec.runId());
@@ -332,7 +383,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                     .build();
             agent = ReActAgent.builder()
                     .name(spec.request().agent().name())
-                    .sysPrompt(spec.request().agent().systemPrompt())
+                    .sysPrompt(systemPrompt(spec.request().agent().systemPrompt(), skillSession.directoryPrompt()))
                     .model(model)
                     .toolkit(toolkit)
                     .maxIters(spec.request().agent().maxIterations())
@@ -477,13 +528,24 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             throw exception;
         } finally {
             RuntimeException finalizationFailure = null;
+            if (skillSession != null) {
+                try {
+                    skillSession.close();
+                } catch (RuntimeException cleanupFailure) {
+                    finalizationFailure = cleanupFailure;
+                }
+            }
             if (context != null && !preserveCheckpoint) {
                 // 只有 ASK 暂停需要保留状态；成功、拒绝、超时、Provider 故障和未知异常均删除状态槽，
                 // 防止终态 Run 留下可被误恢复的 ToolUseBlock。
                 try {
                     stateStore.delete(context.getUserId(), context.getSessionId());
                 } catch (RuntimeException cleanupFailure) {
-                    finalizationFailure = cleanupFailure;
+                    if (finalizationFailure == null) {
+                        finalizationFailure = cleanupFailure;
+                    } else if (finalizationFailure != cleanupFailure) {
+                        finalizationFailure.addSuppressed(cleanupFailure);
+                    }
                 }
             }
             if (agent != null) {
@@ -528,7 +590,8 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
     ) {
         try {
             runGate.throwIfInfrastructureFailure();
-        } catch (ToolInvocationInfrastructureException failure) {
+            runGate.throwIfSkillFailure();
+        } catch (ToolInvocationInfrastructureException | SkillAccessException failure) {
             if (agent != null && context != null) {
                 try {
                     runGate.interruptOnce(() -> lifecycle.interrupt(agent, context));
@@ -563,6 +626,14 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             interruptOnce(runGate, agent, context, lifecycle);
             throw new ToolTimeoutSignal();
         }
+    }
+
+    /** 把技能目录附加到系统提示，目录由原生 SkillBox 生成且不包含正文。 */
+    private static String systemPrompt(String basePrompt, String skillDirectoryPrompt) {
+        if (skillDirectoryPrompt == null || skillDirectoryPrompt.isBlank()) {
+            return basePrompt;
+        }
+        return basePrompt + "\n\n" + skillDirectoryPrompt;
     }
 
     /**
