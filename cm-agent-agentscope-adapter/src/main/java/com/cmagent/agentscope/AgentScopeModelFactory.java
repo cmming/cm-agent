@@ -10,6 +10,7 @@ import io.agentscope.core.model.transport.HttpTransportFactory;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 
+import java.net.URI;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -79,7 +80,7 @@ public class AgentScopeModelFactory {
     }
 
     /**
-     * 创建 OpenAI Compatible 模型，并仅为 OpenCode Go 注入其协议要求的会话头。
+     * 创建 OpenAI Compatible 模型，按 OpenCode 地址选择消息兼容格式和会话头。
      *
      * @param config 当前租户已校验的模型配置
      * @param credential 与当前租户及模型配置匹配的受控凭据
@@ -101,6 +102,14 @@ public class AgentScopeModelFactory {
                 .modelName(modelName)
                 .stream(true)
                 .generateOptions(options);
+        if (ProviderSessionHeaderHttpTransport.isOpenCodeBaseUrl(config.baseUrl())) {
+            String path = URI.create(config.baseUrl()).getPath();
+            // 仅对已确认拒绝消息 name 的 Go v1 端点生效；不改变其他网关或 OpenCode Zen 的消息格式。
+            // 格式化与 runId 无关，公开三参数入口和审批恢复后的模型也必须遵守相同协议。
+            if ("/zen/go/v1".equals(path) || "/zen/go/v1/".equals(path)) {
+                builder.formatter(new OpenCodeGoChatFormatter());
+            }
+        }
         if (runId != null && ProviderSessionHeaderHttpTransport.isOpenCodeBaseUrl(config.baseUrl())) {
             HttpTransport transport = new ProviderSessionHeaderHttpTransport(
                     HttpTransportFactory.getDefault(), runId.toString());

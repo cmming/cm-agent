@@ -1,5 +1,12 @@
 # 发布说明
 
+## 未发布：OpenCode Go 消息协议兼容
+
+- 修复 AgentScope 2.0.2 默认发送消息级 `name` 导致 OpenCode Go 返回 HTTP 400 的问题。仅在
+  `OPENAI_COMPATIBLE` 基础地址精确匹配 `opencode.ai` 的 `/zen/go/v1`（可带末尾 `/`）时省略该字段；
+  工具名称、参数、正文、原始消息和既有运行会话头保持不变。其他网关与 OpenCode Zen 不受影响。
+  无依赖升级、配置项、API 或数据库变更，部署后需重启服务。
+
 ## 未发布：Skill 受治理加载
 
 - 新增文本型 Skill：ZIP 接受 `SKILL.md` 与配置开放的文本资源，默认停用；定义、不可变版本、资源、Agent 绑定、Run 快照和读取记录在 memory/JDBC 合同中保持 tenant 隔离。新 Run 固定版本，停用、解绑或访问纪元变化会阻止旧 Run 继续读取或审批恢复。

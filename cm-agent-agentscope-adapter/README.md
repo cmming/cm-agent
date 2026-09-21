@@ -97,6 +97,12 @@ flowchart LR
 
 [`AgentScopeModelFactory`](src/main/java/com/cmagent/agentscope/AgentScopeModelFactory.java) 根据领域模型配置创建 AgentScope `Model`。每次运行都会创建新的模型实例，不跨租户缓存带凭据的模型。
 
+OpenCode Go 兼容规则：`OPENAI_COMPATIBLE` 的基础地址主机精确为 `opencode.ai`、路径为
+`/zen/go/v1`（可带末尾 `/`）时，使用 `OpenCodeGoChatFormatter` 省略端点不支持的
+`messages[].name`，避免 HTTP 400。角色、正文、工具定义名称、工具调用名称、参数和结果关联保持不变，
+原始会话消息不被修改。此规则不依赖 `runId`；其他网关及 OpenCode Zen 继续使用默认格式。
+现有 `x-opencode-session` 仍由服务端 `runId` 提供，同一运行重试保持一致。升级后需重新启动服务加载新类。
+
 当前映射规则：
 
 | `ModelProviderType` | AgentScope 实现 | 生成选项入口 |
