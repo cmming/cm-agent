@@ -20,6 +20,7 @@ import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.runtime.RuntimeApprovalDecisions;
+import com.cmagent.core.runtime.SkillAccessException;
 import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.ToolAuthorizationPolicy;
 import com.cmagent.server.audit.AuditPersistenceException;
@@ -57,6 +58,7 @@ public class RunExecutionService {
     private final RunPersistenceService persistenceService;
     private final SensitiveDataRedactor redactor;
     private final ErrorDiagnosticLogger diagnosticLogger;
+    private final SkillRuntimeService skillRuntimeService;
 
     @Autowired
     /**
@@ -70,6 +72,8 @@ public class RunExecutionService {
      * @param toolAuthorizationPolicy 校验 Agent 工具授权关系的策略
      * @param persistenceService 负责当前业务流程的服务。
      * @param redactor 负责清理敏感文本的脱敏器。
+     * @param diagnosticLogger 记录运行失败的脱敏诊断日志。
+     * @param skillRuntimeService 在进入 Runtime 前固定或恢复技能快照。
      */
     public RunExecutionService(
             AgentRuntime runtime,
@@ -80,7 +84,8 @@ public class RunExecutionService {
             ToolAuthorizationPolicy toolAuthorizationPolicy,
             RunPersistenceService persistenceService,
             SensitiveDataRedactor redactor,
-            ErrorDiagnosticLogger diagnosticLogger
+            ErrorDiagnosticLogger diagnosticLogger,
+            SkillRuntimeService skillRuntimeService
     ) {
         this.runtime = Objects.requireNonNull(runtime, "runtime 不能为空");
         this.agentRepository = Objects.requireNonNull(agentRepository, "agentRepository 不能为空");
@@ -91,6 +96,7 @@ public class RunExecutionService {
         this.persistenceService = Objects.requireNonNull(persistenceService, "persistenceService 不能为空");
         this.redactor = Objects.requireNonNull(redactor, "redactor 不能为空");
         this.diagnosticLogger = Objects.requireNonNull(diagnosticLogger, "diagnosticLogger 不能为空");
+        this.skillRuntimeService = Objects.requireNonNull(skillRuntimeService, "skillRuntimeService 不能为空");
     }
 
     /**
@@ -245,9 +251,12 @@ public class RunExecutionService {
         AgentRuntimeResult runtimeEnvelope;
         try {
             // 将完整运行上下文交给 Runtime；Runtime 内部可能继续发起受治理的工具调用。
+            var skills = approvalDecisions == null
+                    ? skillRuntimeService.prepare(principal, runningRun)
+                    : skillRuntimeService.restore(principal, runningRun);
             AgentRunRequest runtimeRequest = new AgentRunRequest(
                     runningRun.id(), principal.tenantId(), context.agent(), context.modelConfig(), principal,
-                    runtimeInput, context.authorizedTools(), conversationId
+                    runtimeInput, context.authorizedTools(), conversationId, skills.versions()
             );
             Consumer<AgentTextDelta> safeDelta = delta -> deltaConsumer.accept(new AgentTextDelta(
                     delta.replyId(), delta.blockId(), redactor.redact(delta.delta())));
@@ -263,6 +272,15 @@ public class RunExecutionService {
             // 业务数据持久化失败同样尝试关闭运行记录，避免掩盖原始数据库异常。
             bestEffortFailureClosure(principal, runningRun);
             throw dataFailure;
+        } catch (SkillAccessException skillFailure) {
+            // 技能异常已经具备稳定错误码和错误编号；只收口 Run，不能包装成泛化运行错误后丢失语义。
+            try {
+                persistenceService.completeFailure(principal, runningRun);
+            } catch (RuntimeException closureFailure) {
+                closureFailure.addSuppressed(skillFailure);
+                throw closureFailure;
+            }
+            throw skillFailure;
         } catch (RuntimeException runtimeFailure) {
             // 普通 Runtime 异常先记录可关联诊断，再依次尝试完成失败状态和失败审计。
             diagnosticLogger.error(new ErrorDiagnosticLogger.DiagnosticContext(

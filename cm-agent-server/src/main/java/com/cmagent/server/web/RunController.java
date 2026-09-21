@@ -2,6 +2,8 @@ package com.cmagent.server.web;
 
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.api.ApiErrorCode;
+import com.cmagent.api.ApiPageRequest;
+import com.cmagent.api.ApiPageResponse;
 import com.cmagent.core.domain.AgentRunResult;
 import com.cmagent.core.domain.RunPageRequest;
 import com.cmagent.core.domain.RunRecord;
@@ -13,7 +15,9 @@ import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.diagnostic.ErrorDiagnosticLogger;
 import com.cmagent.server.runtime.RunExecutionService;
 import com.cmagent.server.runtime.RunPersistenceService;
+import com.cmagent.server.service.SkillLoadQueryService;
 import com.cmagent.server.security.JwtService;
+import com.cmagent.core.runtime.SkillAccessException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -50,6 +54,7 @@ public class RunController {
     private final AuditAppender auditAppender;
     private final TaskExecutor streamExecutor;
     private final ErrorDiagnosticLogger diagnosticLogger;
+    private final SkillLoadQueryService skillLoadQueries;
     /**
      * 创建 {@code RunController} 实例并保存其运行所需依赖。
      *
@@ -59,6 +64,7 @@ public class RunController {
      * @param auditAppender 负责追加安全审计事件的组件。
      * @param streamExecutor 在 HTTP 请求线程之外执行长时间运行，避免占用 Servlet 工作线程。
      * @param diagnosticLogger 记录流式响应无法交给统一异常处理器的失败诊断。
+     * @param skillLoadQueries 组装不含正文的技能读取历史记录。
      */
     public RunController(
             RunExecutionService executionService,
@@ -66,7 +72,8 @@ public class RunController {
             PermissionEvaluator permissionEvaluator,
             AuditAppender auditAppender,
             @Qualifier("applicationTaskExecutor") TaskExecutor streamExecutor,
-            ErrorDiagnosticLogger diagnosticLogger
+            ErrorDiagnosticLogger diagnosticLogger,
+            SkillLoadQueryService skillLoadQueries
     ) {
         this.executionService = executionService;
         this.persistenceService = persistenceService;
@@ -74,6 +81,7 @@ public class RunController {
         this.auditAppender = auditAppender;
         this.streamExecutor = streamExecutor;
         this.diagnosticLogger = diagnosticLogger;
+        this.skillLoadQueries = skillLoadQueries;
     }
 
     /**
@@ -174,7 +182,11 @@ public class RunController {
     ) {
         ApiErrorCode code;
         String message;
-        if (failure instanceof ResponseStatusException statusFailure) {
+        if (failure instanceof SkillAccessException skillFailure) {
+            code = skillFailure.code();
+            message = skillFailure.safeMessage();
+            errorId = skillFailure.errorId();
+        } else if (failure instanceof ResponseStatusException statusFailure) {
             int status = statusFailure.getStatusCode().value();
             code = status == HttpStatus.NOT_FOUND.value()
                     ? ApiErrorCode.AGENT_NOT_FOUND
@@ -277,6 +289,31 @@ public class RunController {
                 principal.tenantId(), agentId, runId
         );
         return new RunDetailResponse(detail.run(), detail.toolCalls());
+    }
+
+    /**
+     * 分页查询指定运行的技能读取历史；正文始终只保留在受控读取边界内。
+     *
+     * @param agentId Agent 标识
+     * @param runId 运行标识
+     * @param page 从零开始的页码
+     * @param size 单页记录数
+     * @param authentication 当前请求认证信息
+     * @return 历史读取记录及其固定版本信息
+     */
+    @GetMapping("/{runId}/skill-loads")
+    public ApiPageResponse<SkillResponses.Load> listSkillLoads(
+            @PathVariable("agentId") UUID agentId,
+            @PathVariable("runId") UUID runId,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size,
+            Authentication authentication
+    ) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "agent:read", "AGENT", agentId.toString());
+        // 先通过运行详情的租户与 Agent 边界校验，再查询读取记录，避免 runId 枚举泄露。
+        persistenceService.findDetail(principal.tenantId(), agentId, runId);
+        return skillLoadQueries.list(principal.tenantId(), runId, new ApiPageRequest(page, size));
     }
 
     /**
