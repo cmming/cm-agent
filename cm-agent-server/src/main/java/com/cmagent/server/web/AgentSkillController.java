@@ -8,6 +8,8 @@ import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.service.SkillManagementService;
 import com.cmagent.server.service.SkillQueryService;
+import com.cmagent.server.service.SkillReleaseService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -28,14 +31,17 @@ import java.util.UUID;
 @RequestMapping("/api/agents/{agentId}/skills")
 public class AgentSkillController {
     private final SkillManagementService management;
+    private final SkillReleaseService releases;
     private final SkillQueryService queries;
     private final PermissionEvaluator permissions;
     private final AuditAppender audit;
 
     /** 创建 Agent 技能绑定控制器。 */
-    public AgentSkillController(SkillManagementService management, SkillQueryService queries,
+    public AgentSkillController(SkillManagementService management, SkillReleaseService releases,
+                                SkillQueryService queries,
                                 PermissionEvaluator permissions, AuditAppender audit) {
         this.management = management;
+        this.releases = releases;
         this.queries = queries;
         this.permissions = permissions;
         this.audit = audit;
@@ -53,11 +59,16 @@ public class AgentSkillController {
     @PutMapping("/{skillId}")
     public SkillResponses.Binding bind(@PathVariable("agentId") UUID agentId,
                                        @PathVariable("skillId") UUID skillId,
+                                       @Valid @RequestBody(required = false) SkillRequests.BindingStrategyRequest request,
                                        Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:write", agentId.toString());
         authorize(principal, "skill:read", skillId.toString());
-        AgentSkillBinding binding = management.bind(principal, agentId, skillId);
+        // 空请求体保留既有幂等绑定契约；只有显式策略请求才进入带修订校验的发布治理路径。
+        AgentSkillBinding binding = request == null
+                ? management.bind(principal, agentId, skillId)
+                : releases.bindOrUpdate(principal, agentId, skillId, request.mode(),
+                        request.pinnedVersionId(), request.expectedRevision());
         return queries.bindings(principal, agentId).stream()
                 .filter(item -> item.bindingId().equals(binding.id())).findFirst().orElseThrow();
     }

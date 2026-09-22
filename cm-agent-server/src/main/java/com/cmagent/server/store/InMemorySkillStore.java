@@ -3,6 +3,7 @@ package com.cmagent.server.store;
 import com.cmagent.api.ApiPageRequest;
 import com.cmagent.api.ApiPageResponse;
 import com.cmagent.core.domain.AgentSkillBinding;
+import com.cmagent.core.domain.SkillBindingMode;
 import com.cmagent.core.domain.RunSkillSnapshot;
 import com.cmagent.core.domain.SkillDefinition;
 import com.cmagent.core.domain.SkillLoadRecord;
@@ -367,11 +368,44 @@ public final class InMemorySkillStore implements SkillUnitOfWork {
         }
 
         @Override
+        public List<AgentSkillBinding> listBySkill(UUID tenantId, UUID skillId) {
+            return read(state -> state.bindings.values().stream()
+                    .filter(value -> tenantId.equals(value.tenantId()) && skillId.equals(value.skillId()))
+                    .sorted(Comparator.comparing(AgentSkillBinding::createdAt)
+                            .thenComparing(AgentSkillBinding::id, InMemorySkillStore::compareUuidAscending))
+                    .toList());
+        }
+
+        @Override
+        public List<UUID> listFollowerAgentIds(UUID tenantId, UUID skillId) {
+            return listBySkill(tenantId, skillId).stream()
+                    .filter(value -> value.mode() == SkillBindingMode.FOLLOW_PUBLISHED)
+                    .map(AgentSkillBinding::agentId).toList();
+        }
+
+        @Override
         public void lockAgent(UUID tenantId, UUID agentId) {
             Objects.requireNonNull(tenantId, "tenantId 不能为空");
             Objects.requireNonNull(agentId, "agentId 不能为空");
             lockable();
             // 外层可重入锁已经把同一 Agent 的计数、删除和插入串行化，JDBC 实现会改用行锁。
+        }
+
+        @Override
+        public boolean updateStrategy(AgentSkillBinding next, long expectedRevision) {
+            Objects.requireNonNull(next, "next 不能为空");
+            State state = writable();
+            BindingKey key = new BindingKey(next.tenantId(), next.agentId(), next.skillId());
+            AgentSkillBinding current = state.bindings.get(key);
+            if (current == null || current.revision() != expectedRevision) {
+                return false;
+            }
+            if (!current.id().equals(next.id()) || !current.boundBy().equals(next.boundBy())
+                    || !current.createdAt().equals(next.createdAt())) {
+                throw new IllegalArgumentException("绑定策略更新不能改变稳定身份");
+            }
+            state.bindings.put(key, next);
+            return true;
         }
     }
 

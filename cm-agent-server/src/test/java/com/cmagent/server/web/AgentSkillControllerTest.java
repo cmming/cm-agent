@@ -106,6 +106,40 @@ class AgentSkillControllerTest {
         org.assertj.core.api.Assertions.assertThat(bindings.list(TENANT_ID, AGENT_ID)).isEmpty();
     }
 
+    @Test
+    void 显式绑定策略只允许已发布版本并使用修订防止覆盖() throws Exception {
+        String skillId = createAndEnableSkill();
+        SkillDefinition skill = definitions.find(TENANT_ID, UUID.fromString(skillId)).orElseThrow();
+        String token = token("agent:read", "agent:write", "skill:read");
+
+        mockMvc.perform(put("/api/agents/{agentId}/skills/{skillId}", AGENT_ID, skillId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("{\"mode\":\"FOLLOW_PUBLISHED\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/agents/{agentId}/skills/{skillId}", AGENT_ID, skillId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("{\"mode\":\"PINNED\",\"pinnedVersionId\":\""
+                                + skill.publishedVersionId() + "\",\"expectedRevision\":0}"))
+                .andExpect(status().isOk());
+        org.assertj.core.api.Assertions.assertThat(bindings.find(TENANT_ID, AGENT_ID, UUID.fromString(skillId)))
+                .hasValueSatisfying(binding -> {
+                    org.assertj.core.api.Assertions.assertThat(binding.mode().name()).isEqualTo("PINNED");
+                    org.assertj.core.api.Assertions.assertThat(binding.pinnedVersionId())
+                            .isEqualTo(skill.publishedVersionId());
+                    org.assertj.core.api.Assertions.assertThat(binding.revision()).isEqualTo(1);
+                });
+
+        mockMvc.perform(put("/api/agents/{agentId}/skills/{skillId}", AGENT_ID, skillId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("{\"mode\":\"FOLLOW_PUBLISHED\",\"expectedRevision\":0}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SKILL_CANDIDATE_CONFLICT"));
+    }
+
     private String createAndEnableSkill() throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (ZipOutputStream out = new ZipOutputStream(bytes, StandardCharsets.UTF_8)) {
