@@ -88,6 +88,13 @@ class SkillRuntimeJdbcPersistenceTest {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String skillId = JsonPath.read(created, "$.summary.id");
         String firstVersionId = JsonPath.read(created, "$.summary.currentVersionId");
+        // 首次导入只形成候选版本；旧版更新接口负责兼容地将下一版本自动发布。
+        String published = mockMvc.perform(multipart("/api/skills/{id}/versions", skillId)
+                        .file(skillZip("jdbc-history", "第二版"))
+                        .param("expectedVersionId", firstVersionId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String publishedVersionId = JsonPath.read(published, "$.summary.currentVersionId");
         mockMvc.perform(put("/api/skills/{id}/enabled", skillId)
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":true}"))
@@ -103,12 +110,12 @@ class SkillRuntimeJdbcPersistenceTest {
         UUID runId = UUID.fromString(JsonPath.read(runResponse, "$.runId"));
         assertThat(snapshots.find(TENANT_ID, runId)).hasValueSatisfying(snapshot -> {
             assertThat(snapshot.skills()).hasSize(1);
-            assertThat(snapshot.skills().getFirst().versionId()).isEqualTo(UUID.fromString(firstVersionId));
+            assertThat(snapshot.skills().getFirst().versionId()).isEqualTo(UUID.fromString(publishedVersionId));
         });
 
         mockMvc.perform(multipart("/api/skills/{id}/versions", skillId)
-                        .file(skillZip("jdbc-history", "第二版"))
-                        .param("expectedVersionId", firstVersionId)
+                        .file(skillZip("jdbc-history", "第三版"))
+                        .param("expectedVersionId", publishedVersionId)
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isCreated());
 
@@ -117,8 +124,8 @@ class SkillRuntimeJdbcPersistenceTest {
                 "agent:run", "agent:read", "agent:write", "skill:read", "skill:write"));
         assertThat(runtimeSkills.restore(principal, run).versions())
                 .singleElement().satisfies(view -> {
-                    assertThat(view.version().versionNo()).isEqualTo(1);
-                    assertThat(view.version().content()).contains("第一版");
+                    assertThat(view.version().versionNo()).isEqualTo(2);
+                    assertThat(view.version().content()).contains("第二版");
                 });
     }
 
