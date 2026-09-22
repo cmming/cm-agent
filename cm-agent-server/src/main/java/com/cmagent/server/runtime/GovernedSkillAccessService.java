@@ -9,6 +9,8 @@ import com.cmagent.core.domain.SkillLoadRecord;
 import com.cmagent.core.domain.SkillLoadStatus;
 import com.cmagent.core.domain.SkillResource;
 import com.cmagent.core.domain.SkillSnapshotRef;
+import com.cmagent.core.domain.SkillSnapshotOrigin;
+import com.cmagent.core.domain.SkillTrial;
 import com.cmagent.core.domain.SkillVersion;
 import com.cmagent.core.repository.AgentSkillBindingRepository;
 import com.cmagent.core.repository.RunRepository;
@@ -16,6 +18,7 @@ import com.cmagent.core.repository.RunSkillSnapshotRepository;
 import com.cmagent.core.repository.SkillDefinitionRepository;
 import com.cmagent.core.repository.SkillLoadRecordRepository;
 import com.cmagent.core.repository.SkillResourceRepository;
+import com.cmagent.core.repository.SkillTrialRepository;
 import com.cmagent.core.repository.SkillVersionRepository;
 import com.cmagent.core.runtime.SkillAccessException;
 import com.cmagent.core.runtime.SkillAccessGateway;
@@ -51,6 +54,7 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
     private final SkillVersionRepository versions;
     private final SkillResourceRepository resources;
     private final AgentSkillBindingRepository bindings;
+    private final SkillTrialRepository trials;
     private final SkillLoadRecordRepository records;
     private final SkillUnitOfWork workUnit;
     private final AuditAppender audit;
@@ -63,9 +67,10 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
             RunRepository runs, RunSkillSnapshotRepository snapshots,
             SkillDefinitionRepository definitions, SkillVersionRepository versions,
             SkillResourceRepository resources, AgentSkillBindingRepository bindings,
+            SkillTrialRepository trials,
             SkillLoadRecordRepository records, SkillUnitOfWork workUnit,
             AuditAppender audit, SkillProperties properties) {
-        this(runs, snapshots, definitions, versions, resources, bindings, records,
+        this(runs, snapshots, definitions, versions, resources, bindings, trials, records,
                 workUnit, audit, properties, Clock.systemUTC());
     }
 
@@ -73,6 +78,7 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
             RunRepository runs, RunSkillSnapshotRepository snapshots,
             SkillDefinitionRepository definitions, SkillVersionRepository versions,
             SkillResourceRepository resources, AgentSkillBindingRepository bindings,
+            SkillTrialRepository trials,
             SkillLoadRecordRepository records, SkillUnitOfWork workUnit,
             AuditAppender audit, SkillProperties properties, Clock clock) {
         this.runs = Objects.requireNonNull(runs, "runs 不能为空");
@@ -81,6 +87,7 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
         this.versions = Objects.requireNonNull(versions, "versions 不能为空");
         this.resources = Objects.requireNonNull(resources, "resources 不能为空");
         this.bindings = Objects.requireNonNull(bindings, "bindings 不能为空");
+        this.trials = Objects.requireNonNull(trials, "trials 不能为空");
         this.records = Objects.requireNonNull(records, "records 不能为空");
         this.workUnit = Objects.requireNonNull(workUnit, "workUnit 不能为空");
         this.audit = Objects.requireNonNull(audit, "audit 不能为空");
@@ -210,10 +217,10 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
             return ResolvedResource.denied(request.skillId(), request.versionId(), failure(
                     ApiErrorCode.SKILL_ACCESS_REVOKED, "本轮使用的技能已停用或解绑", request, true));
         }
-        AgentSkillBinding binding = bindings.find(
-                request.principal().tenantId(), request.agentId(), request.skillId()).orElse(null);
-        if (!definition.enabled() || definition.accessEpoch() != reference.accessEpoch()
-                || binding == null || !binding.id().equals(reference.bindingId())) {
+        boolean allowed = reference.origin() == SkillSnapshotOrigin.BINDING
+                ? bindingAllowed(request, reference, definition)
+                : trialAllowed(request, reference, definition);
+        if (!allowed) {
             return ResolvedResource.denied(request.skillId(), request.versionId(), failure(
                     ApiErrorCode.SKILL_ACCESS_REVOKED, "本轮使用的技能已停用或解绑", request, true));
         }
@@ -234,6 +241,22 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
                 ? ResolvedResource.denied(request.skillId(), request.versionId(), failure(
                         ApiErrorCode.SKILL_NOT_FOUND, "请求的技能资源不存在", request, false))
                 : ResolvedResource.success(resource.content(), resource.byteLength());
+    }
+
+    private boolean bindingAllowed(SkillReadRequest request, SkillSnapshotRef reference, SkillDefinition definition) {
+        AgentSkillBinding binding = bindings.find(
+                request.principal().tenantId(), request.agentId(), request.skillId()).orElse(null);
+        return definition.enabled() && definition.accessEpoch() == reference.accessEpoch()
+                && binding != null && binding.id().equals(reference.bindingId());
+    }
+
+    private boolean trialAllowed(SkillReadRequest request, SkillSnapshotRef reference, SkillDefinition definition) {
+        SkillTrial trial = trials.find(request.principal().tenantId(), request.runId()).orElse(null);
+        // 显式试运行允许尚未启用的候选版本；访问纪元改变仍会立即撤销其快照读取权。
+        return trial != null && trial.runId().equals(reference.authorizationId())
+                && trial.skillId().equals(reference.skillId()) && trial.versionId().equals(reference.versionId())
+                && trial.agentId().equals(request.agentId()) && trial.createdBy().equals(request.principal().principalId())
+                && definition.accessEpoch() == reference.accessEpoch();
     }
 
     private ReadOutcome denied(SkillReadRequest request, ApiErrorCode code, String message,

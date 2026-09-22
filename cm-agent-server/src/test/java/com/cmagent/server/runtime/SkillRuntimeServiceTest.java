@@ -40,7 +40,7 @@ class SkillRuntimeServiceTest {
     private final InMemorySkillStore store = new InMemorySkillStore();
     private final SkillProperties properties = enabledProperties();
     private final SkillRuntimeService service = new SkillRuntimeService(
-            store.definitions(), store.versions(), store.resources(), store.bindings(), store.snapshots(),
+            store.definitions(), store.dependencies(), store.mappings(), store.versions(), store.resources(), store.bindings(), store.snapshots(),
             store.trials(), store, properties, Clock.fixed(NOW, ZoneOffset.UTC));
 
     @Test
@@ -124,6 +124,27 @@ class SkillRuntimeServiceTest {
         assertThat(prepared.snapshot().skills().getFirst().origin()).isEqualTo(SkillSnapshotOrigin.TRIAL);
         assertThat(service.restore(principal, trialRun).versions().getFirst().version().id())
                 .isEqualTo(candidateVersionId);
+    }
+
+    @Test
+    void 正式运行始终选择已发布版本而不是未发布候选() {
+        Fixture fixture = insertEnabledSkill();
+        UUID candidateVersionId = UUID.randomUUID();
+        store.execute(() -> {
+            store.versions().insert(version(fixture.skillId(), candidateVersionId, 2, "未发布候选"));
+            SkillDefinition current = store.definitions().lock(tenant, fixture.skillId());
+            store.definitions().updatePointers(new SkillDefinition(
+                    current.id(), current.tenantId(), current.name(), candidateVersionId,
+                    fixture.versionId(), current.enabled(), current.accessEpoch(),
+                    current.dependencyMappingRevision(), current.createdBy(), "editor", current.createdAt(), NOW),
+                    current.candidateVersionId(), current.publishedVersionId());
+            return null;
+        });
+
+        var prepared = service.prepare(principal, run());
+
+        assertThat(prepared.versions().getFirst().version().id()).isEqualTo(fixture.versionId());
+        assertThat(prepared.snapshot().formatVersion()).isEqualTo(2);
     }
 
     private Fixture insertEnabledSkill() {

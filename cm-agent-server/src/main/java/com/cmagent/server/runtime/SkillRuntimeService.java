@@ -6,7 +6,11 @@ import com.cmagent.core.domain.AgentSkillBinding;
 import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.RunSkillSnapshot;
 import com.cmagent.core.domain.SkillDefinition;
+import com.cmagent.core.domain.SkillDependency;
+import com.cmagent.core.domain.SkillDependencyMapping;
+import com.cmagent.core.domain.SkillDependencyResolution;
 import com.cmagent.core.domain.SkillSnapshotOrigin;
+import com.cmagent.core.domain.SkillBindingMode;
 import com.cmagent.core.domain.SkillTrial;
 import com.cmagent.core.domain.SkillRuntimeBundle;
 import com.cmagent.core.domain.SkillSnapshotRef;
@@ -15,6 +19,8 @@ import com.cmagent.core.domain.SkillVersionView;
 import com.cmagent.core.repository.AgentSkillBindingRepository;
 import com.cmagent.core.repository.RunSkillSnapshotRepository;
 import com.cmagent.core.repository.SkillDefinitionRepository;
+import com.cmagent.core.repository.SkillDependencyMappingRepository;
+import com.cmagent.core.repository.SkillDependencyRepository;
 import com.cmagent.core.repository.SkillResourceRepository;
 import com.cmagent.core.repository.SkillTrialRepository;
 import com.cmagent.core.repository.SkillVersionRepository;
@@ -27,7 +33,9 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -40,6 +48,8 @@ import java.util.UUID;
 @Service
 public class SkillRuntimeService {
     private final SkillDefinitionRepository definitions;
+    private final SkillDependencyRepository dependencies;
+    private final SkillDependencyMappingRepository mappings;
     private final SkillVersionRepository versions;
     private final SkillResourceRepository resources;
     private final AgentSkillBindingRepository bindings;
@@ -61,19 +71,23 @@ public class SkillRuntimeService {
      * @param properties 技能功能和预算配置
      */
     @Autowired
-    public SkillRuntimeService(SkillDefinitionRepository definitions, SkillVersionRepository versions,
+    public SkillRuntimeService(SkillDefinitionRepository definitions, SkillDependencyRepository dependencies,
+                               SkillDependencyMappingRepository mappings, SkillVersionRepository versions,
                                SkillResourceRepository resources, AgentSkillBindingRepository bindings,
                                RunSkillSnapshotRepository snapshots, SkillTrialRepository trials, SkillUnitOfWork workUnit,
                                SkillProperties properties) {
-        this(definitions, versions, resources, bindings, snapshots, trials, workUnit,
+        this(definitions, dependencies, mappings, versions, resources, bindings, snapshots, trials, workUnit,
                 properties, Clock.systemUTC());
     }
 
-    SkillRuntimeService(SkillDefinitionRepository definitions, SkillVersionRepository versions,
+    SkillRuntimeService(SkillDefinitionRepository definitions, SkillDependencyRepository dependencies,
+                        SkillDependencyMappingRepository mappings, SkillVersionRepository versions,
                         SkillResourceRepository resources, AgentSkillBindingRepository bindings,
                         RunSkillSnapshotRepository snapshots, SkillTrialRepository trials, SkillUnitOfWork workUnit,
                         SkillProperties properties, Clock clock) {
         this.definitions = Objects.requireNonNull(definitions, "definitions 不能为空");
+        this.dependencies = Objects.requireNonNull(dependencies, "dependencies 不能为空");
+        this.mappings = Objects.requireNonNull(mappings, "mappings 不能为空");
         this.versions = Objects.requireNonNull(versions, "versions 不能为空");
         this.resources = Objects.requireNonNull(resources, "resources 不能为空");
         this.bindings = Objects.requireNonNull(bindings, "bindings 不能为空");
@@ -140,6 +154,7 @@ public class SkillRuntimeService {
         bindings.lockAgent(principal.tenantId(), run.agentId());
         List<SkillSnapshotRef> references = new ArrayList<>();
         List<SkillVersionView> views = new ArrayList<>();
+        Map<UUID, List<SkillDependencyResolution>> resolutions = new LinkedHashMap<>();
         int totalBytes = 0;
         if (properties.isEnabled()) {
             for (AgentSkillBinding binding : bindings.list(principal.tenantId(), run.agentId())) {
@@ -151,15 +166,17 @@ public class SkillRuntimeService {
                 if (!definition.enabled()) {
                     continue;
                 }
-                SkillVersionView view = view(definition, definition.currentVersionId());
+                SkillVersionView view = view(definition, resolveBindingVersion(definition, binding));
                 totalBytes = Math.addExact(totalBytes, bytes(view));
                 if (totalBytes > properties.getMaxRunBytes()) {
                     throw failure(ApiErrorCode.SKILL_LOAD_LIMIT_EXCEEDED,
                             "本轮绑定技能内容超过准备上限", true);
                 }
-                references.add(new SkillSnapshotRef(definition.id(), view.version().id(),
-                        binding.id(), definition.accessEpoch()));
+                List<SkillDependencyResolution> resolved = resolveDependencies(definition, view.version().id());
+                references.add(new SkillSnapshotRef(definition.id(), view.version().id(), SkillSnapshotOrigin.BINDING,
+                        binding.id(), definition.accessEpoch(), resolved));
                 views.add(view);
+                resolutions.put(definition.id(), resolved);
             }
             if (selection != null) {
                 SkillDefinition definition = definitions.lock(principal.tenantId(), selection.skillId());
@@ -169,15 +186,17 @@ public class SkillRuntimeService {
                     throw failure(ApiErrorCode.SKILL_LOAD_LIMIT_EXCEEDED,
                             "本轮绑定技能内容超过准备上限", true);
                 }
+                List<SkillDependencyResolution> resolved = resolveDependencies(definition, view.version().id());
                 references.add(new SkillSnapshotRef(definition.id(), view.version().id(), SkillSnapshotOrigin.TRIAL,
-                        selection.trialRunId(), definition.accessEpoch(), List.of()));
+                        selection.trialRunId(), definition.accessEpoch(), resolved));
                 views.add(view);
+                resolutions.put(definition.id(), resolved);
             }
         }
         RunSkillSnapshot snapshot = new RunSkillSnapshot(principal.tenantId(), run.id(), run.agentId(),
-                1, references, clock.instant());
+                2, references, clock.instant());
         snapshots.insert(snapshot);
-        return new SkillRuntimeBundle(snapshot, views);
+        return new SkillRuntimeBundle(snapshot, views, resolutions);
     }
 
     private SkillRuntimeBundle restoreInside(
@@ -190,6 +209,7 @@ public class SkillRuntimeService {
         }
         bindings.lockAgent(principal.tenantId(), run.agentId());
         List<SkillVersionView> views = new ArrayList<>();
+        Map<UUID, List<SkillDependencyResolution>> resolutions = new LinkedHashMap<>();
         for (SkillSnapshotRef reference : snapshot.skills()) {
             SkillDefinition current = definitions.lock(principal.tenantId(), reference.skillId());
             boolean allowed = reference.origin() == SkillSnapshotOrigin.BINDING
@@ -199,8 +219,9 @@ public class SkillRuntimeService {
                 throw revoked();
             }
             views.add(view(current, reference.versionId()));
+            resolutions.put(reference.skillId(), reference.dependencies());
         }
-        return new SkillRuntimeBundle(snapshot, views);
+        return new SkillRuntimeBundle(snapshot, views, resolutions);
     }
 
     private boolean bindingAllowed(
@@ -234,6 +255,32 @@ public class SkillRuntimeService {
                         "本轮固定的技能版本不可用", true));
         return new SkillVersionView(definition, version,
                 resources.list(definition.tenantId(), definition.id(), versionId));
+    }
+
+    private UUID resolveBindingVersion(SkillDefinition definition, AgentSkillBinding binding) {
+        if (binding.mode() == SkillBindingMode.FOLLOW_PUBLISHED) {
+            if (definition.publishedVersionId() == null) {
+                throw failure(ApiErrorCode.SKILL_NOT_PUBLISHED, "技能尚未正式发布，不能进入正式运行", true);
+            }
+            return definition.publishedVersionId();
+        }
+        return binding.pinnedVersionId();
+    }
+
+    private List<SkillDependencyResolution> resolveDependencies(SkillDefinition definition, UUID versionId) {
+        List<SkillDependencyResolution> resolved = new ArrayList<>();
+        for (SkillDependency dependency : dependencies.list(definition.tenantId(), definition.id(), versionId)) {
+            SkillDependencyMapping mapping = mappings.find(definition.tenantId(), definition.id(), dependency.logicalKey())
+                    .orElse(null);
+            if (mapping == null) {
+                if (dependency.required()) {
+                    throw failure(ApiErrorCode.SKILL_DEPENDENCY_UNMAPPED, "本轮技能缺少必需依赖映射", true);
+                }
+                continue;
+            }
+            resolved.add(new SkillDependencyResolution(dependency.logicalKey(), mapping.toolId(), dependency.required()));
+        }
+        return List.copyOf(resolved);
     }
 
     private static int bytes(SkillVersionView view) {

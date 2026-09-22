@@ -8,8 +8,10 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 为一次 AgentScope 运行创建隔离的原生技能目录和加载工具。
@@ -65,7 +67,7 @@ final class AgentScopeSkillSession implements AutoCloseable {
         toolkit.removeTool(AgentScopeSkillLoadBridge.TOOL_NAME);
         toolkit.registerAgentTool(new AgentScopeSkillLoadBridge(
                 request, runGate, gateway, nativeTool, skillsByNativeId));
-        this.directoryPrompt = skillBox.getSkillPrompt();
+        this.directoryPrompt = skillBox.getSkillPrompt() + dependencyPrompt(request);
     }
 
     /**
@@ -73,6 +75,33 @@ final class AgentScopeSkillSession implements AutoCloseable {
      */
     String directoryPrompt() {
         return directoryPrompt;
+    }
+
+    /**
+     * 仅把已固定逻辑依赖及已授权工具名称补入目录提示。
+     *
+     * <p>依赖映射不会注册或放宽任何工具；真正调用仍需通过既有 Toolkit 和服务端网关。这里刻意
+     * 不读取工具端点、请求头、Secret 或其他运行配置，避免把内部连接细节交给模型。</p>
+     */
+    private static String dependencyPrompt(AgentRunRequest request) {
+        if (request.skillDependencies().isEmpty()) {
+            return "";
+        }
+        Map<java.util.UUID, String> names = request.tools().stream().collect(Collectors.toMap(
+                tool -> tool.id(), tool -> tool.name(), (left, right) -> left, LinkedHashMap::new));
+        String details = request.skills().stream().map(view -> {
+            List<com.cmagent.core.domain.SkillDependencyResolution> dependencies =
+                    request.skillDependencies().getOrDefault(view.definition().id(), List.of());
+            if (dependencies.isEmpty()) {
+                return "";
+            }
+            String items = dependencies.stream()
+                    .map(item -> item.logicalKey() + " -> " + names.getOrDefault(item.toolId(), "未授权工具")
+                            + (item.required() ? "（必需）" : "（可选）"))
+                    .collect(Collectors.joining("\n"));
+            return "\n技能“" + view.definition().name() + "”的受控依赖：\n" + items;
+        }).filter(text -> !text.isEmpty()).collect(Collectors.joining());
+        return details;
     }
 
     /**

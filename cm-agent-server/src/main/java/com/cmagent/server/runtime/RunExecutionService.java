@@ -296,7 +296,8 @@ public class RunExecutionService {
                     : skillRuntimeService.restore(principal, runningRun);
             AgentRunRequest runtimeRequest = new AgentRunRequest(
                     runningRun.id(), principal.tenantId(), context.agent(), context.modelConfig(), principal,
-                    runtimeInput, context.authorizedTools(), conversationId, skills.versions()
+                    runtimeInput, context.authorizedTools(), conversationId, skills.versions(),
+                    skills.dependencyResolutions()
             );
             Consumer<AgentTextDelta> safeDelta = delta -> deltaConsumer.accept(new AgentTextDelta(
                     delta.replyId(), delta.blockId(), redactor.redact(delta.delta())));

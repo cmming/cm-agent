@@ -50,7 +50,7 @@ class GovernedSkillAccessServiceTest {
     private final SkillProperties properties = enabledProperties();
     private final GovernedSkillAccessService service = new GovernedSkillAccessService(
             runs, store.snapshots(), store.definitions(), store.versions(), store.resources(), store.bindings(),
-            store.loads(), store, audit, properties, Clock.fixed(NOW, ZoneOffset.UTC));
+            store.trials(), store.loads(), store, audit, properties, Clock.fixed(NOW, ZoneOffset.UTC));
 
     @BeforeEach
     void setUp() {
