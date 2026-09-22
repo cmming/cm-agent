@@ -15,6 +15,7 @@ import com.cmagent.core.domain.ToolApprovalDecision;
 import com.cmagent.core.domain.ToolApprovalItem;
 import com.cmagent.core.domain.ToolApprovalPolicy;
 import com.cmagent.core.domain.ToolApprovalRequest;
+import com.cmagent.core.domain.ToolApprovalScope;
 import com.cmagent.core.domain.ToolApprovalStatus;
 import com.cmagent.core.domain.ToolApprovalHistoryPageRequest;
 import com.cmagent.core.repository.ConversationMessageRepository;
@@ -120,6 +121,23 @@ public class ToolApprovalService {
             UUID runId,
             RuntimePendingApproval pending
     ) {
+        return create(principal, agentId, ToolApprovalScope.CONVERSATION, conversationId, runId, pending);
+    }
+
+    /** 为没有会话的 TEST Run 保存一份运行级审批请求。 */
+    public ToolApprovalView createForRun(
+            PrincipalRef principal, UUID agentId, UUID runId, RuntimePendingApproval pending) {
+        return create(principal, agentId, ToolApprovalScope.RUN, null, runId, pending);
+    }
+
+    private ToolApprovalView create(
+            PrincipalRef principal,
+            UUID agentId,
+            ToolApprovalScope scope,
+            UUID conversationId,
+            UUID runId,
+            RuntimePendingApproval pending
+    ) {
         Instant now = clock.instant();
         UUID approvalId = UUID.randomUUID();
         List<ToolApprovalItem> items = pending.items().stream().map(item -> new ToolApprovalItem(
@@ -128,7 +146,7 @@ public class ToolApprovalService {
                 POLICY_VERSION, null)).toList();
         ToolApprovalRequest saved = inTransaction(() -> {
             ToolApprovalRequest persisted = approvalRepository.save(new ToolApprovalRequest(
-                    approvalId, principal.tenantId(), agentId, conversationId, runId,
+                    approvalId, principal.tenantId(), agentId, scope, conversationId, runId,
                     principal.principalId(), principal.displayName(), ToolApprovalStatus.PENDING,
                     now.plus(properties.getApprovalTtl()), 0, runId.toString(), now, now,
                     null, null, null, items));
@@ -152,6 +170,18 @@ public class ToolApprovalService {
             PrincipalRef principal, UUID agentId, UUID conversationId, UUID approvalId) {
         ToolApprovalRequest request = require(principal, agentId, conversationId, approvalId);
         return view(principal, request);
+    }
+
+    /** 列出指定 TEST Run 的待审批请求；查询边界不接受会话标识。 */
+    public List<ToolApprovalView> listPendingForRun(PrincipalRef principal, UUID agentId, UUID runId) {
+        return approvalRepository.listPendingByRun(
+                        principal.tenantId(), agentId, runId, clock.instant(), PENDING_LIMIT)
+                .stream().map(request -> view(principal, request)).toList();
+    }
+
+    /** 查询一个 TEST Run 的审批权威状态。 */
+    public ToolApprovalView getForRun(PrincipalRef principal, UUID agentId, UUID runId, UUID approvalId) {
+        return view(principal, requireForRun(principal, agentId, runId, approvalId));
     }
 
     /**
@@ -280,6 +310,79 @@ public class ToolApprovalService {
         return new ApprovalResumeOutcome(view(principal, decided), runtimeResult.run(), assistant, nextApproval);
     }
 
+    /**
+     * 接受 TEST Run 的审批决定并恢复同一运行，不创建或追加任何会话消息。
+     *
+     * <p>运行级查询、条件更新和恢复均使用 {@code tenant + agent + run + approval} 边界；
+     * {@code conversationId} 始终为空，避免测试运行借用正式会话的上下文或审批记录。</p>
+     */
+    public RunApprovalResumeOutcome decideAndResumeRun(
+            PrincipalRef principal,
+            UUID agentId,
+            UUID runId,
+            UUID approvalId,
+            long expectedVersion,
+            List<ItemDecision> submitted,
+            Consumer<AgentTextDelta> deltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
+        ToolApprovalRequest current = requireForRun(principal, agentId, runId, approvalId);
+        Instant now = clock.instant();
+        if (current.status() != ToolApprovalStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "审批请求已处理，请刷新后查看最新状态");
+        }
+        if (current.isExpired(now)) {
+            if (approvalRepository.expireByRun(principal.tenantId(), agentId, runId, approvalId,
+                    current.version(), principal.principalId(), now)) {
+                runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId)
+                        .filter(run -> run.status() == RunStatus.WAITING_APPROVAL)
+                        .ifPresent(run -> runPersistenceService.complete(principal, run, new AgentRunResult(
+                                run.id(), RunStatus.DENIED, "", List.of(), run.startedAt(), now, "工具审批已过期"), List.of()));
+            }
+            throw new ResponseStatusException(HttpStatus.GONE, "审批请求已过期");
+        }
+        if (!current.requestedBy().equals(principal.principalId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "第一版仅允许运行发起人处理审批");
+        }
+        Map<UUID, ToolApprovalDecision> decisions = validateDecisions(current, submitted);
+        ToolApprovalStatus status = aggregate(decisions.values());
+        boolean accepted = inTransaction(() -> {
+            boolean decided = approvalRepository.decideByRun(
+                    principal.tenantId(), agentId, runId, approvalId, expectedVersion, status, decisions,
+                    principal.principalId(), principal.displayName(), now);
+            if (decided) {
+                auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_DECIDE",
+                        "TOOL_APPROVAL", approvalId.toString(), status.name(), "试运行高风险工具审批决定已提交");
+            }
+            return decided;
+        });
+        if (!accepted) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "审批状态已变化，请刷新后重试");
+        }
+        ToolApprovalRequest decided = requireForRun(principal, agentId, runId, approvalId);
+        RunRecord waitingRun = runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Run 不存在"));
+        AgentRuntimeResult runtimeResult;
+        if (status == ToolApprovalStatus.DENIED) {
+            RunRecord completed = runPersistenceService.complete(principal, waitingRun, new AgentRunResult(
+                    waitingRun.id(), RunStatus.DENIED, "", List.of(), waitingRun.startedAt(), now, "工具调用已被用户拒绝"),
+                    List.of());
+            runtimeResult = new AgentRuntimeResult(new AgentRunResult(completed.id(), completed.status(),
+                    completed.output(), List.of(), completed.startedAt(), completed.finishedAt(), completed.errorMessage()), null);
+            deleteCheckpoint(principal, waitingRun);
+        } else {
+            List<RuntimeApprovalDecisions.Item> runtimeDecisions = current.items().stream()
+                    .map(item -> new RuntimeApprovalDecisions.Item(
+                            item.toolCallId(), item.toolId(), item.inputHash(), decisions.get(item.id())))
+                    .toList();
+            runtimeResult = runExecutionService.resumePrepared(principal, agentId, waitingRun, null,
+                    new RuntimeApprovalDecisions(runtimeDecisions), deltaConsumer, progressConsumer);
+        }
+        ToolApprovalView nextApproval = runtimeResult.run().status() == RunStatus.WAITING_APPROVAL
+                ? createForRun(principal, agentId, runId, runtimeResult.pendingApproval()) : null;
+        return new RunApprovalResumeOutcome(view(principal, decided), runtimeResult.run(), nextApproval);
+    }
+
     /** 在建立 SSE 前完成权限之外的资源、状态、版本、过期和决定完整性校验。 */
     public void validateForSubmission(
             PrincipalRef principal,
@@ -306,6 +409,12 @@ public class ToolApprovalService {
     private ToolApprovalRequest require(
             PrincipalRef principal, UUID agentId, UUID conversationId, UUID approvalId) {
         return approvalRepository.find(principal.tenantId(), agentId, conversationId, approvalId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "审批请求不存在"));
+    }
+
+    private ToolApprovalRequest requireForRun(
+            PrincipalRef principal, UUID agentId, UUID runId, UUID approvalId) {
+        return approvalRepository.findByRun(principal.tenantId(), agentId, runId, approvalId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "审批请求不存在"));
     }
 
@@ -447,5 +556,10 @@ public class ToolApprovalService {
     public record ApprovalResumeOutcome(
             ToolApprovalView decision, AgentRunResult run,
             ConversationMessage assistantMessage, ToolApprovalView nextApproval) {
+    }
+
+    /** TEST Run 审批恢复结果，不包含会话消息。 */
+    public record RunApprovalResumeOutcome(
+            ToolApprovalView decision, AgentRunResult run, ToolApprovalView nextApproval) {
     }
 }

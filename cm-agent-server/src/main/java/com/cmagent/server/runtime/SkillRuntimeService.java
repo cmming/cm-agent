@@ -6,6 +6,8 @@ import com.cmagent.core.domain.AgentSkillBinding;
 import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.RunSkillSnapshot;
 import com.cmagent.core.domain.SkillDefinition;
+import com.cmagent.core.domain.SkillSnapshotOrigin;
+import com.cmagent.core.domain.SkillTrial;
 import com.cmagent.core.domain.SkillRuntimeBundle;
 import com.cmagent.core.domain.SkillSnapshotRef;
 import com.cmagent.core.domain.SkillVersion;
@@ -14,6 +16,7 @@ import com.cmagent.core.repository.AgentSkillBindingRepository;
 import com.cmagent.core.repository.RunSkillSnapshotRepository;
 import com.cmagent.core.repository.SkillDefinitionRepository;
 import com.cmagent.core.repository.SkillResourceRepository;
+import com.cmagent.core.repository.SkillTrialRepository;
 import com.cmagent.core.repository.SkillVersionRepository;
 import com.cmagent.core.runtime.SkillAccessException;
 import com.cmagent.server.config.SkillProperties;
@@ -41,6 +44,7 @@ public class SkillRuntimeService {
     private final SkillResourceRepository resources;
     private final AgentSkillBindingRepository bindings;
     private final RunSkillSnapshotRepository snapshots;
+    private final SkillTrialRepository trials;
     private final SkillUnitOfWork workUnit;
     private final SkillProperties properties;
     private final Clock clock;
@@ -59,21 +63,22 @@ public class SkillRuntimeService {
     @Autowired
     public SkillRuntimeService(SkillDefinitionRepository definitions, SkillVersionRepository versions,
                                SkillResourceRepository resources, AgentSkillBindingRepository bindings,
-                               RunSkillSnapshotRepository snapshots, SkillUnitOfWork workUnit,
+                               RunSkillSnapshotRepository snapshots, SkillTrialRepository trials, SkillUnitOfWork workUnit,
                                SkillProperties properties) {
-        this(definitions, versions, resources, bindings, snapshots, workUnit,
+        this(definitions, versions, resources, bindings, snapshots, trials, workUnit,
                 properties, Clock.systemUTC());
     }
 
     SkillRuntimeService(SkillDefinitionRepository definitions, SkillVersionRepository versions,
                         SkillResourceRepository resources, AgentSkillBindingRepository bindings,
-                        RunSkillSnapshotRepository snapshots, SkillUnitOfWork workUnit,
+                        RunSkillSnapshotRepository snapshots, SkillTrialRepository trials, SkillUnitOfWork workUnit,
                         SkillProperties properties, Clock clock) {
         this.definitions = Objects.requireNonNull(definitions, "definitions 不能为空");
         this.versions = Objects.requireNonNull(versions, "versions 不能为空");
         this.resources = Objects.requireNonNull(resources, "resources 不能为空");
         this.bindings = Objects.requireNonNull(bindings, "bindings 不能为空");
         this.snapshots = Objects.requireNonNull(snapshots, "snapshots 不能为空");
+        this.trials = Objects.requireNonNull(trials, "trials 不能为空");
         this.workUnit = Objects.requireNonNull(workUnit, "workUnit 不能为空");
         this.properties = Objects.requireNonNull(properties, "properties 不能为空");
         this.clock = Objects.requireNonNull(clock, "clock 不能为空");
@@ -87,10 +92,28 @@ public class SkillRuntimeService {
      * @return 固定快照及其版本正文
      */
     public SkillRuntimeBundle prepare(PrincipalRef principal, RunRecord run) {
+        return prepare(principal, run, null);
+    }
+
+    /**
+     * 在进入 Runtime 前固定技能集合，并可为 TEST Run 临时替换一个目标版本。
+     *
+     * <p>临时选择不会创建 Agent 绑定，也不会扩大工具授权；它只影响当前 Run 的不可变快照。
+     * 相同 Run 已有快照时忽略传入选择，以持久化事实作为恢复唯一来源。</p>
+     *
+     * @param principal 原 Run 的可信认证主体
+     * @param run 已持久化的运行记录
+     * @param selection TEST Run 的临时版本选择；普通 Run 为 {@code null}
+     * @return 固定快照及其版本正文
+     */
+    public SkillRuntimeBundle prepare(PrincipalRef principal, RunRecord run, SkillRuntimeSelection selection) {
         requireRunOwner(principal, run);
+        if (selection != null && !run.id().equals(selection.trialRunId())) {
+            throw failure(ApiErrorCode.SKILL_SNAPSHOT_UNAVAILABLE, "试运行技能选择与 Run 不一致", true);
+        }
         return workUnit.execute(() -> snapshots.find(principal.tenantId(), run.id())
                 .map(snapshot -> restoreInside(principal, run, snapshot))
-                .orElseGet(() -> createInside(principal, run)));
+                .orElseGet(() -> createInside(principal, run, selection)));
     }
 
     /**
@@ -112,13 +135,18 @@ public class SkillRuntimeService {
                 ApiErrorCode.SKILL_SNAPSHOT_UNAVAILABLE, "本轮技能快照不可用，请重新发起对话", true));
     }
 
-    private SkillRuntimeBundle createInside(PrincipalRef principal, RunRecord run) {
+    private SkillRuntimeBundle createInside(
+            PrincipalRef principal, RunRecord run, SkillRuntimeSelection selection) {
         bindings.lockAgent(principal.tenantId(), run.agentId());
         List<SkillSnapshotRef> references = new ArrayList<>();
         List<SkillVersionView> views = new ArrayList<>();
         int totalBytes = 0;
         if (properties.isEnabled()) {
             for (AgentSkillBinding binding : bindings.list(principal.tenantId(), run.agentId())) {
+                if (selection != null && selection.skillId().equals(binding.skillId())) {
+                    // 目标技能即便已有正式绑定，也必须由本次候选选择完全替换，不能混入正式版本。
+                    continue;
+                }
                 SkillDefinition definition = definitions.lock(principal.tenantId(), binding.skillId());
                 if (!definition.enabled()) {
                     continue;
@@ -131,6 +159,18 @@ public class SkillRuntimeService {
                 }
                 references.add(new SkillSnapshotRef(definition.id(), view.version().id(),
                         binding.id(), definition.accessEpoch()));
+                views.add(view);
+            }
+            if (selection != null) {
+                SkillDefinition definition = definitions.lock(principal.tenantId(), selection.skillId());
+                SkillVersionView view = view(definition, selection.versionId());
+                totalBytes = Math.addExact(totalBytes, bytes(view));
+                if (totalBytes > properties.getMaxRunBytes()) {
+                    throw failure(ApiErrorCode.SKILL_LOAD_LIMIT_EXCEEDED,
+                            "本轮绑定技能内容超过准备上限", true);
+                }
+                references.add(new SkillSnapshotRef(definition.id(), view.version().id(), SkillSnapshotOrigin.TRIAL,
+                        selection.trialRunId(), definition.accessEpoch(), List.of()));
                 views.add(view);
             }
         }
@@ -152,19 +192,40 @@ public class SkillRuntimeService {
         List<SkillVersionView> views = new ArrayList<>();
         for (SkillSnapshotRef reference : snapshot.skills()) {
             SkillDefinition current = definitions.lock(principal.tenantId(), reference.skillId());
-            AgentSkillBinding binding = bindings.find(principal.tenantId(), run.agentId(), reference.skillId())
-                    .orElseThrow(() -> revoked());
-            boolean allowed = current.enabled()
-                    && current.accessEpoch() == reference.accessEpoch()
-                    && binding.id().equals(reference.bindingId())
-                    && binding.skillId().equals(reference.skillId())
-                    && binding.agentId().equals(run.agentId());
+            boolean allowed = reference.origin() == SkillSnapshotOrigin.BINDING
+                    ? bindingAllowed(principal, run, reference, current)
+                    : trialAllowed(principal, run, reference, current);
             if (!allowed) {
                 throw revoked();
             }
             views.add(view(current, reference.versionId()));
         }
         return new SkillRuntimeBundle(snapshot, views);
+    }
+
+    private boolean bindingAllowed(
+            PrincipalRef principal, RunRecord run, SkillSnapshotRef reference, SkillDefinition current) {
+        AgentSkillBinding binding = bindings.find(principal.tenantId(), run.agentId(), reference.skillId())
+                .orElse(null);
+        return current.enabled()
+                && current.accessEpoch() == reference.accessEpoch()
+                && binding != null
+                && binding.id().equals(reference.bindingId())
+                && binding.skillId().equals(reference.skillId())
+                && binding.agentId().equals(run.agentId());
+    }
+
+    private boolean trialAllowed(
+            PrincipalRef principal, RunRecord run, SkillSnapshotRef reference, SkillDefinition current) {
+        SkillTrial trial = trials.find(principal.tenantId(), run.id()).orElse(null);
+        // 候选首次导入时可处于停用状态，试运行仍可使用其显式快照；但访问纪元变化会撤销该快照。
+        return trial != null
+                && trial.runId().equals(reference.authorizationId())
+                && trial.skillId().equals(reference.skillId())
+                && trial.versionId().equals(reference.versionId())
+                && trial.agentId().equals(run.agentId())
+                && trial.createdBy().equals(principal.principalId())
+                && current.accessEpoch() == reference.accessEpoch();
     }
 
     private SkillVersionView view(SkillDefinition definition, UUID versionId) {

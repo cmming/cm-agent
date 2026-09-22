@@ -1,9 +1,12 @@
 package com.cmagent.server.web;
 
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 import com.cmagent.core.domain.SkillBindingMode;
+import com.cmagent.core.domain.ToolApprovalDecision;
 
+import java.util.List;
 import java.util.UUID;
 
 /** 技能管理接口的请求对象集合。 */
@@ -71,6 +74,37 @@ public final class SkillRequests {
             @NotNull(message = "mode 不能为空") SkillBindingMode mode,
             UUID pinnedVersionId,
             Long expectedRevision
+    ) {
+    }
+
+    /**
+     * 创建一次指定候选或历史版本的真实技能试运行。
+     *
+     * @param versionId 需要临时注入的不可变版本
+     * @param agentId 使用真实模型和既有工具授权执行的目标 Agent
+     * @param input 本次测试输入；不会写入会话消息
+     */
+    public record TrialRequest(
+            @NotNull(message = "versionId 不能为空") UUID versionId,
+            @NotNull(message = "agentId 不能为空") UUID agentId,
+            @NotBlank(message = "input 不能为空") String input
+    ) {
+    }
+
+    /** 提交 TEST Run 高风险工具审批的完整决定集合。 */
+    public record TrialApprovalDecisionRequest(
+            long expectedVersion,
+            @NotNull(message = "items 不能为空") List<TrialApprovalItemDecision> items
+    ) {
+        public TrialApprovalDecisionRequest {
+            items = items == null ? null : List.copyOf(items);
+        }
+    }
+
+    /** 客户端只能提交审批明细标识和允许或拒绝决定。 */
+    public record TrialApprovalItemDecision(
+            @NotNull(message = "itemId 不能为空") UUID itemId,
+            @NotNull(message = "decision 不能为空") ToolApprovalDecision decision
     ) {
     }
 }

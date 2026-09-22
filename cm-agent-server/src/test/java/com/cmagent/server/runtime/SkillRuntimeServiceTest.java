@@ -4,7 +4,11 @@ import com.cmagent.api.ApiErrorCode;
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentSkillBinding;
 import com.cmagent.core.domain.RunRecord;
+import com.cmagent.core.domain.RunKind;
 import com.cmagent.core.domain.SkillDefinition;
+import com.cmagent.core.domain.SkillSnapshotOrigin;
+import com.cmagent.core.domain.SkillTrial;
+import com.cmagent.core.domain.SkillTrialStatus;
 import com.cmagent.core.domain.SkillVersion;
 import com.cmagent.core.runtime.SkillAccessException;
 import com.cmagent.core.repository.RunSkillSnapshotRepository;
@@ -37,7 +41,7 @@ class SkillRuntimeServiceTest {
     private final SkillProperties properties = enabledProperties();
     private final SkillRuntimeService service = new SkillRuntimeService(
             store.definitions(), store.versions(), store.resources(), store.bindings(), store.snapshots(),
-            store, properties, Clock.fixed(NOW, ZoneOffset.UTC));
+            store.trials(), store, properties, Clock.fixed(NOW, ZoneOffset.UTC));
 
     @Test
     void 空技能集合也保存快照且重复准备不会覆盖() {
@@ -92,6 +96,34 @@ class SkillRuntimeServiceTest {
                 .isInstanceOfSatisfying(SkillAccessException.class,
                         failure -> assertThat(failure.code()).isEqualTo(ApiErrorCode.SKILL_ACCESS_REVOKED));
         assertThat(prepared.snapshot().skills().getFirst().versionId()).isEqualTo(fixture.versionId());
+    }
+
+    @Test
+    void 试运行临时注入候选版本会替换正式绑定且恢复只信任快照() {
+        Fixture fixture = insertEnabledSkill();
+        UUID candidateVersionId = UUID.randomUUID();
+        RunRecord trialRun = RunRecord.create(UUID.randomUUID(), tenant, agent, principal.principalId(),
+                RunKind.TEST, "验证候选", NOW);
+        store.execute(() -> {
+            store.versions().insert(version(fixture.skillId(), candidateVersionId, 2, "候选版本"));
+            SkillDefinition current = store.definitions().lock(tenant, fixture.skillId());
+            store.definitions().updatePointers(new SkillDefinition(
+                    current.id(), current.tenantId(), current.name(), candidateVersionId,
+                    fixture.versionId(), current.enabled(), current.accessEpoch(),
+                    current.dependencyMappingRevision(), current.createdBy(), "editor", current.createdAt(), NOW),
+                    current.candidateVersionId(), current.publishedVersionId());
+            store.trials().insert(new SkillTrial(trialRun.id(), tenant, fixture.skillId(), candidateVersionId,
+                    agent, 0, SkillTrialStatus.RUNNING, false, principal.principalId(), NOW, NOW));
+            return null;
+        });
+
+        var prepared = service.prepare(principal, trialRun,
+                new SkillRuntimeSelection(fixture.skillId(), candidateVersionId, trialRun.id(), 0));
+
+        assertThat(prepared.versions()).extracting(view -> view.version().id()).containsExactly(candidateVersionId);
+        assertThat(prepared.snapshot().skills().getFirst().origin()).isEqualTo(SkillSnapshotOrigin.TRIAL);
+        assertThat(service.restore(principal, trialRun).versions().getFirst().version().id())
+                .isEqualTo(candidateVersionId);
     }
 
     private Fixture insertEnabledSkill() {

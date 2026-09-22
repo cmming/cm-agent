@@ -5,6 +5,8 @@ import com.cmagent.core.domain.SkillLoadStatus;
 import com.cmagent.core.domain.SkillPreflightItemStatus;
 import com.cmagent.core.domain.SkillPreflightScope;
 import com.cmagent.core.domain.SkillPreflightStatus;
+import com.cmagent.core.domain.SkillTrial;
+import com.cmagent.core.domain.SkillTrialStatus;
 
 import java.time.Instant;
 import java.util.List;
@@ -276,5 +278,28 @@ public final class SkillResponses {
     public record Load(UUID id, UUID skillId, String name, UUID versionId, Integer versionNo,
                        String path, SkillLoadStatus status, int deliveredBytes, long durationMillis,
                        ApiErrorCode errorCode, String errorId, Instant createdAt) {
+    }
+
+    /**
+     * 指定版本 TEST Run 的公开状态；不返回原始模型输入、工具参数或会话数据。
+     *
+     * @param runId TEST Run 标识，可用于刷新后恢复查询
+     * @param skillId 临时注入的技能
+     * @param versionId 临时注入的不可变版本
+     * @param agentId 实际执行的 Agent
+     * @param mappingRevision 试运行固定的依赖映射修订
+     * @param status 试运行状态
+     * @param qualifiesRelease 是否可作为当前候选发布依据
+     * @param createdAt 创建时间
+     * @param updatedAt 最近状态时间
+     */
+    public record Trial(UUID runId, UUID skillId, UUID versionId, UUID agentId, long mappingRevision,
+                        SkillTrialStatus status, boolean qualifiesRelease, Instant createdAt, Instant updatedAt) {
+        /** 将领域事实转换为不含租户和内部主体的公开视图。 */
+        public static Trial from(SkillTrial trial) {
+            return new Trial(trial.runId(), trial.skillId(), trial.versionId(), trial.agentId(),
+                    trial.mappingRevision(), trial.status(), trial.qualifiesRelease(),
+                    trial.createdAt(), trial.updatedAt());
+        }
     }
 }

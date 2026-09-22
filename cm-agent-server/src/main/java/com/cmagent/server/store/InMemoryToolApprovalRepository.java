@@ -4,6 +4,7 @@ import com.cmagent.core.domain.ToolApprovalDecision;
 import com.cmagent.core.domain.ToolApprovalRequest;
 import com.cmagent.core.domain.ToolApprovalStatus;
 import com.cmagent.core.domain.ToolApprovalHistoryPageRequest;
+import com.cmagent.core.domain.ToolApprovalScope;
 import com.cmagent.core.repository.ToolApprovalRepository;
 
 import java.time.Instant;
@@ -34,6 +35,14 @@ public final class InMemoryToolApprovalRepository implements ToolApprovalReposit
     }
 
     @Override
+    public Optional<ToolApprovalRequest> findByRun(UUID tenantId, UUID agentId, UUID runId, UUID approvalId) {
+        ToolApprovalRequest request = approvals.get(approvalId);
+        return request != null && tenantId.equals(request.tenantId()) && agentId.equals(request.agentId())
+                && runId.equals(request.runId()) && request.scope() == ToolApprovalScope.RUN
+                ? Optional.of(request) : Optional.empty();
+    }
+
+    @Override
     public List<ToolApprovalRequest> listPending(
             UUID tenantId, UUID agentId, UUID conversationId, Instant now, int limit) {
         return approvals.values().stream()
@@ -47,6 +56,22 @@ public final class InMemoryToolApprovalRepository implements ToolApprovalReposit
     @Override
     public boolean hasPending(UUID tenantId, UUID agentId, UUID conversationId, Instant now) {
         return !listPending(tenantId, agentId, conversationId, now, 1).isEmpty();
+    }
+
+    @Override
+    public List<ToolApprovalRequest> listPendingByRun(
+            UUID tenantId, UUID agentId, UUID runId, Instant now, int limit) {
+        return approvals.values().stream()
+                .filter(request -> tenantId.equals(request.tenantId()) && agentId.equals(request.agentId())
+                        && runId.equals(request.runId()) && request.scope() == ToolApprovalScope.RUN
+                        && request.status() == ToolApprovalStatus.PENDING && !request.isExpired(now))
+                .sorted(Comparator.comparing(ToolApprovalRequest::createdAt).thenComparing(ToolApprovalRequest::id))
+                .limit(limit).toList();
+    }
+
+    @Override
+    public boolean hasPendingByRun(UUID tenantId, UUID agentId, UUID runId, Instant now) {
+        return !listPendingByRun(tenantId, agentId, runId, now, 1).isEmpty();
     }
 
     @Override
@@ -92,6 +117,31 @@ public final class InMemoryToolApprovalRepository implements ToolApprovalReposit
     }
 
     @Override
+    public boolean decideByRun(
+            UUID tenantId, UUID agentId, UUID runId, UUID approvalId, long expectedVersion,
+            ToolApprovalStatus status, Map<UUID, ToolApprovalDecision> decisions,
+            String decidedBy, String decidedByDisplayName, Instant decidedAt) {
+        final boolean[] changed = {false};
+        approvals.computeIfPresent(approvalId, (id, current) -> {
+            if (!tenantId.equals(current.tenantId()) || !agentId.equals(current.agentId())
+                    || !runId.equals(current.runId()) || current.scope() != ToolApprovalScope.RUN
+                    || current.status() != ToolApprovalStatus.PENDING || current.version() != expectedVersion
+                    || current.items().size() != decisions.size()
+                    || current.items().stream().anyMatch(item -> !decisions.containsKey(item.id()))) {
+                return current;
+            }
+            changed[0] = true;
+            return new ToolApprovalRequest(
+                    current.id(), current.tenantId(), current.agentId(), current.scope(), null, current.runId(),
+                    current.requestedBy(), current.requestedByDisplayName(), status, current.expiresAt(),
+                    current.version() + 1, current.checkpointRef(), current.createdAt(), decidedAt,
+                    decidedBy, decidedByDisplayName, decidedAt,
+                    current.items().stream().map(item -> item.decide(decisions.get(item.id()))).toList());
+        });
+        return changed[0];
+    }
+
+    @Override
     public boolean expire(
             UUID tenantId, UUID agentId, UUID conversationId, UUID approvalId, long expectedVersion,
             String decidedBy, Instant decidedAt) {
@@ -105,6 +155,27 @@ public final class InMemoryToolApprovalRepository implements ToolApprovalReposit
             changed[0] = true;
             return new ToolApprovalRequest(
                     current.id(), current.tenantId(), current.agentId(), current.conversationId(), current.runId(),
+                    current.requestedBy(), current.requestedByDisplayName(), ToolApprovalStatus.EXPIRED,
+                    current.expiresAt(), current.version() + 1, current.checkpointRef(), current.createdAt(), decidedAt,
+                    decidedBy, decidedBy, decidedAt, current.items());
+        });
+        return changed[0];
+    }
+
+    @Override
+    public boolean expireByRun(
+            UUID tenantId, UUID agentId, UUID runId, UUID approvalId, long expectedVersion,
+            String decidedBy, Instant decidedAt) {
+        final boolean[] changed = {false};
+        approvals.computeIfPresent(approvalId, (id, current) -> {
+            if (!tenantId.equals(current.tenantId()) || !agentId.equals(current.agentId())
+                    || !runId.equals(current.runId()) || current.scope() != ToolApprovalScope.RUN
+                    || current.status() != ToolApprovalStatus.PENDING || current.version() != expectedVersion) {
+                return current;
+            }
+            changed[0] = true;
+            return new ToolApprovalRequest(
+                    current.id(), current.tenantId(), current.agentId(), current.scope(), null, current.runId(),
                     current.requestedBy(), current.requestedByDisplayName(), ToolApprovalStatus.EXPIRED,
                     current.expiresAt(), current.version() + 1, current.checkpointRef(), current.createdAt(), decidedAt,
                     decidedBy, decidedBy, decidedAt, current.items());

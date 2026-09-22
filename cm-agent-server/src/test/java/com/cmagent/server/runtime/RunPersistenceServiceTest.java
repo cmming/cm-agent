@@ -3,6 +3,7 @@ package com.cmagent.server.runtime;
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentRunResult;
 import com.cmagent.core.domain.RunRecord;
+import com.cmagent.core.domain.RunKind;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.RunToolCall;
 import com.cmagent.core.domain.ToolCallRecord;
@@ -139,5 +140,20 @@ class RunPersistenceServiceTest {
         assertThat(detail.toolCalls().getFirst().errorMessage()).isEqualTo("Bearer <已脱敏>");
         assertThat(listed.getFirst().input()).isEqualTo("password=<已脱敏>");
         assertThat(listed.getFirst().output()).isEqualTo("apiKey=<已脱敏>");
+    }
+
+    @Test
+    void 显式测试运行类型会被保存且查询脱敏不丢失类型() {
+        RunRecord stored = RunRecord.create(RUN_ID, TENANT_ID, AGENT_ID, "principal",
+                RunKind.TEST, "验证", STARTED_AT);
+        when(runRepository.save(eq(TENANT_ID), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(runRepository.findByTenantAndAgentAndId(TENANT_ID, AGENT_ID, RUN_ID)).thenReturn(Optional.of(stored));
+        when(toolCallRepository.listByTenantAndRun(TENANT_ID, RUN_ID)).thenReturn(List.of());
+
+        RunRecord created = service.start(principal, AGENT_ID, "验证", RUN_ID, RunKind.TEST);
+        RunPersistenceService.RunDetail detail = service.findDetail(TENANT_ID, AGENT_ID, RUN_ID);
+
+        assertThat(created.kind()).isEqualTo(RunKind.TEST);
+        assertThat(detail.run().kind()).isEqualTo(RunKind.TEST);
     }
 }

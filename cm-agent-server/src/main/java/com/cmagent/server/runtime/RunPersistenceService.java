@@ -2,6 +2,7 @@ package com.cmagent.server.runtime;
 
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentRunResult;
+import com.cmagent.core.domain.RunKind;
 import com.cmagent.core.domain.RunPageRequest;
 import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.RunStatus;
@@ -78,19 +79,37 @@ public class RunPersistenceService {
      * @throws RuntimeException 持久化或审计失败时抛出
      */
     public RunRecord start(PrincipalRef principal, UUID agentId, String input) {
-        return start(principal, agentId, input, UUID.randomUUID());
+        return start(principal, agentId, input, UUID.randomUUID(), RunKind.NORMAL);
     }
 
     /**
      * 使用调用方预生成的 runId 创建运行，供会话消息在同一短事务内建立稳定关联。
      */
     public RunRecord start(PrincipalRef principal, UUID agentId, String input, UUID runId) {
+        return start(principal, agentId, input, runId, RunKind.NORMAL);
+    }
+
+    /**
+     * 使用调用方预生成的标识和运行类型创建运行。
+     *
+     * <p>正式运行仍通过旧重载默认创建 {@link RunKind#NORMAL}；技能试运行必须显式传入
+     * {@link RunKind#TEST}，这样普通运行历史不会意外暴露候选版本的调试记录。</p>
+     *
+     * @param principal 当前可信认证主体
+     * @param agentId 已校验的目标 Agent
+     * @param input 需要持久化的输入
+     * @param runId 调用方预生成的稳定运行标识
+     * @param kind 正式或试运行类型
+     * @return 已进入 RUNNING 状态的运行记录
+     */
+    public RunRecord start(PrincipalRef principal, UUID agentId, String input, UUID runId, RunKind kind) {
         Objects.requireNonNull(principal, "principal 不能为空");
         Objects.requireNonNull(agentId, "agentId 不能为空");
         Objects.requireNonNull(runId, "runId 不能为空");
+        Objects.requireNonNull(kind, "kind 不能为空");
         RunRecord pending = RunRecord.create(
                 runId, principal.tenantId(), agentId, principal.principalId(),
-                redactor.redact(input), Instant.now()
+                kind, redactor.redact(input), Instant.now()
         );
         if (transactionTemplate == null) {
             // Without JDBC transactions, audit first prevents a failed audit from leaving a memory row behind.
@@ -287,7 +306,7 @@ public class RunPersistenceService {
      */
     private RunRecord redactRun(RunRecord run) {
         return new RunRecord(
-                run.id(), run.tenantId(), run.agentId(), run.principalId(), run.status(),
+                run.id(), run.tenantId(), run.agentId(), run.principalId(), run.kind(), run.status(),
                 redactor.redact(run.input()), redactor.redact(run.output()), redactor.redact(run.errorMessage()),
                 run.startedAt(), run.finishedAt()
         );

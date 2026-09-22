@@ -139,7 +139,7 @@ public class RunExecutionService {
         Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
         ResolvedRunContext context = resolve(principal, agentId);
         RunRecord runningRun = persistenceService.start(principal, context.agent().id(), input);
-        return executePrepared(principal, context, runningRun, input, null, null,
+        return executePrepared(principal, context, runningRun, input, null, null, null,
                 delta -> outputDeltaConsumer.accept(delta.delta()), ignored -> {
                 }).run();
     }
@@ -201,7 +201,7 @@ public class RunExecutionService {
             throw new IllegalArgumentException("预创建 Run 不属于当前租户或 Agent");
         }
         return executePrepared(
-                principal, resolve(principal, agentId), runningRun, runtimeInput, conversationId, null,
+                principal, resolve(principal, agentId), runningRun, runtimeInput, conversationId, null, null,
                 deltaConsumer, progressConsumer);
     }
 
@@ -232,7 +232,46 @@ public class RunExecutionService {
             throw new IllegalArgumentException("待恢复 Run 不属于当前发起主体");
         }
         return executePrepared(principal, resolve(principal, agentId), waitingRun, "", conversationId,
-                Objects.requireNonNull(decisions, "decisions 不能为空"), deltaConsumer, progressConsumer);
+                Objects.requireNonNull(decisions, "decisions 不能为空"), null, deltaConsumer, progressConsumer);
+    }
+
+    /**
+     * 使用已经创建的 TEST Run 执行指定技能版本，且不会建立会话或持久化会话消息。
+     *
+     * <p>选择仅在首次执行时进入 {@link SkillRuntimeService}；恢复审批时只从持久化快照读取，
+     * 以避免客户端或候选指针变化重写原试运行的版本事实。</p>
+     *
+     * @param principal 当前可信认证主体
+     * @param agentId 目标 Agent
+     * @param runningRun 已保存且类型为 TEST 的运行记录
+     * @param runtimeInput 本次真实模型输入
+     * @param selection 需要临时注入的指定技能版本
+     * @param deltaConsumer 接收脱敏文本增量
+     * @param progressConsumer 接收脱敏执行进度
+     * @return 运行时结果及可选待审批信息
+     */
+    public AgentRuntimeResult runTrialPrepared(
+            PrincipalRef principal,
+            UUID agentId,
+            RunRecord runningRun,
+            String runtimeInput,
+            SkillRuntimeSelection selection,
+            Consumer<AgentTextDelta> deltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
+        Objects.requireNonNull(runningRun, "runningRun 不能为空");
+        Objects.requireNonNull(selection, "selection 不能为空");
+        if (runningRun.kind() != com.cmagent.core.domain.RunKind.TEST) {
+            throw new IllegalArgumentException("指定技能版本只能通过 TEST Run 执行");
+        }
+        if (!runningRun.id().equals(selection.trialRunId())) {
+            throw new IllegalArgumentException("试运行选择与 Run 不一致");
+        }
+        if (!principal.tenantId().equals(runningRun.tenantId()) || !agentId.equals(runningRun.agentId())) {
+            throw new IllegalArgumentException("预创建 Run 不属于当前租户或 Agent");
+        }
+        return executePrepared(principal, resolve(principal, agentId), runningRun, runtimeInput, null,
+                null, selection, deltaConsumer, progressConsumer);
     }
 
     private AgentRuntimeResult executePrepared(
@@ -242,6 +281,7 @@ public class RunExecutionService {
             String runtimeInput,
             UUID conversationId,
             RuntimeApprovalDecisions approvalDecisions,
+            SkillRuntimeSelection selection,
             Consumer<AgentTextDelta> deltaConsumer,
             Consumer<AgentProgressEvent> progressConsumer
     ) {
@@ -252,7 +292,7 @@ public class RunExecutionService {
         try {
             // 将完整运行上下文交给 Runtime；Runtime 内部可能继续发起受治理的工具调用。
             var skills = approvalDecisions == null
-                    ? skillRuntimeService.prepare(principal, runningRun)
+                    ? skillRuntimeService.prepare(principal, runningRun, selection)
                     : skillRuntimeService.restore(principal, runningRun);
             AgentRunRequest runtimeRequest = new AgentRunRequest(
                     runningRun.id(), principal.tenantId(), context.agent(), context.modelConfig(), principal,

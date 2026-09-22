@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -203,7 +204,9 @@ public class SkillReleaseService {
     private SkillDefinition lock(PrincipalRef principal, UUID skillId) {
         try {
             return definitions.lock(principal.tenantId(), skillId);
-        } catch (RuntimeException exception) {
+        } catch (NoSuchElementException exception) {
+            // 只有缺失记录需要统一为不泄露跨租户存在性的业务错误；持久化故障必须继续抛出，
+            // 否则调用方会把可诊断的数据库异常误判为“技能不存在”。
             throw failure(ApiErrorCode.SKILL_NOT_FOUND, "技能不存在或不属于当前租户");
         }
     }

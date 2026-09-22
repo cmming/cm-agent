@@ -125,9 +125,6 @@ public class SkillPreflightService {
         Objects.requireNonNull(scope, "scope 不能为空");
         UUID tenantId = principal.tenantId();
         SkillDefinition definition = definitions.find(tenantId, skillId).orElseThrow(this::notFound);
-        if (!definition.enabled() && scope == SkillPreflightScope.TRIAL) {
-            throw notFound();
-        }
         List<UUID> targetAgents = resolveTargetAgents(tenantId, skillId, scope, agentId);
         List<SkillDependency> declared = dependencies.list(tenantId, skillId, versionId);
         Instant now = clock.instant();
