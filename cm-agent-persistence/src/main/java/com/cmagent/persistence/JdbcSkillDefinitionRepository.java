@@ -126,14 +126,16 @@ public class JdbcSkillDefinitionRepository implements SkillDefinitionRepository 
     /** 使用候选和发布双指针做 CAS 更新。 */
     @Override
     public boolean updatePointers(SkillDefinition next, UUID expectedCandidateId, UUID expectedPublishedId) {
+        // SQL 的 NULL = NULL 结果为 UNKNOWN；空字符串不是 UUID，使用它规范化空指针既避免 PostgreSQL
+        // 对 "? IS NULL" 无法推断 null 参数类型的问题，也能在 PostgreSQL 与 MySQL 上保持同一份 CAS 语义。
         return jdbcClient.sql("""
                         UPDATE skill_definitions
                         SET candidate_version_id = :candidateVersionId,
                             published_version_id = :publishedVersionId,
                             updated_by = :updatedBy, updated_at = :updatedAt
                         WHERE tenant_id = :tenantId AND id = :skillId
-                          AND candidate_version_id = :expectedCandidateId
-                          AND published_version_id = :expectedPublishedId
+                          AND COALESCE(candidate_version_id, '') = COALESCE(:expectedCandidateId, '')
+                          AND COALESCE(published_version_id, '') = COALESCE(:expectedPublishedId, '')
                         """)
                 .param("candidateVersionId", next.candidateVersionId() == null ? null : next.candidateVersionId().toString())
                 .param("publishedVersionId", next.publishedVersionId() == null ? null : next.publishedVersionId().toString())
@@ -168,13 +170,14 @@ public class JdbcSkillDefinitionRepository implements SkillDefinitionRepository 
     @Override
     public void updateEnabled(SkillDefinition next) {
         Objects.requireNonNull(next, "next 不能为空");
+        // 启停也要核对双指针；使用空字符串规范化空值，防止未发布候选的停用请求被误判为并发冲突。
         int updated = jdbcClient.sql("""
                         UPDATE skill_definitions
                         SET enabled = :enabled, access_epoch = :accessEpoch,
                             updated_by = :updatedBy, updated_at = :updatedAt
                         WHERE tenant_id = :tenantId AND id = :skillId
-                          AND candidate_version_id = :candidateVersionId
-                          AND published_version_id = :publishedVersionId
+                          AND COALESCE(candidate_version_id, '') = COALESCE(:candidateVersionId, '')
+                          AND COALESCE(published_version_id, '') = COALESCE(:publishedVersionId, '')
                         """)
                 .param("enabled", next.enabled())
                 .param("accessEpoch", next.accessEpoch())
