@@ -2,6 +2,8 @@
 
 > **面向执行代理：** 必须使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 逐任务实施；所有步骤使用复选框跟踪。
 
+> **执行结果（2026-09-22）：** T1～T10 已按顺序提交，T11 的文档与本地回归完成。本文保留原始复选框作为执行设计记录；实际提交、已通过验证与尚未完成的 Rocky/浏览器验证以[进度账本](../progress/2026-09-22-skill-release-validation-ledger.md)为准。
+
 **目标：** 在现有技能治理基础上交付候选版本、依赖预检、真实指定版本试运行、可审计发布/回滚，以及 Agent 跟随或固定版本的完整前后端闭环。
 
 **架构：** `SkillVersion` 继续保存不可变内容，`SkillDefinition` 分离候选与发布指针，追加式 `SkillRelease` 表达发布事实。依赖声明随版本保存，环境映射和预检由 Server 治理；`TEST` Run 复用真实模型、工具授权、审批和快照链路，但不创建会话或正式绑定。

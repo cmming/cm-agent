@@ -290,7 +290,7 @@ sequenceDiagram
 
 运行携带 Skill 快照时，`AgentScopeSkillSession` 为本次 Run 创建独立只读 `SkillBox`。目录提示只包含技能名称、固定版本和允许路径；`SKILL.md` 与资源正文不会预先拼入系统提示。
 
-`AgentScopeSkillLoadBridge` 取代原生 `load_skill_through_path`：它只接受本次快照的 AgentScope 内部技能标识和已登记路径，先通过 `SkillAccessGateway` 校验 tenant、Agent、Run、版本、撤销状态与预算，再委托内存只读仓储加载内容。保存、删除、代码执行、自动上传和目录写入均不开放。普通拒绝返回受控工具错误；审计、持久化或读取基础设施失败由 `AgentScopeRunGate` 记录为致命失败并中断本次运行。
+`AgentScopeSkillLoadBridge` 取代原生 `load_skill_through_path`：它只接受本次快照的 AgentScope 内部技能标识和已登记路径，先通过 `SkillAccessGateway` 校验 tenant、Agent、Run、版本、撤销状态与预算，再委托内存只读仓储加载内容。保存、删除、代码执行、自动上传和目录写入均不开放。普通拒绝返回受控工具错误；审计、持久化或读取基础设施失败由 `AgentScopeRunGate` 记录为致命失败并中断本次运行。format 2 快照还固定逻辑依赖到工具 ID 的解析结果；目录提示只显示逻辑名称、已授权工具名称和必需性，绝不包含 endpoint、请求头、密钥或工具原始配置。
 
 Skill 不改变 `ToolInvocationGateway` 的业务工具授权语义，也不为模型自动增加 HTTP、LOCAL、MCP 或 Shell 能力。无绑定 Skill 的既有运行仍使用原有执行路径。
 

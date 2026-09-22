@@ -3,58 +3,47 @@
 ## 1. 状态与文档索引
 
 - 日期与主题：2026-09-22，`skill-release-validation`。
-- 当前阶段：设计规格已确认，实施计划已完成，等待用户复核计划并选择执行方式。
+- 当前阶段：T1～T10 已提交；T11 的本地回归和文档已完成，远程双库与完整浏览器闭环结果待补充。
 - 设计：[设计规格](../specs/2026-09-22-skill-release-validation-design.md)。
 - 计划：[实施计划](../plans/2026-09-22-skill-release-validation.md)。
-- 实现说明：[实现说明](../implementation/2026-09-22-skill-release-validation-implementation-design.md)。
+- 实现：[实现说明](../implementation/2026-09-22-skill-release-validation-implementation-design.md)。
 
-## 2. 已确认决策
+## 2. 实施任务状态
 
-| 决策 | 结果 |
-| --- | --- |
-| Agent 采用版本 | 默认跟随发布版本，允许固定到曾发布版本 |
-| 试运行隔离 | 真实模型和工具治理，使用 TEST Run，不创建正式会话、消息或绑定 |
-| 依赖规则 | 必需依赖失败阻止操作，可选依赖只告警，不自动授权 |
-| 候选数量 | 每个技能只有一个有效候选，旧候选保留为未发布历史 |
-| 回滚 | 追加发布历史版本的新记录，不改写版本或历史 |
-| 发布门禁 | 即时预检、全部跟随 Agent 可用、候选 PASSED 试运行、人工确认 |
-| 临时注入 | 选现有 Agent，只在 TEST Run 覆盖或注入目标版本 |
-| 依赖寻址 | 技能声明逻辑名称，管理员映射到租户具体工具 |
-| 总体方案 | 不可变版本与独立发布记录 |
-| 操作连续性 | 同一工作区保留候选、预检、试运行、审批和发布状态，失败后原地继续 |
-
-## 3. 实施任务状态
-
-| 任务 | 内容 | 状态 |
+| 任务 | 内容 | 状态与提交 |
 | --- | --- | --- |
-| T1 | Core 状态、错误与 Repository 契约 | 未开始 |
-| T2 | 技能包依赖解析与摘要 | 未开始 |
-| T3 | memory 工作单元与新增 Repository | 未开始 |
-| T4 | V13 双库迁移和 JDBC 合同 | 未开始 |
-| T5 | 候选、版本历史和差异 API | 未开始 |
-| T6 | 映射和两层预检 API | 未开始 |
-| T7 | 发布、回滚和绑定策略 | 未开始 |
-| T8 | TEST Run、临时注入和审批恢复 | 未开始 |
-| T9 | format 2 快照与 AgentScope 依赖上下文 | 未开始 |
-| T10 | v2 连续技能发布工作区 | 未开始 |
-| T11 | 双库、端到端回归和正式文档收口 | 未开始 |
+| T1 | Core 状态、错误与 Repository 契约 | 完成：`ab68d20` |
+| T2 | 技能包依赖解析与摘要 | 完成：`9119629` |
+| T3 | memory 工作单元与新增 Repository | 完成：`f08f309` |
+| T4 | V13 双库迁移和 JDBC 合同 | 完成：`c206b5e` |
+| T5 | 候选、版本历史和差异 API | 完成：`20c59ce` |
+| T6 | 映射和两层预检 API | 完成：`3356549`、兼容修复 `2f24bc9` |
+| T7 | 发布、回滚和绑定策略 | 完成：`3278f50` |
+| T8 | TEST Run、临时注入和审批恢复 | 完成：`03746bb` |
+| T9 | format 2 快照与 AgentScope 依赖上下文 | 完成：`7495338` |
+| T10 | v2 连续技能发布工作区 | 完成：`e657cd3` |
+| T11 | 双库、端到端回归和正式文档收口 | 文档与本地回归完成；远程双库和完整浏览器闭环待补充 |
 
-## 4. 本阶段验证
+## 3. 本阶段验证
 
 | 检查 | 结果 |
 | --- | --- |
-| 当前代码与迁移定位 | 已通过 CodeGraph 和源码核对现有 Skill、Run、ToolApproval、V12 与控制台入口 |
-| 计划结构 | 11 个连续任务，每项包含文件、接口、红灯、实现、验证和提交步骤 |
-| 规格覆盖 | 覆盖候选/发布、依赖、试运行、回滚、绑定、快照、审批、迁移、前端和文档 |
-| 占位符扫描 | 无占位符或省略实现项 |
-| 业务测试 | 未执行；当前只修改规划文档 |
+| Java 21 Reactor 打包 | `mvn -q -pl cm-agent-server -am -DskipTests package` 通过 |
+| core/adapter/console 回归 | `mvn -q -pl cm-agent-core,cm-agent-agentscope-adapter,cm-agent-console -am test` 通过 |
+| 控制台与接口回归 | `ConsoleResourceTest`、`AgentSkillControllerTest`、`SkillControllerTest` 通过 |
+| Node 回归 | `node --test .../skills.test.cjs .../console-core.test.cjs` 通过，共 75 项 |
+| 静态语法 | `node --check` 覆盖 `skills.js`、`app.js`，通过 |
+| 浏览器 | 登录页与资源版本已通过 Playwright 快照检查；完整闭环未通过：18080 隔离服务因单模块 Maven 解析本地旧 core 产物而无法启动，8080 为用户 IntelliJ 实例，未干预 |
+| Rocky PostgreSQL 16 / MySQL 8.4 | 未执行：`ssh rocky` 的 Docker 23.0.6 可用，但仅有 Maven 3.6.3、Java 17，且不存在 `/workspace/cm-agent`；不满足规定的 Maven 3.9.9 / Java 21 容器和同提交工作区前置条件 |
 
-## 5. 提交与保护范围
+## 4. 风险与后续
 
-- 设计规格提交：`0c1ecc7 docs: 设计技能发布与试运行流程`。
-- 本次计划和配套文档将在同一个仅文档提交中保存；提交哈希由最终回复提供，不在提交内容中预填自身哈希。
-- 未修改或暂存用户已有 `application.yml`、`application-mysql.yml`、`application-ok.yml`、`.codex/`、`.impeccable/critique/`、`.workbuddy/`。
+- TEST Run 真实调用模型和工具，可能产生外部副作用；发布前须由具备 `skill:write` 与 `agent:run` 的管理员确认。
+- 依赖映射变化会令旧试运行失去发布资格；服务端发布时会重新校验，不依赖浏览器状态。
+- 部署升级需先执行 PostgreSQL/MySQL V13 Flyway 迁移；不要回滚到不识别 format 2 快照的旧服务。
+- 后续应在干净的完整 reactor 启动环境补跑浏览器闭环，并在 Rocky 准备 Maven 3.9.9 / Java 21 容器和同步本分支提交后，分别完成 PostgreSQL 16 与 MySQL 8.4 专项测试。
 
-## 6. 后续门禁
+## 5. 保护范围
 
-用户复核计划并选择执行方式后才开始 T1。选择原生执行时使用 `superpowers:executing-plans`；选择子代理驱动时使用 `superpowers:subagent-driven-development`。任何执行方式都必须按 T1～T11 的依赖顺序、测试和明确路径提交规则推进。
+- 本任务仅在 `codex/skill-release-validation` 工作树提交显式路径；未覆盖用户已有配置或用户正在运行的 IntelliJ 服务。
+- 未写入真实 JWT、数据库密码、模型 API Key 或生产 JDBC URL。
