@@ -36,13 +36,14 @@ class ConsoleResourceTest {
         String agents = resource("META-INF/resources/console/v2/agents.html");
         String modelConfigs = resource("META-INF/resources/console/v2/model-configs.html");
         String tools = resource("META-INF/resources/console/v2/tools.html");
+        String skills = resource("META-INF/resources/console/v2/skills.html");
         String chat = resource("META-INF/resources/console/v2/chat.html");
         String runs = resource("META-INF/resources/console/v2/runs.html");
         String audit = resource("META-INF/resources/console/v2/audit.html");
         String app = resource("META-INF/resources/assets/app.js");
 
         assertThat(login)
-                .contains("data-console-version=\"v2\"", "id=\"loginForm\"", "/console/v1/")
+                .contains("data-console-version=\"v2\"", "id=\"loginForm\"", "/console/v1/", "skills.js?v=2.0.2")
                 .doesNotContain("id=\"overviewPage\"", "id=\"agentsPage\"");
         assertThat(overview)
                 .contains("data-page=\"overviewPage\"", "id=\"overviewPage\"", "id=\"overviewPrimaryAction\"", "配置首个模型", "完成首个 Agent")
@@ -63,6 +64,13 @@ class ConsoleResourceTest {
                         "id=\"startToolCreateBtn\"", "id=\"toolDetailPanel\"", "id=\"toolDetail\""
                 )
                 .doesNotContain("id=\"agentsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
+        assertThat(skills)
+                .contains(
+                        "data-page=\"skillsPage\"", "id=\"skillsPage\"", "id=\"skillList\"", "id=\"skillDetail\"",
+                        "class=\"management-detail-stack skills-detail-stack\"", "id=\"skillUploadForm\"",
+                        "skills.js?v=2.0.2", "选择一个技能"
+                )
+                .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
         assertThat(chat)
                 .contains(
                         "data-page=\"chatPage\"", "id=\"chatPage\"", "id=\"chatAgentSelect\"",
@@ -81,7 +89,7 @@ class ConsoleResourceTest {
                 .contains("data-page=\"auditPage\"", "id=\"auditPage\"", "id=\"auditList\"")
                 .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"");
 
-        for (String page : new String[]{overview, agents, modelConfigs, tools, chat, runs, audit}) {
+        for (String page : new String[]{overview, agents, modelConfigs, tools, skills, chat, runs, audit}) {
             assertThat(page.indexOf("href=\"/console/v2/model-configs.html\""))
                     .isLessThan(page.indexOf("href=\"/console/v2/agents.html\""));
         }

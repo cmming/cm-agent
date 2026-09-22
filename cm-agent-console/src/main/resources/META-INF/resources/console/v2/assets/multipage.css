@@ -522,16 +522,163 @@ body[data-console-version="v2"] .button.ghost:hover:not(:disabled) { border-colo
 body[data-console-version="v2"] .property-grid,
 body[data-console-version="v2"] .detail-section { column-gap: 28px; }
 
+/* 技能页以“选择—核验—启用”的连续操作流组织，避免详情和导入表单分散到不同列。 */
+body[data-console-version="v2"] #skillsPage .page-intro {
+    align-items: flex-start;
+    padding-bottom: 0;
+}
+
+body[data-console-version="v2"] .skills-page-note {
+    max-width: 344px;
+    margin: 3px 0 0;
+    padding: 10px 12px;
+    border: 1px solid #dbe5f3;
+    border-radius: 9px;
+    background: #f8fbff;
+    color: #526b8a;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+body[data-console-version="v2"] #skillsPage .skills-management-grid {
+    grid-template-columns: minmax(252px, .38fr) minmax(0, 1fr);
+}
+
+body[data-console-version="v2"] #skillsPage .skill-list-panel .panel-heading {
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+body[data-console-version="v2"] #skillsPage .panel-heading h2 { margin-bottom: 3px; }
+body[data-console-version="v2"] #skillsPage .panel-heading p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+body[data-console-version="v2"] #skillsPage .skills-detail-stack { gap: 14px; }
+body[data-console-version="v2"] #skillsPage .skill-detail-panel { min-height: 310px; }
+
+body[data-console-version="v2"] .skill-detail-placeholder {
+    display: grid;
+    min-height: 270px;
+    align-content: center;
+    justify-items: start;
+    max-width: 380px;
+}
+
+body[data-console-version="v2"] .skill-detail-placeholder h2 { margin: 0 0 7px; font-size: 18px; }
+body[data-console-version="v2"] .skill-detail-placeholder p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+
+body[data-console-version="v2"] .skill-resource-item {
+    display: grid;
+    gap: 7px;
+    min-height: 78px;
+    text-align: left;
+}
+
+body[data-console-version="v2"] .skill-resource-item.active {
+    border-color: #78a5ec;
+    background: #f1f6ff;
+    box-shadow: inset 2px 0 0 var(--accent);
+}
+
+body[data-console-version="v2"] .skill-resource-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+}
+
+body[data-console-version="v2"] .skill-resource-heading strong { min-width: 0; }
+body[data-console-version="v2"] .skill-resource-description { color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+body[data-console-version="v2"] .skill-state-badge {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    min-height: 21px;
+    padding: 2px 7px;
+    border: 1px solid #d8e1ec;
+    border-radius: 999px;
+    background: #f4f6f9;
+    color: #667487;
+    font-size: 10px;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+body[data-console-version="v2"] .skill-state-badge[data-state="enabled"] { border-color: #c2dfce; background: #e8f7f0; color: #168054; }
+
+body[data-console-version="v2"] .skill-list-empty {
+    display: grid;
+    gap: 5px;
+    padding: 15px 2px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+body[data-console-version="v2"] .skill-list-empty strong { color: var(--text); font-size: 13px; }
+body[data-console-version="v2"] .skill-list-empty p { margin: 0; }
+
+body[data-console-version="v2"] .skill-detail-content { display: grid; gap: 20px; }
+body[data-console-version="v2"] .skill-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+body[data-console-version="v2"] .skill-detail-header h2 { margin: 0 0 6px; font-size: 19px; }
+body[data-console-version="v2"] .skill-detail-header p { max-width: 670px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+
+body[data-console-version="v2"] .skill-detail-metadata {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 0;
+    margin: 0;
+    border-top: 1px solid #e4eaf2;
+    border-bottom: 1px solid #e4eaf2;
+}
+
+body[data-console-version="v2"] .skill-detail-metadata dt,
+body[data-console-version="v2"] .skill-detail-metadata dd { margin: 0; padding: 10px 0; font-size: 12px; }
+body[data-console-version="v2"] .skill-detail-metadata dt { color: var(--muted); }
+body[data-console-version="v2"] .skill-detail-metadata dd { color: var(--text); font-weight: 650; }
+body[data-console-version="v2"] .skill-detail-metadata dt:nth-of-type(2),
+body[data-console-version="v2"] .skill-detail-metadata dd:nth-of-type(2) { border-top: 1px solid #edf1f6; }
+
+body[data-console-version="v2"] .skill-resource-section { display: grid; gap: 9px; }
+body[data-console-version="v2"] .skill-resource-section h3 { margin: 0; font-size: 14px; }
+body[data-console-version="v2"] .skill-resource-section .field-help { margin: -4px 0 0; }
+body[data-console-version="v2"] .skill-resource-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+
+body[data-console-version="v2"] .skill-resource-link {
+    max-width: 100%;
+    padding: 6px 9px;
+    border: 1px solid #d8e2ef;
+    border-radius: 7px;
+    background: #fff;
+    color: #426186;
+    font: 600 11px/1.35 Cascadia Code, Consolas, monospace;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+}
+
+body[data-console-version="v2"] .skill-resource-link:hover,
+body[data-console-version="v2"] .skill-resource-link.active { border-color: #83ace8; background: #f2f7ff; color: #1e50b0; }
+body[data-console-version="v2"] .skill-resource-preview { max-height: 290px; margin: 3px 0 0; padding: 12px; overflow: auto; border: 1px solid #dfe6ef; border-radius: 9px; background: #f7f9fc; color: #35465e; font: 12px/1.65 Cascadia Code, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+body[data-console-version="v2"] .skill-detail-actions { display: flex; justify-content: flex-end; padding-top: 2px; }
+body[data-console-version="v2"] .skill-import-panel { background: #fbfcff; }
+body[data-console-version="v2"] .skill-upload-form { display: grid; gap: 8px; }
+body[data-console-version="v2"] .skill-upload-form .field-help { margin: 0 0 4px; }
+body[data-console-version="v2"] .skill-upload-form code { font-family: Cascadia Code, Consolas, monospace; }
+
 @media (max-width: 900px) {
     body[data-console-version="v2"] .page-intro { margin-bottom: 14px; padding-bottom: 12px; }
     body[data-console-version="v2"] .workspace-header { min-height: 58px; padding: 0 16px; }
     body[data-console-version="v2"] #toolsPage .management-grid { grid-template-columns: minmax(190px, .55fr) minmax(0, 1fr); }
+    body[data-console-version="v2"] #skillsPage .skills-management-grid { grid-template-columns: 1fr; }
+    body[data-console-version="v2"] #skillsPage .skills-page-note { max-width: none; }
 }
 
 @media (max-width: 760px) {
     body[data-console-version="v2"] .page-view { margin: 0 auto; padding: 18px clamp(14px, 4vw, 20px) 40px; }
     body[data-console-version="v2"] #toolsPage .management-grid { grid-template-columns: 1fr; gap: 16px; }
     body[data-console-version="v2"] #toolsPage .management-grid > *:not(:first-child) { grid-column: 1; }
+    body[data-console-version="v2"] #skillsPage .skill-detail-panel { min-height: 0; }
+    body[data-console-version="v2"] #skillsPage .skill-detail-placeholder { min-height: 190px; }
 }
 
 /* 最终布局收口：让长列表、聊天消息和运行输出在固定工作区内滚动，避免整页被内容无限拉长。 */
@@ -735,6 +882,16 @@ body[data-console-version="v2"] .button:active:not(:disabled) {
         grid-column: 1 / -1;
         text-align: left;
     }
+
+    body[data-console-version="v2"] #skillsPage .skill-detail-header { display: grid; gap: 10px; }
+    body[data-console-version="v2"] #skillsPage .skill-detail-header .skill-state-badge { justify-self: start; }
+    body[data-console-version="v2"] #skillsPage .skill-detail-metadata { grid-template-columns: 1fr; gap: 1px; padding: 10px 0; }
+    body[data-console-version="v2"] #skillsPage .skill-detail-metadata dt,
+    body[data-console-version="v2"] #skillsPage .skill-detail-metadata dd { padding: 0; border: 0; }
+    body[data-console-version="v2"] #skillsPage .skill-detail-metadata dd { margin-bottom: 8px; }
+    body[data-console-version="v2"] #skillsPage .skill-detail-metadata dd:last-child { margin-bottom: 0; }
+    body[data-console-version="v2"] #skillsPage .skill-detail-actions { justify-content: stretch; }
+    body[data-console-version="v2"] #skillsPage .skill-detail-actions .button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
