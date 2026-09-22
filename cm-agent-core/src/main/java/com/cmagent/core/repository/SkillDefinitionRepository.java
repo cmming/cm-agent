@@ -21,6 +21,18 @@ public interface SkillDefinitionRepository {
     SkillDefinition lock(UUID tenantId, UUID skillId);
     /** 使用预期当前版本做乐观更新，冲突时返回 {@code false}。 */
     boolean updateCurrent(SkillDefinition next, UUID expectedVersionId);
+    /** 使用预期候选和发布双指针做乐观更新，任一指针漂移时返回 {@code false}。 */
+    default boolean updatePointers(
+            SkillDefinition next,
+            UUID expectedCandidateId,
+            UUID expectedPublishedId
+    ) {
+        throw new UnsupportedOperationException("当前实现尚未支持技能双指针更新");
+    }
+    /** 使用预期技能级修订更新依赖映射修订，冲突时返回 {@code false}。 */
+    default boolean updateDependencyMappingRevision(SkillDefinition next, long expectedRevision) {
+        throw new UnsupportedOperationException("当前实现尚未支持技能依赖映射修订");
+    }
     /** 更新启停状态和访问纪元；目标定义必须已经存在。 */
     void updateEnabled(SkillDefinition next);
 }

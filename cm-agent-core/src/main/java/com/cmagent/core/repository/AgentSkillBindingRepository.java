@@ -20,4 +20,8 @@ public interface AgentSkillBindingRepository {
     long countBySkill(UUID tenantId, UUID skillId);
     /** 在当前工作单元中锁定 Agent 的绑定序列化边界。 */
     void lockAgent(UUID tenantId, UUID agentId);
+    /** 使用预期修订原子更新跟随或固定策略，冲突时返回 {@code false}。 */
+    default boolean updateStrategy(AgentSkillBinding next, long expectedRevision) {
+        throw new UnsupportedOperationException("当前实现尚未支持技能绑定策略更新");
+    }
 }

@@ -161,6 +161,31 @@ class AgentRunRequestTest {
                 "你好", List.of());
 
         assertThat(request.skills()).isEmpty();
+        assertThat(request.skillDependencies()).isEmpty();
+    }
+
+    @Test
+    void 运行请求冻结按技能分组的依赖解析() {
+        UUID skillId = UUID.randomUUID();
+        UUID versionId = UUID.randomUUID();
+        SkillDefinition definition = new SkillDefinition(
+                skillId, TENANT_ID, "support-guide", null, versionId, true, 0, 0,
+                "tester", "tester", java.time.Instant.EPOCH, java.time.Instant.EPOCH);
+        SkillVersion version = new SkillVersion(
+                versionId, TENANT_ID, skillId, 1, "说明", java.util.Map.of(),
+                "正文", "a".repeat(64), "tester", java.time.Instant.EPOCH);
+        java.util.Map<UUID, List<SkillDependencyResolution>> dependencies = new java.util.HashMap<>();
+        dependencies.put(skillId, new ArrayList<>(List.of(
+                new SkillDependencyResolution("search", TOOL_ID, true))));
+
+        AgentRunRequest request = new AgentRunRequest(
+                RUN_ID, TENANT_ID, agent(TENANT_ID), model(TENANT_ID), principal(TENANT_ID),
+                "你好", List.of(), null, List.of(new SkillVersionView(definition, version, List.of())), dependencies);
+        dependencies.clear();
+
+        assertThat(request.skillDependencies()).containsOnlyKeys(skillId);
+        assertThatThrownBy(() -> request.skillDependencies().clear())
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test

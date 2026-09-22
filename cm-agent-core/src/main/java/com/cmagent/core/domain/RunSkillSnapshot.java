@@ -13,7 +13,7 @@ import java.util.UUID;
  * @param tenantId Run 所属租户
  * @param runId Run 标识
  * @param agentId 执行 Run 的 Agent 标识
- * @param formatVersion 快照格式版本，第一版固定为 1
+ * @param formatVersion 快照格式版本；1 为旧绑定格式，2 包含来源和依赖解析
  * @param skills 固定的技能引用集合
  * @param createdAt 快照创建时间
  */
@@ -25,14 +25,13 @@ public record RunSkillSnapshot(
         List<SkillSnapshotRef> skills,
         Instant createdAt
 ) {
-
-    /** 冻结引用集合并拒绝重复技能，避免恢复时出现多义版本。 */
+    /** 冻结引用集合并拒绝重复技能，format 1 保持只读恢复兼容。 */
     public RunSkillSnapshot {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(runId, "runId 不能为空");
         Objects.requireNonNull(agentId, "agentId 不能为空");
         Objects.requireNonNull(createdAt, "createdAt 不能为空");
-        if (formatVersion != 1) {
+        if (formatVersion != 1 && formatVersion != 2) {
             throw new IllegalArgumentException("不支持的技能快照格式");
         }
         skills = List.copyOf(Objects.requireNonNull(skills, "skills 不能为空"));

@@ -43,6 +43,28 @@ public enum ApiErrorCode {
     SKILL_PACKAGE_TOO_LARGE,
     /** 技能名称、版本、绑定或内部工具名称发生冲突。 */
     SKILL_CONFLICT,
+    /** 技能候选指针已被并发修改，调用方应刷新后重试。 */
+    SKILL_CANDIDATE_CONFLICT,
+    /** 技能尚无正式发布版本。 */
+    SKILL_NOT_PUBLISHED,
+    /** 请求固定的技能版本从未形成发布事实。 */
+    SKILL_VERSION_NOT_RELEASED,
+    /** 技能包中的依赖声明结构或逻辑键无效。 */
+    SKILL_DEPENDENCY_INVALID,
+    /** 必需逻辑依赖尚未映射到租户工具。 */
+    SKILL_DEPENDENCY_UNMAPPED,
+    /** 已映射工具不存在、停用或运行时未就绪。 */
+    SKILL_DEPENDENCY_UNAVAILABLE,
+    /** 目标 Agent 未获得映射工具的现行授权。 */
+    SKILL_AGENT_GRANT_MISSING,
+    /** 预检采用的版本或映射修订已经过期。 */
+    SKILL_PREFLIGHT_STALE,
+    /** 当前候选尚无满足发布要求的试运行。 */
+    SKILL_TRIAL_REQUIRED,
+    /** 试运行未实际加载目标技能，不能作为发布依据。 */
+    SKILL_TRIAL_NOT_TRIGGERED,
+    /** 技能发布或回滚事务未能完成。 */
+    SKILL_RELEASE_FAILED,
     /** 技能功能关闭，当前写操作不可执行。 */
     SKILL_FEATURE_DISABLED,
     /** 技能、版本或资源不存在，或不属于可信租户边界。 */

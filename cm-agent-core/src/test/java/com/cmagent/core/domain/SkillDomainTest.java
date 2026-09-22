@@ -22,6 +22,82 @@ class SkillDomainTest {
     private static final UUID BINDING_ID = UUID.fromString("00000000-0000-0000-0000-000000000103");
 
     @Test
+    void 新技能允许候选和发布指针同时为空但拒绝负映射修订() {
+        SkillDefinition definition = new SkillDefinition(
+                SKILL_ID, TENANT_ID, "support-guide", null, null, false, 0, 0,
+                "tester", "tester", Instant.EPOCH, Instant.EPOCH);
+
+        assertThat(definition.candidateVersionId()).isNull();
+        assertThat(definition.publishedVersionId()).isNull();
+        assertThatThrownBy(() -> new SkillDefinition(
+                SKILL_ID, TENANT_ID, "support-guide", null, null, false, 0, -1,
+                "tester", "tester", Instant.EPOCH, Instant.EPOCH))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("技能依赖映射修订不能为负数");
+    }
+
+    @Test
+    void 绑定策略约束固定版本字段() {
+        Instant now = Instant.EPOCH;
+
+        assertThatThrownBy(() -> new AgentSkillBinding(
+                BINDING_ID, TENANT_ID, UUID.randomUUID(), SKILL_ID,
+                SkillBindingMode.PINNED, null, 0, "tester", "tester", now, now))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("固定版本不能为空");
+        assertThatThrownBy(() -> new AgentSkillBinding(
+                BINDING_ID, TENANT_ID, UUID.randomUUID(), SKILL_ID,
+                SkillBindingMode.FOLLOW_PUBLISHED, VERSION_ID, 0, "tester", "tester", now, now))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("跟随发布的绑定不能携带固定版本");
+    }
+
+    @Test
+    void 试运行快照保存授权来源并拒绝重复依赖解析() {
+        UUID trialRunId = UUID.randomUUID();
+        SkillSnapshotRef reference = new SkillSnapshotRef(
+                SKILL_ID, VERSION_ID, SkillSnapshotOrigin.TRIAL, trialRunId, 0,
+                List.of(new SkillDependencyResolution("search", UUID.randomUUID(), true)));
+
+        assertThat(reference.origin()).isEqualTo(SkillSnapshotOrigin.TRIAL);
+        assertThat(reference.authorizationId()).isEqualTo(trialRunId);
+        assertThatThrownBy(() -> new SkillSnapshotRef(
+                SKILL_ID, VERSION_ID, SkillSnapshotOrigin.TRIAL, trialRunId, 0,
+                List.of(
+                        new SkillDependencyResolution("search", UUID.randomUUID(), true),
+                        new SkillDependencyResolution("search", UUID.randomUUID(), false))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("技能依赖解析键不能重复");
+    }
+
+    @Test
+    void 发布事实按动作约束预检和试运行依据() {
+        UUID preflightId = UUID.randomUUID();
+        UUID trialRunId = UUID.randomUUID();
+        Instant now = Instant.EPOCH;
+
+        SkillRelease publish = new SkillRelease(
+                UUID.randomUUID(), TENANT_ID, SKILL_ID, 2, SkillReleaseAction.PUBLISH,
+                UUID.randomUUID(), VERSION_ID, preflightId, trialRunId, "tester", now);
+        assertThat(publish.preflightId()).isEqualTo(preflightId);
+        assertThatThrownBy(() -> new SkillRelease(
+                UUID.randomUUID(), TENANT_ID, SKILL_ID, 2, SkillReleaseAction.PUBLISH,
+                UUID.randomUUID(), VERSION_ID, null, trialRunId, "tester", now))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("发布预检标识不能为空");
+        assertThatThrownBy(() -> new SkillRelease(
+                UUID.randomUUID(), TENANT_ID, SKILL_ID, 2, SkillReleaseAction.ROLLBACK,
+                UUID.randomUUID(), VERSION_ID, preflightId, trialRunId, "tester", now))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("回滚不能引用候选试运行");
+        assertThatThrownBy(() -> new SkillRelease(
+                UUID.randomUUID(), TENANT_ID, SKILL_ID, 1, SkillReleaseAction.BASELINE,
+                null, VERSION_ID, preflightId, null, "tester", now))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("基线发布不能引用预检或试运行");
+    }
+
+    @Test
     void 空快照有效且构造后不能被外部集合修改() {
         List<SkillSnapshotRef> refs = new ArrayList<>();
         RunSkillSnapshot snapshot = new RunSkillSnapshot(

@@ -11,7 +11,8 @@ import java.util.UUID;
  * @param id 审批请求公开标识
  * @param tenantId 可信认证上下文中的租户标识
  * @param agentId 当前 Agent 标识
- * @param conversationId 当前会话标识
+ * @param scope 正式会话或独立 TEST Run 审批范围
+ * @param conversationId 正式会话标识；运行级审批必须为空
  * @param runId 被暂停的 Run 标识
  * @param requestedBy 发起运行的主体标识
  * @param requestedByDisplayName 发起人展示名称快照
@@ -21,15 +22,16 @@ import java.util.UUID;
  * @param checkpointRef 加密 AgentState 检查点引用，不对前端暴露
  * @param createdAt 创建时间
  * @param updatedAt 最后更新时间
- * @param decidedBy 审批主体标识；PENDING 时为 {@code null}
- * @param decidedByDisplayName 审批人展示名称；PENDING 时为 {@code null}
- * @param decidedAt 决定生效时间；PENDING 时为 {@code null}
+ * @param decidedBy 审批主体标识；PENDING 时为空
+ * @param decidedByDisplayName 审批人展示名称；PENDING 时为空
+ * @param decidedAt 决定生效时间；PENDING 时为空
  * @param items 本轮全部待确认调用
  */
 public record ToolApprovalRequest(
         UUID id,
         UUID tenantId,
         UUID agentId,
+        ToolApprovalScope scope,
         UUID conversationId,
         UUID runId,
         String requestedBy,
@@ -45,11 +47,17 @@ public record ToolApprovalRequest(
         Instant decidedAt,
         List<ToolApprovalItem> items
 ) {
+    /** 校验审批资源范围、状态和明细归属。 */
     public ToolApprovalRequest {
         Objects.requireNonNull(id, "id 不能为空");
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(agentId, "agentId 不能为空");
-        Objects.requireNonNull(conversationId, "conversationId 不能为空");
+        Objects.requireNonNull(scope, "scope 不能为空");
+        if (scope == ToolApprovalScope.CONVERSATION) {
+            Objects.requireNonNull(conversationId, "会话审批的 conversationId 不能为空");
+        } else if (conversationId != null) {
+            throw new IllegalArgumentException("运行审批不能携带 conversationId");
+        }
         Objects.requireNonNull(runId, "runId 不能为空");
         if (requestedBy == null || requestedBy.isBlank()) {
             throw new IllegalArgumentException("requestedBy 不能为空");
@@ -65,7 +73,7 @@ public record ToolApprovalRequest(
         }
         Objects.requireNonNull(createdAt, "createdAt 不能为空");
         Objects.requireNonNull(updatedAt, "updatedAt 不能为空");
-        items = List.copyOf(items);
+        items = List.copyOf(Objects.requireNonNull(items, "items 不能为空"));
         if (items.isEmpty() || items.stream().anyMatch(item -> !id.equals(item.approvalId()))) {
             throw new IllegalArgumentException("审批明细不能为空且必须属于当前请求");
         }
@@ -77,7 +85,19 @@ public record ToolApprovalRequest(
         }
     }
 
-    /** @return 是否已达到或超过服务端过期时间 */
+    /** 兼容既有正式会话审批构造方式。 */
+    public ToolApprovalRequest(
+            UUID id, UUID tenantId, UUID agentId, UUID conversationId, UUID runId,
+            String requestedBy, String requestedByDisplayName, ToolApprovalStatus status,
+            Instant expiresAt, long version, String checkpointRef, Instant createdAt, Instant updatedAt,
+            String decidedBy, String decidedByDisplayName, Instant decidedAt, List<ToolApprovalItem> items
+    ) {
+        this(id, tenantId, agentId, ToolApprovalScope.CONVERSATION, conversationId, runId,
+                requestedBy, requestedByDisplayName, status, expiresAt, version, checkpointRef,
+                createdAt, updatedAt, decidedBy, decidedByDisplayName, decidedAt, items);
+    }
+
+    /** @return 是否已达到或超过服务端权威过期时间 */
     public boolean isExpired(Instant now) {
         return !now.isBefore(expiresAt);
     }

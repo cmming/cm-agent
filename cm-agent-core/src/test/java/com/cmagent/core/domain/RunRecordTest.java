@@ -43,11 +43,21 @@ class RunRecordTest {
     void createProducesUnfinishedRunningRunAndNormalizesNullText() {
         RunRecord run = RunRecord.create(ID, TENANT_ID, AGENT_ID, "principal", null, STARTED_AT);
 
+        assertThat(run.kind()).isEqualTo(RunKind.NORMAL);
         assertThat(run.status()).isEqualTo(RunStatus.RUNNING);
         assertThat(run.finishedAt()).isNull();
         assertThat(run.input()).isEmpty();
         assertThat(run.output()).isEmpty();
         assertThat(run.errorMessage()).isEmpty();
+    }
+
+    @Test
+    void 显式工厂可以创建试运行记录() {
+        RunRecord trial = RunRecord.create(
+                ID, TENANT_ID, AGENT_ID, "principal", RunKind.TEST, "验证", STARTED_AT);
+
+        assertThat(trial.kind()).isEqualTo(RunKind.TEST);
+        assertThat(trial.status()).isEqualTo(RunStatus.RUNNING);
     }
 
     @Test

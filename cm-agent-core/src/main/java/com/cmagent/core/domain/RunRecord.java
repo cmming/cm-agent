@@ -5,24 +5,26 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * 记录一次 Agent 运行的主体、状态、输入输出和起止时间。
+ * 记录一次 Agent 运行的主体、类型、状态、输入输出和起止时间。
  *
  * @param id 运行记录唯一标识
- * @param tenantId 运行归属租户，读写边界以此隔离
+ * @param tenantId 运行归属租户
  * @param agentId 被运行的 Agent 标识
  * @param principalId 发起运行的租户内主体标识
- * @param status 运行状态，RUNNING/WAITING_APPROVAL 与终态对完成时间的约束见构造器
+ * @param kind 正式运行或技能试运行
+ * @param status 当前运行状态
  * @param input 调用方输入，保存前已脱敏
  * @param output 模型或工具输出，保存前已脱敏
- * @param errorMessage 已脱敏的错误说明，无错误时空字符串
+ * @param errorMessage 已脱敏的错误说明
  * @param startedAt 运行开始时间
- * @param finishedAt 运行完成时间；非终态必须为 {@code null}，终态必须有值
+ * @param finishedAt 运行完成时间；非终态必须为空
  */
 public record RunRecord(
         UUID id,
         UUID tenantId,
         UUID agentId,
         String principalId,
+        RunKind kind,
         RunStatus status,
         String input,
         String output,
@@ -30,31 +32,16 @@ public record RunRecord(
         Instant startedAt,
         Instant finishedAt
 ) {
-    /**
-     * 校验运行记录的租户上下文、状态和起止时间不变量。
-     *
-     * <p>状态机约束：RUNNING 和 WAITING_APPROVAL 记录不得有完成时间，终态记录必须有完成时间，
-     * 完成时间不得早于开始时间。非法状态在构造期即被拒绝，保证持久化数据只有合法终态。</p>
-     *
-     * @param id 目标资源标识
-     * @param tenantId 当前租户标识
-     * @param agentId 目标 Agent 标识
-     * @param principalId 租户内主体标识
-     * @param status 目标运行状态
-     * @param input 调用方输入
-     * @param output 模型或工具输出
-     * @param errorMessage 已控制敏感信息的错误说明
-     * @param startedAt 流程开始时间
-     * @param finishedAt 流程完成时间
-     */
+    /** 校验租户上下文、运行类型和状态时间不变量。 */
     public RunRecord {
         Objects.requireNonNull(id, "id 不能为空");
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(agentId, "agentId 不能为空");
-        Objects.requireNonNull(status, "status 不能为空");
         if (principalId == null || principalId.isBlank()) {
             throw new IllegalArgumentException("principalId 不能为空");
         }
+        Objects.requireNonNull(kind, "kind 不能为空");
+        Objects.requireNonNull(status, "status 不能为空");
         input = input == null ? "" : input;
         output = output == null ? "" : output;
         errorMessage = errorMessage == null ? "" : errorMessage;
@@ -73,39 +60,43 @@ public record RunRecord(
         }
     }
 
-    /**
-     * 创建处于运行中状态的初始运行记录。
-     *
-     * @param id 目标资源标识
-     * @param tenantId 当前租户标识
-     * @param agentId 目标 Agent 标识
-     * @param principalId 租户内主体标识
-     * @param input 调用方输入
-     * @param startedAt 流程开始时间
-     * @return 新建的运行记录
-     */
-    public static RunRecord create(
-            UUID id,
-            UUID tenantId,
-            UUID agentId,
-            String principalId,
-            String input,
-            Instant startedAt
+    /** 兼容旧持久化映射和调用方，缺省为正式运行。 */
+    public RunRecord(
+            UUID id, UUID tenantId, UUID agentId, String principalId, RunStatus status,
+            String input, String output, String errorMessage, Instant startedAt, Instant finishedAt
     ) {
-        return new RunRecord(id, tenantId, agentId, principalId, RunStatus.RUNNING, input, "", "", startedAt, null);
+        this(id, tenantId, agentId, principalId, RunKind.NORMAL, status,
+                input, output, errorMessage, startedAt, finishedAt);
+    }
+
+    /** 创建正式运行中的初始记录。 */
+    public static RunRecord create(
+            UUID id, UUID tenantId, UUID agentId, String principalId, String input, Instant startedAt
+    ) {
+        return create(id, tenantId, agentId, principalId, RunKind.NORMAL, input, startedAt);
     }
 
     /**
-     * 将当前运行中记录转换为成功或失败的终态记录。
+     * 创建指定类型的运行中记录。
      *
-     * @param status 目标运行状态，不能为 RUNNING 或 WAITING_APPROVAL
-     * @param output 模型或工具输出
-     * @param errorMessage 已控制敏感信息的错误说明
-     * @param finishedAt 流程完成时间
-     * @return 保留原始上下文并写入终态信息的新记录
-     * @throws IllegalArgumentException 目标状态为 RUNNING 时抛出
-     * @throws IllegalStateException 当前记录不是 RUNNING 状态时抛出
+     * @param id 运行标识
+     * @param tenantId 可信租户标识
+     * @param agentId 已校验归属的 Agent 标识
+     * @param principalId 发起主体标识
+     * @param kind 正式或试运行类型
+     * @param input 已脱敏输入
+     * @param startedAt 开始时间
+     * @return 新建的运行中记录
      */
+    public static RunRecord create(
+            UUID id, UUID tenantId, UUID agentId, String principalId,
+            RunKind kind, String input, Instant startedAt
+    ) {
+        return new RunRecord(id, tenantId, agentId, principalId, kind,
+                RunStatus.RUNNING, input, "", "", startedAt, null);
+    }
+
+    /** 将当前活动记录转换为成功或失败终态并保留运行类型。 */
     public RunRecord complete(RunStatus status, String output, String errorMessage, Instant finishedAt) {
         if (status == RunStatus.RUNNING) {
             throw new IllegalArgumentException("finalStatus 不能为 RUNNING");
@@ -117,32 +108,20 @@ public record RunRecord(
             throw new IllegalStateException("只能完成 RUNNING 状态的运行");
         }
         return new RunRecord(
-                id,
-                tenantId,
-                agentId,
-                principalId,
-                status,
-                input,
-                output,
-                errorMessage,
-                startedAt,
-                Objects.requireNonNull(finishedAt, "finishedAt 不能为空")
-        );
+                id, tenantId, agentId, principalId, kind, status, input, output, errorMessage,
+                startedAt, Objects.requireNonNull(finishedAt, "finishedAt 不能为空"));
     }
 
     /**
-     * 将运行中的记录转换为等待审批状态。
+     * 将运行中记录转换为等待审批状态。
      *
-     * <p>暂停不是运行完成，因此不会写入 {@code finishedAt}，也不会保存模型在 ASK 前产生的
-     * 非最终文本。重复暂停和从终态回退都被拒绝，防止审批恢复链路覆盖权威状态。</p>
-     *
-     * @return 保留原始上下文的等待审批记录
+     * <p>暂停不是完成，因此不写入完成时间；正式和试运行审批均保留原运行类型。</p>
      */
     public RunRecord waitForApproval() {
         if (status != RunStatus.RUNNING) {
             throw new IllegalStateException("只能暂停 RUNNING 状态的运行");
         }
-        return new RunRecord(id, tenantId, agentId, principalId, RunStatus.WAITING_APPROVAL,
-                input, "", "", startedAt, null);
+        return new RunRecord(id, tenantId, agentId, principalId, kind,
+                RunStatus.WAITING_APPROVAL, input, "", "", startedAt, null);
     }
 }

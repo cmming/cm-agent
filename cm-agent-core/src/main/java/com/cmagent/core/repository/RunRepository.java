@@ -1,6 +1,7 @@
 package com.cmagent.core.repository;
 
 import com.cmagent.core.domain.RunRecord;
+import com.cmagent.core.domain.RunKind;
 import com.cmagent.core.domain.RunPageRequest;
 import com.cmagent.core.domain.RunStatus;
 
@@ -74,6 +75,19 @@ public interface RunRepository {
      * @return 按游标排序的当前页运行记录
      */
     List<RunRecord> listByTenantAndAgent(UUID tenantId, UUID agentId, RunPageRequest pageRequest);
+
+    /** 按指定运行类型分页查询；试运行只能通过显式类型入口读取。 */
+    default List<RunRecord> listByTenantAndAgentAndKind(
+            UUID tenantId,
+            UUID agentId,
+            RunKind kind,
+            RunPageRequest pageRequest
+    ) {
+        Objects.requireNonNull(kind, "kind 不能为空");
+        return listByTenantAndAgent(tenantId, agentId, pageRequest).stream()
+                .filter(run -> run.kind() == kind)
+                .toList();
+    }
 
     /**
      * 构造与数据库游标查询一致的运行记录倒序比较器。

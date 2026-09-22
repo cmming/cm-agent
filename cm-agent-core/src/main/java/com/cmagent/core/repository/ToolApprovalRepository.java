@@ -26,9 +26,21 @@ public interface ToolApprovalRepository {
     Optional<ToolApprovalRequest> find(
             UUID tenantId, UUID agentId, UUID conversationId, UUID approvalId);
 
+    /** 在可信租户、Agent 和 Run 边界内查询独立试运行审批。 */
+    default Optional<ToolApprovalRequest> findByRun(
+            UUID tenantId, UUID agentId, UUID runId, UUID approvalId) {
+        throw new UnsupportedOperationException("当前实现尚未支持运行级审批查询");
+    }
+
     /** 按创建时间正序列出当前会话未过期的 PENDING 请求。 */
     List<ToolApprovalRequest> listPending(
             UUID tenantId, UUID agentId, UUID conversationId, Instant now, int limit);
+
+    /** 按创建时间正序列出指定 TEST Run 未过期的 PENDING 请求。 */
+    default List<ToolApprovalRequest> listPendingByRun(
+            UUID tenantId, UUID agentId, UUID runId, Instant now, int limit) {
+        throw new UnsupportedOperationException("当前实现尚未支持运行级待审批查询");
+    }
 
     /**
      * 在可信租户和会话边界内分页查询已处理审批，不返回 PENDING，也不触发过期更新或运行恢复。
@@ -44,6 +56,11 @@ public interface ToolApprovalRepository {
 
     /** 判断当前会话是否存在未过期 PENDING 请求，用于阻止并发发送新消息。 */
     boolean hasPending(UUID tenantId, UUID agentId, UUID conversationId, Instant now);
+
+    /** 判断指定 TEST Run 是否存在未过期 PENDING 请求。 */
+    default boolean hasPendingByRun(UUID tenantId, UUID agentId, UUID runId, Instant now) {
+        throw new UnsupportedOperationException("当前实现尚未支持运行级待审批判断");
+    }
 
     /**
      * 使用条件更新原子写入全量明细决定和请求终态。
@@ -62,6 +79,22 @@ public interface ToolApprovalRepository {
             String decidedByDisplayName,
             Instant decidedAt);
 
+    /** 在可信 Run 边界内条件写入试运行审批决定。 */
+    default boolean decideByRun(
+            UUID tenantId,
+            UUID agentId,
+            UUID runId,
+            UUID approvalId,
+            long expectedVersion,
+            ToolApprovalStatus status,
+            Map<UUID, ToolApprovalDecision> decisions,
+            String decidedBy,
+            String decidedByDisplayName,
+            Instant decidedAt
+    ) {
+        throw new UnsupportedOperationException("当前实现尚未支持运行级审批决定");
+    }
+
     /** 将已过期的 PENDING 请求原子标记为 EXPIRED。 */
     boolean expire(
             UUID tenantId,
@@ -71,4 +104,17 @@ public interface ToolApprovalRepository {
             long expectedVersion,
             String decidedBy,
             Instant decidedAt);
+
+    /** 在可信 Run 边界内条件标记已过期的试运行审批。 */
+    default boolean expireByRun(
+            UUID tenantId,
+            UUID agentId,
+            UUID runId,
+            UUID approvalId,
+            long expectedVersion,
+            String decidedBy,
+            Instant decidedAt
+    ) {
+        throw new UnsupportedOperationException("当前实现尚未支持运行级审批过期");
+    }
 }
