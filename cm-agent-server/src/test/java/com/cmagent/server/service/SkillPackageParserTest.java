@@ -30,6 +30,118 @@ class SkillPackageParserTest {
             List.of(".md", ".txt", ".json", ".yaml", ".yml", ".csv"));
 
     @Test
+    void 解析必需默认值和可选工具依赖并从普通元数据移除() throws Exception {
+        ParsedSkillPackage parsed = parseSkill("""
+                ---
+                name: order-analysis
+                description: 订单分析
+                dependencies:
+                  tools:
+                    - key: order-query
+                      description: 查询订单
+                    - key: export-report
+                      required: false
+                      description: 导出报表
+                ---
+                按需查询订单。
+                """);
+
+        assertThat(parsed.dependencies()).containsExactly(
+                new ParsedSkillDependency("order-query", true, "查询订单", 0),
+                new ParsedSkillDependency("export-report", false, "导出报表", 1));
+        assertThat(parsed.metadata()).doesNotContainKey("dependencies");
+    }
+
+    @Test
+    void 没有依赖声明的旧技能包返回空集合() throws Exception {
+        assertThat(parseSkill(SKILL).dependencies()).isEmpty();
+    }
+
+    @Test
+    void 拒绝重复或非法逻辑键() throws Exception {
+        String duplicate = """
+                ---
+                name: order-analysis
+                description: 订单分析
+                dependencies:
+                  tools:
+                    - key: order-query
+                    - key: order-query
+                ---
+                正文
+                """;
+        String invalidKey = duplicate.replace("- key: order-query\n                    - key: order-query",
+                "- key: Order_Query");
+
+        assertSkillInvalid(duplicate);
+        assertSkillInvalid(invalidKey);
+    }
+
+    @Test
+    void 拒绝非数组工具依赖和未知字段() throws Exception {
+        String notArray = """
+                ---
+                name: order-analysis
+                description: 订单分析
+                dependencies:
+                  tools: {key: order-query}
+                ---
+                正文
+                """;
+        String unknownField = """
+                ---
+                name: order-analysis
+                description: 订单分析
+                dependencies:
+                  tools:
+                    - key: order-query
+                      command: curl
+                ---
+                正文
+                """;
+
+        assertSkillInvalid(notArray);
+        assertSkillInvalid(unknownField);
+    }
+
+    @Test
+    void 拒绝依赖描述控制字符() throws Exception {
+        assertSkillInvalid("""
+                ---
+                name: order-analysis
+                description: 订单分析
+                dependencies:
+                  tools:
+                    - key: order-query
+                      description: "查询\u0007订单"
+                ---
+                正文
+                """);
+    }
+
+    @Test
+    void 依赖顺序和必需标志参与版本摘要() throws Exception {
+        ParsedSkillPackage first = parseSkill(skillWithDependencies("""
+                    - key: order-query
+                    - key: export-report
+                      required: false
+                """));
+        ParsedSkillPackage reordered = parseSkill(skillWithDependencies("""
+                    - key: export-report
+                      required: false
+                    - key: order-query
+                """));
+        ParsedSkillPackage requiredChanged = parseSkill(skillWithDependencies("""
+                    - key: order-query
+                    - key: export-report
+                      required: true
+                """));
+
+        assertThat(first.sha256()).isNotEqualTo(reordered.sha256());
+        assertThat(first.sha256()).isNotEqualTo(requiredChanged.sha256());
+    }
+
+    @Test
     void 解析单一包装目录并生成稳定摘要() throws Exception {
         Map<String, byte[]> files = new LinkedHashMap<>();
         files.put("support-guide/SKILL.md", SKILL.getBytes(StandardCharsets.UTF_8));
@@ -187,6 +299,30 @@ class SkillPackageParserTest {
         assertThatThrownBy(() -> parser.parse(new ByteArrayInputStream(bytes), limits))
                 .isInstanceOf(SkillAccessException.class)
                 .extracting("code").isEqualTo(code);
+    }
+
+    private ParsedSkillPackage parseSkill(String content) throws Exception {
+        return parser.parse(new ByteArrayInputStream(zip(
+                Map.of("SKILL.md", content.getBytes(StandardCharsets.UTF_8)), LocalDateTime.now())),
+                SkillPackageLimits.defaults());
+    }
+
+    private void assertSkillInvalid(String content) throws Exception {
+        assertCode(zip(Map.of("SKILL.md", content.getBytes(StandardCharsets.UTF_8)), LocalDateTime.now()),
+                SkillPackageLimits.defaults(), ApiErrorCode.SKILL_PACKAGE_INVALID);
+    }
+
+    private static String skillWithDependencies(String tools) {
+        return """
+                ---
+                name: order-analysis
+                description: 订单分析
+                dependencies:
+                  tools:
+                %s
+                ---
+                正文
+                """.formatted(tools.indent(4));
     }
 
     private static byte[] zip(Map<String, byte[]> files, LocalDateTime timestamp) throws IOException {

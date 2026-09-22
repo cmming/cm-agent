@@ -50,6 +50,7 @@ public final class SkillPackageParser {
     private static final int MAX_ARCHIVE_ENTRIES = 256;
     private static final Pattern FRONTMATTER = Pattern.compile("\\A---\\n(.*?)\\n---(?:\\n|\\z)(.*)\\z", Pattern.DOTALL);
     private static final Pattern NAME = Pattern.compile("[a-z0-9](?:[a-z0-9]|-(?!-)){0,62}[a-z0-9]|[a-z0-9]");
+    private static final Set<String> DEPENDENCY_FIELDS = Set.of("key", "required", "description");
     private final Set<String> allowedExtensions;
 
     /**
@@ -173,7 +174,8 @@ public final class SkillPackageParser {
         });
         String digest = digest(parsed, resources);
         return new ParsedSkillPackage(
-                parsed.name(), parsed.description(), parsed.metadata(), parsed.content(), resources, digest);
+                parsed.name(), parsed.description(), parsed.metadata(), parsed.content(),
+                parsed.dependencies(), resources, digest);
     }
 
     private Frontmatter parseFrontmatter(String instruction, SkillPackageLimits limits) {
@@ -213,14 +215,73 @@ public final class SkillPackageParser {
             }
             String name = requireString(metadata.remove("name"), "技能名称不能为空");
             String description = requireString(metadata.remove("description"), "技能描述不能为空");
+            List<ParsedSkillDependency> dependencies = parseDependencies(metadata.remove("dependencies"));
             validateName(name);
             validateDescription(description);
-            return new Frontmatter(name, description, metadata, content);
+            return new Frontmatter(name, description, metadata, content, dependencies);
         } catch (SkillAccessException exception) {
             throw exception;
         } catch (RuntimeException exception) {
             throw invalid("技能 YAML 元数据不合法");
         }
+    }
+
+    /**
+     * 将已由 SafeConstructor 解析并冻结的 YAML 子树转换为受控工具依赖。
+     *
+     * <p>这里只接受描述性字段，不允许命令、端点或脚本等执行语义；具体工具由管理员在
+     * 当前租户中另行映射，依赖声明本身不会授予工具权限。</p>
+     */
+    private List<ParsedSkillDependency> parseDependencies(Object value) {
+        if (value == null) {
+            return List.of();
+        }
+        if (!(value instanceof Map<?, ?> dependencies)
+                || dependencies.size() != 1
+                || !dependencies.containsKey("tools")) {
+            throw invalid("技能 dependencies 只允许包含 tools");
+        }
+        Object toolsValue = dependencies.get("tools");
+        if (!(toolsValue instanceof List<?> tools)) {
+            throw invalid("技能 dependencies.tools 必须为对象数组");
+        }
+        List<ParsedSkillDependency> result = new ArrayList<>(tools.size());
+        Set<String> logicalKeys = new HashSet<>();
+        for (int position = 0; position < tools.size(); position++) {
+            Object item = tools.get(position);
+            if (!(item instanceof Map<?, ?> source)) {
+                throw invalid("技能工具依赖必须为对象");
+            }
+            Map<String, Object> fields = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : source.entrySet()) {
+                if (!(entry.getKey() instanceof String key) || !DEPENDENCY_FIELDS.contains(key)) {
+                    throw invalid("技能工具依赖包含未知字段");
+                }
+                fields.put(key, entry.getValue());
+            }
+            String logicalKey = requireString(fields.get("key"), "技能工具依赖 key 不能为空");
+            validateDependencyKey(logicalKey);
+            if (!logicalKeys.add(logicalKey)) {
+                throw invalid("技能工具依赖 key 不能重复");
+            }
+            Object requiredValue = fields.get("required");
+            if (requiredValue != null && !(requiredValue instanceof Boolean)) {
+                throw invalid("技能工具依赖 required 必须为布尔值");
+            }
+            boolean required = requiredValue == null || (Boolean) requiredValue;
+            Object descriptionValue = fields.get("description");
+            if (descriptionValue != null && !(descriptionValue instanceof String)) {
+                throw invalid("技能工具依赖 description 必须为字符串");
+            }
+            String dependencyDescription = descriptionValue == null ? "" : ((String) descriptionValue).strip();
+            if (dependencyDescription.codePointCount(0, dependencyDescription.length()) > 1024
+                    || containsControl(dependencyDescription)) {
+                throw invalid("技能工具依赖描述长度或字符不合法");
+            }
+            result.add(new ParsedSkillDependency(
+                    logicalKey, required, dependencyDescription, position));
+        }
+        return List.copyOf(result);
     }
 
     private Object validateMetadata(Object value, int depth) {
@@ -278,6 +339,12 @@ public final class SkillPackageParser {
         }
     }
 
+    private void validateDependencyKey(String logicalKey) {
+        if (logicalKey.length() > 64 || !NAME.matcher(logicalKey).matches()) {
+            throw invalid("技能工具依赖 key 只能使用小写字母、数字和非连续连字符");
+        }
+    }
+
     private void validateDescription(String description) {
         int codePoints = description.codePointCount(0, description.length());
         if (codePoints < 1 || codePoints > 1024 || containsControl(description)) {
@@ -291,6 +358,12 @@ public final class SkillPackageParser {
             update(digest, parsed.name());
             update(digest, parsed.description());
             updateCanonical(digest, parsed.metadata());
+            update(digest, "dependencies.tools");
+            for (ParsedSkillDependency dependency : parsed.dependencies()) {
+                update(digest, dependency.logicalKey());
+                update(digest, Boolean.toString(dependency.required()));
+                update(digest, dependency.description());
+            }
             update(digest, parsed.content());
             resources.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
                 update(digest, entry.getKey());
@@ -395,7 +468,8 @@ public final class SkillPackageParser {
             String name,
             String description,
             Map<String, Object> metadata,
-            String content
+            String content,
+            List<ParsedSkillDependency> dependencies
     ) {
     }
 }

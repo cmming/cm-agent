@@ -14,6 +14,7 @@ import java.util.Objects;
  * @param description 供模型选择技能的适用情境描述
  * @param metadata 安全 YAML 解析得到的附加元数据
  * @param content 非空指令正文
+ * @param dependencies 按声明顺序冻结的逻辑工具依赖
  * @param resources 以技能根为基准的文本资源路径和正文
  * @param sha256 与 ZIP 元信息无关的规范内容摘要
  */
@@ -22,6 +23,7 @@ public record ParsedSkillPackage(
         String description,
         Map<String, Object> metadata,
         String content,
+        List<ParsedSkillDependency> dependencies,
         Map<String, String> resources,
         String sha256
 ) {
@@ -33,6 +35,7 @@ public record ParsedSkillPackage(
         Objects.requireNonNull(content, "content 不能为空");
         Objects.requireNonNull(sha256, "sha256 不能为空");
         metadata = freezeMap(Objects.requireNonNull(metadata, "metadata 不能为空"));
+        dependencies = List.copyOf(Objects.requireNonNull(dependencies, "dependencies 不能为空"));
         resources = Collections.unmodifiableMap(new LinkedHashMap<>(
                 Objects.requireNonNull(resources, "resources 不能为空")));
     }
@@ -61,5 +64,23 @@ public record ParsedSkillPackage(
             return Collections.unmodifiableList(result);
         }
         throw new IllegalArgumentException("技能元数据包含不支持的值");
+    }
+}
+
+/**
+ * 完成安全校验后的单个逻辑工具依赖。
+ *
+ * @param logicalKey 技能包内稳定的逻辑工具键
+ * @param required 是否为阻断运行和发布的必需依赖
+ * @param description 面向管理员的依赖用途说明
+ * @param position 技能包中的声明顺序
+ */
+record ParsedSkillDependency(String logicalKey, boolean required, String description, int position) {
+    ParsedSkillDependency {
+        Objects.requireNonNull(logicalKey, "logicalKey 不能为空");
+        Objects.requireNonNull(description, "description 不能为空");
+        if (position < 0) {
+            throw new IllegalArgumentException("position 不能为负数");
+        }
     }
 }
