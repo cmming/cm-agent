@@ -123,7 +123,8 @@ public class SkillController {
         UUID expectedCandidateId = expectedCandidateVersionId == null
                 ? legacyExpectedVersionId : expectedCandidateVersionId;
         SkillVersionView result = candidates.replaceCandidate(
-                principal, id, expectedCandidateId, expectedPublishedVersionId, parse(file));
+                principal, id, expectedCandidateId, expectedPublishedVersionId, parse(file),
+                expectedCandidateVersionId == null && legacyExpectedVersionId != null);
         HttpStatus status = result.version().id().equals(expectedCandidateId)
                 || result.version().id().equals(expectedPublishedVersionId)
                 ? HttpStatus.OK : HttpStatus.CREATED;

@@ -93,12 +93,38 @@ public class SkillCandidateService {
     public SkillVersionView replaceCandidate(
             PrincipalRef principal, UUID skillId, UUID expectedCandidateId, UUID expectedPublishedId,
             ParsedSkillPackage parsed) {
+        return replaceCandidate(principal, skillId, expectedCandidateId, expectedPublishedId, parsed, false);
+    }
+
+    /**
+     * 使用候选与发布双指针 CAS 替换候选版本。
+     *
+     * <p>只有旧版 {@code expectedVersionId} 调用方会把 {@code publishImmediately} 设为真：在候选与
+     * 发布指针都等于该版本时，本次请求被解释为“重新上传当前已生效版本”，直接返回既有版本，
+     * 保持发布控制引入前“相同内容返回 200、且不产生新候选”的兼容语义。新接口绝不使用该分支，
+     * 因此显式候选替换仍然严格遵循“上传只形成候选”的发布控制规则。</p>
+     *
+     * @param principal 当前认证主体
+     * @param skillId 目标技能标识
+     * @param expectedCandidateId 调用方看到的候选指针
+     * @param expectedPublishedId 调用方看到的发布指针
+     * @param parsed 已解析且未落盘的技能包
+     * @param legacyVersionPointer 是否为旧版单指针调用方
+     * @return 保存后的版本视图
+     */
+    public SkillVersionView replaceCandidate(
+            PrincipalRef principal, UUID skillId, UUID expectedCandidateId, UUID expectedPublishedId,
+            ParsedSkillPackage parsed, boolean legacyVersionPointer) {
         requireFeatureEnabled();
         return workUnit.execute(() -> {
             SkillDefinition current = lockSkill(principal.tenantId(), skillId);
             if (!Objects.equals(current.candidateVersionId(), expectedCandidateId)
                     || !Objects.equals(current.publishedVersionId(), expectedPublishedId)) {
-                throw conflict(ApiErrorCode.SKILL_CANDIDATE_CONFLICT, "候选版本已变化，请刷新后重试");
+                if (!legacyVersionPointer) {
+                    throw conflict(ApiErrorCode.SKILL_CANDIDATE_CONFLICT, "候选版本已变化，请刷新后重试");
+                }
+                // 旧调用方只发送 expectedVersionId：指针已整体前移到该版本时视为重复上传。
+                return legacyReplayOrConflict(principal, current, expectedCandidateId, expectedPublishedId);
             }
             if (!current.name().equals(parsed.name())) {
                 throw conflict(ApiErrorCode.SKILL_CONFLICT, "技能名称不可修改");
@@ -129,6 +155,23 @@ public class SkillCandidateService {
             appendAudit(principal, "SKILL_CANDIDATE_REPLACE", skillId, "候选版本已替换");
             return new SkillVersionView(next, version, entries);
         });
+    }
+
+    private SkillVersionView legacyReplayOrConflict(
+            PrincipalRef principal, SkillDefinition current, UUID expectedCandidateId, UUID expectedPublishedId) {
+        UUID requested = expectedCandidateId != null ? expectedCandidateId : expectedPublishedId;
+        // 旧调用方把同一个版本号同时当作候选和发布指针，因此两侧都等于该版本时视为重复上传。
+        boolean bothPointersMoved = requested != null
+                && requested.equals(current.publishedVersionId())
+                && (current.candidateVersionId() == null
+                        || requested.equals(current.candidateVersionId()));
+        if (bothPointersMoved) {
+            SkillVersion existing = versions.find(principal.tenantId(), current.id(), requested)
+                    .orElseThrow(() -> conflict(ApiErrorCode.SKILL_SNAPSHOT_UNAVAILABLE, "技能当前版本不可用"));
+            return new SkillVersionView(current, existing,
+                    resources.list(principal.tenantId(), current.id(), requested));
+        }
+        throw conflict(ApiErrorCode.SKILL_CANDIDATE_CONFLICT, "候选版本已变化，请刷新后重试");
     }
 
     private int nextVersionNo(UUID tenantId, UUID skillId) {
