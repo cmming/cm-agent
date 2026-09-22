@@ -18,6 +18,11 @@ import com.cmagent.core.repository.McpToolPublicationRepository;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.core.repository.ToolGrantRepository;
 import com.cmagent.core.repository.AgentDefinitionRepository;
+import com.cmagent.core.repository.SkillDependencyMappingRepository;
+import com.cmagent.core.repository.SkillDependencyRepository;
+import com.cmagent.core.repository.SkillPreflightRepository;
+import com.cmagent.core.repository.SkillReleaseRepository;
+import com.cmagent.core.repository.SkillTrialRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
@@ -342,6 +347,34 @@ class ServerRepositoryConfigurationTest {
                             .hasMessage("Run 已存在");
                     assertThat(repository.findByTenantAndAgentAndId(TENANT_A, AGENT_A, RUN_A))
                             .contains(original);
+                });
+    }
+
+    @Test
+    /**
+     * 验证新增技能仓储视图复用同一个内存工作单元，而不是装配彼此独立的存储。
+     */
+    void memoryModeSharesNewSkillRepositoriesInsideOneStore() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ServerRepositoryConfiguration.class)
+                .withPropertyValues("cm-agent.persistence.mode=memory")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(com.cmagent.server.store.InMemorySkillStore.class);
+                    assertThat(context).hasSingleBean(SkillDependencyRepository.class);
+                    assertThat(context).hasSingleBean(SkillDependencyMappingRepository.class);
+                    assertThat(context).hasSingleBean(SkillPreflightRepository.class);
+                    assertThat(context).hasSingleBean(SkillReleaseRepository.class);
+                    assertThat(context).hasSingleBean(SkillTrialRepository.class);
+
+                    com.cmagent.server.store.InMemorySkillStore store =
+                            context.getBean(com.cmagent.server.store.InMemorySkillStore.class);
+                    assertThat(context.getBean(SkillDependencyRepository.class))
+                            .isSameAs(store.dependencies());
+                    assertThat(context.getBean(SkillDependencyMappingRepository.class))
+                            .isSameAs(store.mappings());
+                    assertThat(context.getBean(SkillPreflightRepository.class)).isSameAs(store.preflights());
+                    assertThat(context.getBean(SkillReleaseRepository.class)).isSameAs(store.releases());
+                    assertThat(context.getBean(SkillTrialRepository.class)).isSameAs(store.trials());
                 });
     }
 

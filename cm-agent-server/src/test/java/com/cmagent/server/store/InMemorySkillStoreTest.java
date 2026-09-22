@@ -2,11 +2,21 @@ package com.cmagent.server.store;
 
 import com.cmagent.api.ApiPageRequest;
 import com.cmagent.api.ApiErrorCode;
+import com.cmagent.core.domain.SkillDependency;
+import com.cmagent.core.domain.SkillDependencyMapping;
 import com.cmagent.core.domain.AgentSkillBinding;
 import com.cmagent.core.domain.RunSkillSnapshot;
 import com.cmagent.core.domain.SkillDefinition;
 import com.cmagent.core.domain.SkillLoadRecord;
 import com.cmagent.core.domain.SkillLoadStatus;
+import com.cmagent.core.domain.SkillPreflightCheck;
+import com.cmagent.core.domain.SkillPreflightItem;
+import com.cmagent.core.domain.SkillPreflightScope;
+import com.cmagent.core.domain.SkillPreflightStatus;
+import com.cmagent.core.domain.SkillRelease;
+import com.cmagent.core.domain.SkillReleaseAction;
+import com.cmagent.core.domain.SkillTrial;
+import com.cmagent.core.domain.SkillTrialStatus;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -217,6 +227,144 @@ class InMemorySkillStoreTest {
                 .hasMessage("技能不存在");
     }
 
+    @Test
+    void 发布预检和试运行仓储共享原子工作单元() {
+        InMemorySkillStore store = new InMemorySkillStore();
+        UUID tenant = UUID.randomUUID();
+        UUID skill = UUID.randomUUID();
+        UUID version = UUID.randomUUID();
+        UUID candidate = UUID.randomUUID();
+        UUID published = UUID.randomUUID();
+        SkillDependency dependency = new SkillDependency(
+                tenant, skill, candidate, "search", true, "搜索工具", 0);
+        SkillDependencyMapping mapping = new SkillDependencyMapping(
+                tenant, skill, "search", UUID.randomUUID(), "tester", Instant.EPOCH);
+        SkillPreflightCheck check = new SkillPreflightCheck(
+                UUID.randomUUID(), tenant, skill, candidate, 0,
+                SkillPreflightScope.STRUCTURAL, null,
+                SkillPreflightStatus.PASSED, "tester", Instant.EPOCH);
+        SkillPreflightItem item = new SkillPreflightItem(
+                check.id(), null, "search", true, mapping.toolId(),
+                com.cmagent.core.domain.SkillPreflightItemStatus.READY, null, "已就绪", null);
+        SkillRelease release = new SkillRelease(
+                UUID.randomUUID(), tenant, skill, 1, SkillReleaseAction.PUBLISH,
+                published, candidate, check.id(), UUID.randomUUID(), "tester", Instant.EPOCH);
+        SkillTrial trial = new SkillTrial(
+                UUID.randomUUID(), tenant, skill, candidate, UUID.randomUUID(), 0,
+                SkillTrialStatus.PASSED, true, "tester", Instant.EPOCH, Instant.EPOCH);
+
+        store.execute(() -> {
+            store.dependencies().insertAll(List.of(dependency));
+            store.mappings().save(mapping);
+            store.preflights().save(check, List.of(item));
+            store.releases().insert(release);
+            store.trials().insert(trial);
+            return null;
+        });
+
+        assertThat(store.dependencies().list(tenant, skill, candidate)).containsExactly(dependency);
+        assertThat(store.mappings().list(tenant, skill)).containsExactly(mapping);
+        assertThat(store.preflights().find(tenant, check.id())).contains(check);
+        assertThat(store.preflights().listItems(tenant, check.id())).containsExactly(item);
+        assertThat(store.releases().find(tenant, release.id())).contains(release);
+        assertThat(store.trials().find(tenant, trial.runId())).contains(trial);
+
+        SkillPreflightCheck rollbackCheck = new SkillPreflightCheck(
+                UUID.randomUUID(), tenant, skill, candidate, 0,
+                SkillPreflightScope.STRUCTURAL, null,
+                SkillPreflightStatus.PASSED, "tester", Instant.EPOCH);
+        SkillPreflightItem rollbackItem = new SkillPreflightItem(
+                rollbackCheck.id(), null, "search", true, mapping.toolId(),
+                com.cmagent.core.domain.SkillPreflightItemStatus.READY, null, "已就绪", null);
+        SkillRelease rollbackRelease = new SkillRelease(
+                UUID.randomUUID(), tenant, skill, 2, SkillReleaseAction.PUBLISH,
+                candidate, published, rollbackCheck.id(), UUID.randomUUID(), "tester", Instant.EPOCH);
+        SkillTrial rollbackTrial = new SkillTrial(
+                UUID.randomUUID(), tenant, skill, candidate, UUID.randomUUID(), 0,
+                SkillTrialStatus.RUNNING, false, "tester", Instant.EPOCH, Instant.EPOCH);
+        assertThatThrownBy(() -> store.execute(() -> {
+            store.releases().insert(rollbackRelease);
+            store.preflights().save(rollbackCheck, List.of(rollbackItem));
+            store.trials().insert(rollbackTrial);
+            throw new IllegalStateException("回滚");
+        })).isInstanceOf(IllegalStateException.class);
+        assertThat(store.releases().find(tenant, rollbackRelease.id())).isEmpty();
+        assertThat(store.preflights().find(tenant, rollbackCheck.id())).isEmpty();
+        assertThat(store.preflights().listItems(tenant, rollbackCheck.id())).isEmpty();
+        assertThat(store.trials().find(tenant, rollbackTrial.runId())).isEmpty();
+    }
+
+    @Test
+    void 新增技能仓储执行唯一性和乐观控制约束() {
+        InMemorySkillStore store = new InMemorySkillStore();
+        UUID tenant = UUID.randomUUID();
+        UUID skill = UUID.randomUUID();
+        UUID candidate = UUID.randomUUID();
+        UUID published = UUID.randomUUID();
+        SkillDefinition definition = new SkillDefinition(
+                skill, tenant, "release-skill", candidate, published, true, 0, 3,
+                "tester", "tester", Instant.EPOCH, Instant.EPOCH);
+        SkillDependencyMapping original = new SkillDependencyMapping(
+                tenant, skill, "search", UUID.randomUUID(), "tester", Instant.EPOCH);
+        SkillPreflightCheck check = new SkillPreflightCheck(
+                UUID.randomUUID(), tenant, skill, candidate, 0,
+                SkillPreflightScope.STRUCTURAL, null,
+                SkillPreflightStatus.PASSED, "tester", Instant.EPOCH);
+        SkillTrial trial = new SkillTrial(
+                UUID.randomUUID(), tenant, skill, candidate, UUID.randomUUID(), 0,
+                SkillTrialStatus.RUNNING, false, "tester", Instant.EPOCH, Instant.EPOCH);
+
+        store.execute(() -> {
+            store.definitions().insert(definition);
+            store.preflights().save(check, List.of());
+            store.trials().insert(trial);
+            return null;
+        });
+
+        SkillRelease baseline = new SkillRelease(
+                UUID.randomUUID(), tenant, skill, 1, SkillReleaseAction.BASELINE,
+                null, published, null, null, "tester", Instant.EPOCH);
+        store.execute(() -> store.releases().insert(baseline));
+        assertThat(store.releases().list(tenant, skill)).containsExactly(baseline);
+        assertThatThrownBy(() -> store.execute(() -> store.releases().insert(
+                new SkillRelease(UUID.randomUUID(), tenant, skill, 1, SkillReleaseAction.BASELINE,
+                        null, published, null, null, "tester", Instant.EPOCH))))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThatThrownBy(() -> store.execute(() -> store.trials().insert(trial)))
+                .isInstanceOf(IllegalStateException.class);
+
+        store.execute(() -> {
+            assertThat(store.definitions().updatePointers(definition, candidate, published)).isTrue();
+            assertThat(store.definitions().updatePointers(definition, null, published)).isFalse();
+            assertThat(store.definitions().updateDependencyMappingRevision(definition, 2)).isFalse();
+            assertThat(store.definitions().updateDependencyMappingRevision(definition, 3)).isTrue();
+            return null;
+        });
+        assertThat(store.definitions().find(tenant, skill).orElseThrow().dependencyMappingRevision())
+                .isEqualTo(3);
+
+        store.execute(() -> {
+            assertThat(store.mappings().save(original)).isEqualTo(original);
+            SkillDependencyMapping replaced = new SkillDependencyMapping(
+                    tenant, skill, "search", UUID.randomUUID(), "editor", Instant.EPOCH.plusSeconds(1));
+            assertThat(store.mappings().save(replaced)).isEqualTo(replaced);
+            assertThat(store.mappings().find(tenant, skill, "search")).contains(replaced);
+            return null;
+        });
+        assertThat(store.execute(() -> store.mappings().delete(tenant, skill, "search"))).isTrue();
+        assertThat(store.mappings().find(tenant, skill, "search")).isEmpty();
+
+        SkillTrial next = new SkillTrial(
+                trial.runId(), tenant, skill, candidate, trial.agentId(), 0,
+                SkillTrialStatus.PASSED, true, "tester", trial.createdAt(), Instant.EPOCH.plusSeconds(1));
+        store.execute(() -> {
+            assertThat(store.trials().update(next, SkillTrialStatus.RUNNING)).isTrue();
+            assertThat(store.trials().update(next, SkillTrialStatus.RUNNING)).isFalse();
+            return null;
+        });
+    }
+
     private static boolean insertBinding(
             InMemorySkillStore store,
             CountDownLatch start,
@@ -244,6 +392,10 @@ class InMemorySkillStoreTest {
         return new SkillDefinition(
                 id, tenant, name, UUID.randomUUID(), false, 0,
                 "tester", "tester", Instant.EPOCH, updatedAt);
+    }
+
+    private static SkillDependency dependency(UUID tenant, UUID skill, UUID version, String key) {
+        return new SkillDependency(tenant, skill, version, key, true, "工具", 0);
     }
 
     private static AgentSkillBinding binding(UUID tenant, UUID agent, UUID skill, UUID id) {

@@ -20,8 +20,13 @@ import com.cmagent.core.repository.RuntimeCheckpointRepository;
 import com.cmagent.core.repository.AgentSkillBindingRepository;
 import com.cmagent.core.repository.RunSkillSnapshotRepository;
 import com.cmagent.core.repository.SkillDefinitionRepository;
+import com.cmagent.core.repository.SkillDependencyMappingRepository;
+import com.cmagent.core.repository.SkillDependencyRepository;
 import com.cmagent.core.repository.SkillLoadRecordRepository;
+import com.cmagent.core.repository.SkillPreflightRepository;
+import com.cmagent.core.repository.SkillReleaseRepository;
 import com.cmagent.core.repository.SkillResourceRepository;
+import com.cmagent.core.repository.SkillTrialRepository;
 import com.cmagent.core.repository.SkillVersionRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import com.cmagent.server.store.InMemorySkillStore;
@@ -111,6 +116,46 @@ public class ServerRepositoryConfiguration {
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
     SkillLoadRecordRepository memorySkillLoadRecordRepository(InMemorySkillStore store) {
         return store.loads();
+    }
+
+    /** @return memory 模式下的技能版本依赖声明仓储 */
+    @Bean
+    @ConditionalOnMissingBean(SkillDependencyRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    SkillDependencyRepository memorySkillDependencyRepository(InMemorySkillStore store) {
+        return store.dependencies();
+    }
+
+    /** @return memory 模式下的技能依赖映射仓储 */
+    @Bean
+    @ConditionalOnMissingBean(SkillDependencyMappingRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    SkillDependencyMappingRepository memorySkillDependencyMappingRepository(InMemorySkillStore store) {
+        return store.mappings();
+    }
+
+    /** @return memory 模式下的技能依赖预检仓储 */
+    @Bean
+    @ConditionalOnMissingBean(SkillPreflightRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    SkillPreflightRepository memorySkillPreflightRepository(InMemorySkillStore store) {
+        return store.preflights();
+    }
+
+    /** @return memory 模式下的技能发布事实仓储 */
+    @Bean
+    @ConditionalOnMissingBean(SkillReleaseRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    SkillReleaseRepository memorySkillReleaseRepository(InMemorySkillStore store) {
+        return store.releases();
+    }
+
+    /** @return memory 模式下的技能试运行仓储 */
+    @Bean
+    @ConditionalOnMissingBean(SkillTrialRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    SkillTrialRepository memorySkillTrialRepository(InMemorySkillStore store) {
+        return store.trials();
     }
 
     @Bean
