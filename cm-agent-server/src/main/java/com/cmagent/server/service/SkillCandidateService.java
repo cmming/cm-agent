@@ -118,13 +118,17 @@ public class SkillCandidateService {
         requireFeatureEnabled();
         return workUnit.execute(() -> {
             SkillDefinition current = lockSkill(principal.tenantId(), skillId);
+            // 旧接口只携带一个版本指针，无法表达发布指针的预期值；其历史语义是将两者一起推进，
+            // 因而必须以锁定行中的发布指针参与 CAS，不能把客户端缺失值当作 null 写回数据库。
+            UUID effectiveExpectedPublishedId = legacyVersionPointer
+                    ? current.publishedVersionId() : expectedPublishedId;
             if (!Objects.equals(current.candidateVersionId(), expectedCandidateId)
-                    || !Objects.equals(current.publishedVersionId(), expectedPublishedId)) {
+                    || !Objects.equals(current.publishedVersionId(), effectiveExpectedPublishedId)) {
                 if (!legacyVersionPointer) {
                     throw conflict(ApiErrorCode.SKILL_CANDIDATE_CONFLICT, "候选版本已变化，请刷新后重试");
                 }
                 // 旧调用方只发送 expectedVersionId：指针已整体前移到该版本时视为重复上传。
-                return legacyReplayOrConflict(principal, current, expectedCandidateId, expectedPublishedId);
+                return legacyReplayOrConflict(principal, current, parsed);
             }
             if (!current.name().equals(parsed.name())) {
                 throw conflict(ApiErrorCode.SKILL_CONFLICT, "技能名称不可修改");
@@ -146,10 +150,11 @@ public class SkillCandidateService {
             resources.insertAll(entries);
             dependencies.insertAll(dependencyEntries(principal.tenantId(), skillId, versionId, parsed.dependencies()));
             SkillDefinition next = new SkillDefinition(
-                    current.id(), current.tenantId(), current.name(), versionId, current.publishedVersionId(),
+                    current.id(), current.tenantId(), current.name(), versionId,
+                    legacyVersionPointer ? versionId : current.publishedVersionId(),
                     current.enabled(), current.accessEpoch(), current.dependencyMappingRevision(),
                     current.createdBy(), principal.principalId(), current.createdAt(), now);
-            if (!definitions.updatePointers(next, expectedCandidateId, expectedPublishedId)) {
+            if (!definitions.updatePointers(next, expectedCandidateId, effectiveExpectedPublishedId)) {
                 throw conflict(ApiErrorCode.SKILL_CANDIDATE_CONFLICT, "候选版本已变化，请刷新后重试");
             }
             appendAudit(principal, "SKILL_CANDIDATE_REPLACE", skillId, "候选版本已替换");
@@ -158,18 +163,18 @@ public class SkillCandidateService {
     }
 
     private SkillVersionView legacyReplayOrConflict(
-            PrincipalRef principal, SkillDefinition current, UUID expectedCandidateId, UUID expectedPublishedId) {
-        UUID requested = expectedCandidateId != null ? expectedCandidateId : expectedPublishedId;
-        // 旧调用方把同一个版本号同时当作候选和发布指针，因此两侧都等于该版本时视为重复上传。
-        boolean bothPointersMoved = requested != null
-                && requested.equals(current.publishedVersionId())
-                && (current.candidateVersionId() == null
-                        || requested.equals(current.candidateVersionId()));
+            PrincipalRef principal, SkillDefinition current, ParsedSkillPackage parsed) {
+        // 旧调用方无法回传新版本 ID，只能用不可变内容摘要识别网络重试；两指针必须仍指向同版，
+        // 否则重试可能误把别的发布结果当成自己的成功响应。
+        boolean bothPointersMoved = current.candidateVersionId() != null
+                && current.candidateVersionId().equals(current.publishedVersionId());
         if (bothPointersMoved) {
-            SkillVersion existing = versions.find(principal.tenantId(), current.id(), requested)
+            SkillVersion existing = versions.find(principal.tenantId(), current.id(), current.candidateVersionId())
                     .orElseThrow(() -> conflict(ApiErrorCode.SKILL_SNAPSHOT_UNAVAILABLE, "技能当前版本不可用"));
-            return new SkillVersionView(current, existing,
-                    resources.list(principal.tenantId(), current.id(), requested));
+            if (existing.sha256().equals(parsed.sha256())) {
+                return new SkillVersionView(current, existing,
+                        resources.list(principal.tenantId(), current.id(), existing.id()));
+            }
         }
         throw conflict(ApiErrorCode.SKILL_CANDIDATE_CONFLICT, "候选版本已变化，请刷新后重试");
     }
