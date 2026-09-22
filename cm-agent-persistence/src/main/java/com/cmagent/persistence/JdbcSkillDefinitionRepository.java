@@ -18,7 +18,8 @@ import java.util.UUID;
 /** 使用 JDBC 保存技能稳定定义，并以可信租户条件限制全部读写。 */
 public class JdbcSkillDefinitionRepository implements SkillDefinitionRepository {
     private static final String COLUMNS = """
-            id, tenant_id, name, current_version_id, enabled, access_epoch,
+            id, tenant_id, name, candidate_version_id, published_version_id,
+            dependency_mapping_revision, enabled, access_epoch,
             created_by, updated_by, created_at, updated_at
             """;
     private final JdbcClient jdbcClient;
@@ -63,17 +64,21 @@ public class JdbcSkillDefinitionRepository implements SkillDefinitionRepository 
         Objects.requireNonNull(definition, "definition 不能为空");
         jdbcClient.sql("""
                         INSERT INTO skill_definitions (
-                            id, tenant_id, name, current_version_id, enabled, access_epoch,
+                            id, tenant_id, name, candidate_version_id, published_version_id,
+                            dependency_mapping_revision, enabled, access_epoch,
                             created_by, updated_by, created_at, updated_at
                         ) VALUES (
-                            :id, :tenantId, :name, :currentVersionId, :enabled, :accessEpoch,
+                            :id, :tenantId, :name, :candidateVersionId, :publishedVersionId,
+                            :dependencyMappingRevision, :enabled, :accessEpoch,
                             :createdBy, :updatedBy, :createdAt, :updatedAt
                         )
                         """)
                 .param("id", definition.id().toString())
                 .param("tenantId", definition.tenantId().toString())
                 .param("name", definition.name())
-                .param("currentVersionId", definition.currentVersionId().toString())
+                .param("candidateVersionId", definition.candidateVersionId() == null ? null : definition.candidateVersionId().toString())
+                .param("publishedVersionId", definition.publishedVersionId() == null ? null : definition.publishedVersionId().toString())
+                .param("dependencyMappingRevision", definition.dependencyMappingRevision())
                 .param("enabled", definition.enabled())
                 .param("accessEpoch", definition.accessEpoch())
                 .param("createdBy", definition.createdBy())
@@ -100,16 +105,60 @@ public class JdbcSkillDefinitionRepository implements SkillDefinitionRepository 
         Objects.requireNonNull(next, "next 不能为空");
         return jdbcClient.sql("""
                         UPDATE skill_definitions
-                        SET current_version_id = :newVersionId, updated_by = :updatedBy, updated_at = :updatedAt
+                        SET candidate_version_id = :candidateVersionId,
+                            updated_by = :updatedBy, updated_at = :updatedAt
                         WHERE tenant_id = :tenantId AND id = :skillId
-                          AND current_version_id = :expectedVersionId
+                          AND candidate_version_id = :expectedVersionId
                         """)
-                .param("newVersionId", next.currentVersionId().toString())
+                .param("candidateVersionId", next.candidateVersionId() == null ? null : next.candidateVersionId().toString())
+                .param("publishedVersionId", next.publishedVersionId() == null ? null : next.publishedVersionId().toString())
                 .param("updatedBy", next.updatedBy())
                 .param("updatedAt", Timestamp.from(next.updatedAt()))
                 .param("tenantId", next.tenantId().toString())
                 .param("skillId", next.id().toString())
                 .param("expectedVersionId", expectedVersionId.toString())
+                .update() == 1;
+    }
+
+    /** 使用候选和发布双指针做 CAS 更新。 */
+    @Override
+    public boolean updatePointers(SkillDefinition next, UUID expectedCandidateId, UUID expectedPublishedId) {
+        return jdbcClient.sql("""
+                        UPDATE skill_definitions
+                        SET candidate_version_id = :candidateVersionId,
+                            published_version_id = :publishedVersionId,
+                            updated_by = :updatedBy, updated_at = :updatedAt
+                        WHERE tenant_id = :tenantId AND id = :skillId
+                          AND candidate_version_id = :expectedCandidateId
+                          AND published_version_id = :expectedPublishedId
+                        """)
+                .param("candidateVersionId", next.candidateVersionId() == null ? null : next.candidateVersionId().toString())
+                .param("publishedVersionId", next.publishedVersionId() == null ? null : next.publishedVersionId().toString())
+                .param("updatedBy", next.updatedBy())
+                .param("updatedAt", Timestamp.from(next.updatedAt()))
+                .param("tenantId", next.tenantId().toString())
+                .param("skillId", next.id().toString())
+                .param("expectedCandidateId", expectedCandidateId == null ? null : expectedCandidateId.toString())
+                .param("expectedPublishedId", expectedPublishedId == null ? null : expectedPublishedId.toString())
+                .update() == 1;
+    }
+
+    /** 在同一事务中递增映射修订，防止预检和后续发布使用不同环境。 */
+    @Override
+    public boolean updateDependencyMappingRevision(SkillDefinition next, long expectedRevision) {
+        return jdbcClient.sql("""
+                        UPDATE skill_definitions
+                        SET dependency_mapping_revision = :dependencyMappingRevision,
+                            updated_by = :updatedBy, updated_at = :updatedAt
+                        WHERE tenant_id = :tenantId AND id = :skillId
+                          AND dependency_mapping_revision = :expectedRevision
+                        """)
+                .param("dependencyMappingRevision", next.dependencyMappingRevision())
+                .param("updatedBy", next.updatedBy())
+                .param("updatedAt", Timestamp.from(next.updatedAt()))
+                .param("tenantId", next.tenantId().toString())
+                .param("skillId", next.id().toString())
+                .param("expectedRevision", expectedRevision)
                 .update() == 1;
     }
 
@@ -121,7 +170,8 @@ public class JdbcSkillDefinitionRepository implements SkillDefinitionRepository 
                         SET enabled = :enabled, access_epoch = :accessEpoch,
                             updated_by = :updatedBy, updated_at = :updatedAt
                         WHERE tenant_id = :tenantId AND id = :skillId
-                          AND current_version_id = :currentVersionId
+                          AND candidate_version_id = :candidateVersionId
+                          AND published_version_id = :publishedVersionId
                         """)
                 .param("enabled", next.enabled())
                 .param("accessEpoch", next.accessEpoch())
@@ -129,7 +179,8 @@ public class JdbcSkillDefinitionRepository implements SkillDefinitionRepository 
                 .param("updatedAt", Timestamp.from(next.updatedAt()))
                 .param("tenantId", next.tenantId().toString())
                 .param("skillId", next.id().toString())
-                .param("currentVersionId", next.currentVersionId().toString())
+                .param("candidateVersionId", next.candidateVersionId() == null ? null : next.candidateVersionId().toString())
+                .param("publishedVersionId", next.publishedVersionId() == null ? null : next.publishedVersionId().toString())
                 .update();
         if (updated != 1) {
             throw new NoSuchElementException("技能不存在或版本已变化");
@@ -160,13 +211,17 @@ public class JdbcSkillDefinitionRepository implements SkillDefinitionRepository 
     }
 
     private SkillDefinition map(ResultSet resultSet, int rowNum) throws SQLException {
+        String candidate = resultSet.getString("candidate_version_id");
+        String published = resultSet.getString("published_version_id");
         return new SkillDefinition(
                 UUID.fromString(resultSet.getString("id")),
                 UUID.fromString(resultSet.getString("tenant_id")),
                 resultSet.getString("name"),
-                UUID.fromString(resultSet.getString("current_version_id")),
+                candidate == null ? null : UUID.fromString(candidate),
+                published == null ? null : UUID.fromString(published),
                 resultSet.getBoolean("enabled"),
                 resultSet.getLong("access_epoch"),
+                resultSet.getLong("dependency_mapping_revision"),
                 resultSet.getString("created_by"),
                 resultSet.getString("updated_by"),
                 resultSet.getTimestamp("created_at").toInstant(),

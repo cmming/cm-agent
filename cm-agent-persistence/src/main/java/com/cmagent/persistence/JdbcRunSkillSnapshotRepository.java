@@ -5,12 +5,14 @@ import com.cmagent.core.domain.SkillSnapshotRef;
 import com.cmagent.core.repository.RunSkillSnapshotRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -78,7 +80,7 @@ public class JdbcRunSkillSnapshotRepository implements RunSkillSnapshotRepositor
                 UUID.fromString(resultSet.getString("run_id")),
                 UUID.fromString(resultSet.getString("agent_id")),
                 resultSet.getInt("format_version"),
-                readSkills(resultSet.getString("skills_json")),
+                readSkills(resultSet.getInt("format_version"), resultSet.getString("skills_json")),
                 resultSet.getTimestamp("created_at").toInstant());
     }
 
@@ -90,11 +92,33 @@ public class JdbcRunSkillSnapshotRepository implements RunSkillSnapshotRepositor
         }
     }
 
-    private List<SkillSnapshotRef> readSkills(String json) {
+    private List<SkillSnapshotRef> readSkills(int formatVersion, String json) {
         try {
+            if (formatVersion == 1) {
+                List<SkillSnapshotRef> result = new ArrayList<>();
+                for (JsonNode legacyRef : objectMapper.readTree(json)) {
+                    String authorizationId = nodeToString(legacyRef.path("bindingId"));
+                    if (authorizationId.isBlank()) {
+                        authorizationId = nodeToString(legacyRef.path("authorizationId"));
+                    }
+                    result.add(new SkillSnapshotRef(
+                            UUID.fromString(nodeToString(legacyRef.get("skillId"))),
+                            UUID.fromString(nodeToString(legacyRef.get("versionId"))),
+                            UUID.fromString(authorizationId),
+                            legacyRef.path("accessEpoch").asLong()));
+                }
+                return List.copyOf(result);
+            }
             return objectMapper.readValue(json, SKILLS_TYPE);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("持久化运行技能快照无法解析", exception);
         }
+    }
+
+    private static String nodeToString(JsonNode node) {
+        if (node == null) {
+            return "";
+        }
+        return node.asText();
     }
 }

@@ -5,10 +5,23 @@ import com.cmagent.api.ApiPageRequest;
 import com.cmagent.core.domain.AgentSkillBinding;
 import com.cmagent.core.domain.RunSkillSnapshot;
 import com.cmagent.core.domain.SkillDefinition;
+import com.cmagent.core.domain.SkillDependency;
+import com.cmagent.core.domain.SkillDependencyMapping;
+import com.cmagent.core.domain.SkillDependencyResolution;
 import com.cmagent.core.domain.SkillLoadRecord;
 import com.cmagent.core.domain.SkillLoadStatus;
+import com.cmagent.core.domain.SkillPreflightCheck;
+import com.cmagent.core.domain.SkillPreflightItem;
+import com.cmagent.core.domain.SkillPreflightItemStatus;
+import com.cmagent.core.domain.SkillPreflightScope;
+import com.cmagent.core.domain.SkillPreflightStatus;
+import com.cmagent.core.domain.SkillRelease;
+import com.cmagent.core.domain.SkillReleaseAction;
+import com.cmagent.core.domain.SkillSnapshotOrigin;
 import com.cmagent.core.domain.SkillResource;
 import com.cmagent.core.domain.SkillSnapshotRef;
+import com.cmagent.core.domain.SkillTrial;
+import com.cmagent.core.domain.SkillTrialStatus;
 import com.cmagent.core.domain.SkillVersion;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -70,6 +83,7 @@ class JdbcSkillRepositoriesTest {
     }
 
     private static void verifyContracts(DataSource dataSource) throws Exception {
+        CmAgentFlyway.configure(dataSource).cleanDisabled(false).load().clean();
         CmAgentFlyway.configure(dataSource).load().migrate();
         seedData(dataSource);
         JdbcClient jdbc = JdbcClient.create(dataSource);
@@ -82,6 +96,11 @@ class JdbcSkillRepositoriesTest {
         JdbcAgentSkillBindingRepository bindings = new JdbcAgentSkillBindingRepository(jdbc);
         JdbcRunSkillSnapshotRepository snapshots = new JdbcRunSkillSnapshotRepository(jdbc, objectMapper);
         JdbcSkillLoadRecordRepository loads = new JdbcSkillLoadRecordRepository(jdbc);
+        JdbcSkillDependencyRepository dependencies = new JdbcSkillDependencyRepository(jdbc);
+        JdbcSkillDependencyMappingRepository mappings = new JdbcSkillDependencyMappingRepository(jdbc);
+        JdbcSkillPreflightRepository preflights = new JdbcSkillPreflightRepository(jdbc, transactions);
+        JdbcSkillReleaseRepository releases = new JdbcSkillReleaseRepository(jdbc);
+        JdbcSkillTrialRepository trials = new JdbcSkillTrialRepository(jdbc, transactions);
 
         UUID skillA = UUID.randomUUID();
         UUID skillB = UUID.randomUUID();
@@ -106,11 +125,12 @@ class JdbcSkillRepositoriesTest {
         assertThat(resources.list(TENANT_A, skillA, versionA1)).containsExactly(resource);
         assertThat(definitions.list(TENANT_A, "support", true, new ApiPageRequest(0, 20)).items())
                 .containsExactly(definitionA);
+        assertThat(versions.list(TENANT_A, skillA)).containsExactly(firstVersion);
 
         UUID versionA2 = UUID.randomUUID();
         SkillVersion secondVersion = version(TENANT_A, skillA, versionA2, 2);
         SkillDefinition next = new SkillDefinition(
-                skillA, TENANT_A, definitionA.name(), versionA2, true, 0,
+                skillA, TENANT_A, definitionA.name(), versionA2, versionA1, true, 0, 0,
                 definitionA.createdBy(), "updater", definitionA.createdAt(), NOW.plusSeconds(2));
         execute(transactions, () -> {
             definitions.lock(TENANT_A, skillA);
@@ -120,6 +140,36 @@ class JdbcSkillRepositoriesTest {
             return null;
         });
         assertThat(definitions.find(TENANT_A, skillA)).contains(next);
+
+        execute(transactions, () -> {
+            definitions.lock(TENANT_A, skillA);
+            SkillDefinition pointerBack = new SkillDefinition(
+                    skillA, TENANT_A, definitionA.name(), versionA1, versionA1, true, 0, 0,
+                    definitionA.createdBy(), "release-updater", definitionA.createdAt(), NOW.plusSeconds(3));
+            assertThat(definitions.updatePointers(pointerBack, UUID.randomUUID(), versionA1)).isFalse();
+            assertThat(definitions.updatePointers(pointerBack, versionA2, versionA1)).isTrue();
+            SkillDefinition mappingBack = new SkillDefinition(
+                    skillA, TENANT_A, definitionA.name(), versionA1, versionA2, true, 0, 0,
+                    definitionA.createdBy(), "mapping-updater", definitionA.createdAt(), NOW.plusSeconds(4));
+            assertThat(definitions.updateDependencyMappingRevision(mappingBack, 2L)).isFalse();
+            assertThat(definitions.updateDependencyMappingRevision(mappingBack, 0L)).isTrue();
+            return null;
+        });
+
+        UUID checkId = UUID.randomUUID();
+        SkillPreflightCheck check = new SkillPreflightCheck(
+                checkId, TENANT_A, skillA, versionA1, 0, SkillPreflightScope.STRUCTURAL, null,
+                SkillPreflightStatus.PASSED, "tester", NOW.plusSeconds(5));
+        SkillPreflightItem item = new SkillPreflightItem(
+                checkId, null, "legacy-tool", true, null,
+                SkillPreflightItemStatus.MAPPING_MISSING, ApiErrorCode.SKILL_DEPENDENCY_UNMAPPED, "未配置映射", null);
+        execute(transactions, () -> {
+            preflights.save(check, List.of(item));
+            return null;
+        });
+        assertThat(preflights.find(TENANT_A, checkId)).contains(check);
+        assertThat(preflights.listItems(TENANT_A, checkId)).containsExactly(item);
+        assertThat(preflights.list(TENANT_A, skillA, versionA1)).containsExactly(check);
 
         AgentSkillBinding binding = new AgentSkillBinding(
                 UUID.randomUUID(), TENANT_A, AGENT_A, skillA, "tester", NOW);
@@ -155,6 +205,67 @@ class JdbcSkillRepositoriesTest {
         }
         assertThat(bindings.list(TENANT_B, AGENT_B)).hasSize(1);
 
+        UUID mappingTool = UUID.randomUUID();
+        insertTool(jdbc, mappingTool, TENANT_A, "legacy-tool", Timestamp.from(NOW));
+        SkillDependencyMapping mapping = new SkillDependencyMapping(
+                TENANT_A, skillA, "legacy-tool", mappingTool, "tester", NOW.plusSeconds(6));
+        execute(transactions, () -> {
+            mappings.lockSkill(TENANT_A, skillA);
+            mappings.save(mapping);
+            return null;
+        });
+        assertThat(mappings.find(TENANT_A, skillA, "legacy-tool")).contains(mapping);
+        assertThat(mappings.list(TENANT_A, skillA)).containsExactly(mapping);
+        assertThat(mappings.list(TENANT_B, skillA)).isEmpty();
+
+        execute(transactions, () -> {
+            dependencies.insertAll(List.of(new SkillDependency(
+                    TENANT_A, skillA, versionA1, "legacy-tool", true, "搜索工具", 0)));
+            return null;
+        });
+        assertThat(dependencies.list(TENANT_A, skillA, versionA1)).hasSize(1);
+        assertThat(dependencies.list(TENANT_B, skillA, versionA1)).isEmpty();
+        assertThatThrownBy(() -> execute(transactions, () -> {
+            dependencies.insertAll(List.of(new SkillDependency(
+                    TENANT_A, skillA, versionA1, "legacy-tool", false, "重复", 0)));
+            return null;
+        })).isInstanceOf(DataIntegrityViolationException.class);
+
+        SkillTrial trial = new SkillTrial(
+                RUN_A, TENANT_A, skillA, versionA1, AGENT_A, 0,
+                SkillTrialStatus.RUNNING, false, "tester", NOW, NOW);
+        execute(transactions, () -> {
+            trials.insert(trial);
+            return null;
+        });
+        assertThat(trials.find(TENANT_A, RUN_A)).contains(trial);
+        assertThat(trials.list(TENANT_A, skillA, versionA1)).containsExactly(trial);
+        assertThatThrownBy(() -> trials.insert(new SkillTrial(
+                UUID.randomUUID(), TENANT_A, skillA, versionA1, AGENT_A, 0,
+                SkillTrialStatus.RUNNING, false, "tester", NOW, NOW)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        SkillTrial trialDone = new SkillTrial(
+                RUN_A, TENANT_A, skillA, versionA1, AGENT_A, 0,
+                SkillTrialStatus.PASSED, true, "tester", NOW, NOW.plusSeconds(1));
+        assertThat(trials.update(trialDone, SkillTrialStatus.PASSED)).isFalse();
+        assertThat(trials.update(trialDone, SkillTrialStatus.RUNNING)).isTrue();
+
+        SkillRelease baseline = new SkillRelease(
+                UUID.randomUUID(), TENANT_A, skillA, 1, SkillReleaseAction.BASELINE,
+                null, versionA1, null, null, "tester", NOW.plusSeconds(2));
+        execute(transactions, () -> {
+            releases.insert(baseline);
+            return null;
+        });
+        assertThat(releases.find(TENANT_A, baseline.id())).contains(baseline);
+        assertThat(releases.list(TENANT_A, skillA)).containsExactly(baseline);
+        assertThat(releases.lockLatest(TENANT_A, skillA)).contains(baseline);
+        assertThatThrownBy(() -> execute(transactions, () -> releases.insert(new SkillRelease(
+                UUID.randomUUID(), TENANT_A, skillA, 1, SkillReleaseAction.BASELINE,
+                null, versionA1, null, null, "tester", NOW.plusSeconds(3)))))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
         RunSkillSnapshot snapshot = new RunSkillSnapshot(
                 TENANT_A, RUN_A, AGENT_A, 1,
                 List.of(new SkillSnapshotRef(skillA, versionA2, binding.id(), 0)), NOW);
@@ -164,6 +275,20 @@ class JdbcSkillRepositoriesTest {
         });
         assertThat(snapshots.find(TENANT_A, RUN_A)).contains(snapshot);
         assertThat(snapshots.find(TENANT_B, RUN_A)).isEmpty();
+
+        UUID format2Run = UUID.randomUUID();
+        insertRun(jdbc, format2Run, TENANT_A, AGENT_A, Timestamp.from(NOW.plusSeconds(4)));
+        RunSkillSnapshot format2Snapshot = new RunSkillSnapshot(
+                TENANT_A, format2Run, AGENT_A, 2,
+                List.of(new SkillSnapshotRef(
+                        skillA, versionA1, SkillSnapshotOrigin.TRIAL, RUN_A, 0,
+                        List.of(new SkillDependencyResolution("legacy-tool", mappingTool, true)))),
+                NOW.plusSeconds(4));
+        execute(transactions, () -> {
+            snapshots.insert(format2Snapshot);
+            return null;
+        });
+        assertThat(snapshots.find(TENANT_A, format2Run)).contains(format2Snapshot);
 
         SkillLoadRecord success = new SkillLoadRecord(
                 UUID.randomUUID(), TENANT_A, RUN_A, "model-call-1", 1,
@@ -289,5 +414,16 @@ class JdbcSkillRepositoriesTest {
                 VALUES (:id, :tenantId, :agentId, 'principal', 'RUNNING', 'input', NULL, NULL, :startedAt, NULL)
                 """).param("id", id.toString()).param("tenantId", tenantId.toString())
                 .param("agentId", agentId.toString()).param("startedAt", now).update();
+    }
+
+    private static void insertTool(
+            JdbcClient jdbc, UUID toolId, UUID tenantId, String name, Timestamp now) {
+        jdbc.sql("""
+                INSERT INTO tool_definitions (id, tenant_id, name, description, type, input_schema, risk_level,
+                    enabled, endpoint, created_by, updated_by, created_at, updated_at)
+                VALUES (:id, :tenantId, :name, '', 'LOCAL', '{}', 'HIGH', true, '',
+                    'tester', 'tester', :createdAt, :updatedAt)
+                """).param("id", toolId.toString()).param("tenantId", tenantId.toString())
+                .param("name", name).param("createdAt", now).param("updatedAt", now).update();
     }
 }

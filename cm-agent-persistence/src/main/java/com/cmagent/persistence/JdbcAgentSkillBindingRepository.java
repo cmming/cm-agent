@@ -1,6 +1,7 @@
 package com.cmagent.persistence;
 
 import com.cmagent.core.domain.AgentSkillBinding;
+import com.cmagent.core.domain.SkillBindingMode;
 import com.cmagent.core.repository.AgentSkillBindingRepository;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
@@ -25,7 +26,8 @@ public class JdbcAgentSkillBindingRepository implements AgentSkillBindingReposit
     @Override
     public List<AgentSkillBinding> list(UUID tenantId, UUID agentId) {
         return jdbcClient.sql("""
-                        SELECT id, tenant_id, agent_id, skill_id, bound_by, created_at
+                        SELECT id, tenant_id, agent_id, skill_id, resolution_mode, pinned_version_id, revision,
+                               bound_by, updated_by, created_at, updated_at
                         FROM agent_skill_bindings
                         WHERE tenant_id = :tenantId AND agent_id = :agentId
                         ORDER BY created_at, id
@@ -37,7 +39,8 @@ public class JdbcAgentSkillBindingRepository implements AgentSkillBindingReposit
     @Override
     public Optional<AgentSkillBinding> find(UUID tenantId, UUID agentId, UUID skillId) {
         return jdbcClient.sql("""
-                        SELECT id, tenant_id, agent_id, skill_id, bound_by, created_at
+                        SELECT id, tenant_id, agent_id, skill_id, resolution_mode, pinned_version_id, revision,
+                               bound_by, updated_by, created_at, updated_at
                         FROM agent_skill_bindings
                         WHERE tenant_id = :tenantId AND agent_id = :agentId AND skill_id = :skillId
                         """)
@@ -50,15 +53,24 @@ public class JdbcAgentSkillBindingRepository implements AgentSkillBindingReposit
         Objects.requireNonNull(binding, "binding 不能为空");
         jdbcClient.sql("""
                         INSERT INTO agent_skill_bindings (
-                            id, tenant_id, agent_id, skill_id, bound_by, created_at
-                        ) VALUES (:id, :tenantId, :agentId, :skillId, :boundBy, :createdAt)
+                            id, tenant_id, agent_id, skill_id, resolution_mode, pinned_version_id, revision,
+                            bound_by, updated_by, created_at, updated_at
+                        ) VALUES (
+                            :id, :tenantId, :agentId, :skillId, :mode, :pinnedVersionId, :revision,
+                            :boundBy, :updatedBy, :createdAt, :updatedAt
+                        )
                         """)
                 .param("id", binding.id().toString())
                 .param("tenantId", binding.tenantId().toString())
                 .param("agentId", binding.agentId().toString())
                 .param("skillId", binding.skillId().toString())
+                .param("mode", binding.mode().name())
+                .param("pinnedVersionId", binding.pinnedVersionId() == null ? null : binding.pinnedVersionId().toString())
+                .param("revision", binding.revision())
                 .param("boundBy", binding.boundBy())
+                .param("updatedBy", binding.updatedBy())
                 .param("createdAt", Timestamp.from(binding.createdAt()))
+                .param("updatedAt", Timestamp.from(binding.updatedAt()))
                 .update();
     }
 
@@ -96,13 +108,40 @@ public class JdbcAgentSkillBindingRepository implements AgentSkillBindingReposit
         }
     }
 
+    @Override
+    public boolean updateStrategy(AgentSkillBinding binding, long expectedRevision) {
+        return jdbcClient.sql("""
+                        UPDATE agent_skill_bindings
+                        SET resolution_mode = :mode, pinned_version_id = :pinnedVersionId,
+                            revision = revision + 1, updated_by = :updatedBy, updated_at = :updatedAt
+                        WHERE tenant_id = :tenantId AND agent_id = :agentId AND skill_id = :skillId
+                          AND revision = :expectedRevision
+                        """)
+                .param("mode", binding.mode().name())
+                .param("pinnedVersionId", binding.pinnedVersionId() == null ? null : binding.pinnedVersionId().toString())
+                .param("updatedBy", binding.updatedBy())
+                .param("updatedAt", Timestamp.from(binding.updatedAt()))
+                .param("tenantId", binding.tenantId().toString())
+                .param("agentId", binding.agentId().toString())
+                .param("skillId", binding.skillId().toString())
+                .param("expectedRevision", expectedRevision).update() == 1;
+    }
+
     private AgentSkillBinding map(ResultSet resultSet, int rowNum) throws SQLException {
-        return new AgentSkillBinding(
+
+        String pinned = resultSet.getString("pinned_version_id");
+        AgentSkillBinding binding = new AgentSkillBinding(
                 UUID.fromString(resultSet.getString("id")),
                 UUID.fromString(resultSet.getString("tenant_id")),
                 UUID.fromString(resultSet.getString("agent_id")),
                 UUID.fromString(resultSet.getString("skill_id")),
+                SkillBindingMode.valueOf(resultSet.getString("resolution_mode")),
+                pinned == null ? null : UUID.fromString(pinned),
+                resultSet.getLong("revision"),
                 resultSet.getString("bound_by"),
-                resultSet.getTimestamp("created_at").toInstant());
+                resultSet.getString("updated_by"),
+                resultSet.getTimestamp("created_at").toInstant(),
+                resultSet.getTimestamp("updated_at").toInstant());
+        return binding;
     }
 }

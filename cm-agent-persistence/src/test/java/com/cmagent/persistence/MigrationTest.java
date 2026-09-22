@@ -23,8 +23,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 class MigrationTest {
@@ -56,7 +58,13 @@ class MigrationTest {
             "skill_resources",
             "agent_skill_bindings",
             "run_skill_snapshots",
-            "skill_load_records"
+            "skill_load_records",
+            "skill_dependencies",
+            "skill_dependency_mappings",
+            "skill_releases",
+            "skill_preflight_checks",
+            "skill_preflight_items",
+            "skill_trials"
     );
 
     @Container
@@ -87,18 +95,79 @@ class MigrationTest {
 
     private static void verifyUpgradeAndSchema(
             DriverManagerDataSource dataSource, String jdbcUrl, String username, String password) {
-        int firstStage = CmAgentFlyway.configure(dataSource).target("11").load().migrate().migrationsExecuted;
+        CmAgentFlyway.configure(dataSource).cleanDisabled(false).load().clean();
+        int firstStage = CmAgentFlyway.configure(dataSource).target("12").load().migrate().migrationsExecuted;
         seedLegacyRun(dataSource);
         int secondStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
 
-        assertThat(firstStage).isEqualTo(11);
+        assertThat(firstStage).isEqualTo(12);
         assertThat(secondStage).isEqualTo(1);
         assertSchemaContract(firstStage + secondStage, jdbcUrl, username, password);
         assertThat(JdbcClient.create(dataSource).sql("""
                         SELECT skills_json FROM run_skill_snapshots
                         WHERE tenant_id = '90000000-0000-0000-0000-000000000001'
                           AND run_id = '90000000-0000-0000-0000-000000000004'
-                        """).query(String.class).single()).isEqualTo("[]");
+                        """).query(String.class).single())
+                .contains("90000000-0000-0000-0000-000000000005");
+
+        verifySkillReleaseMigration(JdbcClient.create(dataSource));
+    }
+
+    @Test
+    void legacySkillDependenciesMustBeExplicitAndValid() {
+        DriverManagerDataSource dataSource = new DriverManagerDataSource(
+                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+        verifyInvalidLegacyDependencyColumns(dataSource);
+    }
+
+    private static void verifyInvalidLegacyDependencyColumns(DriverManagerDataSource dataSource) {
+        JdbcClient jdbc = JdbcClient.create(dataSource);
+        CmAgentFlyway.configure(dataSource).cleanDisabled(false).load().clean();
+        CmAgentFlyway.configure(dataSource).target("12").load().migrate();
+        seedLegacyRun(dataSource);
+        jdbc.sql("""
+                UPDATE skill_versions SET metadata_json = '{"dependencies":{"tools":[{"key":"Search!","last":true}]}}'
+                WHERE id = '90000000-0000-0000-0000-000000000006'
+                """).update();
+        assertThatThrownBy(() -> CmAgentFlyway.configure(dataSource).load().migrate())
+                .isInstanceOf(org.flywaydb.core.api.FlywayException.class);
+        CmAgentFlyway.configure(dataSource).cleanDisabled(false).load().clean();
+    }
+
+    private static void verifySkillReleaseMigration(JdbcClient jdbc) {
+        UUID tenantId = UUID.fromString("90000000-0000-0000-0000-000000000001");
+        UUID skillId = UUID.fromString("90000000-0000-0000-0000-000000000005");
+        UUID publishedVersion = UUID.fromString("90000000-0000-0000-0000-000000000006");
+        UUID bindingId = UUID.fromString("90000000-0000-0000-0000-000000000008");
+        UUID runId = UUID.fromString("90000000-0000-0000-0000-000000000004");
+        UUID approvalId = UUID.fromString("90000000-0000-0000-0000-000000000011");
+
+        assertThat(jdbc.sql("""
+                SELECT published_version_id FROM skill_definitions WHERE id = ?
+                """).param(skillId.toString()).query(String.class).single())
+                .isEqualTo(publishedVersion.toString());
+        assertThat(jdbc.sql("""
+                SELECT resolution_mode FROM agent_skill_bindings WHERE id = ?
+                """).param(bindingId.toString()).query(String.class).single())
+                .isEqualTo("FOLLOW_PUBLISHED");
+        assertThat(jdbc.sql("""
+                SELECT run_kind FROM runs WHERE id = ?
+                """).param(runId.toString()).query(String.class).single())
+                .isEqualTo("NORMAL");
+        assertThat(jdbc.sql("""
+                SELECT approval_scope FROM tool_approval_requests WHERE id = ?
+                """).param(approvalId.toString()).query(String.class).single())
+                .isEqualTo("CONVERSATION");
+        assertThat(jdbc.sql("""
+                SELECT COUNT(*) FROM skill_releases
+                WHERE tenant_id = ? AND skill_id = ? AND action = 'BASELINE'
+                """).param(tenantId.toString()).param(skillId.toString())
+                .query(Long.class).single()).isEqualTo(1L);
+        assertThat(jdbc.sql("""
+                SELECT COUNT(*) FROM skill_releases
+                WHERE tenant_id = ? AND skill_id = ? AND id = ? AND release_no = 1
+                """).param(tenantId.toString()).param(skillId.toString())
+                .param(skillId.toString()).query(Long.class).single()).isEqualTo(1L);
     }
 
     private static void seedLegacyRun(DriverManagerDataSource dataSource) {
@@ -132,6 +201,7 @@ class MigrationTest {
                     '90000000-0000-0000-0000-000000000003', 'tester', 'RUNNING', 'legacy',
                     NULL, NULL, :now, NULL)
                 """).param("now", now).update();
+        insertLegacySkillData(jdbc, now);
     }
 
     /**
@@ -142,8 +212,80 @@ class MigrationTest {
      * @param username 测试辅助方法使用的 username 参数
      * @param password 测试辅助方法使用的 password 参数
      */
+    private static void insertLegacySkillData(JdbcClient jdbc, Timestamp now) {
+        jdbc.sql("""
+                INSERT INTO tool_definitions (id, tenant_id, name, description, type, input_schema, risk_level,
+                    enabled, endpoint, created_by, updated_by, created_at, updated_at)
+                VALUES ('90000000-0000-0000-0000-000000000010',
+                    '90000000-0000-0000-0000-000000000001', 'legacy_tool', '', 'LOCAL', '{}', 'HIGH',
+                    true, '', 'tester', 'tester', :now, :now)
+                """).param("now", now).update();
+        jdbc.sql("""
+                INSERT INTO skill_definitions (id, tenant_id, name, current_version_id, enabled, access_epoch,
+                    created_by, updated_by, created_at, updated_at)
+                VALUES ('90000000-0000-0000-0000-000000000005',
+                    '90000000-0000-0000-0000-000000000001', 'legacy-skill',
+                    '90000000-0000-0000-0000-000000000006', true, 0,
+                    'tester', 'tester', :now, :now)
+                """).param("now", now).update();
+        jdbc.sql("""
+                INSERT INTO skill_versions (id, tenant_id, skill_id, version_no, description, metadata_json,
+                    skill_content, sha256, created_by, created_at)
+                VALUES ('90000000-0000-0000-0000-000000000006',
+                    '90000000-0000-0000-0000-000000000001',
+                    '90000000-0000-0000-0000-000000000005', 1, '旧技能',
+                    '{"description":"旧技能","dependencies":{"tools":[{"key":"legacy-tool","required":true}]}}',
+                    '旧正文',
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                    'tester', :now)
+                """).param("now", now).update();
+        jdbc.sql("""
+                INSERT INTO skill_versions (id, tenant_id, skill_id, version_no, description, metadata_json,
+                    skill_content, sha256, created_by, created_at)
+                VALUES ('90000000-0000-0000-0000-000000000007',
+                    '90000000-0000-0000-0000-000000000001',
+                    '90000000-0000-0000-0000-000000000005', 2, '候选技能',
+                    '{"description":"候选技能"}', '候选正文',
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                    'tester', :now)
+                """).param("now", now).update();
+        jdbc.sql("""
+                INSERT INTO agent_skill_bindings (id, tenant_id, agent_id, skill_id, bound_by, created_at)
+                VALUES ('90000000-0000-0000-0000-000000000008',
+                    '90000000-0000-0000-0000-000000000001',
+                    '90000000-0000-0000-0000-000000000003',
+                    '90000000-0000-0000-0000-000000000005', 'tester', :now)
+                """).param("now", now).update();
+        jdbc.sql("""
+                INSERT INTO conversations (id, tenant_id, agent_id, title, created_by, created_at, updated_at)
+                VALUES ('90000000-0000-0000-0000-000000000009',
+                    '90000000-0000-0000-0000-000000000001',
+                    '90000000-0000-0000-0000-000000000003', '旧会话', 'tester', :now, :now)
+                """).param("now", now).update();
+        jdbc.sql("""
+                INSERT INTO tool_approval_requests (
+                    id, tenant_id, agent_id, conversation_id, run_id, requested_by,
+                    requested_by_display_name, status, expires_at, version_no, checkpoint_ref,
+                    created_at, updated_at)
+                VALUES ('90000000-0000-0000-0000-000000000011',
+                    '90000000-0000-0000-0000-000000000001',
+                    '90000000-0000-0000-0000-000000000003',
+                    '90000000-0000-0000-0000-000000000009',
+                    '90000000-0000-0000-0000-000000000004', 'tester', '测试', 'PENDING',
+                    :now, 0, 'checkpoint-legacy', :now, :now)
+                """).param("now", now).update();
+        jdbc.sql("""
+                INSERT INTO run_skill_snapshots (tenant_id, run_id, agent_id, format_version, skills_json, created_at)
+                VALUES ('90000000-0000-0000-0000-000000000001',
+                    '90000000-0000-0000-0000-000000000004',
+                    '90000000-0000-0000-0000-000000000003', 1,
+                    '[{"skillId":"90000000-0000-0000-0000-000000000005","versionId":"90000000-0000-0000-0000-000000000006","bindingId":"90000000-0000-0000-0000-000000000008","accessEpoch":0}]',
+                    :now)
+                """).param("now", now).update();
+    }
+
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(12);
+        assertThat(migrationsExecuted).isEqualTo(13);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
@@ -187,6 +329,12 @@ class MigrationTest {
             assertThat(indexNames(connection, "run_skill_snapshots")).contains("ux_run_skill_snapshots_tenant_run");
             assertThat(indexNames(connection, "skill_load_records")).contains(
                     "ux_skill_load_records_tenant_call", "idx_skill_load_records_tenant_run_time");
+            assertThat(indexNames(connection, "skill_versions")).contains("ux_skill_versions_tenant_number");
+            assertThat(indexNames(connection, "skill_dependencies")).contains("ux_skill_dependencies_version_key");
+            assertThat(indexNames(connection, "skill_releases")).contains("ux_skill_releases_tenant_release_no");
+            assertThat(indexNames(connection, "skill_preflight_checks")).contains("ux_skill_preflight_checks_tenant_id");
+            assertThat(indexNames(connection, "skill_preflight_items")).contains("ux_skill_preflight_items_tenant_check");
+            assertThat(indexNames(connection, "skill_trials")).contains("ux_skill_trials_tenant_run");
             assertThat(indexColumns(connection, "runs", "idx_runs_tenant_agent_started"))
                     .containsExactly("tenant_id", "agent_id", "started_at", "id");
             assertThat(indexColumns(connection, "tool_calls", "idx_tool_calls_tenant_run"))
@@ -204,7 +352,9 @@ class MigrationTest {
             assertThat(isNullable(connection, "conversations", "updated_at")).isFalse();
             assertThat(isNullable(connection, "messages", "sequence_no")).isFalse();
             assertThat(isNullable(connection, "messages", "content_blocks_json")).isFalse();
-            assertThat(isNullable(connection, "skill_definitions", "current_version_id")).isFalse();
+            assertThat(isNullable(connection, "skill_definitions", "candidate_version_id")).isTrue();
+            assertThat(isNullable(connection, "skill_definitions", "published_version_id")).isTrue();
+            assertThat(isNullable(connection, "skill_definitions", "dependency_mapping_revision")).isFalse();
             assertThat(isNullable(connection, "skill_load_records", "skill_id")).isTrue();
             assertThat(isNullable(connection, "skill_load_records", "version_id")).isTrue();
             assertThat(columnExists(connection, "tool_http_configs", "input_schema")).isFalse();

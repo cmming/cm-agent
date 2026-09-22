@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -67,6 +68,20 @@ public class JdbcSkillVersionRepository implements SkillVersionRepository {
                 .param("skillId", skillId.toString())
                 .param("versionId", versionId.toString())
                 .query(this::map).optional();
+    }
+
+    @Override
+    public List<SkillVersion> list(UUID tenantId, UUID skillId) {
+        return jdbcClient.sql("""
+                        SELECT id, tenant_id, skill_id, version_no, description, metadata_json,
+                               skill_content, sha256, created_by, created_at
+                        FROM skill_versions
+                        WHERE tenant_id = :tenantId AND skill_id = :skillId
+                        ORDER BY version_no DESC, id DESC
+                        """)
+                .param("tenantId", tenantId.toString())
+                .param("skillId", skillId.toString())
+                .query(this::map).list();
     }
 
     private SkillVersion map(ResultSet resultSet, int rowNum) throws SQLException {

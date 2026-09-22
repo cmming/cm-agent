@@ -2,6 +2,7 @@ package com.cmagent.persistence;
 
 import com.cmagent.core.domain.RunPageRequest;
 import com.cmagent.core.domain.RunRecord;
+import com.cmagent.core.domain.RunKind;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.repository.RunRepository;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -46,10 +47,10 @@ public class JdbcRunRepository implements RunRepository {
 
         jdbcClient.sql("""
                         INSERT INTO runs (
-                            id, tenant_id, agent_id, principal_id, status, input_text, output_text,
+                            id, tenant_id, agent_id, principal_id, run_kind, status, input_text, output_text,
                             error_message, started_at, finished_at
                         ) VALUES (
-                            :id, :tenantId, :agentId, :principalId, :status, :input, :output,
+                            :id, :tenantId, :agentId, :principalId, :runKind, :status, :input, :output,
                             :errorMessage, :startedAt, :finishedAt
                         )
                         """)
@@ -57,6 +58,7 @@ public class JdbcRunRepository implements RunRepository {
                 .param("tenantId", tenantId.toString())
                 .param("agentId", run.agentId().toString())
                 .param("principalId", run.principalId())
+                .param("runKind", run.kind().name())
                 .param("status", run.status().name())
                 .param("input", run.input())
                 .param("output", nullIfBlank(run.output()))
@@ -140,7 +142,7 @@ public class JdbcRunRepository implements RunRepository {
      */
     public Optional<RunRecord> findByTenantAndAgentAndId(UUID tenantId, UUID agentId, UUID runId) {
         return jdbcClient.sql("""
-                        SELECT id, tenant_id, agent_id, principal_id, status, input_text, output_text,
+                        SELECT id, tenant_id, agent_id, principal_id, run_kind, status, input_text, output_text,
                                error_message, started_at, finished_at
                         FROM runs
                         WHERE tenant_id = :tenantId AND agent_id = :agentId AND id = :runId
@@ -165,10 +167,11 @@ public class JdbcRunRepository implements RunRepository {
         Objects.requireNonNull(pageRequest, "pageRequest 不能为空");
         if (pageRequest.beforeStartedAt() == null) {
             return jdbcClient.sql("""
-                            SELECT id, tenant_id, agent_id, principal_id, status, input_text, output_text,
+                            SELECT id, tenant_id, agent_id, principal_id, run_kind, status, input_text, output_text,
                                    error_message, started_at, finished_at
                             FROM runs
                             WHERE tenant_id = :tenantId AND agent_id = :agentId
+                              AND run_kind = 'NORMAL'
                             ORDER BY started_at DESC, id DESC
                             LIMIT :limit
                             """)
@@ -179,11 +182,12 @@ public class JdbcRunRepository implements RunRepository {
                     .list();
         }
         return jdbcClient.sql("""
-                        SELECT id, tenant_id, agent_id, principal_id, status, input_text, output_text,
+                        SELECT id, tenant_id, agent_id, principal_id, run_kind, status, input_text, output_text,
                                error_message, started_at, finished_at
                         FROM runs
                         WHERE tenant_id = :tenantId
                           AND agent_id = :agentId
+                          AND run_kind = 'NORMAL'
                           AND (started_at < :beforeStartedAt
                                OR (started_at = :beforeStartedAt AND id < :beforeId))
                         ORDER BY started_at DESC, id DESC
@@ -205,9 +209,52 @@ public class JdbcRunRepository implements RunRepository {
      * @param runId 运行标识
      * @return 匹配的运行记录
      */
+    @Override
+    public List<RunRecord> listByTenantAndAgentAndKind(
+            UUID tenantId, UUID agentId, RunKind kind, RunPageRequest pageRequest) {
+        Objects.requireNonNull(kind, "kind 不能为空");
+        Objects.requireNonNull(pageRequest, "pageRequest 不能为空");
+        if (pageRequest.beforeStartedAt() == null) {
+            return jdbcClient.sql("""
+                            SELECT id, tenant_id, agent_id, principal_id, run_kind, status, input_text, output_text,
+                                   error_message, started_at, finished_at
+                            FROM runs
+                            WHERE tenant_id = :tenantId AND agent_id = :agentId AND run_kind = :runKind
+                            ORDER BY started_at DESC, id DESC
+                            LIMIT :limit
+                            """)
+                    .param("tenantId", tenantId.toString())
+                    .param("agentId", agentId.toString())
+                    .param("runKind", kind.name())
+                    .param("limit", pageRequest.limit())
+                    .query(this::mapRun)
+                    .list();
+        }
+        return jdbcClient.sql("""
+                        SELECT id, tenant_id, agent_id, principal_id, run_kind, status, input_text, output_text,
+                               error_message, started_at, finished_at
+                        FROM runs
+                        WHERE tenant_id = :tenantId
+                          AND agent_id = :agentId
+                          AND run_kind = :runKind
+                          AND (started_at < :beforeStartedAt
+                               OR (started_at = :beforeStartedAt AND id < :beforeId))
+                        ORDER BY started_at DESC, id DESC
+                        LIMIT :limit
+                        """)
+                .param("tenantId", tenantId.toString())
+                .param("agentId", agentId.toString())
+                .param("runKind", kind.name())
+                .param("beforeStartedAt", Timestamp.from(pageRequest.beforeStartedAt()))
+                .param("beforeId", pageRequest.beforeId().toString())
+                .param("limit", pageRequest.limit())
+                .query(this::mapRun)
+                .list();
+    }
+
     private Optional<RunRecord> findByTenantAndId(UUID tenantId, UUID runId) {
         return jdbcClient.sql("""
-                        SELECT id, tenant_id, agent_id, principal_id, status, input_text, output_text,
+                        SELECT id, tenant_id, agent_id, principal_id, run_kind, status, input_text, output_text,
                                error_message, started_at, finished_at
                         FROM runs
                         WHERE tenant_id = :tenantId AND id = :runId
@@ -233,6 +280,7 @@ public class JdbcRunRepository implements RunRepository {
                 UUID.fromString(resultSet.getString("tenant_id")),
                 UUID.fromString(resultSet.getString("agent_id")),
                 resultSet.getString("principal_id"),
+                RunKind.valueOf(resultSet.getString("run_kind")),
                 RunStatus.valueOf(resultSet.getString("status")),
                 resultSet.getString("input_text"),
                 resultSet.getString("output_text"),

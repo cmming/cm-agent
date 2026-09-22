@@ -2,6 +2,7 @@ package com.cmagent.persistence;
 
 import com.cmagent.core.domain.RunPageRequest;
 import com.cmagent.core.domain.RunRecord;
+import com.cmagent.core.domain.RunKind;
 import com.cmagent.core.domain.RunStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -124,6 +125,27 @@ class JdbcRunRepositoryTest {
         assertThatThrownBy(() -> repository.complete(TENANT_B, runId, RunStatus.FAILED, "", "error", finishedAt.plusSeconds(1)))
                 .isInstanceOf(NoSuchElementException.class)
                 .hasMessage("Run 不存在");
+    }
+
+    @Test
+    void testRunsDoNotPolluteHistoryAndCanOnlyBeFoundByExplicitKind() {
+        UUID testRun = UUID.fromString("30000000-0000-0000-0000-000000000021");
+        Instant startedAt = Instant.parse("2026-07-14T21:00:00Z");
+        repository.save(TENANT_A, RunRecord.create(
+                testRun, TENANT_A, AGENT_A, "principal", RunKind.TEST, "candidate-input", startedAt));
+
+        assertThat(repository.findByTenantAndAgentAndId(TENANT_A, AGENT_A, testRun).orElseThrow().kind())
+                .isEqualTo(RunKind.TEST);
+        assertThat(repository.listByTenantAndAgent(TENANT_A, AGENT_A, new RunPageRequest(20, null, null)))
+                .extracting(RunRecord::id)
+                .doesNotContain(testRun);
+        assertThat(repository.listByTenantAndAgentAndKind(
+                TENANT_A, AGENT_A, RunKind.TEST, new RunPageRequest(20, null, null)))
+                .extracting(RunRecord::id)
+                .containsExactly(testRun);
+        assertThat(repository.listByTenantAndAgentAndKind(
+                TENANT_B, AGENT_B, RunKind.TEST, new RunPageRequest(20, null, null)))
+                .isEmpty();
     }
 
     /**

@@ -4,6 +4,7 @@ import com.cmagent.core.domain.ToolApprovalDecision;
 import com.cmagent.core.domain.ToolApprovalItem;
 import com.cmagent.core.domain.ToolApprovalPolicy;
 import com.cmagent.core.domain.ToolApprovalRequest;
+import com.cmagent.core.domain.ToolApprovalScope;
 import com.cmagent.core.domain.ToolApprovalStatus;
 import com.cmagent.core.domain.ToolApprovalHistoryPageRequest;
 import com.cmagent.core.domain.ToolRiskLevel;
@@ -35,16 +36,17 @@ public final class JdbcToolApprovalRepository implements ToolApprovalRepository 
         return java.util.Objects.requireNonNull(transactionTemplate.execute(status -> {
             jdbcClient.sql("""
                             INSERT INTO tool_approval_requests (
-                                id, tenant_id, agent_id, conversation_id, run_id, requested_by,
+                                id, tenant_id, agent_id, approval_scope, conversation_id, run_id, requested_by,
                                 requested_by_display_name, status, expires_at, version_no, checkpoint_ref,
                                 decided_by, decided_by_display_name, decided_at, created_at, updated_at)
-                            VALUES (:id, :tenantId, :agentId, :conversationId, :runId, :requestedBy,
+                            VALUES (:id, :tenantId, :agentId, :approvalScope, :conversationId, :runId, :requestedBy,
                                     :requestedByDisplayName, :status, :expiresAt, :version, :checkpointRef,
                                     :decidedBy, :decidedByDisplayName, :decidedAt, :createdAt, :updatedAt)
                             """)
                     .param("id", request.id().toString()).param("tenantId", request.tenantId().toString())
                     .param("agentId", request.agentId().toString())
-                    .param("conversationId", request.conversationId().toString())
+                    .param("approvalScope", request.scope().name())
+                    .param("conversationId", request.conversationId() == null ? null : request.conversationId().toString())
                     .param("runId", request.runId().toString()).param("requestedBy", request.requestedBy())
                     .param("requestedByDisplayName", request.requestedByDisplayName())
                     .param("status", request.status().name()).param("expiresAt", Timestamp.from(request.expiresAt()))
@@ -80,7 +82,7 @@ public final class JdbcToolApprovalRepository implements ToolApprovalRepository 
     @Override
     public Optional<ToolApprovalRequest> find(UUID tenantId, UUID agentId, UUID conversationId, UUID approvalId) {
         return jdbcClient.sql("""
-                        SELECT id, tenant_id, agent_id, conversation_id, run_id, requested_by,
+                        SELECT id, tenant_id, agent_id, approval_scope, conversation_id, run_id, requested_by,
                                requested_by_display_name, status, expires_at, version_no, checkpoint_ref,
                                decided_by, decided_by_display_name, decided_at, created_at, updated_at
                         FROM tool_approval_requests
@@ -97,7 +99,7 @@ public final class JdbcToolApprovalRepository implements ToolApprovalRepository 
     public List<ToolApprovalRequest> listPending(
             UUID tenantId, UUID agentId, UUID conversationId, Instant now, int limit) {
         return jdbcClient.sql("""
-                        SELECT id, tenant_id, agent_id, conversation_id, run_id, requested_by,
+                        SELECT id, tenant_id, agent_id, approval_scope, conversation_id, run_id, requested_by,
                                requested_by_display_name, status, expires_at, version_no, checkpoint_ref,
                                decided_by, decided_by_display_name, decided_at, created_at, updated_at
                         FROM tool_approval_requests
@@ -135,7 +137,7 @@ public final class JdbcToolApprovalRepository implements ToolApprovalRepository 
                 AND (decided_at < :beforeTime OR (decided_at = :beforeTime AND id < :beforeId))
                 """;
         var query = jdbcClient.sql("""
-                SELECT id, tenant_id, agent_id, conversation_id, run_id, requested_by,
+                SELECT id, tenant_id, agent_id, approval_scope, conversation_id, run_id, requested_by,
                        requested_by_display_name, status, expires_at, version_no, checkpoint_ref,
                        decided_by, decided_by_display_name, decided_at, created_at, updated_at
                 FROM tool_approval_requests
@@ -220,11 +222,121 @@ public final class JdbcToolApprovalRepository implements ToolApprovalRepository 
                 .query(this::mapItem).list();
     }
 
+    @Override
+    public Optional<ToolApprovalRequest> findByRun(
+            UUID tenantId, UUID agentId, UUID runId, UUID approvalId) {
+        return jdbcClient.sql("""
+                        SELECT id, tenant_id, agent_id, approval_scope, conversation_id, run_id, requested_by,
+                               requested_by_display_name, status, expires_at, version_no, checkpoint_ref,
+                               decided_by, decided_by_display_name, decided_at, created_at, updated_at
+                        FROM tool_approval_requests
+                        WHERE tenant_id = :tenantId AND agent_id = :agentId
+                          AND run_id = :runId AND id = :approvalId
+                        """)
+                .param("tenantId", tenantId.toString()).param("agentId", agentId.toString())
+                .param("runId", runId.toString()).param("approvalId", approvalId.toString())
+                .query((rs, row) -> mapRequest(rs, items(tenantId, approvalId)))
+                .optional();
+    }
+
+    @Override
+    public List<ToolApprovalRequest> listPendingByRun(UUID tenantId, UUID agentId, UUID runId, Instant now, int limit) {
+        return jdbcClient.sql("""
+                        SELECT id, tenant_id, agent_id, approval_scope, conversation_id, run_id, requested_by,
+                               requested_by_display_name, status, expires_at, version_no, checkpoint_ref,
+                               decided_by, decided_by_display_name, decided_at, created_at, updated_at
+                        FROM tool_approval_requests
+                        WHERE tenant_id = :tenantId AND agent_id = :agentId AND run_id = :runId
+                          AND status = 'PENDING' AND expires_at > :now
+                        ORDER BY created_at, id LIMIT :limit
+                        """)
+                .param("tenantId", tenantId.toString()).param("agentId", agentId.toString())
+                .param("runId", runId.toString()).param("now", Timestamp.from(now))
+                .param("limit", limit)
+                .query((rs, row) -> mapRequest(rs, items(tenantId, UUID.fromString(rs.getString("id")))))
+                .list();
+    }
+
+    @Override
+    public boolean hasPendingByRun(UUID tenantId, UUID agentId, UUID runId, Instant now) {
+        return jdbcClient.sql("""
+                        SELECT COUNT(*) FROM tool_approval_requests
+                        WHERE tenant_id = :tenantId AND agent_id = :agentId AND run_id = :runId
+                          AND status = 'PENDING' AND expires_at > :now
+                        """)
+                .param("tenantId", tenantId.toString()).param("agentId", agentId.toString())
+                .param("runId", runId.toString()).param("now", Timestamp.from(now))
+                .query(Integer.class).single() > 0;
+    }
+
+    @Override
+    public boolean decideByRun(
+            UUID tenantId, UUID agentId, UUID runId, UUID approvalId, long expectedVersion,
+            ToolApprovalStatus status, Map<UUID, ToolApprovalDecision> decisions,
+            String decidedBy, String decidedByDisplayName, Instant decidedAt) {
+        return Boolean.TRUE.equals(transactionTemplate.execute(tx -> {
+            int updated = jdbcClient.sql("""
+                            UPDATE tool_approval_requests
+                            SET status = :status, version_no = version_no + 1, decided_by = :decidedBy,
+                                decided_by_display_name = :displayName, decided_at = :decidedAt, updated_at = :decidedAt
+                            WHERE tenant_id = :tenantId AND agent_id = :agentId
+                              AND run_id = :runId AND id = :approvalId
+                              AND status = 'PENDING' AND version_no = :expectedVersion
+                            """)
+                    .param("status", status.name()).param("decidedBy", decidedBy)
+                    .param("displayName", decidedByDisplayName)
+                    .param("decidedAt", Timestamp.from(decidedAt)).param("tenantId", tenantId.toString())
+                    .param("agentId", agentId.toString()).param("runId", runId.toString())
+                    .param("approvalId", approvalId.toString()).param("expectedVersion", expectedVersion)
+                    .update();
+            if (updated != 1) {
+                return false;
+            }
+            for (var entry : decisions.entrySet()) {
+                int revised = jdbcClient.sql("""
+                                UPDATE tool_approval_items SET decision = :decision, updated_at = :decidedAt
+                                WHERE tenant_id = :tenantId AND approval_id = :approvalId
+                                  AND id = :itemId AND decision IS NULL
+                                """)
+                        .param("decision", entry.getValue().name())
+                        .param("decidedAt", Timestamp.from(decidedAt))
+                        .param("tenantId", tenantId.toString())
+                        .param("approvalId", approvalId.toString())
+                        .param("itemId", entry.getKey().toString()).update();
+                if (revised != 1) {
+                    tx.setRollbackOnly();
+                    return false;
+                }
+            }
+            return true;
+        }));
+    }
+
+    @Override
+    public boolean expireByRun(
+            UUID tenantId, UUID agentId, UUID runId, UUID approvalId,
+            long expectedVersion, String decidedBy, Instant decidedAt) {
+        return jdbcClient.sql("""
+                        UPDATE tool_approval_requests
+                        SET status = 'EXPIRED', version_no = version_no + 1, decided_by = :decidedBy,
+                            decided_by_display_name = :decidedBy, decided_at = :decidedAt, updated_at = :decidedAt
+                        WHERE tenant_id = :tenantId AND agent_id = :agentId
+                          AND run_id = :runId AND id = :approvalId
+                          AND status = 'PENDING' AND version_no = :expectedVersion
+                        """)
+                .param("decidedBy", decidedBy).param("decidedAt", Timestamp.from(decidedAt))
+                .param("tenantId", tenantId.toString()).param("agentId", agentId.toString())
+                .param("runId", runId.toString()).param("approvalId", approvalId.toString())
+                .param("expectedVersion", expectedVersion).update() == 1;
+    }
+
     private ToolApprovalRequest mapRequest(ResultSet rs, List<ToolApprovalItem> items) throws SQLException {
         Timestamp decidedAt = rs.getTimestamp("decided_at");
+        String conversationId = rs.getString("conversation_id");
         return new ToolApprovalRequest(
                 UUID.fromString(rs.getString("id")), UUID.fromString(rs.getString("tenant_id")),
-                UUID.fromString(rs.getString("agent_id")), UUID.fromString(rs.getString("conversation_id")),
+                UUID.fromString(rs.getString("agent_id")), ToolApprovalScope.valueOf(rs.getString("approval_scope")),
+                conversationId == null ? null : UUID.fromString(conversationId),
                 UUID.fromString(rs.getString("run_id")), rs.getString("requested_by"),
                 rs.getString("requested_by_display_name"), ToolApprovalStatus.valueOf(rs.getString("status")),
                 rs.getTimestamp("expires_at").toInstant(), rs.getLong("version_no"), rs.getString("checkpoint_ref"),
