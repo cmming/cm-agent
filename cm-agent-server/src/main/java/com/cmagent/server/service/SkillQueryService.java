@@ -125,7 +125,8 @@ public class SkillQueryService {
         SkillDefinition definition = requireDefinition(binding.tenantId(), binding.skillId());
         SkillVersion version = requireVersion(definition);
         return new SkillResponses.Binding(binding.id(), definition.id(), definition.name(),
-                version.description(), version.versionNo(), definition.enabled());
+                version.description(), version.versionNo(), definition.enabled(), binding.mode().name(),
+                binding.pinnedVersionId(), binding.revision());
     }
 
     private SkillResponses.Summary summary(SkillDefinition definition) {

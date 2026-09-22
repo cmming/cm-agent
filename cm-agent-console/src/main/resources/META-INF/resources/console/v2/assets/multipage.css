@@ -639,6 +639,34 @@ body[data-console-version="v2"] .skill-detail-metadata dd { color: var(--text); 
 body[data-console-version="v2"] .skill-detail-metadata dt:nth-of-type(2),
 body[data-console-version="v2"] .skill-detail-metadata dd:nth-of-type(2) { border-top: 1px solid #edf1f6; }
 
+body[data-console-version="v2"] .skill-release-workspace {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid #d8e3f0;
+    border-radius: 10px;
+    background: #f7faff;
+}
+body[data-console-version="v2"] .skill-release-workspace h3,
+body[data-console-version="v2"] .skill-release-workspace h4 { margin: 0; color: #1b3558; }
+body[data-console-version="v2"] .skill-release-workspace h3 { font-size: 14px; }
+body[data-console-version="v2"] .skill-release-workspace h4 { font-size: 13px; }
+body[data-console-version="v2"] .skill-release-pointers {
+    display: grid; grid-template-columns: 100px minmax(0, 1fr); margin: 0;
+    border-top: 1px solid #dce8f4; border-bottom: 1px solid #dce8f4;
+}
+body[data-console-version="v2"] .skill-release-pointers dt,
+body[data-console-version="v2"] .skill-release-pointers dd { margin: 0; padding: 7px 0; font-size: 12px; }
+body[data-console-version="v2"] .skill-release-pointers dt { color: var(--muted); }
+body[data-console-version="v2"] .skill-release-pointers dd { color: #1d426f; font-family: Cascadia Code, Consolas, monospace; font-weight: 650; }
+body[data-console-version="v2"] .skill-dependency-summary { display: grid; gap: 5px; }
+body[data-console-version="v2"] .skill-dependency-list { display: grid; gap: 5px; margin: 0; padding-left: 18px; color: #4f6178; font-size: 12px; }
+body[data-console-version="v2"] .skill-trial-form { display: grid; gap: 9px; padding-top: 3px; }
+body[data-console-version="v2"] .skill-trial-form label { display: grid; gap: 5px; color: #41526a; font-size: 12px; font-weight: 650; }
+body[data-console-version="v2"] .skill-trial-form input,
+body[data-console-version="v2"] .skill-trial-form textarea { width: 100%; box-sizing: border-box; }
+body[data-console-version="v2"] .skill-trial-form textarea { min-height: 78px; resize: vertical; }
+
 body[data-console-version="v2"] .skill-resource-section { display: grid; gap: 9px; }
 body[data-console-version="v2"] .skill-resource-section h3 { margin: 0; font-size: 14px; }
 body[data-console-version="v2"] .skill-resource-section .field-help { margin: -4px 0 0; }
@@ -890,6 +918,11 @@ body[data-console-version="v2"] .button:active:not(:disabled) {
     body[data-console-version="v2"] #skillsPage .skill-detail-metadata dd { padding: 0; border: 0; }
     body[data-console-version="v2"] #skillsPage .skill-detail-metadata dd { margin-bottom: 8px; }
     body[data-console-version="v2"] #skillsPage .skill-detail-metadata dd:last-child { margin-bottom: 0; }
+    body[data-console-version="v2"] #skillsPage .skill-release-pointers { grid-template-columns: 1fr; gap: 1px; padding: 8px 0; }
+    body[data-console-version="v2"] #skillsPage .skill-release-pointers dt,
+    body[data-console-version="v2"] #skillsPage .skill-release-pointers dd { padding: 0; border: 0; }
+    body[data-console-version="v2"] #skillsPage .skill-release-pointers dd { margin-bottom: 8px; }
+    body[data-console-version="v2"] #skillsPage .skill-trial-form .button { width: 100%; }
     body[data-console-version="v2"] #skillsPage .skill-detail-actions { justify-content: stretch; }
     body[data-console-version="v2"] #skillsPage .skill-detail-actions .button { width: 100%; }
 }

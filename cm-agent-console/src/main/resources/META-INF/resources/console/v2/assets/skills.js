@@ -12,9 +12,15 @@
         };
     }
 
+    function canPublishTrial(trial, candidateVersionId, mappingRevision) {
+        return Boolean(trial && trial.status === "PASSED" && trial.qualifiesRelease
+            && trial.versionId === candidateVersionId && trial.mappingRevision === mappingRevision);
+    }
+
     function createSkillPage({api, getSessionEpoch, getPermissions, document}) {
         const scope = createRequestScope(getSessionEpoch);
         let selectedId = "";
+        let selectedMappingRevision = null;
         const byId = (id) => document.getElementById(id);
         const status = (message, tone = "neutral") => {
             const node = byId("skillPageStatus");
@@ -61,7 +67,7 @@
             } catch (error) { if (scope.isCurrent(ticket)) status(error.message, "error"); }
         }
         async function select(id) {
-            selectedId = id; selectListItem(id); const ticket = scope.issue("detail");
+            selectedId = id; selectedMappingRevision = null; selectListItem(id); const ticket = scope.issue("detail");
             byId("skillDetail").replaceChildren(text("p", "正在加载技能详情…", "empty-state"));
             try {
                 const skill = await api.request(`/api/skills/${encodeURIComponent(id)}`);
@@ -74,6 +80,115 @@
                 const metadata = document.createElement("dl"); metadata.className = "skill-detail-metadata";
                 metadata.append(text("dt", "当前版本"), text("dd", `v${summary.currentVersionNo || "—"}`), text("dt", "使用状态"), text("dd", summary.enabled ? "可绑定到 Agent" : "停用后不可绑定或读取"));
                 detail.append(header, metadata);
+                const release = document.createElement("section"); release.className = "skill-release-workspace";
+                release.append(text("h3", "发布工作区"), text("p", "按“依赖预检 → 指定版本试运行 → 人工发布”推进；候选不会进入正式运行。", "field-help"));
+                const pointers = document.createElement("dl"); pointers.className = "skill-release-pointers";
+                pointers.append(text("dt", "候选版本"), text("dd", summary.candidateVersionId ? summary.candidateVersionId.slice(0, 8) : "当前没有候选"), text("dt", "正式版本"), text("dd", summary.publishedVersionId ? summary.publishedVersionId.slice(0, 8) : "尚未发布"));
+                release.append(pointers);
+                const dependencies = document.createElement("div"); dependencies.className = "skill-dependency-summary";
+                dependencies.append(text("strong", "依赖映射"), text("p", "正在读取当前候选的工具依赖。", "field-help")); release.append(dependencies);
+                try {
+                    const view = await api.request(`/api/skills/${encodeURIComponent(id)}/dependencies`);
+                    if (!scope.isCurrent(ticket)) return;
+                    selectedMappingRevision = view.revision;
+                    const rows = document.createElement("ul"); rows.className = "skill-dependency-list";
+                    const entries = Array.isArray(view?.items) ? view.items : [];
+                    if (!entries.length) rows.append(text("li", "此版本未声明工具依赖。"));
+                    let tools = [];
+                    if (getPermissions().includes("skill:write") && entries.length) {
+                        const page = await api.request("/api/tools?page=0&size=100");
+                        if (!scope.isCurrent(ticket)) return;
+                        tools = Array.isArray(page?.items) ? page.items.filter((item) => item.enabled) : [];
+                    }
+                    entries.forEach((entry) => {
+                        const row = document.createElement("li");
+                        row.append(text("span", `${entry.logicalKey} · ${entry.required ? "必需" : "可选"} · ${entry.mappedToolId ? "已映射" : "等待映射"}`));
+                        if (getPermissions().includes("skill:write")) {
+                            const toolSelect = document.createElement("select"); toolSelect.className = "inline-select";
+                            const placeholder = document.createElement("option"); placeholder.value = ""; placeholder.textContent = tools.length ? "选择已启用工具" : "没有可映射的已启用工具"; toolSelect.append(placeholder);
+                            tools.forEach((tool) => { const option = document.createElement("option"); option.value = tool.id; option.textContent = tool.name || tool.id; toolSelect.append(option); });
+                            toolSelect.value = entry.mappedToolId || "";
+                            const save = document.createElement("button"); save.type = "button"; save.className = "button ghost"; save.textContent = "保存映射";
+                            save.addEventListener("click", async () => {
+                                if (!toolSelect.value) { status("请选择一个已启用工具后再保存映射。", "error"); return; }
+                                save.disabled = true;
+                                try {
+                                    await api.request(`/api/skills/${encodeURIComponent(id)}/dependencies/${encodeURIComponent(entry.logicalKey)}`, {method: "PUT", body: JSON.stringify({toolId: toolSelect.value, expectedRevision: view.revision})});
+                                    status("依赖映射已保存；此前试运行需要重新执行。", "success"); await select(id);
+                                } catch (error) { status(error.message, "error"); } finally { save.disabled = false; }
+                            });
+                            row.append(toolSelect, save);
+                        }
+                        rows.append(row);
+                    });
+                    dependencies.replaceChildren(text("strong", "依赖映射"), rows);
+                } catch (error) { dependencies.replaceChildren(text("strong", "依赖映射"), text("p", error.message, "field-help")); }
+                const history = document.createElement("section"); history.className = "skill-version-history";
+                history.append(text("h4", "版本历史与回滚"), text("p", "回滚会重新发布历史版本，只影响之后按跟随策略创建的 Run。", "field-help"));
+                const historyList = document.createElement("ul"); historyList.className = "skill-dependency-list";
+                history.append(historyList); release.append(history);
+                try {
+                    const versions = await api.request(`/api/skills/${encodeURIComponent(id)}/versions`);
+                    if (!scope.isCurrent(ticket)) return;
+                    if (!versions.length) historyList.append(text("li", "尚无版本历史。"));
+                    versions.forEach((version) => {
+                        const row = document.createElement("li");
+                        row.append(text("span", `v${version.versionNo} · ${version.state}`));
+                        if (version.state === "PREVIOUSLY_PUBLISHED" && getPermissions().includes("skill:write")) {
+                            const rollback = document.createElement("button"); rollback.type = "button"; rollback.className = "button ghost"; rollback.textContent = "回滚到此版本";
+                            rollback.addEventListener("click", async () => {
+                                if (!window.confirm(`确认将技能回滚并重新发布 v${version.versionNo} 吗？`)) return;
+                                rollback.disabled = true;
+                                try {
+                                    await api.request(`/api/skills/${encodeURIComponent(id)}/rollbacks`, {method: "POST", body: JSON.stringify({targetVersionId: version.versionId, expectedPublishedVersionId: summary.publishedVersionId})});
+                                    status(`已重新发布 v${version.versionNo}。`, "success"); await reload(); await select(id);
+                                } catch (error) { status(error.message, "error"); } finally { rollback.disabled = false; }
+                            });
+                            row.append(rollback);
+                        }
+                        historyList.append(row);
+                    });
+                } catch (error) { historyList.append(text("li", `版本历史读取失败：${error.message}`)); }
+                if (summary.candidateVersionId && getPermissions().includes("skill:write")) {
+                    const preflight = document.createElement("div"); preflight.className = "skill-preflight-actions";
+                    const check = document.createElement("button"); check.type = "button"; check.className = "button ghost"; check.textContent = "执行候选结构预检";
+                    const result = document.createElement("p"); result.className = "form-status"; result.setAttribute("aria-live", "polite");
+                    check.addEventListener("click", async () => {
+                        check.disabled = true; result.textContent = "正在验证候选版本依赖…";
+                        try {
+                            const checked = await api.request(`/api/skills/${encodeURIComponent(id)}/preflights?versionId=${encodeURIComponent(summary.candidateVersionId)}&scope=STRUCTURAL`, {method: "POST"});
+                            result.textContent = checked.summary?.status === "PASSED" ? "结构预检通过。" : `结构预检结果：${checked.summary?.status || "未知"}。请修复失败项后重新执行。`;
+                            result.dataset.tone = checked.summary?.status === "PASSED" ? "success" : "neutral";
+                        } catch (error) { result.textContent = error.message; result.dataset.tone = "error"; } finally { check.disabled = false; }
+                    });
+                    preflight.append(check, result); release.append(preflight);
+                }
+                if (summary.candidateVersionId && getPermissions().includes("skill:write")) {
+                    const trial = document.createElement("form"); trial.className = "skill-trial-form";
+                    trial.append(text("h4", "指定版本试运行"), text("p", "使用真实 Agent、模型和工具治理链路；工具可能产生真实副作用。", "field-help"));
+                    const agentLabel = text("label", "目标 Agent ID"); const agentInput = document.createElement("input"); agentInput.required = true; agentInput.placeholder = "输入要验证的 Agent UUID"; agentLabel.append(agentInput);
+                    const inputLabel = text("label", "测试输入"); const input = document.createElement("textarea"); input.required = true; input.placeholder = "描述希望模型使用此技能完成的任务"; inputLabel.append(input);
+                    const run = document.createElement("button"); run.type = "submit"; run.className = "button primary"; run.textContent = "开始试运行";
+                    const result = document.createElement("p"); result.className = "form-status"; result.setAttribute("aria-live", "polite");
+                    trial.append(agentLabel, inputLabel, run, result);
+                    trial.addEventListener("submit", async (event) => {
+                        event.preventDefault(); run.disabled = true; result.textContent = "正在执行 TEST Run…";
+                        try {
+                            const tested = await api.request(`/api/skills/${encodeURIComponent(id)}/trials`, {method: "POST", body: JSON.stringify({versionId: summary.candidateVersionId, agentId: agentInput.value.trim(), input: input.value.trim()})});
+                            result.textContent = tested.qualifiesRelease ? `试运行已通过（Run ${tested.runId.slice(0, 8)}），可以发布。` : `试运行结果：${tested.status}。目标技能必须实际读取后才能发布。`;
+                            result.dataset.tone = tested.qualifiesRelease ? "success" : "neutral";
+                            if (canPublishTrial(tested, summary.candidateVersionId, selectedMappingRevision)) {
+                                const publish = document.createElement("button"); publish.type = "button"; publish.className = "button ghost"; publish.textContent = "发布当前候选";
+                                publish.addEventListener("click", async () => {
+                                    publish.disabled = true;
+                                    try { await api.request(`/api/skills/${encodeURIComponent(id)}/releases`, {method: "POST", body: JSON.stringify({candidateVersionId: summary.candidateVersionId, expectedPublishedVersionId: summary.publishedVersionId || null, qualifyingTrialRunId: tested.runId})}); status("候选版本已发布；新建正式 Run 将按绑定策略解析版本。", "success"); await reload(); await select(id); }
+                                    catch (error) { status(error.message, "error"); } finally { publish.disabled = false; }
+                                }); trial.append(publish);
+                            }
+                        } catch (error) { result.textContent = error.message; result.dataset.tone = "error"; } finally { run.disabled = false; }
+                    }); release.append(trial);
+                }
+                detail.append(release);
                 const resourceSection = document.createElement("section"); resourceSection.className = "skill-resource-section";
                 resourceSection.append(text("h3", "受控资源"), text("p", "选择资源可在下方预览当前版本内容。", "field-help"));
                 const resourceActions = document.createElement("div"); resourceActions.className = "skill-resource-actions";
@@ -122,5 +237,5 @@
         }
         return {mount() { byId("refreshSkillsBtn").addEventListener("click", reload); byId("skillUploadForm").addEventListener("submit", upload); reload(); }, reload, dispose() { scope.invalidate(); selectedId = ""; }};
     }
-    return {createRequestScope, createSkillPage};
+    return {canPublishTrial, createRequestScope, createSkillPage};
 });

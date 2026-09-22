@@ -159,9 +159,12 @@ public final class SkillResponses {
      * @param description 当前版本描述
      * @param versionNo 当前版本号
      * @param enabled 是否启用
+     * @param mode 新建运行解析正式版本的策略
+     * @param pinnedVersionId 固定策略选择的已发布版本；跟随发布时为空
+     * @param revision 绑定策略的乐观锁修订
      */
     public record Binding(UUID bindingId, UUID skillId, String name, String description,
-                          int versionNo, boolean enabled) {
+                          int versionNo, boolean enabled, String mode, UUID pinnedVersionId, long revision) {
     }
 
     /**

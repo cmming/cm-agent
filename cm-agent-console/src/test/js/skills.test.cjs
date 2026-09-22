@@ -1,0 +1,35 @@
+const assert = require("node:assert/strict");
+const path = require("node:path");
+const test = require("node:test");
+
+const skills = require(path.resolve(
+    __dirname,
+    "../../main/resources/META-INF/resources/console/v2/assets/skills.js"
+));
+
+test("迟到的技能详情响应不能覆盖当前选择", () => {
+    let session = 1;
+    const scope = skills.createRequestScope(() => session);
+    const skillA = scope.issue("detail");
+    const skillB = scope.issue("detail");
+
+    assert.equal(scope.isCurrent(skillA), false);
+    assert.equal(scope.isCurrent(skillB), true);
+
+    session = 2;
+    assert.equal(scope.isCurrent(skillB), false);
+});
+
+test("只有同一候选和映射修订的已通过试运行才能开启发布", () => {
+    const trial = {
+        status: "PASSED",
+        qualifiesRelease: true,
+        versionId: "candidate-v2",
+        mappingRevision: 7
+    };
+
+    assert.equal(skills.canPublishTrial(trial, "candidate-v2", 7), true);
+    assert.equal(skills.canPublishTrial({...trial, status: "NOT_TRIGGERED"}, "candidate-v2", 7), false);
+    assert.equal(skills.canPublishTrial(trial, "candidate-v3", 7), false);
+    assert.equal(skills.canPublishTrial(trial, "candidate-v2", 8), false);
+});

@@ -642,6 +642,7 @@
                     unbindButton.addEventListener("click", () => unbindAgentSkill(agentId, binding, unbindButton));
                     actions.append(unbindButton);
                     row.append(actions);
+                    appendBindingStrategyControls(agentId, binding, row);
                 }
                 section.append(row);
             });
@@ -671,6 +672,72 @@
     function canManageAgentSkillBindings() {
         const permissions = state.currentUser?.permissions || [];
         return permissions.includes("agent:write") && permissions.includes("skill:read");
+    }
+
+    function appendBindingStrategyControls(agentId, binding, row) {
+        const controls = element("div", {className: "tool-actions"});
+        const mode = element("select", {className: "inline-select"});
+        mode.setAttribute("aria-label", `设置 ${binding.name || binding.skillId} 的取版策略`);
+        [
+            ["FOLLOW_PUBLISHED", "跟随当前正式发布版本"],
+            ["PINNED", "固定到历史发布版本"]
+        ].forEach(([value, label]) => {
+            const option = element("option", {text: label}); option.value = value; mode.append(option);
+        });
+        mode.value = binding.mode || "FOLLOW_PUBLISHED";
+        const versions = element("select", {className: "inline-select"});
+        versions.setAttribute("aria-label", "选择要固定的已发布技能版本");
+        versions.append(element("option", {text: "正在加载可固定版本…"}));
+        const save = element("button", {className: "button ghost", type: "button", text: "保存策略"});
+        const hint = element("p", {className: "field-help"});
+        const updateVisibility = () => {
+            const pinned = mode.value === "PINNED";
+            versions.disabled = !pinned;
+            hint.textContent = pinned
+                ? "固定版本不会随之后的发布或回滚变化。"
+                : "后续新建 Run 将使用该技能当前的正式发布版本。";
+        };
+        updateVisibility(); mode.addEventListener("change", updateVisibility);
+        controls.append(mode, versions, save); row.append(controls, hint);
+        api.request(`/api/skills/${encodeURIComponent(binding.skillId)}/versions`).then((items) => {
+            versions.replaceChildren();
+            const published = (Array.isArray(items) ? items : []).filter((item) =>
+                item.state === "CURRENT_PUBLISHED" || item.state === "PREVIOUSLY_PUBLISHED");
+            if (!published.length) {
+                const empty = element("option", {text: "没有可固定的已发布版本"}); empty.value = ""; versions.append(empty);
+                return;
+            }
+            published.forEach((item) => {
+                const option = element("option", {text: `v${item.versionNo} · ${item.state === "CURRENT_PUBLISHED" ? "当前正式" : "历史正式"}`});
+                option.value = item.versionId; versions.append(option);
+            });
+            if (binding.pinnedVersionId) versions.value = binding.pinnedVersionId;
+        }).catch((error) => {
+            versions.replaceChildren();
+            const unavailable = element("option", {text: "无法读取可固定版本"}); unavailable.value = ""; versions.append(unavailable);
+            hint.textContent = `版本历史读取失败：${error.message}`;
+        });
+        save.addEventListener("click", async () => {
+            const pinnedVersionId = mode.value === "PINNED" ? versions.value : null;
+            if (mode.value === "PINNED" && !pinnedVersionId) {
+                hint.textContent = "请先选择一个曾正式发布的版本。";
+                return;
+            }
+            const session = sessionEpoch.capture();
+            try {
+                await withSubmitState(save, async () => {
+                    await api.request(`/api/agents/${encodeURIComponent(agentId)}/skills/${encodeURIComponent(binding.skillId)}`, {
+                        method: "PUT",
+                        body: JSON.stringify({mode: mode.value, pinnedVersionId, expectedRevision: binding.revision})
+                    });
+                    if (!sessionEpoch.isCurrent(session) || state.selectedAgentId !== agentId) return;
+                    await loadAgentSkillBindings(agentId, agentSkillRevision.completeWrite(), session);
+                    setStatus($("globalStatus"), "技能取版策略已保存。", "success");
+                });
+            } catch (error) {
+                if (sessionEpoch.isCurrent(session)) setStatus($("globalStatus"), error.message, "error");
+            }
+        });
     }
 
     async function bindAgentSkill(agentId, skillId, button) {
