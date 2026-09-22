@@ -34,14 +34,14 @@
 | Node 回归 | `node --test .../skills.test.cjs .../console-core.test.cjs` 通过，共 75 项 |
 | 静态语法 | `node --check` 覆盖 `skills.js`、`app.js`，通过 |
 | 浏览器 | 登录页与资源版本已通过 Playwright 快照检查；完整闭环未通过：18080 隔离服务因单模块 Maven 解析本地旧 core 产物而无法启动，8080 为用户 IntelliJ 实例，未干预 |
-| Rocky PostgreSQL 16 / MySQL 8.4 | 未执行：`ssh rocky` 的 Docker 23.0.6 可用，但仅有 Maven 3.6.3、Java 17，且不存在 `/workspace/cm-agent`；不满足规定的 Maven 3.9.9 / Java 21 容器和同提交工作区前置条件 |
+| Rocky PostgreSQL 16 / MySQL 8.4 | 未执行：已用隔离 bundle 固定 `9c4054c`，在 `maven:3.9.9-eclipse-temurin-21` 中确认 Maven 3.9.9 / Java 21.0.7；容器解析 Maven Central DNS 失败，父 POM 无法下载，测试尚未开始 |
 
 ## 4. 风险与后续
 
 - TEST Run 真实调用模型和工具，可能产生外部副作用；发布前须由具备 `skill:write` 与 `agent:run` 的管理员确认。
 - 依赖映射变化会令旧试运行失去发布资格；服务端发布时会重新校验，不依赖浏览器状态。
 - 部署升级需先执行 PostgreSQL/MySQL V13 Flyway 迁移；不要回滚到不识别 format 2 快照的旧服务。
-- 后续应在干净的完整 reactor 启动环境补跑浏览器闭环，并在 Rocky 准备 Maven 3.9.9 / Java 21 容器和同步本分支提交后，分别完成 PostgreSQL 16 与 MySQL 8.4 专项测试。
+- 后续应在干净的完整 reactor 启动环境补跑浏览器闭环，并在 Rocky 恢复 Maven Central DNS 后，以本分支提交分别完成 PostgreSQL 16 与 MySQL 8.4 专项测试。
 
 ## 5. 保护范围
 

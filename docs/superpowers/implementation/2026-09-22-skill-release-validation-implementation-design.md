@@ -42,4 +42,4 @@
 - Java 21 reactor 打包及 core、adapter、console 测试通过。
 - Node 的 `skills.test.cjs` 与 `console-core.test.cjs` 通过，共 75 项。
 - `ConsoleResourceTest`、`AgentSkillControllerTest`、`SkillControllerTest` 通过。
-- Rocky 验证未执行：远程仅提供 Maven 3.6.3、Java 17 且没有项目工作区；浏览器真实工作流的限制与后续前置条件均见进度账本。
+- Rocky 验证未执行：已在隔离的 Maven 3.9.9 / Java 21.0.7 容器中固定最终提交，但 Maven Central DNS 解析失败，无法下载父 POM；浏览器真实工作流的限制与后续前置条件均见进度账本。
