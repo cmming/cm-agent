@@ -16,8 +16,13 @@ import com.cmagent.core.repository.RuntimeCheckpointRepository;
 import com.cmagent.core.repository.AgentSkillBindingRepository;
 import com.cmagent.core.repository.RunSkillSnapshotRepository;
 import com.cmagent.core.repository.SkillDefinitionRepository;
+import com.cmagent.core.repository.SkillDependencyMappingRepository;
+import com.cmagent.core.repository.SkillDependencyRepository;
 import com.cmagent.core.repository.SkillLoadRecordRepository;
+import com.cmagent.core.repository.SkillPreflightRepository;
+import com.cmagent.core.repository.SkillReleaseRepository;
 import com.cmagent.core.repository.SkillResourceRepository;
+import com.cmagent.core.repository.SkillTrialRepository;
 import com.cmagent.core.repository.SkillVersionRepository;
 import com.cmagent.persistence.JdbcAuditEventRepository;
 import com.cmagent.persistence.JdbcAgentDefinitionRepository;
@@ -36,8 +41,13 @@ import com.cmagent.persistence.JdbcRuntimeCheckpointRepository;
 import com.cmagent.persistence.JdbcAgentSkillBindingRepository;
 import com.cmagent.persistence.JdbcRunSkillSnapshotRepository;
 import com.cmagent.persistence.JdbcSkillDefinitionRepository;
+import com.cmagent.persistence.JdbcSkillDependencyMappingRepository;
+import com.cmagent.persistence.JdbcSkillDependencyRepository;
 import com.cmagent.persistence.JdbcSkillLoadRecordRepository;
+import com.cmagent.persistence.JdbcSkillPreflightRepository;
+import com.cmagent.persistence.JdbcSkillReleaseRepository;
 import com.cmagent.persistence.JdbcSkillResourceRepository;
+import com.cmagent.persistence.JdbcSkillTrialRepository;
 import com.cmagent.persistence.JdbcSkillVersionRepository;
 import com.cmagent.server.service.SkillUnitOfWork;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -192,6 +202,38 @@ public class JdbcPersistenceConfiguration {
     @Bean
     SkillLoadRecordRepository jdbcSkillLoadRecordRepository(JdbcClient cmAgentJdbcClient) {
         return new JdbcSkillLoadRecordRepository(cmAgentJdbcClient);
+    }
+
+    /** 创建技能依赖声明 JDBC Repository。 */
+    @Bean
+    SkillDependencyRepository jdbcSkillDependencyRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcSkillDependencyRepository(cmAgentJdbcClient);
+    }
+
+    /** 创建技能依赖映射 JDBC Repository。 */
+    @Bean
+    SkillDependencyMappingRepository jdbcSkillDependencyMappingRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcSkillDependencyMappingRepository(cmAgentJdbcClient);
+    }
+
+    /** 创建使用事务边界的技能预检 JDBC Repository。 */
+    @Bean
+    SkillPreflightRepository jdbcSkillPreflightRepository(
+            JdbcClient cmAgentJdbcClient, TransactionTemplate cmAgentTransactionTemplate) {
+        return new JdbcSkillPreflightRepository(cmAgentJdbcClient, cmAgentTransactionTemplate);
+    }
+
+    /** 创建技能发布事实 JDBC Repository。 */
+    @Bean
+    SkillReleaseRepository jdbcSkillReleaseRepository(JdbcClient cmAgentJdbcClient) {
+        return new JdbcSkillReleaseRepository(cmAgentJdbcClient);
+    }
+
+    /** 创建使用事务边界的技能试运行 JDBC Repository。 */
+    @Bean
+    SkillTrialRepository jdbcSkillTrialRepository(
+            JdbcClient cmAgentJdbcClient, TransactionTemplate cmAgentTransactionTemplate) {
+        return new JdbcSkillTrialRepository(cmAgentJdbcClient, cmAgentTransactionTemplate);
     }
 
     /**

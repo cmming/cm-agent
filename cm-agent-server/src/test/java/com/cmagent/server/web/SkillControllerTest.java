@@ -3,6 +3,12 @@ package com.cmagent.server.web;
 import com.cmagent.server.CmAgentServerApplication;
 import com.cmagent.server.config.SkillProperties;
 import com.cmagent.server.security.JwtService;
+import com.cmagent.core.domain.SkillDefinition;
+import com.cmagent.core.domain.SkillRelease;
+import com.cmagent.core.domain.SkillReleaseAction;
+import com.cmagent.core.repository.SkillDefinitionRepository;
+import com.cmagent.core.repository.SkillReleaseRepository;
+import com.cmagent.server.service.SkillUnitOfWork;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +21,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -22,6 +29,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.hamcrest.Matchers.hasItem;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -44,6 +52,12 @@ class SkillControllerTest {
     private JwtService jwtService;
     @Autowired
     private SkillProperties properties;
+    @Autowired
+    private SkillDefinitionRepository definitions;
+    @Autowired
+    private SkillReleaseRepository releases;
+    @Autowired
+    private SkillUnitOfWork workUnit;
 
     @Test
     void 只有运行权限不能上传技能() throws Exception {
@@ -64,7 +78,7 @@ class SkillControllerTest {
                 .andExpect(jsonPath("$.summary.versionNo").value(1))
                 .andReturn().getResponse().getContentAsString();
         String skillId = JsonPath.read(created, "$.summary.id");
-        String versionId = JsonPath.read(created, "$.summary.currentVersionId");
+        String versionId = JsonPath.read(created, "$.summary.candidateVersionId");
 
         mockMvc.perform(get("/api/skills/{id}", skillId)
                         .header("Authorization", "Bearer " + token(TENANT_ID, "skill:read")))
@@ -76,22 +90,23 @@ class SkillControllerTest {
                         .header("Authorization", "Bearer " + token(TENANT_ID, "skill:write"))
                         .contentType("application/json")
                         .content("{\"enabled\":true}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.enabled").value(true));
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SKILL_NOT_PUBLISHED"));
 
         mockMvc.perform(multipart("/api/skills/{id}/versions", skillId)
                         .file(file("support", "支持流程", "第二版", Map.of()))
-                        .param("expectedVersionId", UUID.randomUUID().toString())
+                        .param("expectedCandidateVersionId", UUID.randomUUID().toString())
                         .header("Authorization", "Bearer " + token(TENANT_ID, "skill:write")))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("SKILL_CONFLICT"));
+                .andExpect(jsonPath("$.code").value("SKILL_CANDIDATE_CONFLICT"));
 
         mockMvc.perform(multipart("/api/skills/{id}/versions", skillId)
                         .file(file("support", "支持流程", "第二版", Map.of()))
-                        .param("expectedVersionId", versionId)
+                        .param("expectedCandidateVersionId", versionId)
                         .header("Authorization", "Bearer " + token(TENANT_ID, "skill:write")))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.summary.versionNo").value(2));
+                .andExpect(jsonPath("$.summary.versionNo").value(2))
+                .andExpect(jsonPath("$.summary.publishedVersionId").isEmpty());
     }
 
     @Test
@@ -150,7 +165,7 @@ class SkillControllerTest {
         String skillId = JsonPath.read(created, "$.summary.id");
         mockMvc.perform(put("/api/skills/{id}/enabled", skillId)
                         .header("Authorization", "Bearer " + token)
-                        .contentType("application/json").content("{\"enabled\":true}"))
+                        .contentType("application/json").content("{\"enabled\":false}"))
                 .andExpect(status().isOk());
 
         properties.setEnabled(false);
@@ -182,6 +197,81 @@ class SkillControllerTest {
                 .andExpect(jsonPath("$.enabled").value(true))
                 .andExpect(jsonPath("$.allowedExtensions", hasItem(".html")))
                 .andExpect(jsonPath("$.maxBoundSkills").value(20));
+    }
+
+    @Test
+    void 候选版本历史与差异可读且跨租户隐藏() throws Exception {
+        String token = token(TENANT_ID, "skill:write", "skill:read");
+        String created = mockMvc.perform(multipart("/api/skills")
+                        .file(file("candidate", "候选技能", "第一版", Map.of("references/guide.md", "旧指南")))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.summary.candidateVersionId").isNotEmpty())
+                .andExpect(jsonPath("$.summary.publishedVersionId").isEmpty())
+                .andReturn().getResponse().getContentAsString();
+        String skillId = JsonPath.read(created, "$.summary.id");
+        String firstVersionId = JsonPath.read(created, "$.summary.candidateVersionId");
+
+        String replaced = mockMvc.perform(multipart("/api/skills/{id}/versions", skillId)
+                        .file(file("candidate", "候选技能", "第二版",
+                                Map.of("references/guide.md", "新指南", "references/new.md", "新增")))
+                        .param("expectedCandidateVersionId", firstVersionId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.summary.candidateVersionId").isNotEmpty())
+                .andExpect(jsonPath("$.summary.publishedVersionId").isEmpty())
+                .andReturn().getResponse().getContentAsString();
+        String secondVersionId = JsonPath.read(replaced, "$.summary.candidateVersionId");
+
+        String third = mockMvc.perform(multipart("/api/skills/{id}/versions", skillId)
+                        .file(file("candidate", "候选技能", "第三版",
+                                Map.of("references/guide.md", "最新指南", "references/new.md", "新增")))
+                        .param("expectedCandidateVersionId", secondVersionId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String thirdVersionId = JsonPath.read(third, "$.summary.candidateVersionId");
+        workUnit.execute(() -> {
+            SkillDefinition current = definitions.lock(TENANT_ID, UUID.fromString(skillId));
+            SkillDefinition next = new SkillDefinition(
+                    current.id(), current.tenantId(), current.name(), current.candidateVersionId(),
+                    UUID.fromString(secondVersionId), current.enabled(), current.accessEpoch(),
+                    current.dependencyMappingRevision(), current.createdBy(), "tester",
+                    current.createdAt(), Instant.now());
+            assertThat(definitions.updatePointers(
+                    next, UUID.fromString(thirdVersionId), null)).isTrue();
+            releases.insert(new SkillRelease(
+                    UUID.randomUUID(), TENANT_ID, UUID.fromString(skillId), 1, SkillReleaseAction.PUBLISH,
+                    null, UUID.fromString(firstVersionId), UUID.randomUUID(), UUID.randomUUID(),
+                    "tester", Instant.now()));
+            return null;
+        });
+
+        mockMvc.perform(get("/api/skills/{id}/versions", skillId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].versionId").value(thirdVersionId))
+                .andExpect(jsonPath("$[0].state").value("CANDIDATE"))
+                .andExpect(jsonPath("$[1].versionId").value(secondVersionId))
+                .andExpect(jsonPath("$[1].state").value("CURRENT_PUBLISHED"))
+                .andExpect(jsonPath("$[2].versionId").value(firstVersionId))
+                .andExpect(jsonPath("$[2].state").value("PREVIOUSLY_PUBLISHED"));
+
+        mockMvc.perform(get("/api/skills/{id}/versions/diff", skillId)
+                        .param("fromVersionId", firstVersionId)
+                        .param("toVersionId", secondVersionId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.instruction.state").value("CHANGED"))
+                .andExpect(jsonPath("$.resources[0].path").value("references/guide.md"))
+                .andExpect(jsonPath("$.resources[0].state").value("CHANGED"))
+                .andExpect(jsonPath("$.resources[1].path").value("references/new.md"))
+                .andExpect(jsonPath("$.resources[1].state").value("ADDED"));
+
+        mockMvc.perform(get("/api/skills/{id}/versions", skillId)
+                        .header("Authorization", "Bearer " + token(UUID.randomUUID(), "skill:read")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("SKILL_NOT_FOUND"));
     }
 
     private String token(UUID tenantId, String... permissions) {

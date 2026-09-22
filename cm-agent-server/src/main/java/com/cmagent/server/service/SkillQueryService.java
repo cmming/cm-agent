@@ -7,11 +7,14 @@ import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentSkillBinding;
 import com.cmagent.core.domain.SkillDefinition;
 import com.cmagent.core.domain.SkillResource;
+import com.cmagent.core.domain.SkillRelease;
+import com.cmagent.core.domain.SkillReleaseAction;
 import com.cmagent.core.domain.SkillVersion;
 import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.cmagent.core.repository.AgentSkillBindingRepository;
 import com.cmagent.core.repository.SkillDefinitionRepository;
 import com.cmagent.core.repository.SkillResourceRepository;
+import com.cmagent.core.repository.SkillReleaseRepository;
 import com.cmagent.core.repository.SkillVersionRepository;
 import com.cmagent.core.runtime.SkillAccessException;
 import com.cmagent.server.web.SkillResponses;
@@ -28,6 +31,8 @@ public class SkillQueryService {
     private final SkillResourceRepository resources;
     private final AgentSkillBindingRepository bindings;
     private final AgentDefinitionRepository agents;
+    private final SkillReleaseRepository releases;
+    private final SkillVersionDiffService diffs;
 
     /**
      * @param definitions 技能定义仓储
@@ -35,15 +40,20 @@ public class SkillQueryService {
      * @param resources 技能资源仓储
      * @param bindings Agent 技能绑定仓储
      * @param agents Agent 定义仓储
+     * @param releases 技能发布事实仓储
+     * @param diffs 版本差异服务
      */
     public SkillQueryService(SkillDefinitionRepository definitions, SkillVersionRepository versions,
                              SkillResourceRepository resources, AgentSkillBindingRepository bindings,
-                             AgentDefinitionRepository agents) {
+                             AgentDefinitionRepository agents, SkillReleaseRepository releases,
+                             SkillVersionDiffService diffs) {
         this.definitions = definitions;
         this.versions = versions;
         this.resources = resources;
         this.bindings = bindings;
         this.agents = agents;
+        this.releases = releases;
+        this.diffs = diffs;
     }
 
     /** 按当前主体租户分页列出技能摘要。 */
@@ -88,6 +98,24 @@ public class SkillQueryService {
         return bindings.list(principal.tenantId(), agentId).stream().map(this::binding).toList();
     }
 
+    /** 按当前指针和发布事实推导技能版本历史状态。 */
+    public List<SkillResponses.VersionSummary> versions(PrincipalRef principal, UUID skillId) {
+        SkillDefinition definition = requireDefinition(principal.tenantId(), skillId);
+        List<SkillRelease> history = releases.list(principal.tenantId(), skillId);
+        return versions.list(principal.tenantId(), skillId).stream()
+                .map(version -> new SkillResponses.VersionSummary(
+                        version.id(), version.versionNo(), version.description(), version.sha256(),
+                        version.createdBy(), version.createdAt(),
+                        state(definition, history, version)))
+                .toList();
+    }
+
+    /** 返回同一租户、同一技能下两个不可变版本的安全文本差异。 */
+    public SkillResponses.VersionDiff diff(
+            PrincipalRef principal, UUID skillId, UUID fromVersionId, UUID toVersionId) {
+        return diffs.diff(principal, skillId, fromVersionId, toVersionId);
+    }
+
     /** 将新写入的固定版本转换为详情响应。 */
     public SkillResponses.Detail detail(PrincipalRef principal, SkillDefinition definition) {
         return detail(principal, definition.id());
@@ -103,7 +131,24 @@ public class SkillQueryService {
     private SkillResponses.Summary summary(SkillDefinition definition) {
         SkillVersion version = requireVersion(definition);
         return new SkillResponses.Summary(definition.id(), definition.name(), version.description(),
-                definition.currentVersionId(), version.versionNo(), definition.enabled(), definition.updatedAt());
+                definition.currentVersionId(), definition.candidateVersionId(), definition.publishedVersionId(),
+                version.versionNo(), definition.enabled(), definition.updatedAt());
+    }
+
+    private SkillResponses.VersionState state(
+            SkillDefinition definition, List<SkillRelease> history, SkillVersion version) {
+        if (version.id().equals(definition.candidateVersionId())) {
+            return SkillResponses.VersionState.CANDIDATE;
+        }
+        if (version.id().equals(definition.publishedVersionId())) {
+            return SkillResponses.VersionState.CURRENT_PUBLISHED;
+        }
+        return history.stream()
+                .filter(release -> release.action() == SkillReleaseAction.PUBLISH
+                        || release.action() == SkillReleaseAction.ROLLBACK)
+                .anyMatch(release -> version.id().equals(release.versionId()))
+                ? SkillResponses.VersionState.PREVIOUSLY_PUBLISHED
+                : SkillResponses.VersionState.UNPUBLISHED_HISTORY;
     }
 
     private SkillDefinition requireDefinition(UUID tenantId, UUID skillId) {

@@ -113,7 +113,12 @@ public class ApiExceptionHandler {
         HttpStatus status = switch (failure.code()) {
             case SKILL_PACKAGE_INVALID, SKILL_RESOURCE_UNSUPPORTED -> HttpStatus.BAD_REQUEST;
             case SKILL_PACKAGE_TOO_LARGE, SKILL_LOAD_LIMIT_EXCEEDED -> HttpStatus.PAYLOAD_TOO_LARGE;
-            case SKILL_CONFLICT -> HttpStatus.CONFLICT;
+            case SKILL_CONFLICT, SKILL_CANDIDATE_CONFLICT, SKILL_NOT_PUBLISHED,
+                    SKILL_VERSION_NOT_RELEASED, SKILL_DEPENDENCY_UNMAPPED,
+                    SKILL_DEPENDENCY_UNAVAILABLE, SKILL_AGENT_GRANT_MISSING,
+                    SKILL_PREFLIGHT_STALE, SKILL_TRIAL_REQUIRED,
+                    SKILL_TRIAL_NOT_TRIGGERED, SKILL_RELEASE_FAILED -> HttpStatus.CONFLICT;
+            case SKILL_DEPENDENCY_INVALID -> HttpStatus.BAD_REQUEST;
             case SKILL_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case SKILL_ACCESS_REVOKED -> HttpStatus.GONE;
             case SKILL_FEATURE_DISABLED -> HttpStatus.SERVICE_UNAVAILABLE;

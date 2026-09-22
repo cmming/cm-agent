@@ -13,6 +13,7 @@ import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.config.SkillProperties;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.service.ParsedSkillPackage;
+import com.cmagent.server.service.SkillCandidateService;
 import com.cmagent.server.service.SkillManagementService;
 import com.cmagent.server.service.SkillPackageParser;
 import com.cmagent.server.service.SkillQueryService;
@@ -33,6 +34,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -44,17 +46,20 @@ public class SkillController {
     private final SkillPackageParser parser;
     private final SkillProperties properties;
     private final SkillManagementService management;
+    private final SkillCandidateService candidates;
     private final SkillQueryService queries;
     private final PermissionEvaluator permissions;
     private final AuditAppender audit;
 
     /** 创建技能控制器并保存解析、服务、权限和审计依赖。 */
     public SkillController(SkillPackageParser parser, SkillProperties properties,
-                           SkillManagementService management, SkillQueryService queries,
+                           SkillManagementService management, SkillCandidateService candidates,
+                           SkillQueryService queries,
                            PermissionEvaluator permissions, AuditAppender audit) {
         this.parser = parser;
         this.properties = properties;
         this.management = management;
+        this.candidates = candidates;
         this.queries = queries;
         this.permissions = permissions;
         this.audit = audit;
@@ -92,7 +97,7 @@ public class SkillController {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "skill:write", "create");
         ParsedSkillPackage parsed = parse(file);
-        SkillVersionView created = management.create(principal, parsed);
+        SkillVersionView created = candidates.createCandidate(principal, parsed);
         return ResponseEntity.status(HttpStatus.CREATED).body(queries.detail(principal, created.definition()));
     }
 
@@ -108,14 +113,42 @@ public class SkillController {
     @PostMapping("/{id}/versions")
     public ResponseEntity<SkillResponses.Detail> update(
             @PathVariable("id") UUID id,
-            @RequestParam("expectedVersionId") UUID expectedVersionId,
+            @RequestParam(name = "expectedCandidateVersionId", required = false) UUID expectedCandidateVersionId,
+            @RequestParam(name = "expectedPublishedVersionId", required = false) UUID expectedPublishedVersionId,
+            @RequestParam(name = "expectedVersionId", required = false) UUID legacyExpectedVersionId,
             @RequestPart("file") MultipartFile file,
             Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "skill:write", id.toString());
-        SkillVersionView result = management.update(principal, id, expectedVersionId, parse(file));
-        HttpStatus status = result.version().id().equals(expectedVersionId) ? HttpStatus.OK : HttpStatus.CREATED;
+        UUID expectedCandidateId = expectedCandidateVersionId == null
+                ? legacyExpectedVersionId : expectedCandidateVersionId;
+        SkillVersionView result = candidates.replaceCandidate(
+                principal, id, expectedCandidateId, expectedPublishedVersionId, parse(file));
+        HttpStatus status = result.version().id().equals(expectedCandidateId)
+                || result.version().id().equals(expectedPublishedVersionId)
+                ? HttpStatus.OK : HttpStatus.CREATED;
         return ResponseEntity.status(status).body(queries.detail(principal, result.definition()));
+    }
+
+    /** 返回技能版本历史及发布治理状态。 */
+    @GetMapping("/{id}/versions")
+    public List<SkillResponses.VersionSummary> versions(
+            @PathVariable("id") UUID id, Authentication authentication) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "skill:read", id.toString());
+        return queries.versions(principal, id);
+    }
+
+    /** 返回两个指定版本之间的安全文本差异。 */
+    @GetMapping("/{id}/versions/diff")
+    public SkillResponses.VersionDiff diff(
+            @PathVariable("id") UUID id,
+            @RequestParam("fromVersionId") UUID fromVersionId,
+            @RequestParam("toVersionId") UUID toVersionId,
+            Authentication authentication) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "skill:read", id.toString());
+        return queries.diff(principal, id, fromVersionId, toVersionId);
     }
 
     /** 显式启用或停用技能。 */

@@ -43,6 +43,7 @@ public class SkillManagementService {
     private final AgentSkillBindingRepository bindings;
     private final AgentDefinitionRepository agents;
     private final SkillUnitOfWork workUnit;
+    private final SkillCandidateService candidates;
     private final AuditAppender audit;
     private final SkillProperties properties;
     private final Clock clock;
@@ -52,13 +53,16 @@ public class SkillManagementService {
     public SkillManagementService(SkillDefinitionRepository definitions, SkillVersionRepository versions,
                                   SkillResourceRepository resources, AgentSkillBindingRepository bindings,
                                   AgentDefinitionRepository agents, SkillUnitOfWork workUnit,
-                                  AuditAppender audit, SkillProperties properties) {
-        this(definitions, versions, resources, bindings, agents, workUnit, audit, properties, Clock.systemUTC());
+                                  SkillCandidateService candidates, AuditAppender audit,
+                                  SkillProperties properties) {
+        this(definitions, versions, resources, bindings, agents, workUnit, candidates, audit,
+                properties, Clock.systemUTC());
     }
 
     SkillManagementService(SkillDefinitionRepository definitions, SkillVersionRepository versions,
                            SkillResourceRepository resources, AgentSkillBindingRepository bindings,
                            AgentDefinitionRepository agents, SkillUnitOfWork workUnit,
+                           SkillCandidateService candidates,
                            AuditAppender audit, SkillProperties properties, Clock clock) {
         this.definitions = definitions;
         this.versions = versions;
@@ -66,6 +70,7 @@ public class SkillManagementService {
         this.bindings = bindings;
         this.agents = agents;
         this.workUnit = workUnit;
+        this.candidates = candidates;
         this.audit = audit;
         this.properties = properties;
         this.clock = clock;
@@ -73,24 +78,7 @@ public class SkillManagementService {
 
     /** 创建默认停用的技能及首个不可变版本。 */
     public SkillVersionView create(PrincipalRef principal, ParsedSkillPackage parsed) {
-        requireFeatureEnabled();
-        return workUnit.execute(() -> {
-            if (definitions.findByName(principal.tenantId(), parsed.name()).isPresent()) {
-                throw conflict("同名技能已存在");
-            }
-            Instant now = clock.instant();
-            UUID skillId = UUID.randomUUID();
-            UUID versionId = UUID.randomUUID();
-            SkillDefinition definition = new SkillDefinition(skillId, principal.tenantId(), parsed.name(),
-                    versionId, false, 0, principal.principalId(), principal.principalId(), now, now);
-            SkillVersion version = version(principal, parsed, skillId, versionId, 1, now);
-            List<SkillResource> entries = resourceEntries(principal.tenantId(), skillId, versionId, parsed.resources());
-            definitions.insert(definition);
-            versions.insert(version);
-            resources.insertAll(entries);
-            appendAudit(principal, "SKILL_CREATE", skillId, "技能创建成功，初始状态为停用");
-            return new SkillVersionView(definition, version, entries);
-        });
+        return candidates.createCandidate(principal, parsed);
     }
 
     /** 在锁定定义后创建新版本，并用预期版本指针防止覆盖并发更新。 */
@@ -135,11 +123,17 @@ public class SkillManagementService {
         }
         return workUnit.execute(() -> {
             SkillDefinition current = lockSkill(principal.tenantId(), skillId);
+            if (enabled && current.publishedVersionId() == null) {
+                throw new SkillAccessException(ApiErrorCode.SKILL_NOT_PUBLISHED,
+                        "技能尚未正式发布，不能启用", errorId(), false);
+            }
             long epoch = current.enabled() && !enabled
                     ? Math.addExact(current.accessEpoch(), 1) : current.accessEpoch();
-            SkillDefinition next = new SkillDefinition(current.id(), current.tenantId(), current.name(),
-                    current.currentVersionId(), enabled, epoch, current.createdBy(), principal.principalId(),
-                    current.createdAt(), clock.instant());
+            SkillDefinition next = new SkillDefinition(
+                    current.id(), current.tenantId(), current.name(),
+                    current.candidateVersionId(), current.publishedVersionId(),
+                    enabled, epoch, current.dependencyMappingRevision(),
+                    current.createdBy(), principal.principalId(), current.createdAt(), clock.instant());
             definitions.updateEnabled(next);
             appendAudit(principal, enabled ? "SKILL_ENABLE" : "SKILL_DISABLE", skillId,
                     enabled ? "技能已启用" : "技能已停用");
