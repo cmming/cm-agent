@@ -11,5 +11,7 @@ public enum SkillPreflightScope {
     /** 正式绑定或切换绑定策略前的检查。 */
     BINDING,
     /** 依赖映射变更后用于确认影响的检查。 */
-    MAPPING_CHANGE
+    MAPPING_CHANGE,
+    /** 指定版本试运行前的目标 Agent 检查。 */
+    TRIAL
 }

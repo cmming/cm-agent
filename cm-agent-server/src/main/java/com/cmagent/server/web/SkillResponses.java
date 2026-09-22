@@ -2,6 +2,9 @@ package com.cmagent.server.web;
 
 import com.cmagent.api.ApiErrorCode;
 import com.cmagent.core.domain.SkillLoadStatus;
+import com.cmagent.core.domain.SkillPreflightItemStatus;
+import com.cmagent.core.domain.SkillPreflightScope;
+import com.cmagent.core.domain.SkillPreflightStatus;
 
 import java.time.Instant;
 import java.util.List;
@@ -175,6 +178,84 @@ public final class SkillResponses {
                                int maxResourceBytes, int maxPathLength, int maxBoundSkills) {
         public Capabilities {
             allowedExtensions = List.copyOf(allowedExtensions);
+        }
+    }
+
+    /**
+     * 一条逻辑依赖在当前租户的映射与预检状态。
+     *
+     * <p>响应只包含工具标识和管理员可读说明，不返回工具端点、HTTP 请求头或授权内部字段。</p>
+     *
+     * @param logicalKey 技能版本声明的逻辑工具键
+     * @param required 是否为阻断性必需依赖
+     * @param description 技能包提供的依赖用途说明
+     * @param mappedToolId 已映射的工具标识；未映射时为空
+     * @param status 最近一次预检状态；没有历史结果时为空
+     * @param errorCode 未就绪时的稳定错误码
+     * @param message 已脱敏的中文结果说明
+     */
+    public record DependencyEntry(String logicalKey, boolean required, String description,
+                                  UUID mappedToolId, SkillPreflightItemStatus status,
+                                  ApiErrorCode errorCode, String message) {
+        public DependencyEntry {
+            description = description == null ? "" : description;
+            message = message == null ? "" : message;
+        }
+    }
+
+    /**
+     * 技能级依赖映射集合及其权威修订。
+     *
+     * @param skillId 技能稳定标识
+     * @param revision 技能级映射修订，随任一映射变化单调递增
+     * @param items 依赖明细，按技能声明的稳定顺序排列
+     */
+    public record DependencyView(UUID skillId, long revision, List<DependencyEntry> items) {
+        public DependencyView {
+            items = List.copyOf(items);
+        }
+    }
+
+    /**
+     * @param id 预检标识
+     * @param skillId 目标技能
+     * @param versionId 目标不可变版本
+     * @param mappingRevision 预检采用的技能级映射修订
+     * @param scope 预检场景
+     * @param agentId 发布或结构预检为空，单 Agent 预检为目标 Agent
+     * @param status 汇总状态
+     * @param createdAt 预检完成时间
+     */
+    public record PreflightSummary(UUID id, UUID skillId, UUID versionId, long mappingRevision,
+                                   SkillPreflightScope scope, UUID agentId,
+                                   SkillPreflightStatus status, Instant createdAt) {
+    }
+
+    /**
+     * @param checkId 所属预检标识
+     * @param agentId 受检 Agent；纯结构检查为空
+     * @param logicalKey 逻辑依赖键
+     * @param required 是否为必需依赖
+     * @param toolId 已解析的租户工具；未映射时为空
+     * @param status 明细状态
+     * @param errorCode 未就绪时的稳定错误码
+     * @param message 已脱敏的中文说明
+     * @param errorId 需要后台定位时的关联编号
+     */
+    public record PreflightItemView(UUID checkId, UUID agentId, String logicalKey, boolean required,
+                                    UUID toolId, SkillPreflightItemStatus status,
+                                    ApiErrorCode errorCode, String message, String errorId) {
+    }
+
+    /**
+     * 一次依赖预检的完整结果。
+     *
+     * @param check 预检汇总
+     * @param items 预检明细，按依赖声明顺序和受检 Agent 排列
+     */
+    public record PreflightView(PreflightSummary check, List<PreflightItemView> items) {
+        public PreflightView {
+            items = List.copyOf(items);
         }
     }
 

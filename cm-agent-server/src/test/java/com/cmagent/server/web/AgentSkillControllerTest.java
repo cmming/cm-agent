@@ -1,10 +1,16 @@
 package com.cmagent.server.web;
 
 import com.cmagent.core.domain.AgentDefinition;
+import com.cmagent.core.domain.SkillDefinition;
+import com.cmagent.core.domain.SkillRelease;
+import com.cmagent.core.domain.SkillReleaseAction;
 import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.cmagent.core.repository.AgentSkillBindingRepository;
+import com.cmagent.core.repository.SkillDefinitionRepository;
+import com.cmagent.core.repository.SkillReleaseRepository;
 import com.cmagent.server.CmAgentServerApplication;
 import com.cmagent.server.security.JwtService;
+import com.cmagent.server.service.SkillUnitOfWork;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,6 +50,9 @@ class AgentSkillControllerTest {
     @Autowired private JwtService jwtService;
     @Autowired private AgentDefinitionRepository agents;
     @Autowired private AgentSkillBindingRepository bindings;
+    @Autowired private SkillDefinitionRepository definitions;
+    @Autowired private SkillReleaseRepository releases;
+    @Autowired private SkillUnitOfWork workUnit;
 
     @BeforeEach
     void createAgent() {
@@ -109,11 +118,38 @@ class AgentSkillControllerTest {
                         .header("Authorization", "Bearer " + token("skill:write", "skill:read")))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String skillId = JsonPath.read(created, "$.summary.id");
+        publish(skillId);
         mockMvc.perform(put("/api/skills/{id}/enabled", skillId)
                         .header("Authorization", "Bearer " + token("skill:write"))
                         .contentType("application/json").content("{\"enabled\":true}"))
                 .andExpect(status().isOk());
         return skillId;
+    }
+
+    /**
+     * 直接写入发布事实并切换发布指针。
+     *
+     * <p>任务 7 之前尚无发布接口，因此这里复用与应用相同的 {@link SkillUnitOfWork} 事务边界，
+     * 只准备“技能已正式发布”的前置状态，不改变生产代码。</p>
+     *
+     * @param skillId 已创建技能的标识字符串
+     */
+    private void publish(String skillId) {
+        UUID id = UUID.fromString(skillId);
+        workUnit.execute(() -> {
+            SkillDefinition current = definitions.lock(TENANT_ID, id);
+            definitions.updatePointers(new SkillDefinition(
+                    current.id(), current.tenantId(), current.name(),
+                    null, current.candidateVersionId(), current.enabled(), current.accessEpoch(),
+                    current.dependencyMappingRevision(), current.createdBy(), "tester",
+                    current.createdAt(), java.time.Instant.now()),
+                    current.candidateVersionId(), null);
+            releases.insert(new SkillRelease(
+                    UUID.randomUUID(), TENANT_ID, id, 1, SkillReleaseAction.PUBLISH,
+                    null, current.candidateVersionId(), UUID.randomUUID(), UUID.randomUUID(),
+                    "tester", java.time.Instant.now()));
+            return null;
+        });
     }
 
     private String token(String... permissions) {
