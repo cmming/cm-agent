@@ -103,9 +103,12 @@ public class JdbcSkillDefinitionRepository implements SkillDefinitionRepository 
     @Override
     public boolean updateCurrent(SkillDefinition next, UUID expectedVersionId) {
         Objects.requireNonNull(next, "next 不能为空");
+        // 旧版单指针更新在语义上等同于“候选与发布指针一起切到新版本”：
+        // 迁移后 published_version_id 是运行取版的权威来源，漏写会让技能永久保持未发布。
         return jdbcClient.sql("""
                         UPDATE skill_definitions
                         SET candidate_version_id = :candidateVersionId,
+                            published_version_id = :publishedVersionId,
                             updated_by = :updatedBy, updated_at = :updatedAt
                         WHERE tenant_id = :tenantId AND id = :skillId
                           AND candidate_version_id = :expectedVersionId
