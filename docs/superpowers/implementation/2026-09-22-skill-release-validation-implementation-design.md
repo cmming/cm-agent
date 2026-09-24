@@ -39,7 +39,8 @@
 
 ## 5. 与原方案的差异
 
-- 计划中的完整浏览器端到端流未作为通过项：隔离测试服务的单模块启动解析到本地仓库旧 core 产物，无法加载新接口；未触碰用户占用 8080 的 IntelliJ 实例。静态资源、Node 与 Java 回归均通过。
+- 真实浏览器在隔离的 18080 端口、`test` profile 下完成登录、技能 ZIP 导入、测试 Agent 创建和窄屏渲染；未调用真实模型或外部工具。结构预检 API 返回 `PASSED`，但详情区仍显示“未知”；试运行请求返回 HTTP 400 / `VALIDATION_FAILED`，因此发布、审批恢复、固定版本和回滚的浏览器流程未完成。8080 上的用户 IntelliJ 实例未触碰。
+- 390px 视口下页面文档宽度与视口一致（均为 390px）；桌面与移动截图保存在隔离工作树的 `output/playwright/skill-release-validation/`，不纳入提交。
 - 控制台试运行目前以同步试运行响应呈现终态；运行级审批 API 已实现，但连续 SSE 输出和刷新后审批卡片仍应作为后续增强，不得宣称已经完成浏览器闭环。
 
 ## 6. 验证状态
@@ -47,5 +48,5 @@
 - Java 21 reactor 打包及 core、adapter、console 测试通过。
 - Node 的 `skills.test.cjs` 与 `console-core.test.cjs` 通过，共 75 项。
 - `ConsoleResourceTest`、`AgentSkillControllerTest`、`SkillControllerTest` 通过。
-- Rocky 验证未执行：已在隔离的 Maven 3.9.9 / Java 21.0.7 容器中固定最终提交，但 Maven Central DNS 解析失败，无法下载父 POM；浏览器真实工作流的限制与后续前置条件均见进度账本。
+- Rocky 验证：提交 `4e8a60530e28d4fff2c21cd83f062f32132ccaff` 的隔离副本在 `maven:3.9.9-eclipse-temurin-21`（Maven 3.9.9 / Java 21.0.7）执行 `mvn -B -pl cm-agent-persistence -am test`，58 项通过；Testcontainers 实际运行 PostgreSQL 16.14 与 MySQL 8.4，V13 迁移及字段注释检查通过。Flyway 对 MySQL 8.4 输出“支持版本最新为 8.1”的兼容性提示，但迁移及测试成功。
 - 审查修复后，Java 21 下 `SkillTrialServiceTest`、`SkillRuntimeServiceTest`、`ToolApprovalServiceTest` 共 19 项通过；`skills.js` 语法检查和 Node 测试通过。

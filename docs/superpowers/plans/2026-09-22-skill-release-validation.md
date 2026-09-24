@@ -2,7 +2,7 @@
 
 > **面向执行代理：** 必须使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 逐任务实施；所有步骤使用复选框跟踪。
 
-> **执行结果（2026-09-22）：** T1～T10 已按顺序提交，T11 的文档与本地回归完成。本文保留原始复选框作为执行设计记录；实际提交、已通过验证与尚未完成的 Rocky/浏览器验证以[进度账本](../progress/2026-09-22-skill-release-validation-ledger.md)为准。
+> **执行结果（2026-09-24）：** T1～T10 已按顺序提交；T11 的 Rocky 双库持久化全量测试已于提交 `4e8a605` 通过。真实浏览器仅完成登录、技能 ZIP 导入、结构预检调用和窄屏检查；页面未刷新预检状态且试运行请求收到 400，完整发布闭环仍未通过。本文保留原始复选框作为执行设计记录，实际结果以[进度账本](../progress/2026-09-22-skill-release-validation-ledger.md)为准。
 
 **目标：** 在现有技能治理基础上交付候选版本、依赖预检、真实指定版本试运行、可审计发布/回滚，以及 Agent 跟随或固定版本的完整前后端闭环。
 
@@ -940,7 +940,7 @@ node --test cm-agent-console/src/test/js/skills.test.cjs cm-agent-console/src/te
 
 预期所有存在的指定测试执行且通过；核对 Surefire 报告数量，不能用 `failIfNoSpecifiedTests=false` 掩盖目标类拼写错误。
 
-- [ ] **Step 2：执行 Rocky 双库验证。** 确认远程工作区 HEAD 等于本地待验证提交，在 Maven 3.9.9/Java 21 容器中执行：
+- [x] **Step 2：执行 Rocky 双库验证。** 已确认远程隔离副本 HEAD 为 `4e8a60530e28d4fff2c21cd83f062f32132ccaff`，并在 Maven 3.9.9/Java 21 容器中执行完整 persistence reactor；58 项通过，包含 PostgreSQL 16.14 和 MySQL 8.4 Testcontainers。
 
 ```sh
 mvn -B -pl cm-agent-persistence,cm-agent-server -am \
@@ -950,7 +950,7 @@ mvn -B -pl cm-agent-persistence,cm-agent-server -am \
 
 分别记录 PostgreSQL 16 和 MySQL 8.4 结果；禁止清理无关容器、卷或镜像。
 
-- [ ] **Step 3：复跑浏览器闭环。** 验证桌面和 390px、刷新恢复、候选并发冲突、可选依赖告警、未触发不能发布、发布影响列表、固定版本不随回滚变化；保存不含凭据的截图和 Network 资源版本证据，测试凭据不得写入仓库。
+- [ ] **Step 3：复跑浏览器闭环。** 已在 test profile 完成登录、ZIP 导入、创建测试 Agent、结构预检 API 调用和 390px 布局检查；预检 API 为 `PASSED` 但页面仍显示“未知”，试运行请求为 HTTP 400 / `VALIDATION_FAILED`。因此发布、审批恢复、并发冲突、固定版本和回滚仍未验证；桌面/移动截图保存在隔离工作树 `output/playwright/skill-release-validation/`，不含仓库测试凭据。
 
 - [ ] **Step 4：更新正式文档。** README 写明候选/发布区别、默认跟随、固定版本、依赖不自动授权和 TEST Run 真实副作用；Adapter README 写明依赖映射只进入受控提示且工具仍经网关；release notes 记录 V13、API 和控制台行为。实现说明写实际类和调用链，账本逐任务记录提交与验证，不把未执行项写成通过。
 
