@@ -20,6 +20,7 @@ import com.cmagent.core.repository.SkillTrialRepository;
 import com.cmagent.core.repository.SkillVersionRepository;
 import com.cmagent.core.runtime.SkillAccessException;
 import com.cmagent.server.audit.AuditAppender;
+import com.cmagent.server.config.SkillProperties;
 import com.cmagent.server.service.SkillPreflightResult;
 import com.cmagent.server.service.SkillPreflightService;
 import com.cmagent.server.service.SkillUnitOfWork;
@@ -50,6 +51,7 @@ public class SkillTrialService {
     private final ToolApprovalService approvals;
     private final SkillUnitOfWork workUnit;
     private final AuditAppender audit;
+    private final SkillProperties properties;
     private final Clock clock;
 
     /** 创建试运行服务并固定其可信治理依赖。 */
@@ -64,10 +66,11 @@ public class SkillTrialService {
             RunExecutionService execution,
             ToolApprovalService approvals,
             SkillUnitOfWork workUnit,
-            AuditAppender audit
+            AuditAppender audit,
+            SkillProperties properties
     ) {
         this(definitions, versions, trials, loads, preflights, runs, execution, approvals, workUnit, audit,
-                Clock.systemUTC());
+                properties, Clock.systemUTC());
     }
 
     SkillTrialService(
@@ -81,6 +84,7 @@ public class SkillTrialService {
             ToolApprovalService approvals,
             SkillUnitOfWork workUnit,
             AuditAppender audit,
+            SkillProperties properties,
             Clock clock
     ) {
         this.definitions = Objects.requireNonNull(definitions, "definitions 不能为空");
@@ -93,6 +97,7 @@ public class SkillTrialService {
         this.approvals = Objects.requireNonNull(approvals, "approvals 不能为空");
         this.workUnit = Objects.requireNonNull(workUnit, "workUnit 不能为空");
         this.audit = Objects.requireNonNull(audit, "audit 不能为空");
+        this.properties = Objects.requireNonNull(properties, "properties 不能为空");
         this.clock = Objects.requireNonNull(clock, "clock 不能为空");
     }
 
@@ -111,6 +116,7 @@ public class SkillTrialService {
         Objects.requireNonNull(skillId, "skillId 不能为空");
         Objects.requireNonNull(versionId, "versionId 不能为空");
         Objects.requireNonNull(agentId, "agentId 不能为空");
+        requireFeatureEnabled();
         SkillDefinition definition = definitions.find(principal.tenantId(), skillId).orElseThrow(this::notFound);
         versions.find(principal.tenantId(), skillId, versionId).orElseThrow(this::notFound);
         SkillPreflightResult preflight = preflights.preflight(
@@ -155,13 +161,19 @@ public class SkillTrialService {
             AgentRuntimeResult result = execution.runTrialPrepared(principal, trial.agentId(), running, input,
                     new SkillRuntimeSelection(trial.skillId(), trial.versionId(), trial.runId(), trial.mappingRevision()),
                     deltaConsumer, progressConsumer);
-            finalizeResult(principal, trial.runId(), result.run());
             if (result.run().status() == RunStatus.WAITING_APPROVAL) {
-                approvals.createForRun(principal, trial.agentId(), trial.runId(), result.pendingApproval());
+                try {
+                    approvals.createForRun(principal, trial.agentId(), trial.runId(), result.pendingApproval());
+                } catch (RuntimeException approvalFailure) {
+                    // Run 已进入等待状态但审批事实未落库时，必须关闭状态槽，避免 HIGH 工具被后续误恢复。
+                    approvals.failRunAfterApprovalCreationFailure(principal, trial.agentId(), trial.runId());
+                    throw approvalFailure;
+                }
             }
+            finalizeResult(principal, trial.runId(), result.run());
             return result;
         } catch (RuntimeException exception) {
-            markFailed(principal, trial);
+            markFailed(principal, trial.runId());
             throw exception;
         }
     }
@@ -193,9 +205,31 @@ public class SkillTrialService {
                         && trial.versionId().equals(load.versionId()));
     }
 
-    private void markFailed(PrincipalRef principal, SkillTrial trial) {
-        if (trial.status() == SkillTrialStatus.RUNNING || trial.status() == SkillTrialStatus.WAITING_APPROVAL) {
-            update(principal, trial, SkillTrialStatus.FAILED, false);
+    /**
+     * 依据最新试运行事实将仍活动的试运行收口为失败。
+     *
+     * <p>模型运行与审批创建不在同一数据库事务中；因此不能使用调用开始时的旧状态进行 CAS，
+     * 否则审批创建失败会因状态已变为 {@code WAITING_APPROVAL} 而留下孤儿试运行。</p>
+     */
+    public void markFailed(PrincipalRef principal, UUID runId) {
+        SkillTrial current = trials.find(principal.tenantId(), runId).orElse(null);
+        if (current == null || (current.status() != SkillTrialStatus.RUNNING
+                && current.status() != SkillTrialStatus.WAITING_APPROVAL)) {
+            return;
+        }
+        try {
+            update(principal, current, SkillTrialStatus.FAILED, false);
+        } catch (SkillAccessException conflict) {
+            if (conflict.code() != ApiErrorCode.SKILL_CANDIDATE_CONFLICT) {
+                throw conflict;
+            }
+        }
+    }
+
+    /** 仅当功能已显式启用时允许创建会产生真实模型和工具副作用的试运行。 */
+    private void requireFeatureEnabled() {
+        if (!properties.isEnabled()) {
+            throw failure(ApiErrorCode.SKILL_FEATURE_DISABLED, "技能功能已关闭，不能创建试运行");
         }
     }
 

@@ -974,3 +974,13 @@ git commit -m "docs: 完成技能发布与试运行说明"
 ```
 
 计划执行完成的定义：T1～T11 均有对应提交；本地、Rocky 双库和浏览器验证结果写入账本；规格、实现说明、进度账本和正式文档与代码一致；工作区中用户原有无关修改保持未暂存、未覆盖。
+
+## Task 12：审查修复与回归补强
+
+**文件：** `SkillTrialService`、`ToolApprovalService`、`SkillRuntimeService`、`RunExecutionService`、`SkillTrialController`、`console/v2/assets/skills.js` 及对应定向测试和本任务四份文档。
+
+- [x] 为 TEST Run 增加当前待审批查询与控制台逐项决定卡片。
+- [x] 为首次和续轮审批创建失败增加 Run/检查点补偿，并将试运行收口。
+- [x] 在恢复执行前复核快照的必需工具依赖是否仍在当前授权集合内。
+- [x] 对试运行入口和临时快照补齐 `cm-agent.skills.enabled` 拒绝边界；补齐运行级审批过期清理。
+- [x] 使用 Java 21 定向 Maven 测试、Node 测试与 `git diff --check` 验证。

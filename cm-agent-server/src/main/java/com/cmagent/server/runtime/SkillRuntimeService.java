@@ -16,6 +16,7 @@ import com.cmagent.core.domain.SkillRuntimeBundle;
 import com.cmagent.core.domain.SkillSnapshotRef;
 import com.cmagent.core.domain.SkillVersion;
 import com.cmagent.core.domain.SkillVersionView;
+import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.repository.AgentSkillBindingRepository;
 import com.cmagent.core.repository.RunSkillSnapshotRepository;
 import com.cmagent.core.repository.SkillDefinitionRepository;
@@ -38,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.Set;
 
 /**
  * 为 Run 创建不可变技能快照，并在恢复时复核绑定身份、访问纪元和历史版本。
@@ -122,6 +124,9 @@ public class SkillRuntimeService {
      */
     public SkillRuntimeBundle prepare(PrincipalRef principal, RunRecord run, SkillRuntimeSelection selection) {
         requireRunOwner(principal, run);
+        if (selection != null && !properties.isEnabled()) {
+            throw failure(ApiErrorCode.SKILL_FEATURE_DISABLED, "技能功能已关闭，不能创建试运行快照", true);
+        }
         if (selection != null && !run.id().equals(selection.trialRunId())) {
             throw failure(ApiErrorCode.SKILL_SNAPSHOT_UNAVAILABLE, "试运行技能选择与 Run 不一致", true);
         }
@@ -222,6 +227,28 @@ public class SkillRuntimeService {
             resolutions.put(reference.skillId(), reference.dependencies());
         }
         return new SkillRuntimeBundle(snapshot, views, resolutions);
+    }
+
+    /**
+     * 使用本轮刚解析出的工具授权复核快照中的必需依赖。
+     *
+     * <p>依赖映射本身需要保持快照语义，但工具启停和 {@code ToolGrant} 撤销必须立即生效；
+     * 因此只要任一必需工具不在当前授权集合中便拒绝恢复，不能让审批恢复绕过撤销。</p>
+     *
+     * @param bundle 已固定版本和依赖映射的运行时技能集合
+     * @param authorizedTools 当前主体本轮实际获准使用的工具
+     */
+    public void verifyRequiredDependencies(SkillRuntimeBundle bundle, List<ToolDefinition> authorizedTools) {
+        Objects.requireNonNull(bundle, "bundle 不能为空");
+        Objects.requireNonNull(authorizedTools, "authorizedTools 不能为空");
+        Set<UUID> authorizedIds = authorizedTools.stream().map(ToolDefinition::id).collect(java.util.stream.Collectors.toSet());
+        boolean missingRequired = bundle.dependencyResolutions().values().stream()
+                .flatMap(List::stream)
+                .anyMatch(dependency -> dependency.required() && !authorizedIds.contains(dependency.toolId()));
+        if (missingRequired) {
+            throw failure(ApiErrorCode.SKILL_ACCESS_REVOKED,
+                    "本轮技能的必需依赖工具已停用或撤销授权，请重新发起对话", true);
+        }
     }
 
     private boolean bindingAllowed(

@@ -144,18 +144,41 @@ public class ToolApprovalService {
                 UUID.randomUUID(), approvalId, item.toolCallId(), item.toolId(), item.toolName(), item.riskLevel(),
                 redactor.redact(item.inputSummary()), item.inputHash(), ToolApprovalPolicy.EACH_CALL,
                 POLICY_VERSION, null)).toList();
-        ToolApprovalRequest saved = inTransaction(() -> {
-            ToolApprovalRequest persisted = approvalRepository.save(new ToolApprovalRequest(
-                    approvalId, principal.tenantId(), agentId, scope, conversationId, runId,
-                    principal.principalId(), principal.displayName(), ToolApprovalStatus.PENDING,
-                    now.plus(properties.getApprovalTtl()), 0, runId.toString(), now, now,
-                    null, null, null, items));
-            // 审批事实与严格审计必须同成同败；否则可能出现前端可决定但审计链缺口。
-            auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_CREATE",
-                    "TOOL_APPROVAL", approvalId.toString(), "PENDING", "已创建高风险工具审批请求");
-            return persisted;
-        });
+        ToolApprovalRequest saved;
+        try {
+            saved = inTransaction(() -> {
+                ToolApprovalRequest persisted = approvalRepository.save(new ToolApprovalRequest(
+                        approvalId, principal.tenantId(), agentId, scope, conversationId, runId,
+                        principal.principalId(), principal.displayName(), ToolApprovalStatus.PENDING,
+                        now.plus(properties.getApprovalTtl()), 0, runId.toString(), now, now,
+                        null, null, null, items));
+                // 审批事实与严格审计必须同成同败；否则可能出现前端可决定但审计链缺口。
+                auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_CREATE",
+                        "TOOL_APPROVAL", approvalId.toString(), "PENDING", "已创建高风险工具审批请求");
+                return persisted;
+            });
+        } catch (RuntimeException failure) {
+            // memory 模式没有 JDBC 回滚，必须显式使已保存的请求不可决定，保持与事务模式相同的安全语义。
+            if (transactionTemplate == null) {
+                discardCreatedApproval(principal, agentId, scope, conversationId, runId, approvalId, now);
+            }
+            throw failure;
+        }
         return view(principal, saved);
+    }
+
+    /** 在无事务的 memory 模式撤销创建失败时残留的审批请求，禁止其在后续被恢复使用。 */
+    private void discardCreatedApproval(
+            PrincipalRef principal, UUID agentId, ToolApprovalScope scope, UUID conversationId,
+            UUID runId, UUID approvalId, Instant now
+    ) {
+        if (scope == ToolApprovalScope.RUN) {
+            approvalRepository.expireByRun(principal.tenantId(), agentId, runId, approvalId, 0,
+                    principal.principalId(), now);
+        } else {
+            approvalRepository.expire(principal.tenantId(), agentId, conversationId, approvalId, 0,
+                    principal.principalId(), now);
+        }
     }
 
     /** 列出当前会话未过期 PENDING 请求。 */
@@ -177,6 +200,11 @@ public class ToolApprovalService {
         return approvalRepository.listPendingByRun(
                         principal.tenantId(), agentId, runId, clock.instant(), PENDING_LIMIT)
                 .stream().map(request -> view(principal, request)).toList();
+    }
+
+    /** 返回指定 TEST Run 的当前待审批请求；不存在时返回空，便于页面刷新后恢复审批操作。 */
+    public ToolApprovalView currentPendingForRun(PrincipalRef principal, UUID agentId, UUID runId) {
+        return listPendingForRun(principal, agentId, runId).stream().findFirst().orElse(null);
     }
 
     /** 查询一个 TEST Run 的审批权威状态。 */
@@ -332,13 +360,7 @@ public class ToolApprovalService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "审批请求已处理，请刷新后查看最新状态");
         }
         if (current.isExpired(now)) {
-            if (approvalRepository.expireByRun(principal.tenantId(), agentId, runId, approvalId,
-                    current.version(), principal.principalId(), now)) {
-                runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId)
-                        .filter(run -> run.status() == RunStatus.WAITING_APPROVAL)
-                        .ifPresent(run -> runPersistenceService.complete(principal, run, new AgentRunResult(
-                                run.id(), RunStatus.DENIED, "", List.of(), run.startedAt(), now, "工具审批已过期"), List.of()));
-            }
+            expireRun(principal, current, now);
             throw new ResponseStatusException(HttpStatus.GONE, "审批请求已过期");
         }
         if (!current.requestedBy().equals(principal.principalId())) {
@@ -378,8 +400,15 @@ public class ToolApprovalService {
             runtimeResult = runExecutionService.resumePrepared(principal, agentId, waitingRun, null,
                     new RuntimeApprovalDecisions(runtimeDecisions), deltaConsumer, progressConsumer);
         }
-        ToolApprovalView nextApproval = runtimeResult.run().status() == RunStatus.WAITING_APPROVAL
-                ? createForRun(principal, agentId, runId, runtimeResult.pendingApproval()) : null;
+        ToolApprovalView nextApproval = null;
+        if (runtimeResult.run().status() == RunStatus.WAITING_APPROVAL) {
+            try {
+                nextApproval = createForRun(principal, agentId, runId, runtimeResult.pendingApproval());
+            } catch (RuntimeException approvalFailure) {
+                failRunAfterApprovalCreationFailure(principal, agentId, runId);
+                throw new ApprovalCreationFailure(approvalFailure);
+            }
+        }
         return new RunApprovalResumeOutcome(view(principal, decided), runtimeResult.run(), nextApproval);
     }
 
@@ -558,8 +587,53 @@ public class ToolApprovalService {
             ConversationMessage assistantMessage, ToolApprovalView nextApproval) {
     }
 
+    /** TEST Run 审批过期时以与会话审批相同的原子边界收口运行、检查点和审计。 */
+    private void expireRun(PrincipalRef principal, ToolApprovalRequest request, Instant now) {
+        inTransaction(() -> {
+            if (!approvalRepository.expireByRun(principal.tenantId(), request.agentId(), request.runId(), request.id(),
+                    request.version(), principal.principalId(), now)) {
+                return false;
+            }
+            runRepository.findByTenantAndAgentAndId(principal.tenantId(), request.agentId(), request.runId())
+                    .filter(run -> run.status() == RunStatus.WAITING_APPROVAL)
+                    .ifPresent(run -> {
+                        runPersistenceService.complete(principal, run, new AgentRunResult(
+                                run.id(), RunStatus.DENIED, "", List.of(), run.startedAt(), now, "工具审批已过期"), List.of());
+                        deleteCheckpoint(principal, run);
+                    });
+            auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_EXPIRE",
+                    "TOOL_APPROVAL", request.id().toString(), "EXPIRED", "试运行高风险工具审批请求已过期");
+            return true;
+        });
+    }
+
+    /**
+     * 审批事实无法创建时强制关闭仍活动的 Run 和其加密状态槽。
+     *
+     * <p>该补偿不能回滚已经持久化的等待状态；关闭而非重试可确保 HIGH 工具不会在缺少可审计审批事实时恢复。</p>
+     */
+    public void failRunAfterApprovalCreationFailure(PrincipalRef principal, UUID agentId, UUID runId) {
+        RunRecord active = runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId)
+                .filter(run -> run.status().isActive()).orElse(null);
+        if (active == null) {
+            return;
+        }
+        runPersistenceService.completeFailure(principal, active);
+        deleteCheckpoint(principal, active);
+        auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_CREATE_FAILED",
+                "RUN", runId.toString(), "FAILED", "审批创建失败，已关闭等待恢复的运行");
+    }
+
     /** TEST Run 审批恢复结果，不包含会话消息。 */
     public record RunApprovalResumeOutcome(
             ToolApprovalView decision, AgentRunResult run, ToolApprovalView nextApproval) {
+    }
+
+    /** 标识已提交审批后的下一轮审批创建失败，调用方可据此同步收口关联试运行。 */
+    public static final class ApprovalCreationFailure extends RuntimeException {
+        /** 保留审批创建的原始失败原因，供统一异常边界生成安全错误响应。 */
+        public ApprovalCreationFailure(RuntimeException cause) {
+            super(cause.getMessage(), cause);
+        }
     }
 }

@@ -23,6 +23,7 @@
 | T9 | format 2 快照与 AgentScope 依赖上下文 | 完成：`7495338` |
 | T10 | v2 连续技能发布工作区 | 完成：`e657cd3` |
 | T11 | 双库、端到端回归和正式文档收口 | 文档与本地回归完成；远程双库和完整浏览器闭环待补充 |
+| T12 | 审查修复与回归补强 | 完成，未提交：补齐 TEST Run 审批发现/恢复、审批创建失败补偿、必需依赖复核、功能开关和运行级审批过期清理 |
 
 ## 3. 本阶段验证
 
@@ -35,6 +36,7 @@
 | 静态语法 | `node --check` 覆盖 `skills.js`、`app.js`，通过 |
 | 浏览器 | 登录页与资源版本已通过 Playwright 快照检查；完整闭环未通过：18080 隔离服务因单模块 Maven 解析本地旧 core 产物而无法启动，8080 为用户 IntelliJ 实例，未干预 |
 | Rocky PostgreSQL 16 / MySQL 8.4 | 未执行：已用隔离 bundle 固定 `9c4054c`，在 `maven:3.9.9-eclipse-temurin-21` 中确认 Maven 3.9.9 / Java 21.0.7；容器解析 Maven Central DNS 失败，父 POM 无法下载，测试尚未开始 |
+| 审查修复定向回归 | Java 21：`mvn -pl cm-agent-server -am '-Dtest=SkillTrialServiceTest,SkillRuntimeServiceTest,ToolApprovalServiceTest' '-Dsurefire.failIfNoSpecifiedTests=false' test` 通过，19 项；`node --check .../skills.js`、`node --test .../skills.test.cjs` 通过 |
 
 ## 4. 风险与后续
 

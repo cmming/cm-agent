@@ -1,6 +1,7 @@
 package com.cmagent.server.runtime;
 
 import com.cmagent.api.PrincipalRef;
+import com.cmagent.api.ApiErrorCode;
 import com.cmagent.core.domain.AgentRunResult;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.SkillLoadRecord;
@@ -12,8 +13,10 @@ import com.cmagent.core.repository.SkillLoadRecordRepository;
 import com.cmagent.core.repository.SkillTrialRepository;
 import com.cmagent.core.repository.SkillVersionRepository;
 import com.cmagent.server.audit.AuditAppender;
+import com.cmagent.server.config.SkillProperties;
 import com.cmagent.server.service.SkillPreflightService;
 import com.cmagent.server.service.SkillUnitOfWork;
+import com.cmagent.core.runtime.SkillAccessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +33,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -66,7 +70,7 @@ class SkillTrialServiceTest {
             }
         };
         service = new SkillTrialService(definitions, versions, trials, loads, preflights, runs, execution, approvals,
-                unit, audit, Clock.fixed(NOW, ZoneOffset.UTC));
+                unit, audit, enabledProperties(), Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -107,6 +111,28 @@ class SkillTrialServiceTest {
         assertThat(notTriggered.status()).isEqualTo(SkillTrialStatus.NOT_TRIGGERED);
         assertThat(notTriggered.qualifiesRelease()).isFalse();
         assertThat(waiting.status()).isEqualTo(SkillTrialStatus.WAITING_APPROVAL);
+    }
+
+    @Test
+    void 技能功能关闭时拒绝创建会产生真实副作用的试运行() {
+        SkillUnitOfWork unit = new SkillUnitOfWork() {
+            @Override
+            public <T> T execute(java.util.function.Supplier<T> operation) {
+                return operation.get();
+            }
+        };
+        SkillTrialService disabled = new SkillTrialService(definitions, versions, trials, loads, preflights, runs,
+                execution, approvals, unit, audit, new SkillProperties(), Clock.fixed(NOW, ZoneOffset.UTC));
+
+        assertThatThrownBy(() -> disabled.start(principal, skill, version, agent, "测试"))
+                .isInstanceOfSatisfying(SkillAccessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo(ApiErrorCode.SKILL_FEATURE_DISABLED));
+    }
+
+    private static SkillProperties enabledProperties() {
+        SkillProperties result = new SkillProperties();
+        result.setEnabled(true);
+        return result;
     }
 
     private SkillTrial runningTrial() {

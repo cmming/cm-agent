@@ -6,6 +6,8 @@ import com.cmagent.core.domain.AgentSkillBinding;
 import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.RunKind;
 import com.cmagent.core.domain.SkillDefinition;
+import com.cmagent.core.domain.SkillDependency;
+import com.cmagent.core.domain.SkillDependencyMapping;
 import com.cmagent.core.domain.SkillSnapshotOrigin;
 import com.cmagent.core.domain.SkillTrial;
 import com.cmagent.core.domain.SkillTrialStatus;
@@ -145,6 +147,39 @@ class SkillRuntimeServiceTest {
 
         assertThat(prepared.versions().getFirst().version().id()).isEqualTo(fixture.versionId());
         assertThat(prepared.snapshot().formatVersion()).isEqualTo(2);
+    }
+
+    @Test
+    void 恢复前发现必需工具已撤销授权时拒绝继续执行() {
+        Fixture fixture = insertEnabledSkill();
+        UUID toolId = UUID.randomUUID();
+        store.execute(() -> {
+            store.dependencies().insertAll(List.of(
+                    new SkillDependency(tenant, fixture.skillId(), fixture.versionId(), "orders", true, "订单查询", 0)));
+            store.mappings().save(new SkillDependencyMapping(tenant, fixture.skillId(), "orders", toolId,
+                    principal.principalId(), NOW));
+            return null;
+        });
+        var prepared = service.prepare(principal, run());
+
+        assertThatThrownBy(() -> service.verifyRequiredDependencies(prepared, List.of()))
+                .isInstanceOfSatisfying(SkillAccessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo(ApiErrorCode.SKILL_ACCESS_REVOKED));
+    }
+
+    @Test
+    void 功能关闭时不允许临时注入试运行技能快照() {
+        SkillProperties disabledProperties = new SkillProperties();
+        SkillRuntimeService disabled = new SkillRuntimeService(store.definitions(), store.dependencies(), store.mappings(),
+                store.versions(), store.resources(), store.bindings(), store.snapshots(), store.trials(), store,
+                disabledProperties, Clock.fixed(NOW, ZoneOffset.UTC));
+        RunRecord trialRun = RunRecord.create(UUID.randomUUID(), tenant, agent, principal.principalId(),
+                RunKind.TEST, "验证候选", NOW);
+
+        assertThatThrownBy(() -> disabled.prepare(principal, trialRun,
+                new SkillRuntimeSelection(UUID.randomUUID(), UUID.randomUUID(), trialRun.id(), 0)))
+                .isInstanceOfSatisfying(SkillAccessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo(ApiErrorCode.SKILL_FEATURE_DISABLED));
     }
 
     private Fixture insertEnabledSkill() {

@@ -18,11 +18,11 @@
 
 `SkillDependencyController` 提供逻辑 key 到当前租户工具的条件映射及结构/Agent 预检。映射服务不信任客户端租户，保存后增加技能级映射修订；它不会创建 ToolGrant 或改变工具风险等级。
 
-`SkillTrialController` 通过 `SkillTrialService` 创建 `RunKind.TEST` 和 `SkillTrial`。`SkillRuntimeService.prepare` 以 `SkillRuntimeSelection` 在本次 Run 临时替换或注入目标技能，写入带 `TRIAL` 来源的 format 2 快照；`RunExecutionService` 仍复用正式执行、脱敏、网关和审计链路。终态以 `SkillLoadRecordRepository` 的目标 skill/version 成功读取记录判定 `PASSED`、`NOT_TRIGGERED`、`FAILED` 或 `WAITING_APPROVAL`。运行级审批由 `ToolApprovalService` 使用 tenant、Agent、Run 和审批 ID 恢复同一 TEST Run，不创建会话消息。
+`SkillTrialController` 通过 `SkillTrialService` 创建 `RunKind.TEST` 和 `SkillTrial`。`SkillRuntimeService.prepare` 以 `SkillRuntimeSelection` 在本次 Run 临时替换或注入目标技能，写入带 `TRIAL` 来源的 format 2 快照；`RunExecutionService` 仍复用正式执行、脱敏、网关和审计链路。终态以 `SkillLoadRecordRepository` 的目标 skill/version 成功读取记录判定 `PASSED`、`NOT_TRIGGERED`、`FAILED` 或 `WAITING_APPROVAL`。运行级审批由 `ToolApprovalService` 使用 tenant、Agent、Run 和审批 ID 恢复同一 TEST Run，不创建会话消息；控制器提供按 Run 查询当前待审批接口，控制台以脱敏审批卡片逐项提交决定，并在会话存储中保留最近等待 Run 以支持页面刷新恢复。
 
 ### 2.3 正式运行与适配器
 
-`SkillRuntimeService` 对 `FOLLOW_PUBLISHED` 解析正式指针，对 `PINNED` 解析固定历史版本，并将依赖逻辑 key、工具 ID、必需性写入快照。恢复只信任快照，同时复核工具启用、授权和撤销状态。
+`SkillRuntimeService` 对 `FOLLOW_PUBLISHED` 解析正式指针，对 `PINNED` 解析固定历史版本，并将依赖逻辑 key、工具 ID、必需性写入快照。恢复只信任快照；`RunExecutionService` 在每次执行前以当前已启用工具和 `ToolGrant` 授权复核全部必需依赖。
 
 `AgentScopeSkillSession` 只把已固定的逻辑依赖、已授权工具名称和必需性加入目录提示。实际工具仍由现有 `ToolInvocationGateway` 执行，适配器不读取映射仓储、不自动增加工具，也不暴露 endpoint、请求头或密钥。
 
@@ -32,14 +32,20 @@
 
 界面遵循既有受控工作台：冷白工作区、克制蓝色操作、桌面详情栈和窄屏单列，不改变权限、审计、导入或启停行为。
 
-## 4. 与原方案的差异
+## 4. 审查后修复
+
+- 首次或续轮审批创建失败时，`ToolApprovalService` 关闭仍活动的 Run、删除检查点并追加审计；`SkillTrialService` 依据最新状态将关联试运行收口为 `FAILED`，避免旧状态 CAS 留下孤儿运行。
+- `SkillTrialService` 和 `SkillRuntimeService` 均检查 `cm-agent.skills.enabled`，避免关闭功能时创建未实际注入的试运行。运行级审批过期也已纳入短事务、检查点删除和严格审计。
+
+## 5. 与原方案的差异
 
 - 计划中的完整浏览器端到端流未作为通过项：隔离测试服务的单模块启动解析到本地仓库旧 core 产物，无法加载新接口；未触碰用户占用 8080 的 IntelliJ 实例。静态资源、Node 与 Java 回归均通过。
 - 控制台试运行目前以同步试运行响应呈现终态；运行级审批 API 已实现，但连续 SSE 输出和刷新后审批卡片仍应作为后续增强，不得宣称已经完成浏览器闭环。
 
-## 5. 验证状态
+## 6. 验证状态
 
 - Java 21 reactor 打包及 core、adapter、console 测试通过。
 - Node 的 `skills.test.cjs` 与 `console-core.test.cjs` 通过，共 75 项。
 - `ConsoleResourceTest`、`AgentSkillControllerTest`、`SkillControllerTest` 通过。
 - Rocky 验证未执行：已在隔离的 Maven 3.9.9 / Java 21.0.7 容器中固定最终提交，但 Maven Central DNS 解析失败，无法下载父 POM；浏览器真实工作流的限制与后续前置条件均见进度账本。
+- 审查修复后，Java 21 下 `SkillTrialServiceTest`、`SkillRuntimeServiceTest`、`ToolApprovalServiceTest` 共 19 项通过；`skills.js` 语法检查和 Node 测试通过。

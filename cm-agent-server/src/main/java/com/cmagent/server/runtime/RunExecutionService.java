@@ -294,6 +294,7 @@ public class RunExecutionService {
             var skills = approvalDecisions == null
                     ? skillRuntimeService.prepare(principal, runningRun, selection)
                     : skillRuntimeService.restore(principal, runningRun);
+            skillRuntimeService.verifyRequiredDependencies(skills, context.authorizedTools());
             AgentRunRequest runtimeRequest = new AgentRunRequest(
                     runningRun.id(), principal.tenantId(), context.agent(), context.modelConfig(), principal,
                     runtimeInput, context.authorizedTools(), conversationId, skills.versions(),

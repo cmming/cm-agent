@@ -170,13 +170,62 @@
                     const inputLabel = text("label", "测试输入"); const input = document.createElement("textarea"); input.required = true; input.placeholder = "描述希望模型使用此技能完成的任务"; inputLabel.append(input);
                     const run = document.createElement("button"); run.type = "submit"; run.className = "button primary"; run.textContent = "开始试运行";
                     const result = document.createElement("p"); result.className = "form-status"; result.setAttribute("aria-live", "polite");
-                    trial.append(agentLabel, inputLabel, run, result);
+                    const approvalPanel = document.createElement("div"); approvalPanel.className = "skill-trial-approval";
+                    const trialStorageKey = `cm-agent.skill-trial.${id}`;
+                    const trialStorage = typeof window !== "undefined" ? window.sessionStorage : null;
+                    const renderApproval = (approval) => {
+                        approvalPanel.replaceChildren();
+                        if (!approval) return;
+                        approvalPanel.append(text("h5", "高风险工具审批"), text("p", `试运行暂停，审批将在 ${new Date(approval.expiresAt).toLocaleString()} 前有效。`, "field-help"));
+                        const decisions = [];
+                        (approval.items || []).forEach((item) => {
+                            const row = document.createElement("label"); row.className = "skill-approval-item";
+                            const select = document.createElement("select"); select.className = "inline-select";
+                            const placeholder = document.createElement("option"); placeholder.value = ""; placeholder.textContent = "请选择允许或拒绝";
+                            const allow = document.createElement("option"); allow.value = "APPROVE"; allow.textContent = "允许";
+                            const deny = document.createElement("option"); deny.value = "DENY"; deny.textContent = "拒绝";
+                            select.append(placeholder, allow, deny);
+                            row.append(text("span", `${item.toolName || "工具"}：${item.inputSummary || "无参数摘要"}`), select);
+                            decisions.push({itemId: item.itemId, select}); approvalPanel.append(row);
+                        });
+                        if (!approval.canDecide) {
+                            approvalPanel.append(text("p", "当前账号只能查看审批，需由试运行发起人完成决定。", "field-help"));
+                            return;
+                        }
+                        const submit = document.createElement("button"); submit.type = "button"; submit.className = "button primary"; submit.textContent = "提交审批决定";
+                        const approvalResult = document.createElement("p"); approvalResult.className = "form-status"; approvalResult.setAttribute("aria-live", "polite");
+                        submit.addEventListener("click", async () => {
+                            const items = decisions.map((entry) => ({itemId: entry.itemId, decision: entry.select.value}));
+                            if (items.some((entry) => !entry.decision)) { approvalResult.textContent = "请为全部工具调用选择允许或拒绝。"; approvalResult.dataset.tone = "error"; return; }
+                            submit.disabled = true; approvalResult.textContent = "正在恢复试运行…";
+                            try {
+                                const resumed = await api.request(`/api/skills/${encodeURIComponent(id)}/trials/${encodeURIComponent(approval.runId)}/approvals/${encodeURIComponent(approval.approvalId)}/decisions`, {method: "POST", body: JSON.stringify({expectedVersion: approval.version, items})});
+                                const updated = resumed.trial;
+                                result.textContent = updated.qualifiesRelease ? `试运行已通过（Run ${updated.runId.slice(0, 8)}），可以发布。` : `试运行结果：${updated.status}。`;
+                                result.dataset.tone = updated.qualifiesRelease ? "success" : "neutral";
+                                renderApproval(resumed.nextApproval);
+                            } catch (error) { approvalResult.textContent = error.message; approvalResult.dataset.tone = "error"; } finally { submit.disabled = false; }
+                        });
+                        approvalPanel.append(submit, approvalResult);
+                    };
+                    const loadCurrentApproval = async (tested) => {
+                        const approval = await api.request(`/api/skills/${encodeURIComponent(id)}/trials/${encodeURIComponent(tested.runId)}/approvals/current`);
+                        renderApproval(approval);
+                    };
+                    trial.append(agentLabel, inputLabel, run, result, approvalPanel);
                     trial.addEventListener("submit", async (event) => {
                         event.preventDefault(); run.disabled = true; result.textContent = "正在执行 TEST Run…";
                         try {
                             const tested = await api.request(`/api/skills/${encodeURIComponent(id)}/trials`, {method: "POST", body: JSON.stringify({versionId: summary.candidateVersionId, agentId: agentInput.value.trim(), input: input.value.trim()})});
                             result.textContent = tested.qualifiesRelease ? `试运行已通过（Run ${tested.runId.slice(0, 8)}），可以发布。` : `试运行结果：${tested.status}。目标技能必须实际读取后才能发布。`;
                             result.dataset.tone = tested.qualifiesRelease ? "success" : "neutral";
+                            if (tested.status === "WAITING_APPROVAL") {
+                                if (trialStorage) trialStorage.setItem(trialStorageKey, tested.runId);
+                                await loadCurrentApproval(tested);
+                            } else {
+                                if (trialStorage) trialStorage.removeItem(trialStorageKey);
+                                renderApproval(null);
+                            }
                             if (canPublishTrial(tested, summary.candidateVersionId, selectedMappingRevision)) {
                                 const publish = document.createElement("button"); publish.type = "button"; publish.className = "button ghost"; publish.textContent = "发布当前候选";
                                 publish.addEventListener("click", async () => {
@@ -186,7 +235,16 @@
                                 }); trial.append(publish);
                             }
                         } catch (error) { result.textContent = error.message; result.dataset.tone = "error"; } finally { run.disabled = false; }
-                    }); release.append(trial);
+                    });
+                    if (trialStorage) {
+                        const previousRunId = trialStorage.getItem(trialStorageKey);
+                        if (previousRunId) {
+                            api.request(`/api/skills/${encodeURIComponent(id)}/trials/${encodeURIComponent(previousRunId)}`)
+                                .then((previous) => previous.status === "WAITING_APPROVAL" ? loadCurrentApproval(previous) : trialStorage.removeItem(trialStorageKey))
+                                .catch(() => trialStorage.removeItem(trialStorageKey));
+                        }
+                    }
+                    release.append(trial);
                 }
                 detail.append(release);
                 const resourceSection = document.createElement("section"); resourceSection.className = "skill-resource-section";

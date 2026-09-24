@@ -101,6 +101,32 @@ class ToolApprovalServiceTest {
         verifyNoInteractions(execution);
     }
 
+    @Test
+    void 试运行审批过期同样收口状态删除检查点并记录审计() {
+        Instant started = Instant.now().minusSeconds(100);
+        UUID approvalId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        ToolApprovalItem item = new ToolApprovalItem(UUID.randomUUID(), approvalId, "call", UUID.randomUUID(),
+                "high_tool", ToolRiskLevel.HIGH, "摘要", "a".repeat(64), ToolApprovalPolicy.EACH_CALL, 1, null);
+        repository.save(new ToolApprovalRequest(approvalId, tenant, agent, ToolApprovalScope.RUN, null, runId,
+                "initiator", "发起人", ToolApprovalStatus.PENDING, started.plusSeconds(10), 0, runId.toString(),
+                started, started, null, null, null, List.of(item)));
+        RunRecord waiting = RunRecord.create(runId, tenant, agent, "initiator", RunKind.TEST, "输入", started).waitForApproval();
+        when(runs.findByTenantAndAgentAndId(tenant, agent, runId)).thenReturn(java.util.Optional.of(waiting));
+
+        assertThatThrownBy(() -> service.decideAndResumeRun(principal, agent, runId, approvalId, 0,
+                List.of(new ToolApprovalService.ItemDecision(item.id(), ToolApprovalDecision.APPROVE)),
+                ignored -> {}, ignored -> {}))
+                .isInstanceOfSatisfying(ResponseStatusException.class, error -> assertThat(error.getStatusCode().value()).isEqualTo(410));
+
+        assertThat(repository.findByRun(tenant, agent, runId, approvalId).orElseThrow().status()).isEqualTo(ToolApprovalStatus.EXPIRED);
+        verify(checkpoints).deleteSession(tenant, tenant + ":initiator", runId.toString());
+        verify(persistence).complete(eq(principal), eq(waiting), argThat(result -> result.status() == RunStatus.DENIED), eq(List.of()));
+        verify(audit).append(tenant, "initiator", "TOOL_APPROVAL_EXPIRE", "TOOL_APPROVAL", approvalId.toString(),
+                "EXPIRED", "试运行高风险工具审批请求已过期");
+        verifyNoInteractions(execution);
+    }
+
     private ToolApprovalService.ToolApprovalView create() {
         return service.create(principal, agent, conversation, UUID.randomUUID(), new RuntimePendingApproval("reply", List.of(
                 new RuntimePendingApproval.RuntimePendingToolCall("call", UUID.randomUUID(), "high_tool", ToolRiskLevel.HIGH,
@@ -143,5 +169,37 @@ class ToolApprovalServiceTest {
         verify(checkpoints).deleteSession(tenant, tenant + ":initiator", approval.runId().toString());
         verify(audit).append(tenant, "initiator", "TOOL_APPROVAL_RESUME", "TOOL_APPROVAL", approval.approvalId().toString(),
                 "FAILED", "审批已接受但运行恢复失败");
+    }
+
+    @Test
+    void 续轮审批创建失败会关闭等待Run并删除检查点() {
+        UUID runId = UUID.randomUUID();
+        var approval = service.createForRun(principal, agent, runId, pending("first"));
+        RunRecord waiting = RunRecord.create(runId, tenant, agent, "initiator", RunKind.TEST, "输入", Instant.now()).waitForApproval();
+        when(runs.findByTenantAndAgentAndId(tenant, agent, runId)).thenReturn(java.util.Optional.of(waiting));
+        when(execution.resumePrepared(any(), any(), any(), isNull(), any(), any(), any())).thenReturn(
+                new AgentRuntimeResult(new AgentRunResult(runId, RunStatus.WAITING_APPROVAL, "", List.of(),
+                        waiting.startedAt(), null, ""), null, pending("second")));
+        doAnswer(invocation -> {
+            if ("TOOL_APPROVAL_CREATE".equals(invocation.getArgument(2))) {
+                throw new IllegalStateException("审计不可用");
+            }
+            return null;
+        }).when(audit).append(any(), any(), any(), any(), any(), any(), any());
+
+        assertThatThrownBy(() -> service.decideAndResumeRun(principal, agent, runId, approval.approvalId(), 0,
+                List.of(new ToolApprovalService.ItemDecision(approval.items().getFirst().itemId(), ToolApprovalDecision.APPROVE)),
+                ignored -> {}, ignored -> {})).isInstanceOf(ToolApprovalService.ApprovalCreationFailure.class);
+
+        verify(persistence).completeFailure(principal, waiting);
+        verify(checkpoints).deleteSession(tenant, tenant + ":initiator", runId.toString());
+        verify(audit).append(tenant, "initiator", "TOOL_APPROVAL_CREATE_FAILED", "RUN", runId.toString(),
+                "FAILED", "审批创建失败，已关闭等待恢复的运行");
+        assertThat(service.currentPendingForRun(principal, agent, runId)).isNull();
+    }
+
+    private RuntimePendingApproval pending(String callId) {
+        return new RuntimePendingApproval("reply", List.of(new RuntimePendingApproval.RuntimePendingToolCall(
+                callId, UUID.randomUUID(), "high_tool", ToolRiskLevel.HIGH, "摘要", "a".repeat(64))));
     }
 }

@@ -80,6 +80,24 @@ public class SkillTrialController {
         return SkillResponses.Trial.from(trial);
     }
 
+    /** 刷新后读取当前 TEST Run 待处理的运行级审批；没有待审批时返回空响应。 */
+    @GetMapping("/{runId}/approvals/current")
+    public ResponseEntity<ToolApprovalService.ToolApprovalView> currentApproval(
+            @PathVariable UUID skillId,
+            @PathVariable UUID runId,
+            Authentication authentication
+    ) {
+        PrincipalRef principal = principal(authentication);
+        authorize(principal, "skill:read", "SKILL", skillId.toString());
+        SkillTrial trial = trials.get(principal, runId);
+        if (!trial.skillId().equals(skillId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "技能试运行不存在");
+        }
+        authorize(principal, "agent:read", "AGENT", trial.agentId().toString());
+        ToolApprovalService.ToolApprovalView approval = approvals.currentPendingForRun(principal, trial.agentId(), runId);
+        return approval == null ? ResponseEntity.noContent().build() : ResponseEntity.ok(approval);
+    }
+
     /** 对 TEST Run 的运行级审批提交决定并恢复同一 Run。 */
     @PostMapping("/{runId}/approvals/{approvalId}/decisions")
     public TrialApprovalResponse decide(
@@ -95,13 +113,20 @@ public class SkillTrialController {
         if (!trial.skillId().equals(skillId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "技能试运行不存在");
         }
+        authorize(principal, "agent:run", "AGENT", trial.agentId().toString());
         authorize(principal, "agent:approve", "AGENT", trial.agentId().toString());
-        ToolApprovalService.RunApprovalResumeOutcome outcome = approvals.decideAndResumeRun(
-                principal, trial.agentId(), runId, approvalId, request.expectedVersion(),
-                request.items().stream().map(item -> new ToolApprovalService.ItemDecision(item.itemId(), item.decision())).toList(),
-                ignored -> { }, ignored -> { });
-        SkillTrial refreshed = trials.finalizeResult(principal, runId, outcome.run());
-        return new TrialApprovalResponse(SkillResponses.Trial.from(refreshed), outcome.decision(), outcome.nextApproval());
+        try {
+            ToolApprovalService.RunApprovalResumeOutcome outcome = approvals.decideAndResumeRun(
+                    principal, trial.agentId(), runId, approvalId, request.expectedVersion(),
+                    request.items().stream().map(item -> new ToolApprovalService.ItemDecision(item.itemId(), item.decision())).toList(),
+                    ignored -> { }, ignored -> { });
+            SkillTrial refreshed = trials.finalizeResult(principal, runId, outcome.run());
+            return new TrialApprovalResponse(SkillResponses.Trial.from(refreshed), outcome.decision(), outcome.nextApproval());
+        } catch (ToolApprovalService.ApprovalCreationFailure failure) {
+            // 只有下一轮审批事实创建失败才由服务关闭 Run；此处同步收口其关联试运行。
+            trials.markFailed(principal, runId);
+            throw failure;
+        }
     }
 
     private PrincipalRef principal(Authentication authentication) {
