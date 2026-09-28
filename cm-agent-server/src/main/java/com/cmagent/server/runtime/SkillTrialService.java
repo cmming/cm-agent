@@ -198,6 +198,27 @@ public class SkillTrialService {
         return trial;
     }
 
+    /**
+     * 查询当前主体拥有的 TEST Run 结果明细。
+     *
+     * <p>复用运行持久化服务的租户、Agent 查询边界和脱敏映射；返回前再次确认运行类型，
+     * 使试运行预览不会意外暴露同一 Agent 下的正式 Run。</p>
+     *
+     * @param principal 当前可信认证主体
+     * @param runId 目标试运行标识
+     * @return 已脱敏的运行记录及工具调用摘要，不含未过滤的输入或主体上下文
+     * @throws SkillAccessException 试运行不属于当前租户或主体时按不存在处理
+     * @throws ResponseStatusException 关联运行不存在时按不存在处理
+     */
+    public RunPersistenceService.RunDetail runDetail(PrincipalRef principal, UUID runId) {
+        SkillTrial trial = get(principal, runId);
+        RunPersistenceService.RunDetail detail = runs.findDetail(principal.tenantId(), trial.agentId(), runId);
+        if (detail.run().kind() != RunKind.TEST) {
+            throw notFound();
+        }
+        return detail;
+    }
+
     private boolean targetWasLoaded(PrincipalRef principal, SkillTrial trial) {
         return loads.listForBudget(principal.tenantId(), trial.runId()).stream().anyMatch(load ->
                 load.status() == SkillLoadStatus.SUCCEEDED

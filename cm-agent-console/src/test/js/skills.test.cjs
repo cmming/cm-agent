@@ -50,3 +50,9 @@ test("试运行 Agent 选择仅包含当前租户已启用且具有标识的 Age
     ]), [enabled]);
     assert.deepEqual(skills.eligibleTrialAgents(null), []);
 });
+
+test("试运行预览将运行和发布状态映射为可读中文", () => {
+    assert.equal(skills.runStatusLabel("WAITING_APPROVAL"), "等待审批");
+    assert.equal(skills.runStatusLabel("SUCCEEDED"), "成功");
+    assert.equal(skills.trialStatusLabel("NOT_TRIGGERED"), "运行完成，但未读取目标技能");
+});

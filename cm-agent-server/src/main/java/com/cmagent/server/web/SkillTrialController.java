@@ -62,7 +62,8 @@ public class SkillTrialController {
         authorize(principal, "agent:run", "AGENT", request.agentId().toString());
         SkillTrial trial = trials.start(principal, skillId, request.versionId(), request.agentId(), request.input());
         trials.execute(principal, trial, request.input(), ignored -> { }, ignored -> { });
-        return ResponseEntity.status(HttpStatus.CREATED).body(SkillResponses.Trial.from(trials.get(principal, trial.runId())));
+        SkillTrial completed = trials.get(principal, trial.runId());
+        return ResponseEntity.status(HttpStatus.CREATED).body(trialResponse(principal, completed));
     }
 
     /** 查询一个当前主体创建的试运行；跨租户或其他主体一律不暴露其存在性。 */
@@ -78,7 +79,8 @@ public class SkillTrialController {
         if (!trial.skillId().equals(skillId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "技能试运行不存在");
         }
-        return SkillResponses.Trial.from(trial);
+        authorize(principal, "agent:read", "AGENT", trial.agentId().toString());
+        return trialResponse(principal, trial);
     }
 
     /** 刷新后读取当前 TEST Run 待处理的运行级审批；没有待审批时返回空响应。 */
@@ -122,12 +124,17 @@ public class SkillTrialController {
                     request.items().stream().map(item -> new ToolApprovalService.ItemDecision(item.itemId(), item.decision())).toList(),
                     ignored -> { }, ignored -> { });
             SkillTrial refreshed = trials.finalizeResult(principal, runId, outcome.run());
-            return new TrialApprovalResponse(SkillResponses.Trial.from(refreshed), outcome.decision(), outcome.nextApproval());
+            return new TrialApprovalResponse(trialResponse(principal, refreshed), outcome.decision(), outcome.nextApproval());
         } catch (ToolApprovalService.ApprovalCreationFailure failure) {
             // 只有下一轮审批事实创建失败才由服务关闭 Run；此处同步收口其关联试运行。
             trials.markFailed(principal, runId);
             throw failure;
         }
+    }
+
+    /** 使用可信试运行所有权读取已经脱敏的 TEST Run 结果并组装响应。 */
+    private SkillResponses.Trial trialResponse(PrincipalRef principal, SkillTrial trial) {
+        return SkillResponses.Trial.from(trial, trials.runDetail(principal, trial.runId()));
     }
 
     private PrincipalRef principal(Authentication authentication) {

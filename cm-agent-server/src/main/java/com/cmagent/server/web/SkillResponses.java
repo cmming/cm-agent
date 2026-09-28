@@ -1,12 +1,15 @@
 package com.cmagent.server.web;
 
 import com.cmagent.api.ApiErrorCode;
+import com.cmagent.core.domain.RunStatus;
+import com.cmagent.core.domain.RunToolCall;
 import com.cmagent.core.domain.SkillLoadStatus;
 import com.cmagent.core.domain.SkillPreflightItemStatus;
 import com.cmagent.core.domain.SkillPreflightScope;
 import com.cmagent.core.domain.SkillPreflightStatus;
 import com.cmagent.core.domain.SkillTrial;
 import com.cmagent.core.domain.SkillTrialStatus;
+import com.cmagent.server.runtime.RunPersistenceService;
 
 import java.time.Instant;
 import java.util.List;
@@ -295,14 +298,74 @@ public final class SkillResponses {
      * @param qualifiesRelease 是否可作为当前候选发布依据
      * @param createdAt 创建时间
      * @param updatedAt 最近状态时间
+     * @param preview 已脱敏的运行结果预览；不返回运行输入、租户或主体内部字段
      */
     public record Trial(UUID runId, UUID skillId, UUID versionId, UUID agentId, long mappingRevision,
-                        SkillTrialStatus status, boolean qualifiesRelease, Instant createdAt, Instant updatedAt) {
+                        SkillTrialStatus status, boolean qualifiesRelease, Instant createdAt, Instant updatedAt,
+                        TrialPreview preview) {
+        /** 保留仅包含试运行治理状态的旧构造方式，供既有 Java 调用方兼容。 */
+        public Trial(UUID runId, UUID skillId, UUID versionId, UUID agentId, long mappingRevision,
+                     SkillTrialStatus status, boolean qualifiesRelease, Instant createdAt, Instant updatedAt) {
+            this(runId, skillId, versionId, agentId, mappingRevision, status, qualifiesRelease,
+                    createdAt, updatedAt, null);
+        }
+
         /** 将领域事实转换为不含租户和内部主体的公开视图。 */
         public static Trial from(SkillTrial trial) {
             return new Trial(trial.runId(), trial.skillId(), trial.versionId(), trial.agentId(),
                     trial.mappingRevision(), trial.status(), trial.qualifiesRelease(),
                     trial.createdAt(), trial.updatedAt());
+        }
+
+        /** 将试运行事实和已脱敏的持久化运行明细组装为公开预览。 */
+        public static Trial from(SkillTrial trial, RunPersistenceService.RunDetail detail) {
+            return new Trial(trial.runId(), trial.skillId(), trial.versionId(), trial.agentId(),
+                    trial.mappingRevision(), trial.status(), trial.qualifiesRelease(), trial.createdAt(),
+                    trial.updatedAt(), TrialPreview.from(detail));
+        }
+    }
+
+    /**
+     * 供技能管理页预览的 TEST Run 结果，不含调用输入原文或内部租户、主体和工具标识。
+     *
+     * @param status Agent 运行实际状态
+     * @param output 已脱敏的最终输出
+     * @param errorMessage 已脱敏的运行错误；成功时为空
+     * @param startedAt 运行开始时间
+     * @param finishedAt 运行结束时间；等待审批时为空
+     * @param toolCalls 已脱敏并限长的工具调用摘要
+     */
+    public record TrialPreview(RunStatus status, String output, String errorMessage, Instant startedAt,
+                               Instant finishedAt, List<TrialToolCall> toolCalls) {
+        public TrialPreview {
+            toolCalls = List.copyOf(toolCalls);
+        }
+
+        /** 仅从持久化层已脱敏的运行明细创建预览，避免直接序列化 Runtime 原始结果。 */
+        public static TrialPreview from(RunPersistenceService.RunDetail detail) {
+            return new TrialPreview(detail.run().status(), detail.run().output(), detail.run().errorMessage(),
+                    detail.run().startedAt(), detail.run().finishedAt(),
+                    detail.toolCalls().stream().map(TrialToolCall::from).toList());
+        }
+    }
+
+    /**
+     * 单条可展示的工具调用摘要。
+     *
+     * @param toolName 工具名称快照
+     * @param inputSummary 已脱敏且限长的调用输入摘要
+     * @param outputSummary 已脱敏且限长的调用输出摘要
+     * @param status 工具调用状态
+     * @param durationMillis 工具调用耗时毫秒数；不可用时为空
+     * @param authorized 本次调用是否通过授权复核
+     * @param errorMessage 已脱敏的工具错误说明
+     */
+    public record TrialToolCall(String toolName, String inputSummary, String outputSummary, RunStatus status,
+                                Long durationMillis, boolean authorized, String errorMessage) {
+        /** 从运行持久化层已脱敏的工具调用记录中提取最小展示字段。 */
+        public static TrialToolCall from(RunToolCall toolCall) {
+            return new TrialToolCall(toolCall.toolName(), toolCall.inputSummary(), toolCall.outputSummary(),
+                    toolCall.status(), toolCall.durationMillis(), toolCall.authorized(), toolCall.errorMessage());
         }
     }
 }

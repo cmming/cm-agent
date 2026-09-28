@@ -667,6 +667,38 @@ body[data-console-version="v2"] .skill-trial-form input,
 body[data-console-version="v2"] .skill-trial-form select,
 body[data-console-version="v2"] .skill-trial-form textarea { width: 100%; box-sizing: border-box; }
 body[data-console-version="v2"] .skill-trial-form textarea { min-height: 78px; resize: vertical; }
+body[data-console-version="v2"] .skill-trial-preview {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid #dbe2ec;
+    border-radius: 9px;
+    background: #f7f9fc;
+}
+body[data-console-version="v2"] .skill-trial-preview:empty { display: none; }
+body[data-console-version="v2"] .skill-trial-preview h5,
+body[data-console-version="v2"] .skill-trial-preview h6,
+body[data-console-version="v2"] .skill-trial-preview p { margin: 0; }
+body[data-console-version="v2"] .skill-trial-preview h5 { font-size: 13px; }
+body[data-console-version="v2"] .skill-trial-preview h6 { font-size: 12px; }
+body[data-console-version="v2"] .skill-trial-output {
+    max-height: 280px;
+    min-width: 0;
+    margin: 0;
+    padding: 9px 10px;
+    overflow: auto;
+    border: 1px solid #dce3ec;
+    border-radius: 7px;
+    background: #fff;
+    color: #172238;
+    font: 12px/1.6 Consolas, "Microsoft YaHei", monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+body[data-console-version="v2"] .skill-trial-tool-preview { min-width: 0; padding-top: 8px; border-top: 1px solid #dce3ec; }
+body[data-console-version="v2"] .skill-trial-tool-preview summary { color: #41526a; cursor: pointer; font-size: 12px; font-weight: 650; }
+body[data-console-version="v2"] .skill-trial-tool-preview .skill-trial-output { margin-top: 7px; }
 
 body[data-console-version="v2"] .skill-resource-section { display: grid; gap: 9px; }
 body[data-console-version="v2"] .skill-resource-section h3 { margin: 0; font-size: 14px; }

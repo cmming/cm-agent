@@ -3,6 +3,8 @@ package com.cmagent.server.runtime;
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.api.ApiErrorCode;
 import com.cmagent.core.domain.AgentRunResult;
+import com.cmagent.core.domain.RunKind;
+import com.cmagent.core.domain.RunRecord;
 import com.cmagent.core.domain.RunStatus;
 import com.cmagent.core.domain.SkillLoadRecord;
 import com.cmagent.core.domain.SkillLoadStatus;
@@ -127,6 +129,32 @@ class SkillTrialServiceTest {
         assertThatThrownBy(() -> disabled.start(principal, skill, version, agent, "测试"))
                 .isInstanceOfSatisfying(SkillAccessException.class,
                         failure -> assertThat(failure.code()).isEqualTo(ApiErrorCode.SKILL_FEATURE_DISABLED));
+    }
+
+    @Test
+    void 结果预览通过可信租户和Agent读取TEST运行明细() {
+        SkillTrial trial = runningTrial();
+        RunRecord runRecord = new RunRecord(run, tenant, agent, principal.principalId(), RunKind.TEST,
+                RunStatus.SUCCEEDED, "已脱敏输入", "已脱敏输出", "", NOW, NOW);
+        RunPersistenceService.RunDetail detail = new RunPersistenceService.RunDetail(runRecord, List.of());
+        when(trials.find(tenant, run)).thenReturn(Optional.of(trial));
+        when(runs.findDetail(tenant, agent, run)).thenReturn(detail);
+
+        assertThat(service.runDetail(principal, run)).isSameAs(detail);
+        verify(runs).findDetail(tenant, agent, run);
+    }
+
+    @Test
+    void 其他主体不能查询试运行运行结果() {
+        SkillTrial otherOwnerTrial = new SkillTrial(run, tenant, skill, version, agent, 3,
+                SkillTrialStatus.PASSED, true, "other-user", NOW.minusSeconds(1), NOW);
+        when(trials.find(tenant, run)).thenReturn(Optional.of(otherOwnerTrial));
+
+        assertThatThrownBy(() -> service.runDetail(principal, run))
+                .isInstanceOf(SkillAccessException.class)
+                .satisfies(failure -> assertThat(((SkillAccessException) failure).code())
+                        .isEqualTo(ApiErrorCode.SKILL_NOT_FOUND));
+        org.mockito.Mockito.verifyNoInteractions(runs);
     }
 
     private static SkillProperties enabledProperties() {

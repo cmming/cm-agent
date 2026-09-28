@@ -22,6 +22,26 @@
             .filter((agent) => agent && agent.enabled && typeof agent.id === "string" && agent.id.length > 0);
     }
 
+    function runStatusLabel(status) {
+        return ({
+            RUNNING: "运行中",
+            WAITING_APPROVAL: "等待审批",
+            SUCCEEDED: "成功",
+            FAILED: "失败",
+            DENIED: "已拒绝"
+        })[status] || status || "未知";
+    }
+
+    function trialStatusLabel(status) {
+        return ({
+            RUNNING: "试运行进行中",
+            WAITING_APPROVAL: "等待审批",
+            PASSED: "试运行通过，可作为发布依据",
+            NOT_TRIGGERED: "运行完成，但未读取目标技能",
+            FAILED: "试运行失败"
+        })[status] || "试运行状态未知";
+    }
+
     function createSkillPage({api, getSessionEpoch, getPermissions, document}) {
         const scope = createRequestScope(getSessionEpoch);
         let selectedId = "";
@@ -181,6 +201,38 @@
                     const inputLabel = text("label", "测试输入"); const input = document.createElement("textarea"); input.required = true; input.placeholder = "描述希望模型使用此技能完成的任务"; inputLabel.append(input);
                     const run = document.createElement("button"); run.type = "submit"; run.className = "button primary"; run.textContent = "开始试运行"; run.disabled = true;
                     const result = document.createElement("p"); result.className = "form-status"; result.setAttribute("aria-live", "polite");
+                    const preview = document.createElement("section"); preview.className = "skill-trial-preview";
+                    preview.setAttribute("aria-label", "试运行结果预览");
+                    const renderTrialPreview = (trialResponse) => {
+                        const data = trialResponse && trialResponse.preview;
+                        preview.replaceChildren();
+                        if (!data) return;
+                        preview.append(text("h5", "运行结果"));
+                        preview.append(text("p", `${trialStatusLabel(trialResponse.status)} · Run：${runStatusLabel(data.status)}`, "field-help"));
+                        preview.append(text("h6", "最终输出"));
+                        preview.append(text("pre", data.output || (data.status === "WAITING_APPROVAL" ? "当前运行等待审批，完成后会更新输出。" : "本次运行没有文本输出。"), "skill-trial-output"));
+                        if (data.errorMessage) {
+                            const error = text("p", data.errorMessage, "form-status");
+                            error.dataset.tone = "error";
+                            preview.append(error);
+                        }
+                        const toolCalls = Array.isArray(data.toolCalls) ? data.toolCalls : [];
+                        preview.append(text("h6", `工具调用（${toolCalls.length}）`));
+                        if (toolCalls.length === 0) {
+                            preview.append(text("p", data.status === "WAITING_APPROVAL" ? "审批完成前暂无已记录的工具调用摘要。" : "本次运行没有已记录的工具调用。", "field-help"));
+                        }
+                        toolCalls.forEach((call) => {
+                            const item = document.createElement("details"); item.className = "skill-trial-tool-preview";
+                            const summary = document.createElement("summary");
+                            const duration = Number.isFinite(call.durationMillis) ? ` · ${call.durationMillis} ms` : "";
+                            summary.textContent = `${call.toolName || "工具"} · ${runStatusLabel(call.status)} · ${call.authorized ? "已授权" : "未授权"}${duration}`;
+                            item.append(summary);
+                            if (call.inputSummary) item.append(text("pre", `输入摘要：${call.inputSummary}`, "skill-trial-output"));
+                            if (call.outputSummary) item.append(text("pre", `输出摘要：${call.outputSummary}`, "skill-trial-output"));
+                            if (call.errorMessage) item.append(text("p", call.errorMessage, "field-help"));
+                            preview.append(item);
+                        });
+                    };
                     const approvalPanel = document.createElement("div"); approvalPanel.className = "skill-trial-approval";
                     const trialStorageKey = `cm-agent.skill-trial.${id}`;
                     const trialStorage = typeof window !== "undefined" ? window.sessionStorage : null;
@@ -212,6 +264,7 @@
                             try {
                                 const resumed = await api.request(`/api/skills/${encodeURIComponent(id)}/trials/${encodeURIComponent(approval.runId)}/approvals/${encodeURIComponent(approval.approvalId)}/decisions`, {method: "POST", body: JSON.stringify({expectedVersion: approval.version, items})});
                                 const updated = resumed.trial;
+                                renderTrialPreview(updated);
                                 result.textContent = updated.qualifiesRelease ? `试运行已通过（Run ${updated.runId.slice(0, 8)}），可以发布。` : `试运行结果：${updated.status}。`;
                                 result.dataset.tone = updated.qualifiesRelease ? "success" : "neutral";
                                 renderApproval(resumed.nextApproval);
@@ -223,7 +276,7 @@
                         const approval = await api.request(`/api/skills/${encodeURIComponent(id)}/trials/${encodeURIComponent(tested.runId)}/approvals/current`);
                         renderApproval(approval);
                     };
-                    trial.append(agentLabel, agentHelp, inputLabel, run, result, approvalPanel);
+                    trial.append(agentLabel, agentHelp, inputLabel, run, result, preview, approvalPanel);
                     const permissions = getPermissions();
                     const loadTrialAgents = async () => {
                         if (!permissions.includes("agent:read")) {
@@ -269,9 +322,10 @@
                     trial.addEventListener("submit", async (event) => {
                         event.preventDefault();
                         if (!agentSelect.value) { agentHelp.textContent = "请选择一个已启用的 Agent。"; agentHelp.dataset.tone = "error"; return; }
-                        run.disabled = true; result.textContent = "正在执行 TEST Run…";
+                        run.disabled = true; result.textContent = "正在执行 TEST Run…"; preview.replaceChildren();
                         try {
                             const tested = await api.request(`/api/skills/${encodeURIComponent(id)}/trials`, {method: "POST", body: JSON.stringify({versionId: summary.candidateVersionId, agentId: agentSelect.value, input: input.value.trim()})});
+                            renderTrialPreview(tested);
                             result.textContent = tested.qualifiesRelease ? `试运行已通过（Run ${tested.runId.slice(0, 8)}），可以发布。` : `试运行结果：${tested.status}。目标技能必须实际读取后才能发布。`;
                             result.dataset.tone = tested.qualifiesRelease ? "success" : "neutral";
                             if (tested.status === "WAITING_APPROVAL") {
@@ -295,7 +349,12 @@
                         const previousRunId = trialStorage.getItem(trialStorageKey);
                         if (previousRunId) {
                             api.request(`/api/skills/${encodeURIComponent(id)}/trials/${encodeURIComponent(previousRunId)}`)
-                                .then((previous) => previous.status === "WAITING_APPROVAL" ? loadCurrentApproval(previous) : trialStorage.removeItem(trialStorageKey))
+                                .then((previous) => {
+                                    if (!scope.isCurrent(ticket)) return;
+                                    renderTrialPreview(previous);
+                                    if (previous.status === "WAITING_APPROVAL") return loadCurrentApproval(previous);
+                                    trialStorage.removeItem(trialStorageKey);
+                                })
                                 .catch(() => trialStorage.removeItem(trialStorageKey));
                         }
                     }
@@ -353,5 +412,5 @@
     function preflightStatus(response) {
         return response?.check?.status || "未知";
     }
-    return {canPublishTrial, createRequestScope, createSkillPage, eligibleTrialAgents, preflightStatus};
+    return {canPublishTrial, createRequestScope, createSkillPage, eligibleTrialAgents, preflightStatus, runStatusLabel, trialStatusLabel};
 });
