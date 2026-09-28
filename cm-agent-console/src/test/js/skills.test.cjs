@@ -39,3 +39,14 @@ test("从预检接口的 check 字段读取结构预检状态", () => {
     assert.equal(skills.preflightStatus({check: {status: "FAILED"}, items: []}), "FAILED");
     assert.equal(skills.preflightStatus({summary: {status: "PASSED"}}), "未知");
 });
+
+test("试运行 Agent 选择仅包含当前租户已启用且具有标识的 Agent", () => {
+    const enabled = {id: "agent-1", name: "分析 Agent", enabled: true};
+    assert.deepEqual(skills.eligibleTrialAgents([
+        enabled,
+        {id: "agent-2", name: "已停用 Agent", enabled: false},
+        {name: "缺少标识", enabled: true},
+        null
+    ]), [enabled]);
+    assert.deepEqual(skills.eligibleTrialAgents(null), []);
+});

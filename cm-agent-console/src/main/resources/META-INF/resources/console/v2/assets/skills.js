@@ -17,6 +17,11 @@
             && trial.versionId === candidateVersionId && trial.mappingRevision === mappingRevision);
     }
 
+    function eligibleTrialAgents(agents) {
+        return (Array.isArray(agents) ? agents : [])
+            .filter((agent) => agent && agent.enabled && typeof agent.id === "string" && agent.id.length > 0);
+    }
+
     function createSkillPage({api, getSessionEpoch, getPermissions, document}) {
         const scope = createRequestScope(getSessionEpoch);
         let selectedId = "";
@@ -167,9 +172,14 @@
                 if (summary.candidateVersionId && getPermissions().includes("skill:write")) {
                     const trial = document.createElement("form"); trial.className = "skill-trial-form";
                     trial.append(text("h4", "指定版本试运行"), text("p", "使用真实 Agent、模型和工具治理链路；工具可能产生真实副作用。", "field-help"));
-                    const agentLabel = text("label", "目标 Agent ID"); const agentInput = document.createElement("input"); agentInput.required = true; agentInput.placeholder = "输入要验证的 Agent UUID"; agentLabel.append(agentInput);
+                    const agentLabel = text("label", "目标 Agent");
+                    const agentSelect = document.createElement("select"); agentSelect.required = true; agentSelect.setAttribute("aria-label", "目标 Agent");
+                    const agentPlaceholder = document.createElement("option"); agentPlaceholder.value = ""; agentPlaceholder.disabled = true; agentPlaceholder.selected = true;
+                    agentPlaceholder.textContent = "正在加载可用 Agent…"; agentSelect.append(agentPlaceholder); agentSelect.disabled = true;
+                    agentLabel.append(agentSelect);
+                    const agentHelp = text("p", "仅显示当前租户已启用的 Agent。", "field-help"); agentHelp.setAttribute("aria-live", "polite");
                     const inputLabel = text("label", "测试输入"); const input = document.createElement("textarea"); input.required = true; input.placeholder = "描述希望模型使用此技能完成的任务"; inputLabel.append(input);
-                    const run = document.createElement("button"); run.type = "submit"; run.className = "button primary"; run.textContent = "开始试运行";
+                    const run = document.createElement("button"); run.type = "submit"; run.className = "button primary"; run.textContent = "开始试运行"; run.disabled = true;
                     const result = document.createElement("p"); result.className = "form-status"; result.setAttribute("aria-live", "polite");
                     const approvalPanel = document.createElement("div"); approvalPanel.className = "skill-trial-approval";
                     const trialStorageKey = `cm-agent.skill-trial.${id}`;
@@ -213,11 +223,55 @@
                         const approval = await api.request(`/api/skills/${encodeURIComponent(id)}/trials/${encodeURIComponent(tested.runId)}/approvals/current`);
                         renderApproval(approval);
                     };
-                    trial.append(agentLabel, inputLabel, run, result, approvalPanel);
-                    trial.addEventListener("submit", async (event) => {
-                        event.preventDefault(); run.disabled = true; result.textContent = "正在执行 TEST Run…";
+                    trial.append(agentLabel, agentHelp, inputLabel, run, result, approvalPanel);
+                    const permissions = getPermissions();
+                    const loadTrialAgents = async () => {
+                        if (!permissions.includes("agent:read")) {
+                            agentPlaceholder.textContent = "当前账号无法读取 Agent 列表";
+                            agentHelp.textContent = "选择试运行 Agent 需要 agent:read 权限；启动试运行还需要 agent:run。";
+                            agentHelp.dataset.tone = "error";
+                            return;
+                        }
+                        if (!permissions.includes("agent:run")) {
+                            agentPlaceholder.textContent = "当前账号无试运行权限";
+                            agentHelp.textContent = "当前账号缺少 agent:run 权限，无法启动试运行。";
+                            agentHelp.dataset.tone = "error";
+                            return;
+                        }
                         try {
-                            const tested = await api.request(`/api/skills/${encodeURIComponent(id)}/trials`, {method: "POST", body: JSON.stringify({versionId: summary.candidateVersionId, agentId: agentInput.value.trim(), input: input.value.trim()})});
+                            const agents = await api.request("/api/agents");
+                            if (!scope.isCurrent(ticket)) return;
+                            const available = eligibleTrialAgents(agents);
+                            agentSelect.replaceChildren();
+                            agentPlaceholder.textContent = available.length ? "请选择已启用的 Agent" : "没有已启用的 Agent";
+                            agentSelect.append(agentPlaceholder);
+                            available.forEach((agent) => {
+                                const option = document.createElement("option");
+                                option.value = agent.id;
+                                option.textContent = `${agent.name || "未命名 Agent"} · ${agent.modelName || "未配置模型"}`;
+                                agentSelect.append(option);
+                            });
+                            agentSelect.disabled = available.length === 0;
+                            run.disabled = available.length === 0;
+                            agentHelp.textContent = available.length
+                                ? "试运行将使用所选 Agent 的模型配置和现有工具授权。"
+                                : "请先创建并启用 Agent，再返回此处试运行。";
+                        } catch (error) {
+                            if (!scope.isCurrent(ticket)) return;
+                            agentPlaceholder.textContent = "Agent 列表加载失败";
+                            agentSelect.replaceChildren(agentPlaceholder);
+                            agentSelect.disabled = true;
+                            agentHelp.textContent = `无法加载 Agent 列表：${error.message}。请刷新技能详情后重试。`;
+                            agentHelp.dataset.tone = "error";
+                        }
+                    };
+                    void loadTrialAgents();
+                    trial.addEventListener("submit", async (event) => {
+                        event.preventDefault();
+                        if (!agentSelect.value) { agentHelp.textContent = "请选择一个已启用的 Agent。"; agentHelp.dataset.tone = "error"; return; }
+                        run.disabled = true; result.textContent = "正在执行 TEST Run…";
+                        try {
+                            const tested = await api.request(`/api/skills/${encodeURIComponent(id)}/trials`, {method: "POST", body: JSON.stringify({versionId: summary.candidateVersionId, agentId: agentSelect.value, input: input.value.trim()})});
                             result.textContent = tested.qualifiesRelease ? `试运行已通过（Run ${tested.runId.slice(0, 8)}），可以发布。` : `试运行结果：${tested.status}。目标技能必须实际读取后才能发布。`;
                             result.dataset.tone = tested.qualifiesRelease ? "success" : "neutral";
                             if (tested.status === "WAITING_APPROVAL") {
@@ -299,5 +353,5 @@
     function preflightStatus(response) {
         return response?.check?.status || "未知";
     }
-    return {canPublishTrial, createRequestScope, createSkillPage, preflightStatus};
+    return {canPublishTrial, createRequestScope, createSkillPage, eligibleTrialAgents, preflightStatus};
 });

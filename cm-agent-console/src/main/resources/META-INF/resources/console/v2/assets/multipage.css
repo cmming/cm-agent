@@ -664,6 +664,7 @@ body[data-console-version="v2"] .skill-dependency-list { display: grid; gap: 5px
 body[data-console-version="v2"] .skill-trial-form { display: grid; gap: 9px; padding-top: 3px; }
 body[data-console-version="v2"] .skill-trial-form label { display: grid; gap: 5px; color: #41526a; font-size: 12px; font-weight: 650; }
 body[data-console-version="v2"] .skill-trial-form input,
+body[data-console-version="v2"] .skill-trial-form select,
 body[data-console-version="v2"] .skill-trial-form textarea { width: 100%; box-sizing: border-box; }
 body[data-console-version="v2"] .skill-trial-form textarea { min-height: 78px; resize: vertical; }
 
