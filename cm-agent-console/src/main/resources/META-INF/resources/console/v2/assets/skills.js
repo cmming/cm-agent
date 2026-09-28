@@ -157,8 +157,9 @@
                         check.disabled = true; result.textContent = "正在验证候选版本依赖…";
                         try {
                             const checked = await api.request(`/api/skills/${encodeURIComponent(id)}/preflights?versionId=${encodeURIComponent(summary.candidateVersionId)}&scope=STRUCTURAL`, {method: "POST"});
-                            result.textContent = checked.summary?.status === "PASSED" ? "结构预检通过。" : `结构预检结果：${checked.summary?.status || "未知"}。请修复失败项后重新执行。`;
-                            result.dataset.tone = checked.summary?.status === "PASSED" ? "success" : "neutral";
+                            const status = preflightStatus(checked);
+                            result.textContent = status === "PASSED" ? "结构预检通过。" : `结构预检结果：${status}。请修复失败项后重新执行。`;
+                            result.dataset.tone = status === "PASSED" ? "success" : "neutral";
                         } catch (error) { result.textContent = error.message; result.dataset.tone = "error"; } finally { check.disabled = false; }
                     });
                     preflight.append(check, result); release.append(preflight);
@@ -295,5 +296,8 @@
         }
         return {mount() { byId("refreshSkillsBtn").addEventListener("click", reload); byId("skillUploadForm").addEventListener("submit", upload); reload(); }, reload, dispose() { scope.invalidate(); selectedId = ""; }};
     }
-    return {canPublishTrial, createRequestScope, createSkillPage};
+    function preflightStatus(response) {
+        return response?.check?.status || "未知";
+    }
+    return {canPublishTrial, createRequestScope, createSkillPage, preflightStatus};
 });

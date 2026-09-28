@@ -984,3 +984,13 @@ git commit -m "docs: 完成技能发布与试运行说明"
 - [x] 在恢复执行前复核快照的必需工具依赖是否仍在当前授权集合内。
 - [x] 对试运行入口和临时快照补齐 `cm-agent.skills.enabled` 拒绝边界；补齐运行级审批过期清理。
 - [x] 使用 Java 21 定向 Maven 测试、Node 测试与 `git diff --check` 验证。
+
+## Task 13：真实浏览器缺陷修复与闭环复验
+
+**文件：** `console/v2/assets/skills.js`、`skills.test.cjs`、`SkillTrialController`、新增的 `SkillTrialControllerTest` 及本任务既有四份文档、发布说明。
+
+- [x] 修正预检响应状态读取路径，补充 PASSED、FAILED 与未知状态单测。
+- [x] 为所有 UUID `@PathVariable` 显式指定名称，并以 MockMvc 回归确保试运行请求进入服务层。
+- [x] 在 test profile 真实浏览器中重跑导入、结构预检、Agent 创建和指定版本试运行；确认 Fake Runtime 返回 `NOT_TRIGGERED` 且发布门禁仍关闭。
+- [x] 更新四份任务文档及发布说明，明确本次验证不代表真实模型调用或正式发布验收。
+- [x] Java 21 定向测试、Node 测试、浏览器流程与 `git diff --check` 通过；双库验证沿用未改持久化代码时已通过的 Rocky 结果。

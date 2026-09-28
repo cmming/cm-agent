@@ -50,3 +50,11 @@
 - `ConsoleResourceTest`、`AgentSkillControllerTest`、`SkillControllerTest` 通过。
 - Rocky 验证：提交 `4e8a60530e28d4fff2c21cd83f062f32132ccaff` 的隔离副本在 `maven:3.9.9-eclipse-temurin-21`（Maven 3.9.9 / Java 21.0.7）执行 `mvn -B -pl cm-agent-persistence -am test`，58 项通过；Testcontainers 实际运行 PostgreSQL 16.14 与 MySQL 8.4，V13 迁移及字段注释检查通过。Flyway 对 MySQL 8.4 输出“支持版本最新为 8.1”的兼容性提示，但迁移及测试成功。
 - 审查修复后，Java 21 下 `SkillTrialServiceTest`、`SkillRuntimeServiceTest`、`ToolApprovalServiceTest` 共 19 项通过；`skills.js` 语法检查和 Node 测试通过。
+
+## 7. 浏览器缺陷修复与复验
+
+- `skills.js` 通过 `preflightStatus(response)` 读取接口的 `check.status`；`skills.test.cjs` 覆盖 `PASSED`、`FAILED` 和缺少状态的回退显示。
+- `SkillTrialController` 对 `skillId`、`runId`、`approvalId` 的路径参数显式命名，避免运行时因编译未保留参数名而在进入控制器前返回 400。新增 `SkillTrialControllerTest` 通过 MockMvc 验证 POST 试运行返回 201 并调用服务。
+- Playwright 在 `http://localhost:18080` 的本地 test profile 中完成登录、ZIP 导入、候选结构预检、测试 Agent 创建及指定版本试运行；页面显示“结构预检通过”和 `NOT_TRIGGERED`。Fake Runtime 不加载技能，因此该结果正确阻止发布，未触发真实模型、外部工具、正式发布或启用操作。
+- 定向 Java 测试共 11 项通过，Node 技能页面测试 3 项通过。持久化模块与迁移未变更，沿用同一任务此前 Rocky PostgreSQL 16 / MySQL 8.4 的 58 项通过结果；本次没有重复启动双库测试。
+- `output/playwright/` 中的截图与 ZIP 夹具只用于本地验收，不纳入版本控制。

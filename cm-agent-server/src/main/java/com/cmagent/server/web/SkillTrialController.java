@@ -29,7 +29,8 @@ import java.util.UUID;
  * 指定技能版本的 TEST Run 接口。
  *
  * <p>试运行必须同时拥有技能写入和 Agent 运行权限：前者授权候选内容的治理操作，后者授权真实模型及
- * 工具副作用。租户、主体和权限均只从 JWT 会话取得，客户端请求不含也不能覆盖这些字段。</p>
+ * 工具副作用。租户、主体和权限均只从 JWT 会话取得，客户端请求不含也不能覆盖这些字段。
+ * 路径参数显式声明名称，避免 Spring MVC 依赖编译器是否保留 Java 参数名。</p>
  */
 @RestController
 @RequestMapping("/api/skills/{skillId}/trials")
@@ -52,7 +53,7 @@ public class SkillTrialController {
     /** 创建并同步执行一次指定版本试运行；调用方可使用返回的 runId 在刷新后继续查询。 */
     @PostMapping
     public ResponseEntity<SkillResponses.Trial> start(
-            @PathVariable UUID skillId,
+            @PathVariable("skillId") UUID skillId,
             @Valid @RequestBody SkillRequests.TrialRequest request,
             Authentication authentication
     ) {
@@ -67,8 +68,8 @@ public class SkillTrialController {
     /** 查询一个当前主体创建的试运行；跨租户或其他主体一律不暴露其存在性。 */
     @GetMapping("/{runId}")
     public SkillResponses.Trial get(
-            @PathVariable UUID skillId,
-            @PathVariable UUID runId,
+            @PathVariable("skillId") UUID skillId,
+            @PathVariable("runId") UUID runId,
             Authentication authentication
     ) {
         PrincipalRef principal = principal(authentication);
@@ -83,8 +84,8 @@ public class SkillTrialController {
     /** 刷新后读取当前 TEST Run 待处理的运行级审批；没有待审批时返回空响应。 */
     @GetMapping("/{runId}/approvals/current")
     public ResponseEntity<ToolApprovalService.ToolApprovalView> currentApproval(
-            @PathVariable UUID skillId,
-            @PathVariable UUID runId,
+            @PathVariable("skillId") UUID skillId,
+            @PathVariable("runId") UUID runId,
             Authentication authentication
     ) {
         PrincipalRef principal = principal(authentication);
@@ -101,9 +102,9 @@ public class SkillTrialController {
     /** 对 TEST Run 的运行级审批提交决定并恢复同一 Run。 */
     @PostMapping("/{runId}/approvals/{approvalId}/decisions")
     public TrialApprovalResponse decide(
-            @PathVariable UUID skillId,
-            @PathVariable UUID runId,
-            @PathVariable UUID approvalId,
+            @PathVariable("skillId") UUID skillId,
+            @PathVariable("runId") UUID runId,
+            @PathVariable("approvalId") UUID approvalId,
             @Valid @RequestBody SkillRequests.TrialApprovalDecisionRequest request,
             Authentication authentication
     ) {

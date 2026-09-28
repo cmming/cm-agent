@@ -33,3 +33,9 @@ test("只有同一候选和映射修订的已通过试运行才能开启发布",
     assert.equal(skills.canPublishTrial(trial, "candidate-v3", 7), false);
     assert.equal(skills.canPublishTrial(trial, "candidate-v2", 8), false);
 });
+
+test("从预检接口的 check 字段读取结构预检状态", () => {
+    assert.equal(skills.preflightStatus({check: {status: "PASSED"}, items: []}), "PASSED");
+    assert.equal(skills.preflightStatus({check: {status: "FAILED"}, items: []}), "FAILED");
+    assert.equal(skills.preflightStatus({summary: {status: "PASSED"}}), "未知");
+});
