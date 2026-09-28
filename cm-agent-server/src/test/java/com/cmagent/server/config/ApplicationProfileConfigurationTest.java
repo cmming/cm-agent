@@ -2,9 +2,11 @@ package com.cmagent.server.config;
 
 import com.cmagent.agentscope.AgentScopeRuntimeAdapter;
 import com.cmagent.core.runtime.AgentRuntime;
+import com.cmagent.core.runtime.SkillAccessGateway;
 import com.cmagent.core.runtime.ToolInvocationGateway;
 import com.cmagent.core.runtime.ToolInvocationResult;
 import com.cmagent.core.repository.ModelConfigRepository;
+import com.cmagent.core.repository.RuntimeCheckpointRepository;
 import com.cmagent.server.security.BootstrapAdminConfiguration;
 import com.cmagent.server.security.BootstrapAdminProperties;
 import com.cmagent.server.security.JwtSecurityConfiguration;
@@ -82,7 +84,9 @@ class ApplicationProfileConfigurationTest {
                     ProfileSafetyValidator.class)
             .withBean(ToolInvocationGateway.class,
                     () -> request -> ToolInvocationResult.succeeded("测试结果"))
+            .withBean(SkillAccessGateway.class, () -> mock(SkillAccessGateway.class))
             .withBean(ModelConfigRepository.class, () -> mock(ModelConfigRepository.class))
+            .withBean(RuntimeCheckpointRepository.class, () -> mock(RuntimeCheckpointRepository.class))
             .withInitializer(new ConfigDataApplicationContextInitializer());
 
     @Test

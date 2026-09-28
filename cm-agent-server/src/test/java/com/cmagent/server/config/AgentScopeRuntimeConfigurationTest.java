@@ -4,6 +4,7 @@ import com.cmagent.agentscope.AgentScopeRuntimeAdapter;
 import com.cmagent.core.runtime.AgentRuntime;
 import com.cmagent.core.runtime.ModelCredential;
 import com.cmagent.core.runtime.ModelCredentialProvider;
+import com.cmagent.core.runtime.SkillAccessGateway;
 import com.cmagent.core.runtime.ToolInvocationGateway;
 import com.cmagent.core.runtime.ToolInvocationResult;
 import com.cmagent.core.repository.ModelConfigRepository;
@@ -28,6 +29,7 @@ class AgentScopeRuntimeConfigurationTest {
                     ModelCredentialEncryptionConfiguration.class,
                     ToolGatewayConfiguration.class,
                     RepositoryConfiguration.class)
+            .withBean(SkillAccessGateway.class, () -> mock(SkillAccessGateway.class))
             .withPropertyValues(
                     "cm-agent.model-credentials.encryption-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=");
 

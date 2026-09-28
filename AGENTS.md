@@ -75,13 +75,15 @@
 - Spring Boot: 3.5.0；使用 Web MVC、Security、Actuator、Validation、Auto Configure。
 - API 文档: springdoc OpenAPI 2.8.9。
 - JWT: JJWT 0.13.0。
-- AgentScope: `agentscope-core` 2.0.2；Provider 扩展由 adapter 模块按需引入，并保持 optional 依赖；父 POM 另管理 `agentscope-extensions-model-openai`/`agentscope-extensions-model-dashscope`，server 额外依赖 `agentscope-extensions-studio`（AgentScope Studio 集成，见 `cm-agent-server` 的 `com.cmagent.server.config.AgentScopeStudioConfiguration`）。
-- MCP: `io.modelcontextprotocol.sdk:mcp-core`/`mcp-json-jackson2` 2.0.0；用于将已发布工具以 MCP Streamable HTTP 方式对外提供，Server 端实现见 `cm-agent-server` 的 `com.cmagent.server.mcp` 包。注意：`cm-agent-examples/dashscope-mcp-agent` 因与 agentscope-core 2.0.x 存在 `NoSuchMethodError` 级不兼容，示例内将 MCP SDK 锁回 0.17.0（见该模块 `pom.xml` 注释），不要在主工程随意升级/降级 MCP SDK。
+- AgentScope: `agentscope-core` 2.0.2；Provider 扩展由 adapter 模块按需引入，并保持 optional 依赖；父 POM 另管理 `agentscope-extensions-model-openai`/`agentscope-extensions-model-dashscope`，server 额外依赖 `agentscope-extensions-studio`（AgentScope Studio 集成，见 `cm-agent-server` 的 `com.cmagent.server.config.AgentScopeStudioConfiguration`）。示例模块另依赖同版本的 `agentscope-extensions-redis`，只用于 Redis AgentState 示例，不代表生产 Server 使用 Redis 持久化。
+- MCP: Server 以 `io.modelcontextprotocol.sdk:mcp-core`/`mcp-json-jackson2` 2.0.0 提供已发布工具的 MCP Streamable HTTP 端点，见 `cm-agent-server` 的 `com.cmagent.server.mcp` 包。`cm-agent-examples/dashscope-mcp-agent` 将客户端 SDK 固定为 0.17.0；依赖树实测为 AgentScope Core 2.0.2 与 MCP SDK 0.17.0。MCP 2.0.0 的 `McpSchema.Tool#inputSchema()` 返回类型与 AgentScope 客户端所引用的方法签名不兼容，可能在运行时触发 `NoSuchMethodError`，因此不要把 Server 的 2.0.0 覆盖到该示例。
+- 测试依赖: 根 POM 导入 Testcontainers BOM 2.0.5；但当前 `mvn -pl cm-agent-server -am dependency:tree -Dverbose -Dincludes=org.testcontainers:*` 实际解析为 1.21.0（由 Spring Boot BOM 管理）。版本属性、导入 BOM 和最终解析版本不一致；调整依赖前先核实 effective POM 与完整依赖树，不要把 BOM 声明版本当成测试运行版本。
+- Server 新增依赖: `commons-compress` 1.27.1 用于 Skill ZIP 资源解析，`com.networknt:json-schema-validator` 2.0.0 用于 HTTP 工具参数 Schema 校验；Maven 版本核对以实际解析结果为准。
 - 数据库: 默认 memory，可通过 `cm-agent.persistence.mode=jdbc` 使用 JDBC/Flyway；目标为 PostgreSQL/Supabase PostgreSQL 和 MySQL。
 - 本地数据库: `docker compose up -d mysql postgres`（如需 Redis agent state 示例再加 `redis`）。
 - 本地启动必须显式选择 profile（local/test），无 profile 不会自动加载 local；可用环境变量 `$env:CM_AGENT_PROFILE='test'; mvn -pl cm-agent-server -am spring-boot:run`，或 `--spring.profiles.active=local` 参数方式。
 - AgentScope Studio 本地调试约定见 `README.md`（server 已集成 `agentscope-extensions-studio`）。
-- 依赖核对: `mvn -pl <module> dependency:tree`，版本异常时以实际解析结果为准。
+- 依赖核对: `mvn -pl <module> dependency:tree` 或加入 `-Dverbose` 检查 BOM 冲突，版本异常时以最终解析结果为准。
 
 ## 目录结构约定
 - `cm-agent-api`: 对外共享 API 类型，如分页、租户上下文、主体引用、错误码。

@@ -20,7 +20,7 @@
     <properties>
         <exec.mainClass>com.cmagent.examples.mcpagent.DashScopeMcpToolExample</exec.mainClass>
         <!--
-            agentscope-core:2.0.0 实际编译、字节码引用的是 io.modelcontextprotocol.sdk:mcp:0.17.0
+            agentscope-core:2.0.2 实际编译、字节码引用的是 io.modelcontextprotocol.sdk:mcp:0.17.0
             这一构件（其自身 POM 声明 mcp-core/mcp-json-jackson2 均为 0.17.0）。
             父 POM 的 dependencyManagement 为了配合 cm-agent-server 自身的 MCP Streamable HTTP
             Server 实现，把 mcp-core/mcp-json-jackson2 统一管理到 2.0.0；但 2.0.0 版本的

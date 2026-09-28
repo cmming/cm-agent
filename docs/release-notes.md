@@ -1,5 +1,11 @@
 # 发布说明
 
+## 发版状态（截至 2026-09-28）
+
+父 POM 版本仍为 `0.1.0-SNAPSHOT`，本文件仍是待发布草案，尚未标记正式版本。基于代码提交 `8fb2c15` 并补齐三处测试上下文后，Rocky Linux 上使用 Maven 3.9.9、JDK 21 和 Testcontainers 执行 `mvn -q test` 通过：80 个 Surefire 测试报告共 497 项，失败 0、错误 0、跳过 0。首次运行暴露的 9 个夹具错误已由 `AgentScopeRuntimeConfigurationTest`、`ApplicationProfileConfigurationTest` 和 `ConsoleSmokeTest` 的测试配置修正；该结果不替代真实模型、浏览器及发布流程验收。
+
+本轮运行验证了 PostgreSQL 16 与 MySQL 8.4，并成功执行 V1–V13 迁移；Flyway 对 MySQL 8.4 输出高于已测试支持版本 8.1 的提示。依赖树另确认 MCP 示例解析为 AgentScope Core/Redis 扩展 2.0.2 与 MCP SDK 0.17.0；Testcontainers BOM 声明 2.0.5，但实际解析版本为 1.21.0，本轮测试通过的是 1.21.0。发正式版本前仍需确定版本号，并完成真实模型、浏览器和发布流程的验收；Testcontainers BOM 与实际解析版本差异也应由维护者确认预期。
+
 ## 未发布：Skill 候选发布、依赖预检与 TEST Run
 
 - 技能版本改为候选与正式发布双指针；上传不会改变正式 Run，发布与回滚均追加不可变事实。新绑定默认 `FOLLOW_PUBLISHED`，可用乐观锁修订切换为固定曾发布版本；已有 Run 继续使用自己的版本和依赖快照。
@@ -54,7 +60,7 @@
 - Agent 管理新增 `PUT /api/agents/{id}` 与 `DELETE /api/agents/{id}`：创建和编辑请求使用当前租户的 `modelConfigId`，服务端仅接受已启用配置并从配置读取实际模型名称；删除需要新增的 `agent:delete` 权限，会自动移除无历史 Agent 的工具授权并写入严格审计。已有会话或运行历史的 Agent 返回明确 `409 Conflict`，不可级联删除历史，应通过编辑接口停用。v2 控制台新增模型配置下拉选择、编辑、删除确认和冲突提示；v1 旧请求的 `modelName` 仅在当前租户唯一匹配一个已启用配置时暂时兼容。
 - 新增租户级模型配置管理 API 与 v2 控制台页面：`GET/POST /api/model-configs` 和 `GET/PUT/DELETE /api/model-configs/{id}` 分别使用 `model:read`、`model:write`、`model:delete` 权限，创建、更新、删除写入严格审计；删除仍被 Agent 引用的配置返回明确 `409 Conflict`，启动初始化器维护的系统默认配置不可删除但可停用或更新。创建请求必须写入 API Key，更新可轮换 API Key；服务以 AES/GCM 加密后写入数据库，所有响应均不回显密钥。新增 PostgreSQL/MySQL 方言 Flyway V9，仅更新密文字段的中文数据库注释。
 - 新增 Flyway V8 数据库注释迁移，为现有 18 张业务表和 135 个字段补齐中文原生注释；PostgreSQL 与 MySQL 使用同版本方言脚本，由统一 Flyway 配置按 JDBC 元数据选择，迁移测试逐表、逐字段阻止后续注释遗漏。
-- 新增示例模块 `cm-agent-examples/dashscope-mcp-agent`：演示 AgentScope Java 智能体使用内置 `McpClientBuilder` 以 Streamable HTTP 协议连接外部 MCP 服务（示例地址 `http://localhost:8088/api/mcp`）、注册其时间查询等工具，并由阿里云百炼 DashScope `qwen3.7-plus` 模型驱动 `ReActAgent` 自动决策调用。示例通过独立 `main` 方法运行,不依赖 CM Agent Server，也不经过其租户隔离、权限与审计链路；示例中的模型 API Key 为一次性本地联调值，生产场景应改为受控配置或密钥管理服务读取，本项不改变生产 API、数据库 Schema 或现有工具治理语义。该模块单独锁定 `io.modelcontextprotocol.sdk:mcp-core`/`mcp-json-jackson2` 为 `0.17.0`（与 `agentscope-core:2.0.0` 实际编译依赖的版本一致），避免与父 POM 为 `cm-agent-server` 自身 MCP Streamable HTTP Server 管理的 `2.0.0` 版本发生二进制不兼容（`McpSchema.Tool#inputSchema()` 返回类型不同导致的 `NoSuchMethodError`）；不修改父 POM 的 `mcp.version`，不影响 `cm-agent-server` 现有 MCP 端点。
+- 新增示例模块 `cm-agent-examples/dashscope-mcp-agent`：演示 AgentScope Java 智能体使用内置 `McpClientBuilder` 以 Streamable HTTP 协议连接外部 MCP 服务（示例地址 `http://localhost:8088/api/mcp`）、注册其时间查询等工具，并由阿里云百炼 DashScope `qwen3.7-plus` 模型驱动 `ReActAgent` 自动决策调用。示例通过独立 `main` 方法运行，不依赖 CM Agent Server，也不经过其租户隔离、权限与审计链路；模型 API Key 从 `DASHSCOPE_API_KEY` 环境变量读取，本项不改变生产 API、数据库 Schema 或现有工具治理语义。该模块单独锁定 `io.modelcontextprotocol.sdk:mcp-core`/`mcp-json-jackson2` 为 `0.17.0`（与 `agentscope-core:2.0.2` 当前构建中的 MCP 客户端依赖一致），避免与父 POM 为 `cm-agent-server` 自身 MCP Streamable HTTP Server 管理的 `2.0.0` 版本发生二进制不兼容（`McpSchema.Tool#inputSchema()` 返回类型不同导致的 `NoSuchMethodError`）；不修改父 POM 的 `mcp.version`，不影响 `cm-agent-server` 现有 MCP 端点。
 - 新增面向开发者的 LOCAL 与 HTTP 工具开发指南；完善可运行的 LOCAL `echo`/`add` 多工具示例，并新增通过公开 REST API 创建和调试 HTTP 工具的客户端示例。本项不改变生产 API、数据库 Schema 或现有工具治理语义。
 - 新增动态 HTTP 工具：支持 GET/POST、嵌套 JSON Schema、本地引用、JSON Pointer 参数映射、缺失/null 默认值、PATH/QUERY/HEADER/BODY 目标及 `secret/...` Header 引用；创建与配置保存保持原子性和租户内工具名称唯一。
 - 动态 HTTP 工具统一使用扁平 `parameters` 定义：由 `id + parentId` 表达对象和数组关系，顶层 `requestLocation` 直接声明 PATH、QUERY、HEADER、BODY 或 BODY_ROOT，服务端自动生成输入 Schema；不再接收或执行 `inputSchema + parameterMappings`、`sourcePointer`、`targetPointer` 或 `nodeRole`，并通过 `BODY_ROOT` 支持 `[{"p1":"v1"}]` 一类根数组请求。
@@ -108,7 +114,7 @@
 - 审计写入失败不再被忽略，会导致请求返回 `503`；部署和告警系统应将其视为依赖不可用。
 - 生产 profile 不允许 bootstrap admin、开发 JWT fallback 或可用的固定凭据。文档和配置示例仅使用占位符。
 - 真实 Runtime 当前支持兼容单轮 SSE、持久化会话 SSE 与在线 HIGH 工具审批；不承诺手动取消、会话归档、自动摘要、写请求幂等重放、无人值守暂停或长期审批规则。
-- AgentScope 2.0.0 工具层的通用取消信号不能证明外部副作用已停止；有副作用的工具必须使用 `runId`、`toolCallId` 或业务键保证幂等。
+- AgentScope 2.0.2 工具层的通用取消信号不能证明外部副作用已停止；有副作用的工具必须使用 `runId`、`toolCallId` 或业务键保证幂等。
 - 模型 API Key 通过受权限保护的模型配置接口加密写入数据库；加密主密钥只能使用受控环境变量或 Secret Manager 注入，密钥不得进入 Git、日志、审计或 API 响应。
 
 ### 未包含范围

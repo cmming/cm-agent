@@ -17,6 +17,13 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=test"
 ```
 
+## 技术栈与依赖
+
+- 项目要求 Java 21，Spring Boot 3.5.0；真实运行时使用 AgentScope Java 2.0.2。Provider 扩展按模块引入，Server 提供 OpenAI Compatible、DashScope 与可选 Studio 集成。
+- Server 的 MCP Streamable HTTP 端点使用 MCP SDK 2.0.0。独立 `dashscope-mcp-agent` 示例使用 AgentScope Core 2.0.2，并将 MCP 客户端构件固定为 0.17.0；MCP 2.0.0 的 `McpSchema.Tool#inputSchema()` 返回类型变化与 AgentScope 客户端引用的方法签名不兼容，混用可能在运行时触发 `NoSuchMethodError`。示例还引入 AgentScope Redis 扩展 2.0.2 演示 AgentState；这不表示 Server 使用 Redis 持久化。
+- Skill ZIP 解析使用 `commons-compress` 1.27.1，HTTP 工具参数校验使用 `com.networknt:json-schema-validator` 2.0.0。
+- 测试依赖管理需按最终解析树核对：根 POM 声明导入 Testcontainers BOM 2.0.5，但当前有效依赖树解析到 Testcontainers 1.21.0（Spring Boot BOM 的管理值）。修改或升级测试依赖前，先运行 `mvn -pl cm-agent-server -am dependency:tree -Dverbose -Dincludes=org.testcontainers:*` 确认实际版本。
+
 ## 导出指定提交文件
 
 需要将某个提交的文件以覆盖方式应用到其他工作区时，可执行：

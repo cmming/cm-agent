@@ -38,7 +38,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(classes = CmAgentServerApplication.class)
 @AutoConfigureMockMvc
 @ActiveProfiles("production")
-@TestPropertySource(properties = "cm-agent.security.jwt-secret=cm-agent-console-smoke-jwt-secret-with-32-bytes")
+@TestPropertySource(properties = {
+        "cm-agent.security.jwt-secret=cm-agent-console-smoke-jwt-secret-with-32-bytes",
+        "cm-agent.model-credentials.encryption-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+})
 @Testcontainers
 @Import(ConsoleSmokeTest.ProductionRuntimeConfig.class)
 class ConsoleSmokeTest {
