@@ -1,0 +1,4 @@
+interface:
+  display_name: "需求工作包"
+  short_description: "从一个需求生成中文待办清单、执行提示词及四份项目过程文档，统一验收与证据"
+  default_prompt: "使用 $requirement-workpack，根据我的需求和当前项目生成六份一致的需求工作包文档。"

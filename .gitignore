@@ -10,5 +10,8 @@ logs/
 node_modules/
 dist/
 coverage/
-.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/requirement-workpack/
 .playwright-cli/
