@@ -30,6 +30,8 @@ public class ApprovalExpiryScanner {
     private final ErrorDiagnosticLogger diagnostics;
     /** 服务端时间来源，测试可替换为固定时钟。 */
     private final Clock clock;
+    /** 一次遍历固定截止时间，避免持续到期的新候选使故障项永久得不到重试。 */
+    private Instant sweepCutoff;
     /** 当前遍历的到期时间游标；重启归零并重读数据库，非领取或执行租约。 */
     private Instant afterTime;
     /** 当前遍历的审批标识游标；失败项也前移，避免单项故障阻塞其他租户。 */
@@ -59,7 +61,8 @@ public class ApprovalExpiryScanner {
     @Scheduled(fixedDelayString = "${cm-agent.approval-expiry.interval:30s}")
     public synchronized void scan() {
         if (!properties.isEnabled()) return;
-        Instant cutoff = clock.instant();
+        if (sweepCutoff == null) sweepCutoff = clock.instant();
+        Instant cutoff = sweepCutoff;
         long started = System.nanoTime();
         java.util.List<ToolApprovalRequest> candidates;
         try {
@@ -72,6 +75,7 @@ public class ApprovalExpiryScanner {
         if (candidates.isEmpty()) {
             afterTime = null;
             afterId = null;
+            sweepCutoff = null;
             return;
         }
         for (ToolApprovalRequest candidate : candidates) {

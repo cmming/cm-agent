@@ -20,6 +20,40 @@ class ApprovalExpiryScannerTest {
     private static final Instant NOW = Instant.parse("2026-09-30T01:00:00Z");
 
     @Test
+    void 持续新增到期候选不能饿死已经恢复的失败项() {
+        var repository = new InMemoryToolApprovalRepository();
+        var failed = request(ToolApprovalScope.RUN, UUID.randomUUID(), UUID.randomUUID(), NOW);
+        repository.save(failed);
+        var service = mock(ToolApprovalService.class);
+        var firstFailure = new java.util.concurrent.atomic.AtomicBoolean(true);
+        when(service.expireFromSystem(any(), any())).thenAnswer(invocation -> {
+            ToolApprovalRequest candidate = invocation.getArgument(0);
+            Instant cutoff = invocation.getArgument(1);
+            if (candidate.id().equals(failed.id()) && firstFailure.getAndSet(false)) {
+                throw new IllegalStateException("模拟一次可恢复的审计故障");
+            }
+            return repository.expirePending(candidate, "system:approval-expiry", cutoff);
+        });
+        var time = new java.util.concurrent.atomic.AtomicReference<>(NOW);
+        var clock = mock(Clock.class);
+        when(clock.instant()).thenAnswer(ignored -> time.get());
+        var properties = new ApprovalExpiryProperties();
+        properties.setBatchSize(1);
+        var scanner = new ApprovalExpiryScanner(repository, service, properties,
+                mock(ErrorDiagnosticLogger.class), clock);
+        scanner.scan();
+        for (int second = 1; second <= 4; second++) {
+            time.set(NOW.plusSeconds(second));
+            repository.save(request(ToolApprovalScope.RUN, UUID.randomUUID(), UUID.randomUUID(), time.get()));
+            scanner.scan();
+        }
+        assertThat(repository.findByRun(failed.tenantId(), failed.agentId(),
+                failed.runId(), failed.id()).orElseThrow().status()).isEqualTo(ToolApprovalStatus.EXPIRED);
+        verify(service).expireFromSystem(failed, NOW);
+        verify(service).expireFromSystem(failed, NOW.plusSeconds(2));
+    }
+
+    @Test
     void 真实内存技能仓储通过工作单元同步收口等待试运行() {
         var approvals = new InMemoryToolApprovalRepository();
         var runs = new InMemoryPlatformStore();
