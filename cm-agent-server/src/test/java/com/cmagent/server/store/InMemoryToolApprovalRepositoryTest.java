@@ -61,15 +61,15 @@ class InMemoryToolApprovalRepositoryTest {
         assertThat(repository.decide(
                 UUID.randomUUID(), AGENT_ID, CONVERSATION_ID, request.id(), 0,
                 ToolApprovalStatus.APPROVED, Map.of(request.items().getFirst().id(), ToolApprovalDecision.APPROVE),
-                "principal", "审批人", Instant.now())).isFalse();
+                "principal", "审批人", request.createdAt().plusSeconds(1))).isFalse();
         assertThat(repository.decide(
                 TENANT_ID, AGENT_ID, CONVERSATION_ID, request.id(), 0,
                 ToolApprovalStatus.APPROVED, Map.of(request.items().getFirst().id(), ToolApprovalDecision.APPROVE),
-                "principal", "审批人", Instant.now())).isTrue();
+                "principal", "审批人", request.createdAt().plusSeconds(1))).isTrue();
         assertThat(repository.decide(
                 TENANT_ID, AGENT_ID, CONVERSATION_ID, request.id(), 0,
                 ToolApprovalStatus.APPROVED, Map.of(request.items().getFirst().id(), ToolApprovalDecision.APPROVE),
-                "principal", "审批人", Instant.now())).isFalse();
+                "principal", "审批人", request.createdAt().plusSeconds(1))).isFalse();
 
         ToolApprovalRequest decided = repository.find(TENANT_ID, AGENT_ID, CONVERSATION_ID, request.id()).orElseThrow();
         assertThat(decided.status()).isEqualTo(ToolApprovalStatus.APPROVED);

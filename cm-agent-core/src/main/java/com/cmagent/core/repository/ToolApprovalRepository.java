@@ -19,6 +19,20 @@ import java.util.UUID;
  */
 public interface ToolApprovalRepository {
 
+    /**
+     * 仅供服务端系统任务跨租户发现过期 PENDING，覆盖会话及独立 TEST。
+     * 不授予执行工具权限；更新必须使用返回资源的可信归属，禁止通过 Controller 暴露。
+     * 按到期时间和 UUID 规范字符串升序排列，严格在游标之后且不超过上限。
+     */
+    List<ToolApprovalRequest> findExpiredPending(com.cmagent.core.domain.ApprovalExpiryPage page);
+
+    /**
+     * 校验仓储快照完整归属、版本、PENDING 及截止时间后原子过期。
+     * false 表示竞争失败或未到期，调用方不得收口 Run、删除检查点或写成功审计。
+     * 快照只能来自仓储，不接受客户端构造的系统上下文。
+     */
+    boolean expirePending(ToolApprovalRequest snapshot, String actor, Instant cutoff);
+
     /** 保存新审批请求及其全部明细。 */
     ToolApprovalRequest save(ToolApprovalRequest request);
 

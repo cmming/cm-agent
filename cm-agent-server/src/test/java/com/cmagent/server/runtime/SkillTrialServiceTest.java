@@ -132,6 +132,16 @@ class SkillTrialServiceTest {
     }
 
     @Test
+    void 主动过期后迟到等待结果不能重新打开试运行() {
+        var failed = new SkillTrial(run, tenant, skill, version, agent, 0, SkillTrialStatus.FAILED,
+                false, principal.principalId(), NOW, NOW);
+        when(trials.find(tenant, run)).thenReturn(Optional.of(failed));
+        assertThat(service.finalizeResult(principal, run, new AgentRunResult(run, RunStatus.WAITING_APPROVAL,
+                "", List.of(), NOW, null, ""))).isSameAs(failed);
+        org.mockito.Mockito.verify(trials, org.mockito.Mockito.never()).update(any(), any());
+    }
+
+    @Test
     void 结果预览通过可信租户和Agent读取TEST运行明细() {
         SkillTrial trial = runningTrial();
         RunRecord runRecord = new RunRecord(run, tenant, agent, principal.principalId(), RunKind.TEST,

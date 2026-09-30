@@ -90,6 +90,7 @@ class ToolApprovalServiceTest {
                 null, null, null, List.of(item)));
         RunRecord waiting = RunRecord.create(runId, tenant, agent, "initiator", "输入", started).waitForApproval();
         when(runs.findByTenantAndAgentAndId(tenant, agent, runId)).thenReturn(java.util.Optional.of(waiting));
+        when(runs.expireWaitingApproval(eq(waiting), any())).thenReturn(true);
 
         assertThatThrownBy(() -> service.validateForSubmission(principal, agent, conversation, approvalId, 0,
                 List.of(new ToolApprovalService.ItemDecision(item.id(), ToolApprovalDecision.APPROVE))))
@@ -97,7 +98,7 @@ class ToolApprovalServiceTest {
 
         assertThat(repository.find(tenant, agent, conversation, approvalId).orElseThrow().status()).isEqualTo(ToolApprovalStatus.EXPIRED);
         verify(checkpoints).deleteSession(tenant, tenant + ":initiator", runId.toString());
-        verify(persistence).complete(eq(principal), eq(waiting), argThat(result -> result.status() == RunStatus.DENIED), eq(List.of()));
+        verify(runs).expireWaitingApproval(eq(waiting), any());
         verifyNoInteractions(execution);
     }
 
@@ -113,6 +114,7 @@ class ToolApprovalServiceTest {
                 started, started, null, null, null, List.of(item)));
         RunRecord waiting = RunRecord.create(runId, tenant, agent, "initiator", RunKind.TEST, "输入", started).waitForApproval();
         when(runs.findByTenantAndAgentAndId(tenant, agent, runId)).thenReturn(java.util.Optional.of(waiting));
+        when(runs.expireWaitingApproval(eq(waiting), any())).thenReturn(true);
 
         assertThatThrownBy(() -> service.decideAndResumeRun(principal, agent, runId, approvalId, 0,
                 List.of(new ToolApprovalService.ItemDecision(item.id(), ToolApprovalDecision.APPROVE)),
@@ -121,9 +123,9 @@ class ToolApprovalServiceTest {
 
         assertThat(repository.findByRun(tenant, agent, runId, approvalId).orElseThrow().status()).isEqualTo(ToolApprovalStatus.EXPIRED);
         verify(checkpoints).deleteSession(tenant, tenant + ":initiator", runId.toString());
-        verify(persistence).complete(eq(principal), eq(waiting), argThat(result -> result.status() == RunStatus.DENIED), eq(List.of()));
+        verify(runs).expireWaitingApproval(eq(waiting), any());
         verify(audit).append(tenant, "initiator", "TOOL_APPROVAL_EXPIRE", "TOOL_APPROVAL", approvalId.toString(),
-                "EXPIRED", "试运行高风险工具审批请求已过期");
+                "EXPIRED", "高风险工具审批请求已过期");
         verifyNoInteractions(execution);
     }
 

@@ -88,7 +88,7 @@ cm-agent:
 
 `CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY` 是 Base64 编码的 256 位 AES 主密钥，不是模型 API Key，必须由部署环境或密钥管理系统提供。模型 API Key 只以 AES/GCM 密文写入 `model_configs`，创建时必填、更新时可轮换，所有读取接口均不会回显。生产也可以提供自定义 `ModelCredentialProvider` 对接外部密钥管理系统。
 
-`permission-enabled` 默认关闭，开启后 LOW/MEDIUM 工具继续执行，HIGH 工具在真正进入治理网关前暂停并在聊天页显示逐调用审批卡片。审批人必须是本轮发起人且同时拥有 `agent:run` 和 `agent:approve`；决定绑定当前 `toolCallId`、原工具 `toolId` 与输入哈希，恢复时仍会重新执行 ToolGrant、租户和工具状态校验。检查点使用与模型凭据相同的外部 AES 主密钥进行 AES/GCM 加密，`approval-ttl` 默认 15 分钟、最大 24 小时。当前只开放在线会话审批，不提供无人值守暂停、长期记住规则或独立审批中心；进程中断后的自动接管和主动过期扫描尚未实现，上线前须评估[运维限制](docs/operations.md)。
+`permission-enabled` 默认关闭，开启后 LOW/MEDIUM 工具继续执行，HIGH 工具在真正进入治理网关前暂停并在聊天页显示逐调用审批卡片。审批人必须是本轮发起人且同时拥有 `agent:run` 和 `agent:approve`；决定绑定当前 `toolCallId`、原工具 `toolId` 与输入哈希，恢复时仍会重新执行 ToolGrant、租户和工具状态校验。检查点使用与模型凭据相同的外部 AES 主密钥进行 AES/GCM 加密，`approval-ttl` 默认 15 分钟、最大 24 小时。会话和独立 TEST 的过期审批由系统主动扫描，原子标记 EXPIRED、将仍等待的 Run 收口为 DENIED 并清除该 Run 检查点；关联 TEST 状态同步为 FAILED。扫描默认开启，每批结束后间隔 30 秒、每批最多 50 项，可通过 `cm-agent.approval-expiry` 配置，见[配置说明](docs/configuration.md)。系统过期不执行模型或工具。进程中断后的已批准运行不自动接管，跨实例执行租约、长期授权和独立审批中心仍未提供，上线前须评估[运维限制](docs/operations.md)。
 
 聊天页的人工确认需要先核对参数、逐项选择，再显式提交。多项的“全部选为允许/拒绝”只改变选择，按钮下方汇总会显示允许与拒绝数量；未选完不能提交。提交后区分“正在提交决定”和“决定已接受”，批准不等于工具执行成功。只读或网络结果不确定时使用“刷新审批状态”重新查询指定请求，不会再次发起决定。当前页面可短暂保留同一审批快照的选择，刷新页面后不保留，也不形成长期授权。
 

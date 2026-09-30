@@ -23,6 +23,48 @@ import java.util.UUID;
 
 /** 使用短事务保存审批请求、明细及条件决定，所有 SQL 都包含 tenant 边界。 */
 public final class JdbcToolApprovalRepository implements ToolApprovalRepository {
+    @Override
+    public List<ToolApprovalRequest> findExpiredPending(com.cmagent.core.domain.ApprovalExpiryPage page) {
+        // 系统边界内跨租户发现，V14 的 status/expires_at/id 索引支持有界游标扫描。
+        String cursor = page.afterId() == null ? "" : """
+                AND (expires_at > :afterTime OR (expires_at = :afterTime AND id > :afterId))
+                """;
+        var query = jdbcClient.sql("""
+                SELECT * FROM tool_approval_requests
+                WHERE status = 'PENDING' AND expires_at <= :cutoff
+                """ + cursor + " ORDER BY expires_at, id LIMIT :limit")
+                .param("cutoff", Timestamp.from(page.cutoff())).param("limit", page.limit());
+        if (page.afterId() != null) {
+            query = query.param("afterTime", Timestamp.from(page.afterExpiresAt()))
+                    .param("afterId", page.afterId().toString());
+        }
+        return query.query((rs, row) -> mapRequest(rs, items(UUID.fromString(rs.getString("tenant_id")),
+                UUID.fromString(rs.getString("id"))))).list();
+    }
+
+    @Override
+    public boolean expirePending(ToolApprovalRequest snapshot, String actor, Instant cutoff) {
+        // 审批行锁与决定竞争，输家没有资格清理运行；发现候选不会锁住整个批次。
+        String scopeCondition = snapshot.scope() == com.cmagent.core.domain.ToolApprovalScope.RUN
+                ? " AND conversation_id IS NULL" : " AND conversation_id = :conversationId";
+        var query = jdbcClient.sql("""
+                UPDATE tool_approval_requests
+                SET status = 'EXPIRED', version_no = version_no + 1, decided_by = :actor,
+                    decided_by_display_name = :actor, decided_at = :cutoff, updated_at = :cutoff
+                WHERE tenant_id = :tenantId AND agent_id = :agentId AND run_id = :runId AND id = :id
+                  AND approval_scope = :scope AND status = 'PENDING' AND version_no = :version
+                  AND expires_at = :expiresAt AND expires_at <= :cutoff
+                """ + scopeCondition)
+                .param("actor", actor).param("cutoff", Timestamp.from(cutoff))
+                .param("tenantId", snapshot.tenantId().toString()).param("agentId", snapshot.agentId().toString())
+                .param("runId", snapshot.runId().toString()).param("id", snapshot.id().toString())
+                .param("scope", snapshot.scope().name()).param("version", snapshot.version())
+                .param("expiresAt", Timestamp.from(snapshot.expiresAt()));
+        if (snapshot.conversationId() != null) {
+            query = query.param("conversationId", snapshot.conversationId().toString());
+        }
+        return query.update() == 1;
+    }
     private final JdbcClient jdbcClient;
     private final TransactionTemplate transactionTemplate;
 
@@ -165,6 +207,7 @@ public final class JdbcToolApprovalRepository implements ToolApprovalRepository 
                                 decided_by_display_name = :displayName, decided_at = :decidedAt, updated_at = :decidedAt
                             WHERE tenant_id = :tenantId AND agent_id = :agentId
                               AND conversation_id = :conversationId AND id = :approvalId
+                              AND approval_scope = 'CONVERSATION' AND expires_at > :decidedAt
                               AND status = 'PENDING' AND version_no = :expectedVersion
                             """)
                     .param("status", status.name()).param("decidedBy", decidedBy).param("displayName", decidedByDisplayName)
@@ -281,6 +324,7 @@ public final class JdbcToolApprovalRepository implements ToolApprovalRepository 
                                 decided_by_display_name = :displayName, decided_at = :decidedAt, updated_at = :decidedAt
                             WHERE tenant_id = :tenantId AND agent_id = :agentId
                               AND run_id = :runId AND id = :approvalId
+                              AND approval_scope = 'RUN' AND expires_at > :decidedAt
                               AND status = 'PENDING' AND version_no = :expectedVersion
                             """)
                     .param("status", status.name()).param("decidedBy", decidedBy)

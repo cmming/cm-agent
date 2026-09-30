@@ -42,6 +42,14 @@
         })[status] || "试运行状态未知";
     }
 
+    // 恢复展示只读取权威状态；批准或网络断线均不能触发再次提交或自动执行工具。
+    async function loadTrialState(request, skillId, runId) {
+        const base = `/api/skills/${encodeURIComponent(skillId)}/trials/${encodeURIComponent(runId)}`;
+        const trial = await request(base);
+        const approval = await request(`${base}/approvals/current`);
+        return {trial, approval};
+    }
+
     function createSkillPage({api, getSessionEpoch, getPermissions, document}) {
         const scope = createRequestScope(getSessionEpoch);
         let selectedId = "";
@@ -236,47 +244,85 @@
                     const approvalPanel = document.createElement("div"); approvalPanel.className = "skill-trial-approval";
                     const trialStorageKey = `cm-agent.skill-trial.${id}`;
                     const trialStorage = typeof window !== "undefined" ? window.sessionStorage : null;
+                    let currentTrialRunId = "";
+                    let approvalBusy = false;
+                    let trialStateRevision = 0;
+                    const refreshTrial = document.createElement("button"); refreshTrial.type = "button"; refreshTrial.className = "button ghost"; refreshTrial.textContent = "刷新试运行状态"; refreshTrial.hidden = true;
                     const renderApproval = (approval) => {
                         approvalPanel.replaceChildren();
                         if (!approval) return;
-                        approvalPanel.append(text("h5", "高风险工具审批"), text("p", `试运行暂停，审批将在 ${new Date(approval.expiresAt).toLocaleString()} 前有效。`, "field-help"));
+                        const ui = globalThis.CmAgentConsoleCore.approvalUiState(approval);
+                        approvalPanel.append(text("h5", `高风险工具审批 · ${ui.label}`), text("p", ui.message, "field-help"));
+                        if (approval.status === "PENDING") approvalPanel.append(text("p", `审批将在 ${new Date(approval.expiresAt).toLocaleString()} 前有效。`, "field-help"));
                         const decisions = [];
                         (approval.items || []).forEach((item) => {
                             const row = document.createElement("label"); row.className = "skill-approval-item";
                             const select = document.createElement("select"); select.className = "inline-select";
+                            select.disabled = !ui.editable;
                             const placeholder = document.createElement("option"); placeholder.value = ""; placeholder.textContent = "请选择允许或拒绝";
                             const allow = document.createElement("option"); allow.value = "APPROVE"; allow.textContent = "允许";
                             const deny = document.createElement("option"); deny.value = "DENY"; deny.textContent = "拒绝";
                             select.append(placeholder, allow, deny);
+                            select.value = item.decision || "";
                             row.append(text("span", `${item.toolName || "工具"}：${item.inputSummary || "无参数摘要"}`), select);
                             decisions.push({itemId: item.itemId, select}); approvalPanel.append(row);
                         });
-                        if (!approval.canDecide) {
-                            approvalPanel.append(text("p", "当前账号只能查看审批，需由试运行发起人完成决定。", "field-help"));
-                            return;
-                        }
+                        if (!ui.editable) return;
                         const submit = document.createElement("button"); submit.type = "button"; submit.className = "button primary"; submit.textContent = "提交审批决定";
                         const approvalResult = document.createElement("p"); approvalResult.className = "form-status"; approvalResult.setAttribute("aria-live", "polite");
                         submit.addEventListener("click", async () => {
+                            if (approvalBusy || !scope.isCurrent(ticket) || !globalThis.CmAgentConsoleCore.approvalUiState(approval).editable) return;
                             const items = decisions.map((entry) => ({itemId: entry.itemId, decision: entry.select.value}));
                             if (items.some((entry) => !entry.decision)) { approvalResult.textContent = "请为全部工具调用选择允许或拒绝。"; approvalResult.dataset.tone = "error"; return; }
-                            submit.disabled = true; approvalResult.textContent = "正在恢复试运行…";
+                            approvalBusy = true; submit.disabled = true; refreshTrial.disabled = true;
+                            trialStateRevision += 1;
+                            decisions.forEach((entry) => { entry.select.disabled = true; });
+                            approvalResult.textContent = "正在提交决定；批准不代表工具执行成功，请勿重复提交。";
                             try {
                                 const resumed = await api.request(`/api/skills/${encodeURIComponent(id)}/trials/${encodeURIComponent(approval.runId)}/approvals/${encodeURIComponent(approval.approvalId)}/decisions`, {method: "POST", body: JSON.stringify({expectedVersion: approval.version, items})});
+                                if (!scope.isCurrent(ticket)) return;
                                 const updated = resumed.trial;
                                 renderTrialPreview(updated);
                                 result.textContent = updated.qualifiesRelease ? `试运行已通过（Run ${updated.runId.slice(0, 8)}），可以发布。` : `试运行结果：${updated.status}。`;
                                 result.dataset.tone = updated.qualifiesRelease ? "success" : "neutral";
                                 renderApproval(resumed.nextApproval);
-                            } catch (error) { approvalResult.textContent = error.message; approvalResult.dataset.tone = "error"; } finally { submit.disabled = false; }
+                            } catch (error) {
+                                if (!scope.isCurrent(ticket)) return;
+                                // POST 失败可能只是响应丢失；先删除旧操作入口，再以 GET 确认结果，禁止直接重放。
+                                renderApproval(null);
+                                result.textContent = error.message; result.dataset.tone = "error";
+                                try {
+                                    await refreshCurrentTrial();
+                                    if (scope.isCurrent(ticket)) { result.textContent = `${error.message} ${result.textContent}`; result.dataset.tone = "error"; }
+                                }
+                                catch (refreshError) { if (scope.isCurrent(ticket)) result.textContent = `${error.message} ${refreshError.message} 尚未确认结果，请刷新状态后再操作。`; }
+                            } finally { approvalBusy = false; refreshTrial.disabled = false; }
                         });
                         approvalPanel.append(submit, approvalResult);
                     };
                     const loadCurrentApproval = async (tested) => {
+                        const revision = ++trialStateRevision;
                         const approval = await api.request(`/api/skills/${encodeURIComponent(id)}/trials/${encodeURIComponent(tested.runId)}/approvals/current`);
+                        if (!scope.isCurrent(ticket) || revision !== trialStateRevision) return;
                         renderApproval(approval);
                     };
-                    trial.append(agentLabel, agentHelp, inputLabel, run, result, preview, approvalPanel);
+                    const refreshCurrentTrial = async () => {
+                        const revision = ++trialStateRevision;
+                        const loaded = await loadTrialState((url) => api.request(url), id, currentTrialRunId);
+                        if (!scope.isCurrent(ticket) || revision !== trialStateRevision) return;
+                        renderTrialPreview(loaded.trial); renderApproval(loaded.approval);
+                        result.textContent = `试运行结果：${trialStatusLabel(loaded.trial.status)}。`;
+                        result.dataset.tone = loaded.trial.qualifiesRelease ? "success" : "neutral";
+                        if (trialStorage && !["WAITING_APPROVAL", "RUNNING"].includes(loaded.trial.status)) trialStorage.removeItem(trialStorageKey);
+                    };
+                    refreshTrial.addEventListener("click", async () => {
+                        if (approvalBusy || !currentTrialRunId || !scope.isCurrent(ticket)) return;
+                        approvalBusy = true; refreshTrial.disabled = true; renderApproval(null);
+                        try { await refreshCurrentTrial(); }
+                        catch (error) { if (scope.isCurrent(ticket)) { result.textContent = `${error.message} 尚未确认结果，请刷新状态后再操作。`; result.dataset.tone = "error"; } }
+                        finally { approvalBusy = false; refreshTrial.disabled = false; }
+                    });
+                    trial.append(agentLabel, agentHelp, inputLabel, run, refreshTrial, result, preview, approvalPanel);
                     const permissions = getPermissions();
                     const loadTrialAgents = async () => {
                         if (!permissions.includes("agent:read")) {
@@ -322,9 +368,12 @@
                     trial.addEventListener("submit", async (event) => {
                         event.preventDefault();
                         if (!agentSelect.value) { agentHelp.textContent = "请选择一个已启用的 Agent。"; agentHelp.dataset.tone = "error"; return; }
+                        trialStateRevision += 1; renderApproval(null);
                         run.disabled = true; result.textContent = "正在执行 TEST Run…"; preview.replaceChildren();
                         try {
                             const tested = await api.request(`/api/skills/${encodeURIComponent(id)}/trials`, {method: "POST", body: JSON.stringify({versionId: summary.candidateVersionId, agentId: agentSelect.value, input: input.value.trim()})});
+                            if (!scope.isCurrent(ticket)) return;
+                            currentTrialRunId = tested.runId; refreshTrial.hidden = false;
                             renderTrialPreview(tested);
                             result.textContent = tested.qualifiesRelease ? `试运行已通过（Run ${tested.runId.slice(0, 8)}），可以发布。` : `试运行结果：${tested.status}。目标技能必须实际读取后才能发布。`;
                             result.dataset.tone = tested.qualifiesRelease ? "success" : "neutral";
@@ -348,14 +397,12 @@
                     if (trialStorage) {
                         const previousRunId = trialStorage.getItem(trialStorageKey);
                         if (previousRunId) {
-                            api.request(`/api/skills/${encodeURIComponent(id)}/trials/${encodeURIComponent(previousRunId)}`)
-                                .then((previous) => {
-                                    if (!scope.isCurrent(ticket)) return;
-                                    renderTrialPreview(previous);
-                                    if (previous.status === "WAITING_APPROVAL") return loadCurrentApproval(previous);
-                                    trialStorage.removeItem(trialStorageKey);
-                                })
-                                .catch(() => trialStorage.removeItem(trialStorageKey));
+                            currentTrialRunId = previousRunId; refreshTrial.hidden = false;
+                            refreshCurrentTrial().catch((error) => {
+                                if (!scope.isCurrent(ticket)) return;
+                                // 查询失败保留 Run 标识，刷新与断线恢复只重查，不重复发起 TEST 或旧决定。
+                                result.textContent = `${error.message} 请刷新试运行状态确认结果。`; result.dataset.tone = "error";
+                            });
                         }
                     }
                     release.append(trial);
@@ -412,5 +459,5 @@
     function preflightStatus(response) {
         return response?.check?.status || "未知";
     }
-    return {canPublishTrial, createRequestScope, createSkillPage, eligibleTrialAgents, preflightStatus, runStatusLabel, trialStatusLabel};
+    return {canPublishTrial, createRequestScope, createSkillPage, eligibleTrialAgents, loadTrialState, preflightStatus, runStatusLabel, trialStatusLabel};
 });

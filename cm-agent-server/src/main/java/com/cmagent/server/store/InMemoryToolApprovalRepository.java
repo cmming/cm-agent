@@ -20,6 +20,39 @@ public final class InMemoryToolApprovalRepository implements ToolApprovalReposit
     private final Map<UUID, ToolApprovalRequest> approvals = new ConcurrentHashMap<>();
 
     @Override
+    public List<ToolApprovalRequest> findExpiredPending(com.cmagent.core.domain.ApprovalExpiryPage page) {
+        return approvals.values().stream()
+                .filter(request -> request.status() == ToolApprovalStatus.PENDING && request.isExpired(page.cutoff()))
+                .filter(request -> page.afterId() == null || request.expiresAt().isAfter(page.afterExpiresAt())
+                        || (request.expiresAt().equals(page.afterExpiresAt())
+                        && request.id().toString().compareTo(page.afterId().toString()) > 0))
+                .sorted(Comparator.comparing(ToolApprovalRequest::expiresAt)
+                        .thenComparing(request -> request.id().toString()))
+                .limit(page.limit()).toList();
+    }
+
+    @Override
+    public boolean expirePending(ToolApprovalRequest snapshot, String actor, Instant cutoff) {
+        boolean[] changed = {false};
+        // 单审批行与决定互斥；memory 不具备跨仓储事务回滚能力。
+        approvals.computeIfPresent(snapshot.id(), (id, current) -> {
+            if (current.status() != ToolApprovalStatus.PENDING || current.version() != snapshot.version()
+                    || !current.tenantId().equals(snapshot.tenantId()) || !current.agentId().equals(snapshot.agentId())
+                    || current.scope() != snapshot.scope() || !current.runId().equals(snapshot.runId())
+                    || !java.util.Objects.equals(current.conversationId(), snapshot.conversationId())
+                    || !current.expiresAt().equals(snapshot.expiresAt()) || !current.isExpired(cutoff)) {
+                return current;
+            }
+            changed[0] = true;
+            return new ToolApprovalRequest(current.id(), current.tenantId(), current.agentId(), current.scope(),
+                    current.conversationId(), current.runId(), current.requestedBy(), current.requestedByDisplayName(),
+                    ToolApprovalStatus.EXPIRED, current.expiresAt(), current.version() + 1, current.checkpointRef(),
+                    current.createdAt(), cutoff, actor, actor, cutoff, current.items());
+        });
+        return changed[0];
+    }
+
+    @Override
     public ToolApprovalRequest save(ToolApprovalRequest request) {
         if (approvals.putIfAbsent(request.id(), request) != null) {
             throw new IllegalStateException("审批请求已存在");
@@ -98,7 +131,8 @@ public final class InMemoryToolApprovalRepository implements ToolApprovalReposit
         approvals.computeIfPresent(approvalId, (id, current) -> {
             if (!tenantId.equals(current.tenantId()) || !agentId.equals(current.agentId())
                     || !conversationId.equals(current.conversationId())
-                    || current.status() != ToolApprovalStatus.PENDING || current.version() != expectedVersion) {
+                    || current.status() != ToolApprovalStatus.PENDING || current.version() != expectedVersion
+                    || current.isExpired(decidedAt)) {
                 return current;
             }
             if (current.items().size() != decisions.size()
@@ -127,6 +161,7 @@ public final class InMemoryToolApprovalRepository implements ToolApprovalReposit
                     || !runId.equals(current.runId()) || current.scope() != ToolApprovalScope.RUN
                     || current.status() != ToolApprovalStatus.PENDING || current.version() != expectedVersion
                     || current.items().size() != decisions.size()
+                    || current.isExpired(decidedAt)
                     || current.items().stream().anyMatch(item -> !decisions.containsKey(item.id()))) {
                 return current;
             }

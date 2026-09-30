@@ -3493,6 +3493,8 @@
         outputSection.append(output);
         const dl = definitionList([
             ["错误", run.errorMessage],
+            ["错误码", run.errorCode],
+            ["错误编号", run.errorId],
             ["执行主体", run.principalId],
             ["开始时间", core.formatDateTime(run.startedAt)],
             ["结束时间", core.formatDateTime(run.finishedAt)]

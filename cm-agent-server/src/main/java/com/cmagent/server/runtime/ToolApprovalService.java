@@ -22,6 +22,9 @@ import com.cmagent.core.repository.ConversationMessageRepository;
 import com.cmagent.core.repository.RuntimeCheckpointRepository;
 import com.cmagent.core.repository.RunRepository;
 import com.cmagent.core.repository.ToolApprovalRepository;
+import com.cmagent.core.repository.SkillTrialRepository;
+import com.cmagent.core.domain.SkillTrial;
+import com.cmagent.core.domain.SkillTrialStatus;
 import com.cmagent.core.runtime.RuntimeApprovalDecisions;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.audit.AuditAppender;
@@ -61,6 +64,8 @@ public class ToolApprovalService {
     private final AgentScopeRuntimeProperties properties;
     private final Clock clock;
     private final TransactionTemplate transactionTemplate;
+    /** 独立 TEST 的治理状态需与过期 Run 一起收口，不能通过页面查询补写。 */
+    private final SkillTrialRepository trialRepository;
 
     /**
      * 创建审批编排服务。
@@ -94,6 +99,19 @@ public class ToolApprovalService {
             AgentScopeRuntimeProperties properties,
             @Nullable TransactionTemplate transactionTemplate
     ) {
+        this(approvalRepository, runRepository, messageRepository, checkpointRepository, runPersistenceService,
+                runExecutionService, permissionEvaluator, auditAppender, redactor, properties, transactionTemplate, null);
+    }
+
+    /** 装配生产审批链路；TEST 状态仓储参与同一 JDBC 事务，旧构造器仅兼容既有独立单元测试。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    public ToolApprovalService(
+            ToolApprovalRepository approvalRepository, RunRepository runRepository,
+            ConversationMessageRepository messageRepository, RuntimeCheckpointRepository checkpointRepository,
+            RunPersistenceService runPersistenceService, RunExecutionService runExecutionService,
+            PermissionEvaluator permissionEvaluator, AuditAppender auditAppender, SensitiveDataRedactor redactor,
+            AgentScopeRuntimeProperties properties, @Nullable TransactionTemplate transactionTemplate,
+            @Nullable SkillTrialRepository trialRepository) {
         this.approvalRepository = approvalRepository;
         this.runRepository = runRepository;
         this.messageRepository = messageRepository;
@@ -106,6 +124,7 @@ public class ToolApprovalService {
         this.properties = properties;
         this.clock = Clock.systemUTC();
         this.transactionTemplate = transactionTemplate;
+        this.trialRepository = trialRepository;
     }
 
     /**
@@ -472,24 +491,70 @@ public class ToolApprovalService {
 
     /** 原子标记审批过期，并在本实例赢得更新时收口 Run 和加密检查点。 */
     private void expire(PrincipalRef principal, ToolApprovalRequest request, Instant now) {
-        inTransaction(() -> {
-            if (!approvalRepository.expire(
-                    principal.tenantId(), request.agentId(), request.conversationId(), request.id(),
-                    request.version(), principal.principalId(), now)) {
+        expirePending(principal, request, now);
+    }
+
+    /**
+     * 仅供同包系统调度使用，不读取或借用发起人的旧权限，不触发 Runtime。
+     * tenant 来源于仓储候选；固定主体没有工具执行权限，不能由 HTTP 请求提供。
+     */
+    boolean expireFromSystem(ToolApprovalRequest request, Instant cutoff) {
+        return expirePending(new PrincipalRef(request.tenantId(), "system:approval-expiry", "审批过期系统任务", Set.of()),
+                request, cutoff);
+    }
+
+    /** JDBC 中审批、等待 Run、检查点和严格审计共用短事务，失败直接回滚，不做运行失败补偿。 */
+    private boolean expirePending(PrincipalRef actor, ToolApprovalRequest request, Instant cutoff) {
+        Supplier<Boolean> operation = () -> {
+            if (!actor.tenantId().equals(request.tenantId())) {
+                throw new IllegalArgumentException("审批归属与可信上下文不一致");
+            }
+            if (!approvalRepository.expirePending(request, actor.principalId(), cutoff)) {
                 return false;
             }
-            runRepository.findByTenantAndAgentAndId(principal.tenantId(), request.agentId(), request.runId())
+            runRepository.findByTenantAndAgentAndId(request.tenantId(), request.agentId(), request.runId())
                     .filter(run -> run.status() == RunStatus.WAITING_APPROVAL)
                     .ifPresent(run -> {
-                        AgentRunResult expired = new AgentRunResult(
-                                run.id(), RunStatus.DENIED, "", List.of(), run.startedAt(), now, "工具审批已过期");
-                        runPersistenceService.complete(principal, run, expired, List.of());
-                        deleteCheckpoint(principal, run);
+                        if (runRepository.expireWaitingApproval(run, cutoff)) {
+                            // 状态槽属于运行发起人，系统审计身份不能替换状态槽中的 principalId。
+                            deleteCheckpoint(actor, run);
+                            expireTrial(actor, request, run, cutoff);
+                            auditAppender.append(request.tenantId(), actor.principalId(), "AGENT_RUN", "RUN",
+                                    run.id().toString(), "DENIED", "工具审批已过期，等待运行已结束");
+                        }
                     });
-            auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_EXPIRE",
-                    "TOOL_APPROVAL", request.id().toString(), "EXPIRED", "高风险工具审批请求已过期");
+            auditAppender.append(request.tenantId(), actor.principalId(), "TOOL_APPROVAL_EXPIRE", "TOOL_APPROVAL",
+                    request.id().toString(), "EXPIRED", "高风险工具审批请求已过期");
             return true;
-        });
+        };
+        if (transactionTemplate == null) {
+            return operation.get();
+        }
+        // 使用同一事务管理器；只为本条收口设置超时，不修改共享模板的运行时配置。
+        TransactionTemplate expiryTransaction = new TransactionTemplate(transactionTemplate.getTransactionManager());
+        expiryTransaction.setTimeout(10);
+        return Boolean.TRUE.equals(expiryTransaction.execute(status -> operation.get()));
+    }
+
+    /** 仅处理同一可信 TEST Run 的等待试运行，保留已完成发布依据和正式会话的隔离。 */
+    private void expireTrial(PrincipalRef actor, ToolApprovalRequest request, RunRecord run, Instant cutoff) {
+        if (request.scope() != ToolApprovalScope.RUN || trialRepository == null) return;
+        trialRepository.find(request.tenantId(), run.id())
+                .filter(trial -> trial.status() == SkillTrialStatus.WAITING_APPROVAL || trial.status() == SkillTrialStatus.RUNNING)
+                .ifPresent(trial -> {
+                    if (!trial.agentId().equals(run.agentId()) || !trial.createdBy().equals(run.principalId())
+                            || run.kind() != com.cmagent.core.domain.RunKind.TEST) {
+                        throw new IllegalStateException("审批关联试运行归属不一致");
+                    }
+                    SkillTrial failed = new SkillTrial(trial.runId(), trial.tenantId(), trial.skillId(), trial.versionId(),
+                            trial.agentId(), trial.mappingRevision(), SkillTrialStatus.FAILED, false, trial.createdBy(),
+                            trial.createdAt(), cutoff);
+                    if (!trialRepository.update(failed, trial.status())) {
+                        throw new IllegalStateException("审批过期时试运行状态已变化");
+                    }
+                    auditAppender.append(request.tenantId(), actor.principalId(), "SKILL_TRIAL_COMPLETE", "SKILL",
+                            trial.skillId().toString(), "FAILED", "工具审批过期，试运行已结束");
+                });
     }
 
     /** Run 进入终态后删除同一可信主体和 runId 对应的 AgentScope 状态槽。 */
@@ -589,22 +654,7 @@ public class ToolApprovalService {
 
     /** TEST Run 审批过期时以与会话审批相同的原子边界收口运行、检查点和审计。 */
     private void expireRun(PrincipalRef principal, ToolApprovalRequest request, Instant now) {
-        inTransaction(() -> {
-            if (!approvalRepository.expireByRun(principal.tenantId(), request.agentId(), request.runId(), request.id(),
-                    request.version(), principal.principalId(), now)) {
-                return false;
-            }
-            runRepository.findByTenantAndAgentAndId(principal.tenantId(), request.agentId(), request.runId())
-                    .filter(run -> run.status() == RunStatus.WAITING_APPROVAL)
-                    .ifPresent(run -> {
-                        runPersistenceService.complete(principal, run, new AgentRunResult(
-                                run.id(), RunStatus.DENIED, "", List.of(), run.startedAt(), now, "工具审批已过期"), List.of());
-                        deleteCheckpoint(principal, run);
-                    });
-            auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_EXPIRE",
-                    "TOOL_APPROVAL", request.id().toString(), "EXPIRED", "试运行高风险工具审批请求已过期");
-            return true;
-        });
+        expirePending(principal, request, now);
     }
 
     /**

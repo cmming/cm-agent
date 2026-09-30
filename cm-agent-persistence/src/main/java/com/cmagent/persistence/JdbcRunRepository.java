@@ -19,6 +19,18 @@ import java.util.UUID;
 
 /** 使用 JDBC 持久化 Agent 运行的状态、输入、输出和时间信息。 */
 public class JdbcRunRepository implements RunRepository {
+    @Override
+    public boolean expireWaitingApproval(RunRecord snapshot, Instant finishedAt) {
+        // 必须只命中等待态，避免读写期间恢复为 RUNNING 后仍被扫描终结。
+        return jdbcClient.sql("""
+                UPDATE runs SET status = 'DENIED', output_text = NULL,
+                    error_message = '工具审批已过期', finished_at = :finishedAt
+                WHERE tenant_id = :tenantId AND agent_id = :agentId AND id = :runId
+                  AND principal_id = :principalId AND status = 'WAITING_APPROVAL'
+                """).param("finishedAt", Timestamp.from(finishedAt))
+                .param("tenantId", snapshot.tenantId().toString()).param("agentId", snapshot.agentId().toString())
+                .param("runId", snapshot.id().toString()).param("principalId", snapshot.principalId()).update() == 1;
+    }
     private final JdbcClient jdbcClient;
 
     /**

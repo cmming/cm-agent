@@ -36,6 +36,22 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public class InMemoryPlatformStore implements AuditEventRepository, RunRepository, ToolCallRepository {
 
+    @Override
+    public boolean expireWaitingApproval(RunRecord snapshot, java.time.Instant finishedAt) {
+        boolean[] changed = {false};
+        // 仅在同一可信运行仍等待时更新；单行原子性不等于跨仓储回滚。
+        runs.computeIfPresent(snapshot.id(), (id, current) -> {
+            if (!current.tenantId().equals(snapshot.tenantId()) || !current.agentId().equals(snapshot.agentId())
+                    || !current.principalId().equals(snapshot.principalId())
+                    || current.status() != RunStatus.WAITING_APPROVAL) {
+                return current;
+            }
+            changed[0] = true;
+            return current.complete(RunStatus.DENIED, "", "工具审批已过期", finishedAt);
+        });
+        return changed[0];
+    }
+
     private final ConcurrentHashMap<UUID, AgentDefinition> agents = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, ModelConfig> modelConfigs = new ConcurrentHashMap<>();
     // 内存模式同样只保留密文，保证测试和本地行为不会弱化生产安全边界。

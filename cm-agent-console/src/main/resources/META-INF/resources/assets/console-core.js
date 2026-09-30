@@ -93,7 +93,7 @@
             APPROVED: ["已允许本次调用", "审批决定已保存，实际执行结果请查看会话回答或运行记录。"],
             PARTIALLY_APPROVED: ["已提交混合决定", "仅允许选中的调用；实际执行结果请查看会话回答或运行记录。"],
             DENIED: ["已拒绝全部调用", "本次请求的工具调用不会获准执行。"],
-            EXPIRED: ["审批已过期", "本次请求不能再审批，如仍需执行，请重新发起会话请求。"],
+            EXPIRED: ["审批已过期", "本次请求不能再审批，如仍需执行，请重新发起请求。"],
             CANCELLED: ["审批已取消", "本次请求不能再审批。"]
         };
         if (statuses[approval?.status]) return {label: statuses[approval.status][0], message: statuses[approval.status][1], editable: false, terminal: true};

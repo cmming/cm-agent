@@ -207,7 +207,25 @@ AgentScope 2.0.0 在绑定可信 `RuntimeContext` 前可能探测无用户标识
 
 `permission-enabled` 默认 `false`，用于保持已有工具放行策略的兼容升级；只有明确设为 `true` 时，HIGH 工具才按每次具体调用进入 `WAITING_APPROVAL`。`approval-ttl` 默认 `15m`，必须大于 0 且不超过 24 小时。审批请求保存脱敏摘要及原工具 ID、调用 ID、输入哈希，AgentScope 状态通过 AES/GCM 加密写入 `runtime_checkpoints`，终态或过期处理后删除。第一版只允许原运行发起人且同时拥有 `agent:run`、`agent:approve` 的主体决定，不支持独立审批人、长期预授权规则或无人值守暂停。模式固定在线 DEFAULT、无会话 DONT_ASK，没有 `permission.*` 嵌套配置。
 
-## 会话审批历史
+## 审批主动过期扫描
+
+以下配置由服务端绑定，生产默认开启，不需要在应用 YAML 中重复写入默认值：
+
+```yaml
+cm-agent:
+  approval-expiry:
+    enabled: true
+    interval: 30s
+    batch-size: 50
+```
+
+`interval` 为每轮结束后的等待时间，范围 1 秒～1 小时；`batch-size` 范围 1～100，非法配置启动失败。扫描独立于 `agentscope.permission-enabled`：关闭新审批不会停止历史审批收口。`enabled=false` 只关闭扫描，人工提交过期审批仍收口，权威查询保持只读。每轮读取一批，达到 10 秒后不再开始新项；单项 JDBC 事务有 10 秒超时，依赖连接建立仍应由部署的数据源超时约束。
+
+候选跨租户发现只用于服务端系统任务，按到期时间及审批 ID 升序分页；每项仍验证可信 tenant、Agent、scope、会话/Run、版本和到期时间。截止时间相等即过期，实例应保持系统时钟同步。V14 添加 `(status, expires_at, id)` 扫描索引；无字段变更。单项失败推进游标，遍历到底后下一轮从头重试，关闭开关期间积压不会自动删除。
+
+JDBC 的审批 EXPIRED、等待 Run DENIED、该 Run 检查点删除、关联 TEST FAILED 及严格审计共享短事务。memory 只保证单行竞争，不具备跨仓储回滚或重启恢复能力。扫描不授予工具权限、不调用 Runtime，也不接管已批准但结果未知的运行。
+
+## 会话审批历史查询
 
 会话审批历史无新增配置项，复用当前持久化模式和 V11 审批表。`GET /api/agents/{agentId}/conversations/{conversationId}/approvals/history?limit=20` 使用 `agent:read` 和会话归属校验；`limit` 范围为 1～100，后续请求的 `cursor` 使用响应 `nextCursor` 原值。响应 `{items, nextCursor}` 中仅有终态的脱敏视图；`nextCursor=null` 表示本次查询没有更早页。非法参数为 400/VALIDATION_FAILED，持久化不可用为 503/PERSISTENCE_UNAVAILABLE，并返回可关联日志的 `errorId`。历史读取不依赖开关当前是否开启，不会触发运行或自动过期处理。
 

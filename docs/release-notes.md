@@ -1,5 +1,12 @@
 # 发布说明
 
+## 未发布：A 批次审批主动过期
+
+- 增加会话与独立 TEST 过期扫描，默认开启、间隔 30 秒、批次 50；V14 添加扫描索引，不升级依赖。系统主体不借用用户权限，不调用 Runtime 或外部工具。
+- 统一过期条件竞争和短事务：EXPIRED、等待 Run DENIED、检查点清理、关联 TEST FAILED 与严格审计同成同败。已批准或已恢复运行不被扫描误收口；失败候选有脱敏诊断并在后续遍历重试。
+- TEST 控制台提交失败后先锁定旧入口，通过只读查询恢复权威结果；新增刷新试运行状态，终态不能继续决定，保留 v1/v2 兼容。
+- 跨实例执行租约、已批准未知结果的自动恢复、外部副作用恰好一次仍未提供。实际验证与未执行项以[本轮账本](superpowers/progress/2026-09-30-approval-expiry-a-ledger.md)为准。
+
 ## 发版状态（截至 2026-09-28）
 
 父 POM 版本仍为 `0.1.0-SNAPSHOT`，本文件仍是待发布草案，尚未标记正式版本。基于代码提交 `8fb2c15` 并补齐三处测试上下文后，Rocky Linux 上使用 Maven 3.9.9、JDK 21 和 Testcontainers 执行 `mvn -q test` 通过：80 个 Surefire 测试报告共 497 项，失败 0、错误 0、跳过 0。首次运行暴露的 9 个夹具错误已由 `AgentScopeRuntimeConfigurationTest`、`ApplicationProfileConfigurationTest` 和 `ConsoleSmokeTest` 的测试配置修正；该结果不替代真实模型、浏览器及发布流程验收。

@@ -182,6 +182,10 @@ public class SkillTrialService {
     public SkillTrial finalizeResult(PrincipalRef principal, UUID runId, AgentRunResult result) {
         SkillTrial current = trials.find(principal.tenantId(), runId).orElseThrow(this::notFound);
         requireOwner(principal, current);
+        // 很短的 TTL 下系统扫描可能先结束等待 Run；迟到的 Runtime 等待结果不能把 FAILED 重新打开。
+        if (current.status() != SkillTrialStatus.RUNNING && current.status() != SkillTrialStatus.WAITING_APPROVAL) {
+            return current;
+        }
         SkillTrialStatus target = result.status() == RunStatus.WAITING_APPROVAL
                 ? SkillTrialStatus.WAITING_APPROVAL
                 : result.status() != RunStatus.SUCCEEDED

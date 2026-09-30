@@ -17,6 +17,11 @@ import java.util.UUID;
  */
 public interface RunRepository {
     /**
+     * 仅在可信租户、Agent、Run、发起人匹配且仍为 WAITING_APPROVAL 时原子收口为 DENIED。
+     * 未命中返回 false，禁止随后删除检查点；不会覆盖已恢复的 RUNNING 或终态。
+     */
+    boolean expireWaitingApproval(RunRecord snapshot, Instant finishedAt);
+    /**
      * 仅在 {@code run.tenantId()} 与 {@code tenantId} 一致时保存运行记录。
      *
      * <p>该判等是写入租户边界的唯一闸门：领域对象中的租户字段不可信时（例如反序列化自外部），
