@@ -21,7 +21,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-/** 使用短事务保存审批请求、明细及条件决定，所有 SQL 都包含 tenant 边界。 */
+/**
+ * 使用短事务保存审批请求、明细及条件决定，资源操作均包含 tenant 边界。
+ * 仅系统扫描候选发现允许跨租户；返回持久化归属，不能作为客户端越权查询入口。
+ */
 public final class JdbcToolApprovalRepository implements ToolApprovalRepository {
     @Override
     public List<ToolApprovalRequest> findExpiredPending(com.cmagent.core.domain.ApprovalExpiryPage page) {

@@ -35,6 +35,7 @@ public class ApprovalExpiryScanner {
     /** 当前遍历的审批标识游标；失败项也前移，避免单项故障阻塞其他租户。 */
     private UUID afterId;
 
+    /** Spring 装配时校验扫描配置并固定使用服务端 UTC 时钟；非法配置使启动失败。 */
     @Autowired
     public ApprovalExpiryScanner(ToolApprovalRepository repository, ToolApprovalService approvals,
             ApprovalExpiryProperties properties, ErrorDiagnosticLogger diagnostics) {
