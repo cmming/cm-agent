@@ -25,6 +25,7 @@ import com.cmagent.core.repository.ToolApprovalRepository;
 import com.cmagent.core.repository.SkillTrialRepository;
 import com.cmagent.core.domain.SkillTrial;
 import com.cmagent.core.domain.SkillTrialStatus;
+import com.cmagent.server.service.SkillUnitOfWork;
 import com.cmagent.core.runtime.RuntimeApprovalDecisions;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.audit.AuditAppender;
@@ -66,6 +67,8 @@ public class ToolApprovalService {
     private final TransactionTemplate transactionTemplate;
     /** 独立 TEST 的治理状态需与过期 Run 一起收口，不能通过页面查询补写。 */
     private final SkillTrialRepository trialRepository;
+    /** 技能写入沿用现有工作单元；JDBC 参与外层短事务，memory 使用自身暂存副本。 */
+    private final SkillUnitOfWork skillWorkUnit;
 
     /**
      * 创建审批编排服务。
@@ -103,8 +106,7 @@ public class ToolApprovalService {
                 runExecutionService, permissionEvaluator, auditAppender, redactor, properties, transactionTemplate, null);
     }
 
-    /** 装配生产审批链路；TEST 状态仓储参与同一 JDBC 事务，旧构造器仅兼容既有独立单元测试。 */
-    @org.springframework.beans.factory.annotation.Autowired
+    /** 兼容独立仓储测试装配；真实 memory 技能仓储必须使用带工作单元的生产构造器。 */
     public ToolApprovalService(
             ToolApprovalRepository approvalRepository, RunRepository runRepository,
             ConversationMessageRepository messageRepository, RuntimeCheckpointRepository checkpointRepository,
@@ -112,6 +114,20 @@ public class ToolApprovalService {
             PermissionEvaluator permissionEvaluator, AuditAppender auditAppender, SensitiveDataRedactor redactor,
             AgentScopeRuntimeProperties properties, @Nullable TransactionTemplate transactionTemplate,
             @Nullable SkillTrialRepository trialRepository) {
+        this(approvalRepository, runRepository, messageRepository, checkpointRepository, runPersistenceService,
+                runExecutionService, permissionEvaluator, auditAppender, redactor, properties,
+                transactionTemplate, trialRepository, null);
+    }
+
+    /** 生产装配必须复用技能工作单元，不能绕过 memory 写入约束或另开 JDBC 提交边界。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    public ToolApprovalService(
+            ToolApprovalRepository approvalRepository, RunRepository runRepository,
+            ConversationMessageRepository messageRepository, RuntimeCheckpointRepository checkpointRepository,
+            RunPersistenceService runPersistenceService, RunExecutionService runExecutionService,
+            PermissionEvaluator permissionEvaluator, AuditAppender auditAppender, SensitiveDataRedactor redactor,
+            AgentScopeRuntimeProperties properties, @Nullable TransactionTemplate transactionTemplate,
+            @Nullable SkillTrialRepository trialRepository, SkillUnitOfWork skillWorkUnit) {
         this.approvalRepository = approvalRepository;
         this.runRepository = runRepository;
         this.messageRepository = messageRepository;
@@ -125,6 +141,7 @@ public class ToolApprovalService {
         this.clock = Clock.systemUTC();
         this.transactionTemplate = transactionTemplate;
         this.trialRepository = trialRepository;
+        this.skillWorkUnit = skillWorkUnit;
     }
 
     /**
@@ -531,13 +548,15 @@ public class ToolApprovalService {
                     request.id().toString(), "EXPIRED", "高风险工具审批请求已过期");
             return true;
         };
+        Supplier<Boolean> guardedOperation = () -> skillWorkUnit == null
+                ? operation.get() : skillWorkUnit.execute(operation);
         if (transactionTemplate == null) {
-            return operation.get();
+            return guardedOperation.get();
         }
         // 使用同一事务管理器；只为本条收口设置超时，不修改共享模板的运行时配置。
         TransactionTemplate expiryTransaction = new TransactionTemplate(transactionTemplate.getTransactionManager());
         expiryTransaction.setTimeout(10);
-        return Boolean.TRUE.equals(expiryTransaction.execute(status -> operation.get()));
+        return Boolean.TRUE.equals(expiryTransaction.execute(status -> guardedOperation.get()));
     }
 
     /** 仅处理同一可信 TEST Run 的等待试运行，保留已完成发布依据和正式会话的隔离。 */

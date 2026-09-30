@@ -21,7 +21,12 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.Set;
 import java.util.UUID;
 
-/** 技能正式发布和历史回滚接口；只接受认证主体提供的租户边界。 */
+/**
+ * 技能正式发布和历史回滚接口；只接受认证主体提供的租户边界。
+ *
+ * <p>路径参数显式声明协议名称：Spring MVC 在没有编译器 {@code -parameters} 元数据时
+ * 不能从 Java 参数推导变量名，省略名称会在进入业务授权与发布门禁前拒绝合法请求。</p>
+ */
 @RestController
 @RequestMapping("/api/skills/{skillId}")
 public class SkillReleaseController {
@@ -38,7 +43,7 @@ public class SkillReleaseController {
 
     /** 正式发布当前候选版本。 */
     @PostMapping("/releases")
-    public ResponseEntity<SkillRelease> publish(@PathVariable UUID skillId,
+    public ResponseEntity<SkillRelease> publish(@PathVariable("skillId") UUID skillId,
                                                 @Valid @RequestBody SkillRequests.PublishRequest request,
                                                 Authentication authentication) {
         PrincipalRef principal = principal(authentication);
@@ -50,7 +55,7 @@ public class SkillReleaseController {
 
     /** 将曾正式发布的版本重新发布为当前版本。 */
     @PostMapping("/rollbacks")
-    public ResponseEntity<SkillRelease> rollback(@PathVariable UUID skillId,
+    public ResponseEntity<SkillRelease> rollback(@PathVariable("skillId") UUID skillId,
                                                  @Valid @RequestBody SkillRequests.RollbackRequest request,
                                                  Authentication authentication) {
         PrincipalRef principal = principal(authentication);

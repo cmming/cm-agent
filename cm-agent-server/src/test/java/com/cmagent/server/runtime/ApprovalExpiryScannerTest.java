@@ -20,6 +20,32 @@ class ApprovalExpiryScannerTest {
     private static final Instant NOW = Instant.parse("2026-09-30T01:00:00Z");
 
     @Test
+    void 真实内存技能仓储通过工作单元同步收口等待试运行() {
+        var approvals = new InMemoryToolApprovalRepository();
+        var runs = new InMemoryPlatformStore();
+        var skills = new com.cmagent.server.store.InMemorySkillStore();
+        var request = request(ToolApprovalScope.RUN, UUID.randomUUID(), UUID.randomUUID(), NOW);
+        approvals.save(request);
+        runs.save(request.tenantId(), RunRecord.create(request.runId(), request.tenantId(), request.agentId(),
+                "initiator", RunKind.TEST, "受控验收", NOW.minusSeconds(20)));
+        runs.waitForApproval(request.tenantId(), request.runId());
+        skills.execute(() -> skills.trials().insert(new SkillTrial(request.runId(), request.tenantId(),
+                UUID.randomUUID(), UUID.randomUUID(), request.agentId(), 0, SkillTrialStatus.WAITING_APPROVAL,
+                false, "initiator", NOW.minusSeconds(20), NOW.minusSeconds(20))));
+        var audit = mock(AuditAppender.class);
+        var execution = mock(RunExecutionService.class);
+        var service = new ToolApprovalService(approvals, runs, mock(ConversationMessageRepository.class),
+                mock(RuntimeCheckpointRepository.class), mock(RunPersistenceService.class), execution,
+                (actor, permission) -> com.cmagent.core.security.AuthorizationDecision.deny("系统不执行工具"),
+                audit, new SensitiveDataRedactor(), new AgentScopeRuntimeProperties(), null, skills.trials(), skills);
+        assertThat(service.expireFromSystem(request, NOW)).isTrue();
+        assertThat(skills.trials().find(request.tenantId(), request.runId()).orElseThrow().status())
+                .isEqualTo(SkillTrialStatus.FAILED);
+        assertThat(service.expireFromSystem(request, NOW)).isFalse();
+        verifyNoInteractions(execution);
+    }
+
+    @Test
     void 失败诊断包含可信归属编号和脱敏堆栈() {
         var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(ErrorDiagnosticLogger.class);
         var capture = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();

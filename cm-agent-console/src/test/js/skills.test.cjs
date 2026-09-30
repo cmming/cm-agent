@@ -74,7 +74,7 @@ test("TEST 恢复只查询原 Run 和审批，不自动重放决定", async () =
 });
 
 // 简化 DOM 仅承载事件和文本，回归真实页面编排；布局验收由浏览器单独执行。
-function trialPageHarness({expired = false, failQuery = false, previous = false, terminalApprovalStatus = "EXPIRED"} = {}) {
+function trialPageHarness({expired = false, failQuery = false, previous = false, terminalApprovalStatus = "EXPIRED", startStatuses = []} = {}) {
     class Node {
         constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; this.listeners = {}; this.value = ""; this.className = ""; this.textContent = ""; this.classList = {add() {}, remove() {}, toggle() {}}; }
         append(...nodes) { this.children.push(...nodes); }
@@ -105,7 +105,10 @@ function trialPageHarness({expired = false, failQuery = false, previous = false,
         if (url.endsWith("/versions")) return [];
         if (url === "/api/agents") return [{id: "agent", enabled: true}];
         if (url.endsWith("/decisions")) { terminal = true; throw new Error("审批已过期（错误编号：expiry-test）"); }
-        if (url.endsWith("/trials") && options?.method === "POST") return trial();
+        if (url.endsWith("/trials") && options?.method === "POST") {
+            const status = startStatuses.shift();
+            return status ? {...trial(), status, qualifiesRelease: status === "PASSED", versionId: "candidate", mappingRevision: 1} : trial();
+        }
         if (failQuery && terminal) throw new Error("查询暂时不可用");
         if (url.endsWith("/current")) return approval();
         if (url.endsWith("/trials/run")) return trial();
@@ -189,3 +192,16 @@ test("TEST 页面重载从保存 Run 查询过期状态，不重复 TEST 或审�
         assert.equal(flow.stored.size, 0);
     } finally { flow.restore(); }
 });
+
+for (const nextStatus of ["NOT_TRIGGERED", "WAITING_APPROVAL"]) {
+    test(`新 TEST ${nextStatus} 不保留上一轮 PASSED 发布入口`, async () => {
+        const flow = trialPageHarness({startStatuses: ["PASSED", nextStatus]});
+        try {
+            await startWaitingTrial(flow);
+            assert.ok(flow.find("发布当前候选"));
+            await flow.nodes().find((node) => node.tag === "form").fire("submit");
+            assert.equal(flow.find("发布当前候选"), undefined);
+            assert.equal(flow.requests.filter((call) => call.url.endsWith("/releases")).length, 0);
+        } finally { flow.restore(); }
+    });
+}

@@ -210,6 +210,7 @@
                     const run = document.createElement("button"); run.type = "submit"; run.className = "button primary"; run.textContent = "开始试运行"; run.disabled = true;
                     const result = document.createElement("p"); result.className = "form-status"; result.setAttribute("aria-live", "polite");
                     const preview = document.createElement("section"); preview.className = "skill-trial-preview";
+                    const publishActions = document.createElement("div"); publishActions.className = "skill-preflight-actions";
                     preview.setAttribute("aria-label", "试运行结果预览");
                     const renderTrialPreview = (trialResponse) => {
                         const data = trialResponse && trialResponse.preview;
@@ -307,6 +308,8 @@
                         renderApproval(approval);
                     };
                     const refreshCurrentTrial = async () => {
+                        // 发布入口只对应当前展示的合格试运行；查询或新 TEST 开始后不能残留上一轮按钮。
+                        publishActions.replaceChildren();
                         const revision = ++trialStateRevision;
                         const loaded = await loadTrialState((url) => api.request(url), id, currentTrialRunId);
                         if (!scope.isCurrent(ticket) || revision !== trialStateRevision) return;
@@ -322,7 +325,7 @@
                         catch (error) { if (scope.isCurrent(ticket)) { result.textContent = `${error.message} 尚未确认结果，请刷新状态后再操作。`; result.dataset.tone = "error"; } }
                         finally { approvalBusy = false; refreshTrial.disabled = false; }
                     });
-                    trial.append(agentLabel, agentHelp, inputLabel, run, refreshTrial, result, preview, approvalPanel);
+                    trial.append(agentLabel, agentHelp, inputLabel, run, refreshTrial, result, preview, approvalPanel, publishActions);
                     const permissions = getPermissions();
                     const loadTrialAgents = async () => {
                         if (!permissions.includes("agent:read")) {
@@ -368,7 +371,7 @@
                     trial.addEventListener("submit", async (event) => {
                         event.preventDefault();
                         if (!agentSelect.value) { agentHelp.textContent = "请选择一个已启用的 Agent。"; agentHelp.dataset.tone = "error"; return; }
-                        trialStateRevision += 1; renderApproval(null);
+                        trialStateRevision += 1; renderApproval(null); publishActions.replaceChildren();
                         run.disabled = true; result.textContent = "正在执行 TEST Run…"; preview.replaceChildren();
                         try {
                             const tested = await api.request(`/api/skills/${encodeURIComponent(id)}/trials`, {method: "POST", body: JSON.stringify({versionId: summary.candidateVersionId, agentId: agentSelect.value, input: input.value.trim()})});
@@ -390,7 +393,7 @@
                                     publish.disabled = true;
                                     try { await api.request(`/api/skills/${encodeURIComponent(id)}/releases`, {method: "POST", body: JSON.stringify({candidateVersionId: summary.candidateVersionId, expectedPublishedVersionId: summary.publishedVersionId || null, qualifyingTrialRunId: tested.runId})}); status("候选版本已发布；新建正式 Run 将按绑定策略解析版本。", "success"); await reload(); await select(id); }
                                     catch (error) { status(error.message, "error"); } finally { publish.disabled = false; }
-                                }); trial.append(publish);
+                                }); publishActions.append(publish);
                             }
                         } catch (error) { result.textContent = error.message; result.dataset.tone = "error"; } finally { run.disabled = false; }
                     });
