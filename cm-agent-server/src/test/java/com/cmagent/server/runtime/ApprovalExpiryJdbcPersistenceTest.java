@@ -8,7 +8,10 @@ import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
 import com.cmagent.server.config.AgentScopeRuntimeProperties;
 import com.cmagent.server.security.SensitiveDataRedactor;
+import com.cmagent.server.CmAgentServerApplication;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.core.env.MapPropertySource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -24,7 +27,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.Timestamp;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.SecureRandom;
 import java.time.Instant;
+import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -47,7 +55,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
  */
 @Testcontainers
 class ApprovalExpiryJdbcPersistenceTest {
-    private static final Instant CUTOFF = Instant.parse("2026-09-30T00:00:00Z");
+    // Rocky 与客户端时钟可能不同；以验证主机时间构造已到期 fixture，不调整主机时钟。
+    private static final Instant CUTOFF = Instant.now().minusSeconds(1).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
     private static final Instant CREATED = CUTOFF.minusSeconds(60);
     private static final String REQUESTER = "expiry-fixture-user";
     private static final String SYSTEM = "system:approval-expiry";
@@ -190,6 +199,44 @@ class ApprovalExpiryJdbcPersistenceTest {
     }
 
     @Test
+    void restartedApplicationJvmScansBothPersistedScopesWithoutUserSubmission() throws Exception {
+        ToolApprovalRequest conversation = fixture(ToolApprovalScope.CONVERSATION, RunStatus.WAITING_APPROVAL,
+                CUTOFF, UUID.randomUUID());
+        ToolApprovalRequest testRun = fixture(ToolApprovalScope.RUN, RunStatus.WAITING_APPROVAL,
+                CUTOFF, UUID.randomUUID());
+        byte[] jwt = new byte[48];
+        byte[] aes = new byte[32];
+        new SecureRandom().nextBytes(jwt);
+        new SecureRandom().nextBytes(aes);
+        String jwtSecret = Base64.getEncoder().encodeToString(jwt);
+        String aesKey = Base64.getEncoder().encodeToString(aes);
+        long firstPid;
+        try (FixtureProcess first = launchApplication(false, jwtSecret, aesKey)) {
+            first.awaitReady();
+            firstPid = first.process.pid();
+            assertThat(reload(conversation).status()).isEqualTo(ToolApprovalStatus.PENDING);
+            assertThat(reload(testRun).status()).isEqualTo(ToolApprovalStatus.PENDING);
+            assertThat(hasCheckpoint(conversation)).isTrue();
+            assertThat(hasCheckpoint(testRun)).isTrue();
+        }
+        // 第一个 JVM 已退出，第二个 JVM 没有上次调度的游标或 Spring 内存状态。
+        try (FixtureProcess second = launchApplication(true, jwtSecret, aesKey)) {
+            assertThat(second.process.pid()).isNotEqualTo(firstPid);
+            second.awaitReady();
+            long deadline = System.nanoTime() + Duration.ofSeconds(45).toNanos();
+            while (System.nanoTime() < deadline && (reload(conversation).status() != ToolApprovalStatus.EXPIRED
+                    || reload(testRun).status() != ToolApprovalStatus.EXPIRED)) {
+                assertThat(second.process.isAlive()).as("隔离扫描 JVM 应保持运行").isTrue();
+                Thread.sleep(100);
+            }
+            assertClosed(conversation);
+            assertClosed(testRun);
+            assertThat(audits.listByTenant(tenant, 20)).hasSize(5)
+                    .allSatisfy(event -> assertThat(event.principalId()).isEqualTo(SYSTEM));
+        }
+    }
+
+    @Test
     void runningAndTerminalRunsKeepCheckpointEvenWhenTheirPendingApprovalExpires() {
         for (RunStatus status : List.of(RunStatus.RUNNING, RunStatus.SUCCEEDED, RunStatus.DENIED, RunStatus.FAILED)) {
             ToolApprovalRequest request = fixture(ToolApprovalScope.RUN, status, CUTOFF, UUID.randomUUID());
@@ -226,6 +273,21 @@ class ApprovalExpiryJdbcPersistenceTest {
         assertThat(runs.expireWaitingApproval(staleRun, CUTOFF)).isFalse();
         assertThat(run(request).status()).isEqualTo(RunStatus.RUNNING);
         assertThat(hasCheckpoint(request)).isTrue();
+    }
+
+    @Test
+    void fastRunCompletionUsesPersistedStartTimeAsPrecisionLowerBound() {
+        // MySQL TIMESTAMP(0) 可能将 .900 的开始时间舍入到下一秒；PG 保留亚秒，两者都必须可收口。
+        Instant started = CREATED.plusNanos(900_000_000);
+        UUID runId = UUID.randomUUID();
+        runs.save(tenant, RunRecord.create(runId, tenant, agent, REQUESTER, "精度回归", started));
+        RunRecord completed = runs.complete(tenant, runId, RunStatus.SUCCEEDED, "完成", "", started.plusMillis(10));
+        assertThat(completed.finishedAt()).isAfterOrEqualTo(completed.startedAt());
+        assertThat(runById(runId).status()).isEqualTo(RunStatus.SUCCEEDED);
+    }
+
+    private RunRecord runById(UUID runId) {
+        return runs.findByTenantAndAgentAndId(tenant, agent, runId).orElseThrow();
     }
 
     @Test
@@ -272,6 +334,97 @@ class ApprovalExpiryJdbcPersistenceTest {
     private ToolApprovalService service(AuditAppender appender) {
         return new ToolApprovalService(approvals, runs, messages, checkpoints, mock(RunPersistenceService.class), runtime,
                 mock(PermissionEvaluator.class), appender, new SensitiveDataRedactor(), new AgentScopeRuntimeProperties(), tx, trials);
+    }
+
+    /** 两个 JVM 只共享一次性测试库；随机密钥和数据库凭据不放入命令行或诊断输出。 */
+    private FixtureProcess launchApplication(boolean scannerEnabled, String jwtSecret, String aesKey) throws Exception {
+        Path output = Path.of("target", "approval-expiry-restart");
+        Files.createDirectories(output);
+        String identity = UUID.randomUUID().toString();
+        Path marker = output.resolve(identity + ".ready").toAbsolutePath();
+        Path log = output.resolve(identity + ".log").toAbsolutePath();
+        String classpath = System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"));
+        var builder = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp", classpath, RestartFixture.class.getName(), Boolean.toString(scannerEnabled), marker.toString());
+        builder.environment().put("EXPIRY_FIXTURE_DATABASE_URL", DATABASE.getJdbcUrl());
+        builder.environment().put("EXPIRY_FIXTURE_DATABASE_USER", DATABASE.getUsername());
+        builder.environment().put("EXPIRY_FIXTURE_DATABASE_PASSWORD", DATABASE.getPassword());
+        builder.environment().put("EXPIRY_FIXTURE_DATABASE_DRIVER", DATABASE.getDriverClassName());
+        builder.environment().put("EXPIRY_FIXTURE_JWT", jwtSecret);
+        builder.environment().put("EXPIRY_FIXTURE_AES", aesKey);
+        builder.redirectErrorStream(true).redirectOutput(log.toFile());
+        return new FixtureProcess(builder.start(), marker, log);
+    }
+
+    /**
+     * 只用于本类的隔离子进程入口：启动完整 Servlet 应用和真实 JDBC 调度。
+     *
+     * <p>假 Runtime 只为满足 Spring 装配，不提交运行也不执行工具；环境变量只含临时测试库凭据，
+     * 禁止将此入口或其弱化测试配置用于生产。ready 文件只保存固定就绪标识。</p>
+     */
+    public static final class RestartFixture {
+        public static void main(String[] args) throws Exception {
+            Map<String, Object> settings = Map.ofEntries(
+                    Map.entry("server.port", "0"),
+                    Map.entry("spring.profiles.active", "test"),
+                    Map.entry("spring.main.banner-mode", "off"),
+                    Map.entry("cm-agent.persistence.mode", "jdbc"),
+                    Map.entry("cm-agent.persistence.jdbc.url", System.getenv("EXPIRY_FIXTURE_DATABASE_URL")),
+                    Map.entry("cm-agent.persistence.jdbc.username", System.getenv("EXPIRY_FIXTURE_DATABASE_USER")),
+                    Map.entry("cm-agent.persistence.jdbc.password", System.getenv("EXPIRY_FIXTURE_DATABASE_PASSWORD")),
+                    Map.entry("cm-agent.persistence.jdbc.driver-class-name", System.getenv("EXPIRY_FIXTURE_DATABASE_DRIVER")),
+                    Map.entry("cm-agent.security.jwt-secret", System.getenv("EXPIRY_FIXTURE_JWT")),
+                    Map.entry("cm-agent.model-credentials.encryption-key", System.getenv("EXPIRY_FIXTURE_AES")),
+                    Map.entry("cm-agent.security.bootstrap-admin-enabled", "false"),
+                    Map.entry("cm-agent.security.allow-dev-jwt-fallback", "false"),
+                    Map.entry("cm-agent.agentscope.enabled", "false"),
+                    Map.entry("cm-agent.agentscope.studio.enabled", "false"),
+                    Map.entry("cm-agent.fake-runtime-enabled", "true"),
+                    Map.entry("cm-agent.skills.enabled", "false"),
+                    Map.entry("cm-agent.approval-expiry.enabled", args[0]),
+                    Map.entry("cm-agent.approval-expiry.interval", "1s"),
+                    Map.entry("cm-agent.approval-expiry.batch-size", "10"));
+            // 最高优先级仅在测试子进程内覆盖 profile，避免读取本机运行服务的配置。
+            try (var context = new SpringApplicationBuilder(CmAgentServerApplication.class).profiles("test")
+                    .initializers(application -> application.getEnvironment().getPropertySources()
+                            .addFirst(new MapPropertySource("expiry-fixture", settings))).run()) {
+                Files.writeString(Path.of(args[1]), "READY");
+                new CountDownLatch(1).await();
+            }
+        }
+    }
+
+    /** 持有单个隔离 JVM；失败和正常返回都关闭子进程并确认退出，避免残留服务。 */
+    private static final class FixtureProcess implements AutoCloseable {
+        private final Process process;
+        private final Path marker;
+        private final Path log;
+
+        FixtureProcess(Process process, Path marker, Path log) {
+            this.process = process;
+            this.marker = marker;
+            this.log = log;
+        }
+
+        void awaitReady() throws Exception {
+            long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
+            while (System.nanoTime() < deadline && process.isAlive() && !Files.exists(marker)) {
+                Thread.sleep(100);
+            }
+            // 只报告忽略目录中的日志路径，不能把可能含测试连接信息的日志正文复制到断言。
+            assertThat(Files.exists(marker)).as("隔离应用未就绪，诊断日志位置：%s", log).isTrue();
+            assertThat(process.isAlive()).isTrue();
+        }
+
+        @Override
+        public void close() throws Exception {
+            process.destroy();
+            if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                assertThat(process.waitFor(10, TimeUnit.SECONDS)).as("隔离应用必须退出").isTrue();
+            }
+            Files.deleteIfExists(marker);
+        }
     }
 
     private ToolApprovalRequest fixture(ToolApprovalScope scope, RunStatus status, Instant expiresAt, UUID approvalId) {

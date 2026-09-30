@@ -515,6 +515,10 @@ public class ToolApprovalService {
             runRepository.findByTenantAndAgentAndId(request.tenantId(), request.agentId(), request.runId())
                     .filter(run -> run.status() == RunStatus.WAITING_APPROVAL)
                     .ifPresent(run -> {
+                        // Run 的归属必须与审批发起事实一致；系统身份不能替代或修复错配的资源上下文。
+                        if (!request.requestedBy().equals(run.principalId())) {
+                            throw new IllegalStateException("审批与等待运行发起人不一致");
+                        }
                         if (runRepository.expireWaitingApproval(run, cutoff)) {
                             // 状态槽属于运行发起人，系统审计身份不能替换状态槽中的 principalId。
                             deleteCheckpoint(actor, run);

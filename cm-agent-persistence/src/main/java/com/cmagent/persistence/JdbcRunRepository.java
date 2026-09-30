@@ -119,7 +119,10 @@ public class JdbcRunRepository implements RunRepository {
     ) {
         RunRecord existing = findByTenantAndId(tenantId, runId)
                 .orElseThrow(() -> new NoSuchElementException("Run 不存在"));
-        RunRecord completed = existing.complete(status, output, errorMessage, finishedAt);
+        // MySQL 8.4 的现有 TIMESTAMP(0) 列会把亚秒开始时间舍入到下一秒；快速运行的完成时间
+        // 可能早于回读的开始时间。以持久化开始时间作为下界，保持领域不变量和双库一致语义。
+        Instant persistedFinishedAt = finishedAt.isBefore(existing.startedAt()) ? existing.startedAt() : finishedAt;
+        RunRecord completed = existing.complete(status, output, errorMessage, persistedFinishedAt);
 
         int updated = jdbcClient.sql("""
                         UPDATE runs
