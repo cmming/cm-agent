@@ -89,6 +89,8 @@ public final class ApprovalExpiryBrowserFixture {
         properties.put("cm-agent.approval-expiry.enabled", "true");
         properties.put("cm-agent.approval-expiry.interval", "1s");
         properties.put("cm-agent.http-tools.allow-http", "false");
+        // 仅让必需依赖预检识别完整 HTTP 定义；受控 Runtime 从不调用执行器，且禁止明文 HTTP。
+        properties.put("cm-agent.http-tools.enabled", "true");
         properties.put("cm-agent.security.allow-dev-jwt-fallback", "false");
         properties.put("cm-agent.security.bootstrap-admin-enabled", "true");
         properties.put("cm-agent.security.bootstrap-admin-username", "fixture-admin");
