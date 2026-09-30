@@ -100,7 +100,7 @@
         if (approval?.status === "PENDING" && approval.canDecide) {
             return {label: "等待你的确认", message: "先核对参数，再选择每项决定；点击提交后才会生效，仅授权本次具体调用。", editable: true, terminal: false};
         }
-        return {label: "当前不可审批", message: "仅发起本次运行且具备审批权限的账号可在有效期内处理。请刷新状态确认。", editable: false, terminal: false};
+        return {label: "当前不可审批", message: "审批可能已过期，或当前账号不满足处理条件。仅发起本次运行且同时拥有 agent:run、agent:approve 权限的账号可处理；请刷新状态，仍无法操作时联系管理员核对权限。", editable: false, terminal: false};
     }
 
     // 草稿只在当前页面内存保留；版本或调用快照变化立即失效，不能把旧批准选择套到新调用。

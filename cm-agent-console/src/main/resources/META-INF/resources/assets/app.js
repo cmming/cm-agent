@@ -2426,6 +2426,7 @@
             }
             state.chatLoading = false;
             renderChatApprovals();
+            scrollChatApprovalIntoView();
             renderApprovalHistory();
             return true;
         } catch (error) {
@@ -2436,6 +2437,14 @@
             state.approvalHistoryError = "会话未能完整加载，请重新加载当前会话后查看审批历史。";
             renderApprovalHistory();
             throw error;
+        }
+    }
+
+    function scrollChatApprovalIntoView() {
+        const region = $("chatApprovalRegion");
+        if (region && !region.hidden && state.pendingApprovals.size > 0) {
+            // 审批区位于受限高度的消息面板底部；新待办到达时将其带入视口，避免暂停状态只表现为发送按钮禁用。
+            region.scrollIntoView({block: "nearest"});
         }
     }
 
@@ -2450,8 +2459,10 @@
         const focusedApproval = focused?.closest(".chat-approval-card")?.dataset.approvalId;
         const focusedId = focused?.id;
         region.hidden = approvals.length === 0;
-        if ($("chatApprovalHeading")) $("chatApprovalHeading").textContent = approvals.some((item) => item.status === "PENDING")
-            ? "待审批操作" : "审批处理记录";
+        if ($("chatApprovalHeading")) {
+            const pendingCount = approvals.filter((item) => item.status === "PENDING").length;
+            $("chatApprovalHeading").textContent = pendingCount ? `待审批操作 · ${pendingCount} 项` : "审批处理记录";
+        }
         container.replaceChildren();
         approvals.forEach((approval) => container.append(createApprovalCard(approval)));
         updateChatSendAvailability();
@@ -2595,7 +2606,10 @@
 
     function updateApprovalSubmitAvailability(approval, decisions, submit, summary, submitting) {
         const selection = core.summarizeApprovalChoices(approval.items, decisions);
-        summary.textContent = `已选择 ${selection.selected}/${selection.total} 项 · 允许 ${selection.approved} 项 · 拒绝 ${selection.denied} 项`;
+        summary.dataset.ready = String(selection.ready);
+        summary.textContent = selection.ready
+            ? `已选择 ${selection.selected}/${selection.total} 项 · 允许 ${selection.approved} 项 · 拒绝 ${selection.denied} 项`
+            : `请为每项选择允许或拒绝（已选择 ${selection.selected}/${selection.total} 项）`;
         submit.disabled = submitting || !selection.ready;
         submit.textContent = submitting ? "正在提交决定…" : selection.submitLabel;
     }

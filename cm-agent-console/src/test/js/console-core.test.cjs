@@ -53,6 +53,13 @@ test("会话聊天页复用既有会话流和多页面导航", () => {
     assert.match(app, /function updateApprovalSubmitAvailability\(approval, decisions, submit, summary, submitting\)/);
     assert.match(app, /event\.type === "approval-decision"/);
     assert.match(app, /className: "chat-approval-decisions"/);
+    assert.match(app, /scrollChatApprovalIntoView\(\)/);
+    assert.match(app, /请为每项选择允许或拒绝/);
+    assert.match(chat, /核对脱敏参数，为每项选择允许或拒绝，再提交本次决定/);
+    const styles = fs.readFileSync(path.join(resources, "assets/styles.css"), "utf8");
+    assert.match(styles, /\.chat-approval-decisions input \{ flex: 0 0 18px; width: 18px; height: 18px;/);
+    assert.match(styles, /\.chat-approval-actions \{ position: sticky;/);
+    assert.match(styles, /grid-template-rows: auto minmax\(120px, 1fr\)/);
     assert.match(app, /text: item\.inputSummary/);
     assert.doesNotMatch(app, /innerHTML\s*=\s*item\.inputSummary/);
     assert.match(app, /\["THINKING", "TOOL_USE", "TOOL_RESULT"\]/);
@@ -786,7 +793,8 @@ test("只读提示不把过期或他人发起误断言为账号缺少权限", ()
     const readonly = core.approvalUiState({status: "PENDING", canDecide: false});
     assert.equal(readonly.editable, false);
     assert.match(readonly.message, /发起本次运行/);
-    assert.match(readonly.message, /有效期/);
+    assert.match(readonly.message, /agent:run、agent:approve/);
+    assert.match(readonly.message, /刷新状态/);
     assert.doesNotMatch(readonly.message, /当前账号没有审批权限/);
     for (const status of ["APPROVED", "PARTIALLY_APPROVED", "DENIED", "EXPIRED", "CANCELLED"]) {
         assert.equal(core.approvalUiState({status, canDecide: true}).editable, false);
@@ -839,6 +847,7 @@ test("审批草稿不会记住永久允许且退出清理后不再回填", () =>
 });
 
 test("人工确认界面明确批量选择非提交并保留纯文本与焦点合同", () => {
+    const resources = path.join(__dirname, "../../main/resources/META-INF/resources");
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"), "utf8");
     assert.match(app, /if \(items\.length > 1\)/);
     assert.match(app, /全部选为允许/);
@@ -848,6 +857,8 @@ test("人工确认界面明确批量选择非提交并保留纯文本与焦点�
     assert.match(app, /details\.open = !ui\.terminal/);
     assert.match(app, /status\.tabIndex = -1/);
     assert.match(app, /"alert" : "status"/);
+    assert.match(fs.readFileSync(path.join(resources, "assets/console-core.js"), "utf8"),
+        /仅发起本次运行且同时拥有 agent:run、agent:approve 权限/);
     assert.match(app, /approvalDrafts\.clear\(\)/);
     assert.doesNotMatch(app, /\.innerHTML|localStorage|sessionStorage/);
 });
@@ -1034,11 +1045,13 @@ function historyFlowHarness(request) {
                     && (!selector.includes("[data-run-id]") || child.dataset.runId));
             },
             all() { return this.children.flatMap((child) => [child, ...child.all()]); }};
+        result.scrollIntoViewCalls = 0;
+        result.scrollIntoView = () => { result.scrollIntoViewCalls += 1; };
         result.classList = {add(name) { result.className += ` ${name}`; }};
         return result;
     }
     const root = node("main");
-    const ids = Object.fromEntries(["chatApprovalHistoryRegion", "chatApprovalHistoryList", "chatMessageList",
+    const ids = Object.fromEntries(["chatApprovalHistoryRegion", "chatApprovalHistoryList", "chatApprovalRegion", "chatMessageList",
         "chatApprovalHistorySummary", "chatApprovalHistoryStatus", "loadMoreApprovalHistoryBtn", "refreshApprovalHistoryBtn", "chatFormStatus"]
         .map((id) => [id, node("div")]));
     root.append(...Object.values(ids));
@@ -1074,6 +1087,7 @@ test("实际会话加载在重新进入时恢复历史并保留待审批入口",
     });
     await flow.actions.loadChatMessages("agent", "conversation");
     assert.equal(flow.state.pendingApprovals.size, 1);
+    assert.equal(flow.ids.chatApprovalRegion.scrollIntoViewCalls, 1);
     assert.equal(flow.state.approvalHistory.length, 2);
     assert.equal(flow.ids.chatMessageList.querySelectorAll(".chat-approval-history-inline").length, 1);
     flow.actions.resetApprovalHistory();
