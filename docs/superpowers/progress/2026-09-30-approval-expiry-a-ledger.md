@@ -7,7 +7,7 @@
 - 原仓库：`F:/java/cm-agent`，基线 `b7c7280d4e542c565cf11c482a4c53efd1e99516`。原有 application*.yml、.codex/、.workbuddy/ 及清单/历史文档保持不动，未操作用户运行中的服务。
 - 实施工作树：`F:/java/cm-agent-approval-expiry-a`，分支 `codex/approval-expiry-a`。CodeGraph 先查询 ToolApprovalService，但返回不匹配的 MCP Servlet 等源码；已直接复核当前实现和测试，未重建索引。
 - 隔离验证提交：eb38920、66fc9fb、067b16e、bfc73dc、ddc2ad6、ed2576e；最终代码快照 `2d85c22f54e634bf5cae7c58f6eaa799256e7358`。仅显式纳入本轮文件，未使用 git add -A。
-- 最终文档更新**未提交**；验证提交仅用于同步 Rocky 测试，不等于已提交到用户原分支。未推送、未合并、未部署。
+- A 批次验收结束时最终文档更新未提交；随后用户明确要求合入 master，文档以 b2d7911 提交，并已在原工作树快进合并。未推送、未部署。
 - 本轮只执行 A，未实现 B/C/D、执行租约、自动重放、独立审批中心或新业务功能，未升级依赖。
 
 ## T0～T8 状态
@@ -22,7 +22,7 @@
 | T5 | 完成 | Java 21 快速模块 186 项；最终 server 非容器显式列表 65 类、573 项；最终重点 23 项；Node 85 项；全量补充参数绑定/认证/权限及既有租户、撤权、停用、快照和发布门禁回归 |
 | T6 | 完成 | 最终 2d85c22 快照 Rocky 全量 126 报告、892 项；同快照 MySQL 专项 29 项；零失败/错误/跳过；双库事务回滚、双扫描/扫描决定竞争、完整 JVM 重启及迁移注释已核对 |
 | T7 | 完成 | 真实浏览器与可控 Runtime：PASSED 发布、PINNED v1/FOLLOW v2/回滚 v1 实际加载、同 Run 审批恢复、主动过期、NOT_TRIGGERED 拒绝、必需依赖撤销阻断、响应丢失恰好一次提交；不是实际模型验收 |
-| T8 | 完成 | README/configuration/operations/release-notes 和四份本轮文档已更新；相关 diff、中文注释与敏感内容复核；git diff --check 通过；原工作树 HEAD/脏文件未变；文档未提交、未推送/合并/部署 |
+| T8 | 完成 | README/configuration/operations/release-notes 和四份本轮文档已更新；相关 diff、中文注释与敏感内容复核；git diff --check 通过；验收时原工作树未变，之后按用户要求提交文档并快进合入 master；未推送/部署 |
 
 ## 本机实际验证
 
@@ -95,4 +95,11 @@ mvn -q -pl cm-agent-server -am "-Dtest=$selector" '-Dsurefire.failIfNoSpecifiedT
 - 批准不等于执行成功。Runtime 不在审批数据库短事务内；已批准但结果不确定的 Run 不自动重放。跨实例执行租约、fencing 和外部副作用恰好一次未实现，仍保留运维限制。
 - 本次没有安全专用真实模型配置，未调用真实模型或有外部副作用工具；T7 是受控端到端验收，不是实际模型验收。
 - `git diff b7c7280 --check` 通过；检查全部 36 个本轮文件，中文安全/事务/并发/失败注释已落地，token/私钥格式扫描未发现候选，application*.yml、POM、.codex/、.workbuddy/ 和历史分析文档无本轮 diff。最终原仓库 HEAD 仍为 b7c7280，脏文件清单与开始一致。
-- T0～T8 必需验收全部通过，A 批次完成；无剩余实现或必需验证阻塞。远程时钟与在线 Maven TLS 的环境问题仍需环境维护者处理，当前离线验证已完成，并未弱化 TLS。最终文档更新未提交，验证分支保留，不推送、不合并、不部署。
+- T0～T8 必需验收全部通过，A 批次完成；无剩余实现或必需验证阻塞。远程时钟与在线 Maven TLS 的环境问题仍需环境维护者处理，当前离线验证已完成，并未弱化 TLS。最终文档现已提交并合入 master，验证分支保留，未推送或部署。
+
+## 按用户要求合入 master
+
+- 2026-09-30 核对 master 位于 b7c7280，codex/approval-expiry-a 为其后代，无分叉冲突；本轮最终七份文档显式暂存并提交为 b2d7911。
+- 在 `F:/java/cm-agent` 执行 `git merge --ff-only codex/approval-expiry-a` 成功，master 快进到 b2d7911；本条合并记录另外提交到 master。
+- 代码与已通过全量回归的 2d85c22 完全一致，后续仅文档变化，不重复宣称重跑测试。原有 application*.yml、.codex/、.workbuddy/ 和历史分析文件未暂存或覆盖；三份用户配置在合并前后核对内容指纹。
+- 不推送、不部署、不删除验证工作树或其他分支。
