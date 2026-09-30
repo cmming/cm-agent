@@ -294,6 +294,11 @@ sequenceDiagram
 
 Skill 不改变 `ToolInvocationGateway` 的业务工具授权语义，也不为模型自动增加 HTTP、LOCAL、MCP 或 Shell 能力。无绑定 Skill 的既有运行仍使用原有执行路径。
 
+部署环境显式开放沙箱时，独立注册 `run_skill_script`，只接受当前目录的技能 ID、已登记 `.py` 路径和 stdin。
+该工具使用 `SkillAccessGateway.execute` 与本轮共享门控；原生 `run_skill_code` 始终关闭。
+旧的网关实现默认不开放执行，直接嵌入调用方须自行实现授权、严格审计、沙箱隔离、超时与清理。
+Server 通过 Docker 执行固定版本资源，准备读取记录不代表脚本执行成功，终态以执行审计与 Run 状态为准。
+
 ## 8. 工具结果与运行终态
 
 | 场景 | ToolCall 状态 | Run 状态 | 对外错误 |

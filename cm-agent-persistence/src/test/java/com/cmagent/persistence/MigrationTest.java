@@ -101,7 +101,7 @@ class MigrationTest {
         int secondStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
 
         assertThat(firstStage).isEqualTo(12);
-        assertThat(secondStage).isEqualTo(2);
+        assertThat(secondStage).isEqualTo(3);
         assertSchemaContract(firstStage + secondStage, jdbcUrl, username, password);
         assertThat(JdbcClient.create(dataSource).sql("""
                         SELECT skills_json FROM run_skill_snapshots
@@ -285,7 +285,7 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(14);
+        assertThat(migrationsExecuted).isEqualTo(15);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
@@ -301,6 +301,8 @@ class MigrationTest {
                                 .isNotBlank());
             }
             assertThat(indexNames(connection, "agent_definitions")).contains("idx_agent_definitions_tenant");
+            assertThat(columnComments(connection, "skill_load_records").get("status"))
+                    .contains("沙箱资源准备", "不代表交付模型或脚本成功");
             assertThat(indexNames(connection, "tool_definitions")).contains("idx_tool_definitions_tenant");
             assertThat(indexNames(connection, "tool_definitions")).contains("ux_tool_definitions_tenant_name");
             assertThat(indexNames(connection, "tool_definitions")).contains("idx_tool_definitions_tenant_deleted");

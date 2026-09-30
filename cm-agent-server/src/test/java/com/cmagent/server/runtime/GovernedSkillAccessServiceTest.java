@@ -16,6 +16,9 @@ import com.cmagent.server.config.SkillProperties;
 import com.cmagent.server.store.InMemorySkillStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -34,6 +37,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(OutputCaptureExtension.class)
 class GovernedSkillAccessServiceTest {
     private static final Instant NOW = Instant.parse("2026-09-21T00:00:00Z");
     private final UUID tenant = UUID.randomUUID();
@@ -111,6 +115,159 @@ class GovernedSkillAccessServiceTest {
                         failure -> assertThat(failure.code()).isEqualTo(ApiErrorCode.SKILL_LOAD_LIMIT_EXCEEDED));
         verify(loader, never()).get();
         assertThat(store.loads().listForBudget(tenant, runId)).hasSize(2);
+    }
+
+    @Test
+    void 固定脚本执行并拒绝相同调用重复运行() {
+        DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        GovernedSkillAccessService execution = executionService(sandbox);
+        SkillReadRequest request = scriptRequest("script-1");
+        when(sandbox.execute(org.mockito.ArgumentMatchers.eq(request), org.mockito.ArgumentMatchers.anyMap(),
+                org.mockito.ArgumentMatchers.eq("输入"))).thenReturn("结果");
+
+        assertThat(execution.execute(request, "输入")).isEqualTo("结果");
+        assertThatThrownBy(() -> execution.execute(request, "输入"))
+                .isInstanceOfSatisfying(SkillAccessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo(ApiErrorCode.SKILL_SANDBOX_DUPLICATE));
+        verify(sandbox, times(1)).execute(org.mockito.ArgumentMatchers.eq(request), org.mockito.ArgumentMatchers.anyMap(),
+                org.mockito.ArgumentMatchers.eq("输入"));
+        verify(audit).append(tenant, principal.principalId(), "SKILL_EXECUTE", "RUN", runId.toString(),
+                "SUCCEEDED", "skillId=" + skillId + " versionId=" + versionId + " toolCallId=script-1 技能沙箱执行成功");
+        assertThat(store.loads().listForBudget(tenant, runId)).hasSize(1);
+        assertThat(store.loads().listForBudget(tenant, runId).getFirst().status())
+                .isEqualTo(com.cmagent.core.domain.SkillLoadStatus.SANDBOX_PREPARED);
+        assertThat(store.loads().listForBudget(tenant, runId).getFirst().deliveredBytes()).isZero();
+    }
+
+    @Test
+    void 沙箱准备的固定资源预算在之后读取时仍被扣减() {
+        DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        GovernedSkillAccessService execution = executionService(sandbox);
+        when(sandbox.execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn("结果");
+        execution.execute(scriptRequest("budget-script"), "");
+        properties.setMaxLoadedBytes(20);
+        assertThatThrownBy(() -> service.load(request("load-after-script"), () -> "技能正文"))
+                .isInstanceOfSatisfying(SkillAccessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo(ApiErrorCode.SKILL_LOAD_LIMIT_EXCEEDED));
+    }
+
+    @Test
+    void 撤销与跨租户或其他主体请求不进入沙箱() {
+        DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        GovernedSkillAccessService execution = executionService(sandbox);
+        PrincipalRef other = new PrincipalRef(UUID.randomUUID(), "other", "其他主体", Set.of("agent:run"));
+        SkillReadRequest foreign = new SkillReadRequest(other, agent, runId, "foreign", UUID.randomUUID(), skillId,
+                versionId, "scripts/main.py");
+        when(runs.findByTenantAndAgentAndId(other.tenantId(), agent, runId)).thenReturn(Optional.of(run));
+        assertThatThrownBy(() -> execution.execute(foreign, ""))
+                .isInstanceOfSatisfying(SkillAccessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo(ApiErrorCode.SKILL_ACCESS_REVOKED));
+        store.execute(() -> {
+            SkillDefinition current = store.definitions().lock(tenant, skillId);
+            store.definitions().updateEnabled(new SkillDefinition(current.id(), tenant, current.name(),
+                    current.currentVersionId(), false, 1, current.createdBy(), "editor", NOW, NOW));
+            return null;
+        });
+        assertThatThrownBy(() -> execution.execute(scriptRequest("revoked"), ""))
+                .isInstanceOfSatisfying(SkillAccessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo(ApiErrorCode.SKILL_ACCESS_REVOKED));
+        org.mockito.Mockito.verifyNoInteractions(sandbox);
+    }
+
+    @Test
+    void 严格开始审计失败不执行且诊断脱敏(CapturedOutput output) {
+        DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        GovernedSkillAccessService execution = executionService(sandbox);
+        org.mockito.Mockito.doThrow(new IllegalStateException("api_key=verification-only-value https://internal.example.local"))
+                .when(audit).append(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.eq("SKILL_EXECUTE"), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("STARTED"), org.mockito.ArgumentMatchers.any());
+        SkillReadRequest request = scriptRequest("audit-failure");
+        assertThatThrownBy(() -> execution.execute(request, "private-input"))
+                .isInstanceOfSatisfying(SkillAccessException.class, failure -> {
+                    assertThat(failure.code()).isEqualTo(ApiErrorCode.SKILL_SANDBOX_UNAVAILABLE);
+                    assertThat(failure.errorId()).isEqualTo(request.attemptId().toString());
+                    assertThat(failure.fatal()).isTrue();
+                });
+        org.mockito.Mockito.verifyNoInteractions(sandbox);
+        assertThat(output.getAll()).contains("errorId=" + request.attemptId(), "SKILL_SANDBOX_UNAVAILABLE", "java.lang.RuntimeException")
+                .doesNotContain("verification-only-value", "internal.example.local", "private-input");
+    }
+
+    @Test
+    void 执行期间撤销后丢弃输出并禁止成功审计() {
+        DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        GovernedSkillAccessService execution = executionService(sandbox);
+        when(sandbox.execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(ignored -> {
+                    store.execute(() -> {
+                        SkillDefinition current = store.definitions().lock(tenant, skillId);
+                        store.definitions().updateEnabled(new SkillDefinition(current.id(), tenant, current.name(),
+                                current.currentVersionId(), false, 1, current.createdBy(), "editor", NOW, NOW));
+                        return null;
+                    });
+                    return "不可交付的输出";
+                });
+        assertThatThrownBy(() -> execution.execute(scriptRequest("revoke-during-execution"), ""))
+                .isInstanceOfSatisfying(SkillAccessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo(ApiErrorCode.SKILL_ACCESS_REVOKED));
+        verify(audit, never()).append(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq("SKILL_EXECUTE"), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq("SUCCEEDED"), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void 脚本失败的错误编号与日志审计一致(CapturedOutput output) {
+        DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        GovernedSkillAccessService execution = executionService(sandbox);
+        SkillReadRequest request = scriptRequest("failed-script");
+        when(sandbox.execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new SkillAccessException(ApiErrorCode.SKILL_SANDBOX_TIMEOUT, "技能沙箱执行超时",
+                        request.attemptId().toString(), true));
+        assertThatThrownBy(() -> execution.execute(request, "private-input"))
+                .isInstanceOfSatisfying(SkillAccessException.class,
+                        failure -> assertThat(failure.errorId()).isEqualTo(request.attemptId().toString()));
+        assertThat(output.getAll()).contains("errorId=" + request.attemptId(), "SKILL_SANDBOX_TIMEOUT").doesNotContain("private-input");
+        verify(audit).append(tenant, principal.principalId(), "SKILL_EXECUTE", "RUN", runId.toString(), "FAILED",
+                "skillId=" + skillId + " versionId=" + versionId + " toolCallId=failed-script SKILL_SANDBOX_TIMEOUT errorId=" + request.attemptId());
+    }
+
+    private GovernedSkillAccessService executionService(DockerSkillSandbox sandbox) {
+        properties.getSandbox().setEnabled(true);
+        store.execute(() -> {
+            store.resources().insertAll(java.util.List.of(new com.cmagent.core.domain.SkillResource(tenant, skillId, versionId, "scripts/main.py",
+                    "text/plain", "print(1)", 8, "a".repeat(64))));
+            return null;
+        });
+        return new GovernedSkillAccessService(runs, store.snapshots(), store.definitions(), store.versions(), store.resources(),
+                store.bindings(), store.trials(), store.loads(), store, audit, properties, Clock.fixed(NOW, ZoneOffset.UTC), sandbox);
+    }
+
+    @Test
+    void 成功收口审计失败时丢弃输出且保持审计错误分类(CapturedOutput output) {
+        DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        GovernedSkillAccessService execution = executionService(sandbox);
+        when(sandbox.execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn("private-output");
+        org.mockito.Mockito.doThrow(new com.cmagent.server.audit.AuditPersistenceException("api_key=verification-only-value",
+                new IllegalStateException("https://internal.example.local"))).when(audit)
+                .append(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("SKILL_EXECUTE"),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("SUCCEEDED"),
+                        org.mockito.ArgumentMatchers.any());
+        var request = scriptRequest("audit-after-execution");
+        assertThatThrownBy(() -> execution.execute(request, "private-input"))
+                .isInstanceOfSatisfying(SkillAccessException.class, failure -> {
+                    assertThat(failure.code()).isEqualTo(ApiErrorCode.AUDIT_UNAVAILABLE);
+                    assertThat(failure.errorId()).isEqualTo(request.attemptId().toString());
+                    assertThat(failure.fatal()).isTrue();
+                });
+        assertThat(output.getAll()).contains("errorId=" + request.attemptId(), "AUDIT_UNAVAILABLE")
+                .doesNotContain("verification-only-value", "internal.example.local", "private-output", "private-input");
+    }
+
+    private SkillReadRequest scriptRequest(String callId) {
+        return new SkillReadRequest(principal, agent, runId, callId, UUID.randomUUID(), skillId, versionId, "scripts/main.py");
     }
 
     private SkillReadRequest request(String callId) {

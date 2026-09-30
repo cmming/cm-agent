@@ -4,6 +4,55 @@ CM Agent 是基于 AgentScope Java 的企业级智能体开源底座。第一阶
 
 ## 快速开始
 
+### 技能脚本沙箱
+
+技能脚本执行默认关闭。管理员启用 `cm-agent.skills.sandbox.enabled=true` 后，Skill ZIP 白名单自动补入
+`.py`；仍须完成候选导入、真实 TEST、发布和 Agent 绑定流程。模型通过 `run_skill_script` 运行当前快照
+中的 Python 脚本，并通过 `stdin` 传递输入文本。脚本可按相对路径读取同版本资源，`print` 输出作为脱敏
+结果；不接受任意命令、在线安装依赖或宿主路径。当前解释器为 Python 3，其他语言只作为文本资源。
+
+Linux 执行主机需要可用 Docker CLI 与 daemon，提前运行 `docker pull python:3.12-alpine`。
+配置可以直接写入部署设置，或与环境 profile 一起加载 `application-skill-sandbox.yml`：
+
+```yaml
+cm-agent:
+  skills:
+    sandbox:
+      enabled: true
+      image: python:3.12-alpine
+      runtime: ""
+      timeout: 15s
+      max-input-bytes: 32768
+      max-output-bytes: 32768
+      max-concurrent: 2
+```
+
+使用可选 profile 时仍需设置 `CM_AGENT_SKILL_SANDBOX_ENABLED=true`；仅选择 profile 不会开放执行。
+可通过 `/api/skills/capabilities` 查询公开策略；接口不返回镜像、runtime、daemon 地址或凭据。
+
+沙箱默认无网络、非 root、只读根文件系统，无宿主挂载，CPU 0.5 核、内存 128 MiB、PID 32；私有
+`/workspace` 与 `/tmp` 各限 16 MiB，容器内资源修改随本次执行销毁。累计资源准备受既有 Run 读取预算约束。
+执行前后重新校验租户、主体、固定版本、绑定/TEST 授权和撤销状态；准备读取记录表示资源交付沙箱，
+准备记录使用 `SANDBOX_PREPARED`，不满足 TEST 的成功读取门禁；仍需由模型实际加载目标技能。
+执行结果通过 `SKILL_EXECUTE` 审计与 Run 终态确认。同一调用标识拒绝再次执行；超时、中断或输出超限
+会销毁本次容器。清理无法确认时该实例保留占用名额并返回失败，管理员应检查残留的 `cm-agent-skill-*` 容器。
+
+Docker 共享宿主内核。生产执行不可信 Skill 应使用独立执行主机或配置强化 OCI runtime，并用可信镜像
+digest 固定内容；配置的 runtime 不可用时直接失败。镜像属于可信部署边界，不应包含应用凭据、宿主挂载声明
+或业务数据；Server 不向沙箱注入模型、JWT、数据库凭据，也不自动联网拉取镜像。Server 退出或执行主机
+故障后应由部署运维检查孤立容器；当前不提供跨实例自动接管。沙箱超时应小于 AgentScope 工具超时。
+
+最小脚本资源 `scripts/main.py` 可使用 `import sys; print(sys.stdin.read())`；在 `SKILL.md` 中说明
+该路径与输入格式即可。技能 TEST 和正式 Run 使用相同沙箱路径，原生宿主代码执行能力始终关闭。
+
+真实容器验证必须在 `ssh rocky` 的 Maven 21 容器中设置 `CM_AGENT_TEST_SANDBOX=true`，执行
+`mvn -pl cm-agent-server -am -Dtest=DockerSkillSandboxIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test`。
+
+JDBC 模式新增 V15，仅更新 `skill_load_records.status` 的中文原生注释，不改变表结构。
+写入 `SANDBOX_PREPARED` 后旧服务无法解析该状态；部署实例应使用相同版本，回退前需评估现存运行记录。
+
+### 本地开发
+
 本地开发调试必须显式选择 `local` profile。该 profile 加载 `application-local.yml`，启用 memory 持久化、fake runtime、本地 bootstrap admin 和本地专用 JWT 配置。无 profile 启动时不会自动加载 `local`。
 
 ```powershell

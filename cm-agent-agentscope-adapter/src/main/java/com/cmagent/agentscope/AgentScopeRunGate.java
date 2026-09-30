@@ -83,11 +83,13 @@ final class AgentScopeRunGate {
         }
         try {
             throwIfInfrastructureFailure();
+            throwIfSkillFailure();
             throwIfToolTimedOut();
             throwIfInvocationInterrupted();
             try {
                 ToolInvocationResult result = gateway.invoke(request);
                 throwIfInfrastructureFailure();
+                throwIfSkillFailure();
                 throwIfToolTimedOut();
                 throwIfInvocationInterrupted();
                 return result;
@@ -101,7 +103,7 @@ final class AgentScopeRunGate {
     }
 
     /**
-     * 串行读取技能正文，并在致命读取失败后关闭本次运行的后续调用。
+     * 串行执行技能读取或沙箱调用，并在致命失败后关闭本次运行的后续调用。
      *
      * <p>技能读取和业务工具共用同一公平锁，使撤销、快照丢失等致命失败一经观察到，已经等待的
      * 业务工具也会在进入网关前失败。非致命的资源不存在或预算上限仍会由技能桥接器转换为安全工具结果，

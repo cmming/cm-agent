@@ -180,12 +180,20 @@ public final class SkillResponses {
      * @param maxResourceBytes 单资源字节上限
      * @param maxPathLength 资源路径字符上限
      * @param maxBoundSkills 单 Agent 绑定数量上限
+     * @param sandboxEnabled 是否开放受治理脚本执行
+     * @param scriptLanguages 沙箱支持的脚本语言；关闭时为空
+     * @param sandboxTimeoutSeconds 容器启动与执行时间上限
+     * @param sandboxMaxInputBytes 脚本 stdin 字节上限
+     * @param sandboxMaxOutputBytes 脚本原始输出字节上限
      */
     public record Capabilities(boolean enabled, List<String> allowedExtensions, int maxZipBytes,
                                int maxExpandedBytes, int maxFiles, int maxInstructionBytes,
-                               int maxResourceBytes, int maxPathLength, int maxBoundSkills) {
+                               int maxResourceBytes, int maxPathLength, int maxBoundSkills,
+                               boolean sandboxEnabled, List<String> scriptLanguages, long sandboxTimeoutSeconds,
+                               int sandboxMaxInputBytes, int sandboxMaxOutputBytes) {
         public Capabilities {
             allowedExtensions = List.copyOf(allowedExtensions);
+            scriptLanguages = List.copyOf(scriptLanguages);
         }
     }
 

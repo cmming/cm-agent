@@ -1,0 +1,12 @@
+# 与 local/test 等环境 profile 一起显式启用，不能单独替代环境安全配置。
+# 本 profile 仍默认关闭；管理员须预拉取可信镜像，生产建议使用 digest 与强化 runtime。
+cm-agent:
+  skills:
+    sandbox:
+      enabled: ${CM_AGENT_SKILL_SANDBOX_ENABLED:false}
+      image: ${CM_AGENT_SKILL_SANDBOX_IMAGE:python:3.12-alpine}
+      runtime: ${CM_AGENT_SKILL_SANDBOX_RUNTIME:}
+      timeout: 15s
+      max-input-bytes: 32768
+      max-output-bytes: 32768
+      max-concurrent: 2

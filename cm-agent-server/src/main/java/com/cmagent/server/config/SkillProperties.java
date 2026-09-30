@@ -27,13 +27,21 @@ public class SkillProperties {
     private int maxRunBytes = 8 * 1024 * 1024;
     private int maxLoadAttempts = 32;
     private int maxLoadedBytes = 256 * 1024;
+    /** 独立的执行策略；默认关闭，不由技能包修改。 */
+    private final SkillSandboxProperties sandbox = new SkillSandboxProperties();
 
     /** @return 是否允许新增、更新、启用和绑定技能 */
     public boolean isEnabled() { return enabled; }
     /** @param enabled 是否启用技能写入能力 */
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
-    /** @return ZIP 内允许的文本资源扩展名；入口文件 {@code SKILL.md} 始终保留 */
-    public List<String> getAllowedResourceTypes() { return allowedResourceTypes; }
+    /** @return ZIP 内允许的文本资源扩展名；沙箱启用时补入 {@code .py}，{@code SKILL.md} 始终保留 */
+    public List<String> getAllowedResourceTypes() {
+        if (!sandbox.isEnabled() || allowedResourceTypes.contains(".py")) return allowedResourceTypes;
+        return java.util.stream.Stream.concat(allowedResourceTypes.stream(), java.util.stream.Stream.of(".py"))
+                .toList();
+    }
+    /** @return 仅由部署环境绑定的沙箱配置 */
+    public SkillSandboxProperties getSandbox() { return sandbox; }
     /** @param allowedResourceTypes 部署环境显式允许的文本资源扩展名 */
     public void setAllowedResourceTypes(List<String> allowedResourceTypes) {
         this.allowedResourceTypes = List.copyOf(allowedResourceTypes);
@@ -85,6 +93,7 @@ public class SkillProperties {
      * @throws IllegalStateException 任一限制为零、负数或超过第一版默认值时抛出
      */
     public void validate() {
+        sandbox.validate();
         if (allowedResourceTypes.isEmpty()) {
             throw new IllegalStateException("cm-agent.skills.allowed-resource-types 不能为空");
         }

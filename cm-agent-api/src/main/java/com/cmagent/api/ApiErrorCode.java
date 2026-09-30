@@ -77,6 +77,20 @@ public enum ApiErrorCode {
     SKILL_LOAD_LIMIT_EXCEEDED,
     /** 技能原生加载或未分类运行链路失败。 */
     SKILL_LOAD_FAILED,
+    /** 技能沙箱未被部署环境显式启用。 */
+    SKILL_SANDBOX_DISABLED,
+    /** 脚本路径、输入或固定资源不符合沙箱约束。 */
+    SKILL_SANDBOX_INVALID,
+    /** 同一模型执行调用已经准备过，禁止再次产生副作用。 */
+    SKILL_SANDBOX_DUPLICATE,
+    /** 沙箱并发、输入或输出超过受控限额。 */
+    SKILL_SANDBOX_LIMIT_EXCEEDED,
+    /** 沙箱执行超过部署环境时间限制。 */
+    SKILL_SANDBOX_TIMEOUT,
+    /** Docker、解释器或沙箱清理不可用。 */
+    SKILL_SANDBOX_UNAVAILABLE,
+    /** 脚本非零退出，原始诊断输出不对外泄露。 */
+    SKILL_SANDBOX_FAILED,
     RUNTIME_ERROR,
     AUDIT_UNAVAILABLE,
     PERSISTENCE_UNAVAILABLE,

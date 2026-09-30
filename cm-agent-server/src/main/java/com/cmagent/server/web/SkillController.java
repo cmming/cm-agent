@@ -74,7 +74,11 @@ public class SkillController {
                 properties.getAllowedResourceTypes(),
                 properties.getMaxZipBytes(), properties.getMaxExpandedBytes(), properties.getMaxFiles(),
                 properties.getMaxInstructionBytes(), properties.getMaxResourceBytes(),
-                properties.getMaxPathLength(), properties.getMaxBoundSkills());
+                properties.getMaxPathLength(), properties.getMaxBoundSkills(),
+                properties.isEnabled() && properties.getSandbox().isEnabled(),
+                properties.isEnabled() && properties.getSandbox().isEnabled() ? List.of("python") : List.of(),
+                properties.getSandbox().getTimeout().toSeconds(), properties.getSandbox().getMaxInputBytes(),
+                properties.getSandbox().getMaxOutputBytes());
     }
 
     /** 分页查询当前租户技能。 */

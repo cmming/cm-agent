@@ -208,6 +208,7 @@ test("结构化失败保留错误码和错误编号但不保存原始响应", as
 test("日期和运行状态转换为可读中文", () => {
     assert.equal(core.formatDateTime(""), "—");
     assert.deepEqual(core.statusMeta("SUCCEEDED"), {label: "成功", tone: "success"});
+    assert.deepEqual(core.statusMeta("SANDBOX_PREPARED"), {label: "沙箱资源已准备", tone: "neutral"});
     assert.deepEqual(core.statusMeta("RUNNING"), {label: "运行中", tone: "warning"});
     assert.deepEqual(core.statusMeta("WAITING_APPROVAL"), {label: "等待审批", tone: "warning"});
     assert.deepEqual(core.statusMeta("FAILED"), {label: "失败", tone: "error"});

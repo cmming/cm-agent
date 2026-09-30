@@ -2,6 +2,8 @@ package com.cmagent.core.domain;
 
 /** 技能正文读取的持久化结果。 */
 public enum SkillLoadStatus {
+    /** 固定版本资源已为沙箱执行预留预算；未交付模型，不代表脚本成功。 */
+    SANDBOX_PREPARED,
     /** 正文已在记录和审计成功提交后交给模型。 */
     SUCCEEDED,
     /** 原生读取或基础设施失败，正文未交付。 */

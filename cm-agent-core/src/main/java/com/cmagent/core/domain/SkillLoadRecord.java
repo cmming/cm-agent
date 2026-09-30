@@ -7,7 +7,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * 一次真实技能读取尝试的持久化记录，与业务工具调用记录相互独立。
+ * 一次真实技能读取或沙箱资源准备的持久化记录，与业务工具调用记录相互独立。
  *
  * @param id 读取记录标识
  * @param tenantId 记录所属租户
@@ -17,7 +17,7 @@ import java.util.UUID;
  * @param skillId 已解析的技能标识，无法解析时为空
  * @param versionId 已解析的固定版本标识，无法解析时为空
  * @param path 已校验的资源路径，输入无法安全记录时为空
- * @param status 读取结果
+ * @param status 读取结果或沙箱资源准备状态；准备不表示正文已交付模型
  * @param deliveredBytes 实际交给模型的 UTF-8 字节数，未成功时为 0
  * @param durationMillis 受控读取耗时毫秒数
  * @param errorCode 失败或拒绝时的稳定错误码
@@ -58,7 +58,14 @@ public record SkillLoadRecord(
         if (deliveredBytes < 0 || durationMillis < 0) {
             throw new IllegalArgumentException("技能读取字节数和耗时不能为负数");
         }
-        if (status == SkillLoadStatus.SUCCEEDED) {
+        if (status == SkillLoadStatus.SANDBOX_PREPARED) {
+            Objects.requireNonNull(skillId, "沙箱准备必须记录 skillId");
+            Objects.requireNonNull(path, "沙箱准备必须记录 path");
+            // 准备只预留固定资源预算，不能伪装已交付模型或满足 TEST 的成功读取门禁。
+            if (deliveredBytes != 0 || errorCode != null || (errorId != null && !errorId.isBlank())) {
+                throw new IllegalArgumentException("沙箱准备不能记录模型交付字节或错误信息");
+            }
+        } else if (status == SkillLoadStatus.SUCCEEDED) {
             Objects.requireNonNull(skillId, "成功读取必须记录 skillId");
             Objects.requireNonNull(path, "成功读取必须记录 path");
             if (errorCode != null || (errorId != null && !errorId.isBlank())) {

@@ -63,6 +63,18 @@ class SkillTrialServiceTest {
 
     private SkillTrialService service;
 
+    @Test
+    void 沙箱资源准备不冒充成功读取而放行发布门禁() {
+        when(trials.find(tenant, run)).thenReturn(Optional.of(runningTrial()));
+        when(loads.listForBudget(tenant, run)).thenReturn(List.of(new SkillLoadRecord(UUID.randomUUID(), tenant, run,
+                "script-call", 1, skill, version, "scripts/main.py", SkillLoadStatus.SANDBOX_PREPARED, 0, 0, null, null, NOW)));
+        when(trials.update(any(), eq(SkillTrialStatus.RUNNING))).thenReturn(true);
+        var result = service.finalizeResult(principal, run,
+                new AgentRunResult(run, RunStatus.SUCCEEDED, "", List.of(), NOW, NOW, ""));
+        assertThat(result.status()).isEqualTo(SkillTrialStatus.NOT_TRIGGERED);
+        assertThat(result.qualifiesRelease()).isFalse();
+    }
+
     @BeforeEach
     void setUp() {
         SkillUnitOfWork unit = new SkillUnitOfWork() {

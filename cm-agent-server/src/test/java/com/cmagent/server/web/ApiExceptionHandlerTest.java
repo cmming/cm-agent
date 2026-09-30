@@ -27,6 +27,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ApiExceptionHandlerTest {
     private MockMvc mockMvc;
 
+    @Test
+    void 沙箱失败保持独立状态错误码和原错误编号() throws Exception {
+        mockMvc.perform(get("/test/sandbox/SKILL_SANDBOX_TIMEOUT"))
+                .andExpect(status().isGatewayTimeout())
+                .andExpect(jsonPath("$.code").value("SKILL_SANDBOX_TIMEOUT"))
+                .andExpect(jsonPath("$.errorId").value("sandbox-error-id"));
+        mockMvc.perform(get("/test/sandbox/SKILL_SANDBOX_DISABLED")).andExpect(status().isServiceUnavailable());
+        mockMvc.perform(get("/test/sandbox/SKILL_SANDBOX_UNAVAILABLE")).andExpect(status().isServiceUnavailable());
+        mockMvc.perform(get("/test/sandbox/AUDIT_UNAVAILABLE")).andExpect(status().isServiceUnavailable());
+        mockMvc.perform(get("/test/sandbox/PERSISTENCE_UNAVAILABLE")).andExpect(status().isServiceUnavailable());
+        mockMvc.perform(get("/test/sandbox/SKILL_SANDBOX_INVALID")).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/test/sandbox/SKILL_SANDBOX_DUPLICATE")).andExpect(status().isConflict());
+        mockMvc.perform(get("/test/sandbox/SKILL_SANDBOX_LIMIT_EXCEEDED")).andExpect(status().isTooManyRequests());
+        mockMvc.perform(get("/test/sandbox/SKILL_SANDBOX_FAILED")).andExpect(status().isUnprocessableEntity());
+    }
+
     @BeforeEach
     /**
      * 准备每个测试用例共享的前置数据。
@@ -119,6 +135,10 @@ class ApiExceptionHandlerTest {
 
     @RestController
     static class FailingController {
+        @GetMapping("/test/sandbox/{code}")
+        public void sandbox(@PathVariable("code") com.cmagent.api.ApiErrorCode code) {
+            throw new com.cmagent.core.runtime.SkillAccessException(code, "技能沙箱受控失败", "sandbox-error-id", true);
+        }
         @GetMapping("/test/resources/{id}")
         /**
          * 验证或支持 {@code resource} 所描述的测试场景。

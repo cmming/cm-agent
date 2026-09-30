@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
 /**
  * 为一次 AgentScope 运行创建隔离的原生技能目录和加载工具。
  *
- * <p>每次运行都会新建 SkillBox，并仅注册领域请求已固定的历史版本。禁用自动上传和代码执行后，
+ * <p>每次运行都会新建 SkillBox，并仅注册领域请求已固定的历史版本。禁用原生自动上传和代码执行后，
  * 原生 SkillBox 只能在内存中组织技能元数据；加载工具注册完成后会立即被
  * {@link AgentScopeSkillLoadBridge} 替换，因此模型的每一次正文读取仍会进入 CM Agent 治理网关。</p>
  */
@@ -47,6 +47,9 @@ final class AgentScopeSkillSession implements AutoCloseable {
             // 业务工具不能伪装为技能加载器；否则替换时可能绕过既有工具治理或改变其语义。
             throw new IllegalArgumentException("业务工具名称不能使用 load_skill_through_path");
         }
+        if (toolkit.getTool(AgentScopeSkillExecutionBridge.TOOL_NAME) != null) {
+            throw new IllegalArgumentException("业务工具名称不能使用 run_skill_script");
+        }
         AgentScopeSkillRepository repository = new AgentScopeSkillRepository(request.skills());
         SkillBox skillBox = new SkillBox(toolkit);
         skillBox.setAutoUploadSkill(false);
@@ -67,6 +70,9 @@ final class AgentScopeSkillSession implements AutoCloseable {
         toolkit.removeTool(AgentScopeSkillLoadBridge.TOOL_NAME);
         toolkit.registerAgentTool(new AgentScopeSkillLoadBridge(
                 request, runGate, gateway, nativeTool, skillsByNativeId));
+        if (gateway.executionEnabled()) {
+            toolkit.registerAgentTool(new AgentScopeSkillExecutionBridge(request, runGate, gateway, skillsByNativeId));
+        }
         this.directoryPrompt = skillBox.getSkillPrompt() + dependencyPrompt(request);
     }
 

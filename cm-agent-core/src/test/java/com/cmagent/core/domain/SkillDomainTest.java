@@ -198,6 +198,15 @@ class SkillDomainTest {
 
     @Test
     void 读取记录区分成功失败和拒绝字段() {
+        SkillLoadRecord prepared = new SkillLoadRecord(
+                UUID.randomUUID(), TENANT_ID, UUID.randomUUID(), "sandbox-prepare", 1,
+                SKILL_ID, VERSION_ID, "scripts/main.py", SkillLoadStatus.SANDBOX_PREPARED,
+                0, 0, null, null, Instant.EPOCH);
+        assertThat(prepared.status()).isNotEqualTo(SkillLoadStatus.SUCCEEDED);
+        assertThatThrownBy(() -> new SkillLoadRecord(
+                UUID.randomUUID(), TENANT_ID, UUID.randomUUID(), "sandbox-invalid", 1,
+                SKILL_ID, VERSION_ID, "scripts/main.py", SkillLoadStatus.SANDBOX_PREPARED,
+                8, 0, null, null, Instant.EPOCH)).isInstanceOf(IllegalArgumentException.class);
         SkillLoadRecord succeeded = new SkillLoadRecord(
                 UUID.randomUUID(), TENANT_ID, UUID.randomUUID(), "call-1", 1,
                 SKILL_ID, VERSION_ID, "SKILL.md", SkillLoadStatus.SUCCEEDED,

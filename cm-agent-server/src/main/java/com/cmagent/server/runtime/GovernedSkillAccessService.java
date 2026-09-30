@@ -60,6 +60,10 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
     private final AuditAppender audit;
     private final SkillProperties properties;
     private final Clock clock;
+    /** 服务级复用沙箱并发门控，执行期间不持有数据库事务。 */
+    private final DockerSkillSandbox sandbox;
+    /** 只记录可信上下文与脱敏异常，不记录脚本、输入或输出正文。 */
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GovernedSkillAccessService.class);
 
     /** 创建技能读取治理服务并固定全部安全和提交依赖。 */
     @Autowired
@@ -81,6 +85,16 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
             SkillTrialRepository trials,
             SkillLoadRecordRepository records, SkillUnitOfWork workUnit,
             AuditAppender audit, SkillProperties properties, Clock clock) {
+        this(runs, snapshots, definitions, versions, resources, bindings, trials, records,
+                workUnit, audit, properties, clock, new DockerSkillSandbox(properties.getSandbox()));
+    }
+
+    GovernedSkillAccessService(
+            RunRepository runs, RunSkillSnapshotRepository snapshots,
+            SkillDefinitionRepository definitions, SkillVersionRepository versions,
+            SkillResourceRepository resources, AgentSkillBindingRepository bindings,
+            SkillTrialRepository trials, SkillLoadRecordRepository records, SkillUnitOfWork workUnit,
+            AuditAppender audit, SkillProperties properties, Clock clock, DockerSkillSandbox sandbox) {
         this.runs = Objects.requireNonNull(runs, "runs 不能为空");
         this.snapshots = Objects.requireNonNull(snapshots, "snapshots 不能为空");
         this.definitions = Objects.requireNonNull(definitions, "definitions 不能为空");
@@ -93,6 +107,138 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
         this.audit = Objects.requireNonNull(audit, "audit 不能为空");
         this.properties = Objects.requireNonNull(properties, "properties 不能为空");
         this.clock = Objects.requireNonNull(clock, "clock 不能为空");
+        this.sandbox = Objects.requireNonNull(sandbox, "sandbox 不能为空");
+    }
+
+    /** @return 技能和沙箱开关同时开启时才允许适配器公开执行工具 */
+    @Override
+    public boolean executionEnabled() {
+        return properties.isEnabled() && properties.getSandbox().isEnabled();
+    }
+
+    /**
+     * 准备、执行并收口一次固定脚本调用；同一调用标识拒绝重放，不重新产生副作用。
+     *
+     * <p>读取记录表示资源已交给沙箱准备阶段，并共用 Run 读取预算；它不表示脚本执行成功。
+     * 执行终态单独通过 SKILL_EXECUTE 审计记录。数据库短工作单元在容器运行前已提交，
+     * 后置复核发现停用、解绑或 Run 结束时丢弃输出；容器内写入全部随容器销毁。</p>
+     *
+     * @param request 由可信 Run 和固定快照构造的脚本资源定位
+     * @param stdin 有界的脚本标准输入，不作为命令解释
+     * @return 后置授权与严格审计成功后的脱敏输出
+     */
+    @Override
+    public String execute(SkillReadRequest request, String stdin) {
+        try {
+            if (!executionEnabled()) throw failure(ApiErrorCode.SKILL_SANDBOX_DISABLED, "技能沙箱未启用", request, true);
+            if (!DockerSkillSandbox.safePath(request.path()) || !request.path().endsWith(".py")
+                    || stdin == null || stdin.getBytes(StandardCharsets.UTF_8).length > properties.getSandbox().getMaxInputBytes()) {
+                throw failure(ApiErrorCode.SKILL_SANDBOX_INVALID, "只允许执行包内 Python 脚本和有界输入", request, true);
+            }
+            java.util.Map<String, String> files = workUnit.execute(() -> prepareExecution(request));
+            // 审计不可用时禁止创建容器，不能将严格失败降级成普通工具错误。
+            executionAudit(request, "STARTED", "技能沙箱开始执行");
+            String output = sandbox.execute(request, files, stdin);
+            workUnit.execute(() -> {
+                checkExecutionState(request);
+                ResolvedResource current = resolve(request, snapshots.lock(request.principal().tenantId(), request.runId()));
+                if (current.failure() != null) throw current.failure();
+                executionAudit(request, "SUCCEEDED", "技能沙箱执行成功");
+                return null;
+            });
+            return output;
+        } catch (SkillAccessException failure) {
+            try {
+                executionAudit(request, "FAILED", failure.code().name() + " errorId=" + failure.errorId());
+            } catch (RuntimeException auditFailure) {
+                // 失败审计本身不可用时，仍保留同一关联编号，以严格基础设施失败收口而非伪造审计成功。
+                SkillAccessException controlled = infrastructureFailure(request, auditFailure);
+                logExecutionFailure(request, controlled);
+                throw controlled;
+            }
+            logExecutionFailure(request, failure);
+            throw failure;
+        } catch (RuntimeException failure) {
+            SkillAccessException controlled = infrastructureFailure(request, failure);
+            logExecutionFailure(request, controlled);
+            throw controlled;
+        }
+    }
+
+    private java.util.Map<String, String> prepareExecution(SkillReadRequest request) {
+        checkExecutionState(request);
+        snapshots.lock(request.principal().tenantId(), request.runId());
+        if (records.findByCall(request.principal().tenantId(), request.runId(), request.modelCallId()).isPresent()) {
+            throw failure(ApiErrorCode.SKILL_SANDBOX_DUPLICATE, "本次脚本调用已经准备过，请勿重复执行", request, true);
+        }
+        ResolvedResource script = resolve(request, snapshots.lock(request.principal().tenantId(), request.runId()));
+        if (script.failure() != null) throw script.failure();
+        java.util.Map<String, String> files = new java.util.LinkedHashMap<>();
+        resources.list(request.principal().tenantId(), request.skillId(), request.versionId())
+                .forEach(resource -> files.put(resource.path(), resource.content()));
+        versions.find(request.principal().tenantId(), request.skillId(), request.versionId())
+                .ifPresent(version -> files.put("SKILL.md", version.content()));
+        // 每个同版本资源都计入现有累计读取预算，不能通过一次脚本调用绕过资源字节限额。
+        int bytes = files.values().stream().mapToInt(value -> value.getBytes(StandardCharsets.UTF_8).length).sum();
+        List<SkillLoadRecord> budget = records.listForBudget(request.principal().tenantId(), request.runId());
+        int delivered = usedBytes(budget, request);
+        if (budget.size() >= properties.getMaxLoadAttempts() || bytes > properties.getMaxLoadedBytes() - delivered) {
+            throw failure(ApiErrorCode.SKILL_LOAD_LIMIT_EXCEEDED, "本轮技能读取已达上限", request, true);
+        }
+        records.insert(new SkillLoadRecord(UUID.randomUUID(), request.principal().tenantId(), request.runId(),
+                request.modelCallId(), budget.size() + 1, request.skillId(), request.versionId(), request.path(),
+                SkillLoadStatus.SANDBOX_PREPARED, 0, 0, null, null, clock.instant()));
+        executionAudit(request, "PREPARED", "固定技能资源已预留沙箱预算，尚未执行");
+        return java.util.Map.copyOf(files);
+    }
+
+    private void checkExecutionState(SkillReadRequest request) {
+        if (!executionEnabled()) throw failure(ApiErrorCode.SKILL_SANDBOX_DISABLED, "技能沙箱已关闭", request, true);
+        // tenant 和 principal 均取自认证后的 Run 请求，模型输入不能覆盖；终态和审批等待均禁止执行。
+        boolean active = runs.findByTenantAndAgentAndId(request.principal().tenantId(), request.agentId(), request.runId())
+                .filter(run -> run.principalId().equals(request.principal().principalId())
+                        && run.status() == com.cmagent.core.domain.RunStatus.RUNNING).isPresent();
+        if (!active) throw failure(ApiErrorCode.SKILL_ACCESS_REVOKED, "本轮运行已结束或无权执行技能", request, true);
+    }
+
+    private void executionAudit(SkillReadRequest request, String status, String message) {
+        audit.append(request.principal().tenantId(), request.principal().principalId(), "SKILL_EXECUTE", "RUN",
+                request.runId().toString(), status, "skillId=" + request.skillId() + " versionId=" + request.versionId()
+                        + " toolCallId=" + request.modelCallId() + " " + message);
+    }
+
+    private static void logExecutionFailure(SkillReadRequest request, SkillAccessException failure) {
+        String template = "技能沙箱失败。errorId={}, operation=SKILL_EXECUTE, errorCode={}, tenantId={}, principalId={}, resourceType=SKILL, resourceId={}, versionId={}, runId={}, toolCallId={}";
+        Object[] context = {failure.errorId(), failure.code(), request.principal().tenantId(),
+                request.principal().principalId(), request.skillId(), request.versionId(), request.runId(), request.modelCallId()};
+        if (failure.code() == ApiErrorCode.SKILL_SANDBOX_UNAVAILABLE
+                || failure.code() == ApiErrorCode.AUDIT_UNAVAILABLE || failure.code() == ApiErrorCode.PERSISTENCE_UNAVAILABLE) {
+            RuntimeException safe = new RuntimeException(failure.safeMessage());
+            safe.setStackTrace(failure.getCause() == null ? failure.getStackTrace() : failure.getCause().getStackTrace());
+            Object[] diagnostic = java.util.Arrays.copyOf(context, context.length + 1);
+            diagnostic[context.length] = safe;
+            log.error(template, diagnostic);
+        } else if (failure.code() == ApiErrorCode.SKILL_SANDBOX_TIMEOUT || failure.code() == ApiErrorCode.SKILL_SANDBOX_FAILED) {
+            log.error(template, context);
+        } else {
+            log.warn(template, context);
+        }
+    }
+
+    private static SkillAccessException infrastructureFailure(SkillReadRequest request, RuntimeException original) {
+        ApiErrorCode code = original instanceof com.cmagent.server.audit.AuditPersistenceException
+                ? ApiErrorCode.AUDIT_UNAVAILABLE
+                : original instanceof org.springframework.dao.DataAccessException
+                ? ApiErrorCode.PERSISTENCE_UNAVAILABLE : ApiErrorCode.SKILL_SANDBOX_UNAVAILABLE;
+        String message = switch (code) {
+            case AUDIT_UNAVAILABLE -> "技能沙箱审计服务不可用，请联系管理员";
+            case PERSISTENCE_UNAVAILABLE -> "技能沙箱数据服务不可用，请联系管理员";
+            default -> "技能沙箱基础服务不可用，请联系管理员";
+        };
+        SkillAccessException controlled = failure(code, message, request, true);
+        // 只保留原始异常的堆栈位置，不保留可能含凭据、SQL 或内部地址的异常消息。
+        controlled.setStackTrace(original.getStackTrace());
+        return controlled;
     }
 
     /**
@@ -143,7 +289,7 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
                     resolved.skillId(), resolved.versionId(), safePath(request.path()), 0);
         }
         List<SkillLoadRecord> budget = records.listForBudget(request.principal().tenantId(), request.runId());
-        int delivered = budget.stream().mapToInt(SkillLoadRecord::deliveredBytes).sum();
+        int delivered = usedBytes(budget, request);
         if (budget.size() >= properties.getMaxLoadAttempts()
                 || resolved.byteLength() > properties.getMaxLoadedBytes() - delivered) {
             return denied(request, ApiErrorCode.SKILL_LOAD_LIMIT_EXCEEDED,
@@ -183,6 +329,10 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
         if (!same) {
             throw new SkillAccessException(ApiErrorCode.SKILL_CONFLICT,
                     "模型调用标识已用于其他技能读取", request.attemptId().toString(), true);
+        }
+        if (existing.status() == SkillLoadStatus.SANDBOX_PREPARED) {
+            throw failure(ApiErrorCode.SKILL_SANDBOX_DUPLICATE,
+                    "本次调用标识已用于沙箱资源准备", request, true);
         }
         if (existing.status() != SkillLoadStatus.SUCCEEDED) {
             throw new SkillAccessException(existing.errorCode(), "技能读取重试仍被拒绝",
@@ -281,6 +431,27 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
     private void appendAudit(SkillReadRequest request, String status, String message) {
         audit.append(request.principal().tenantId(), request.principal().principalId(),
                 "SKILL_LOAD", "RUN", request.runId().toString(), status, message);
+    }
+
+    /**
+     * 沙箱准备不计作模型交付，但按其不可变固定版本资源大小预留相同预算。
+     * 该记录持久化且受快照锁串行保护，恢复或跨实例请求不能通过零交付字节绕过限额。
+     */
+    private int usedBytes(List<SkillLoadRecord> budget, SkillReadRequest request) {
+        int total = 0;
+        for (SkillLoadRecord record : budget) {
+            if (record.status() == SkillLoadStatus.SANDBOX_PREPARED) {
+                SkillVersion version = versions.find(record.tenantId(), record.skillId(), record.versionId())
+                        .orElseThrow(() -> failure(ApiErrorCode.SKILL_SNAPSHOT_UNAVAILABLE,
+                                "沙箱预算固定版本不可用", request, true));
+                total += version.content().getBytes(StandardCharsets.UTF_8).length;
+                total += resources.list(record.tenantId(), record.skillId(), record.versionId()).stream()
+                        .mapToInt(SkillResource::byteLength).sum();
+            } else {
+                total += record.deliveredBytes();
+            }
+        }
+        return total;
     }
 
     private long elapsed(Instant started) {

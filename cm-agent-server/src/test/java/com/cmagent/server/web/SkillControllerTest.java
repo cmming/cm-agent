@@ -196,6 +196,11 @@ class SkillControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.enabled").value(true))
                 .andExpect(jsonPath("$.allowedExtensions", hasItem(".html")))
+                .andExpect(jsonPath("$.sandboxEnabled").value(false))
+                .andExpect(jsonPath("$.scriptLanguages").isEmpty())
+                .andExpect(jsonPath("$.sandboxTimeoutSeconds").value(15))
+                .andExpect(jsonPath("$.sandboxMaxInputBytes").value(32768))
+                .andExpect(jsonPath("$.sandboxMaxOutputBytes").value(32768))
                 .andExpect(jsonPath("$.maxBoundSkills").value(20));
     }
 

@@ -318,6 +318,11 @@ class JdbcSkillRepositoriesTest {
             return null;
         });
         assertThat(loads.findByCall(TENANT_B, RUN_B, "model-call-denied")).contains(denied);
+        SkillLoadRecord prepared = new SkillLoadRecord(UUID.randomUUID(), TENANT_A, RUN_A, "script-call", 2,
+                skillA, versionA2, "scripts/main.py", SkillLoadStatus.SANDBOX_PREPARED, 0, 0, null, null, NOW.plusSeconds(5));
+        execute(transactions, () -> { loads.insert(prepared); return null; });
+        assertThat(loads.findByCall(TENANT_A, RUN_A, "script-call")).contains(prepared);
+        assertThat(loads.findByCall(TENANT_B, RUN_A, "script-call")).isEmpty();
 
         UUID rolledBackSkill = UUID.randomUUID();
         assertThatThrownBy(() -> execute(transactions, () -> {

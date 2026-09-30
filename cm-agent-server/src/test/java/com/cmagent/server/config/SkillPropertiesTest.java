@@ -11,6 +11,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class SkillPropertiesTest {
 
     @Test
+    void 沙箱默认关闭且开启时能力白名单自动包含Python() {
+        SkillProperties properties = new SkillProperties();
+        assertThat(properties.getSandbox().isEnabled()).isFalse();
+        assertThat(properties.getAllowedResourceTypes()).doesNotContain(".py");
+        properties.getSandbox().setEnabled(true);
+        properties.validate();
+        assertThat(properties.getAllowedResourceTypes()).contains(".py");
+        properties.getSandbox().setTimeout(java.time.Duration.ofSeconds(21));
+        assertThatThrownBy(properties::validate).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void 默认关闭并使用设计约定的全部上限() {
         SkillProperties properties = new SkillProperties();
 
