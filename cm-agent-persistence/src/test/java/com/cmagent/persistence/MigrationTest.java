@@ -101,7 +101,7 @@ class MigrationTest {
         int secondStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
 
         assertThat(firstStage).isEqualTo(12);
-        assertThat(secondStage).isEqualTo(1);
+        assertThat(secondStage).isEqualTo(2);
         assertSchemaContract(firstStage + secondStage, jdbcUrl, username, password);
         assertThat(JdbcClient.create(dataSource).sql("""
                         SELECT skills_json FROM run_skill_snapshots
@@ -285,7 +285,7 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(13);
+        assertThat(migrationsExecuted).isEqualTo(14);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
@@ -315,7 +315,9 @@ class MigrationTest {
             assertThat(indexNames(connection, "messages")).contains(
                     "ux_messages_tenant_conversation_sequence", "idx_messages_tenant_run");
             assertThat(indexNames(connection, "tool_approval_requests")).contains(
-                    "idx_tool_approvals_pending", "idx_tool_approvals_run");
+                    "idx_tool_approvals_pending", "idx_tool_approvals_run", "idx_approval_expiry_scan");
+            assertThat(indexColumns(connection, "tool_approval_requests", "idx_approval_expiry_scan"))
+                    .containsExactly("status", "expires_at", "id");
             assertThat(indexNames(connection, "tool_approval_items")).contains("ux_tool_approval_items_call");
             assertThat(indexNames(connection, "runtime_checkpoints")).contains(
                     "ux_runtime_checkpoints_slot", "idx_runtime_checkpoints_expiry");

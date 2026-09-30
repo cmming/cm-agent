@@ -365,7 +365,10 @@ class ApprovalExpiryJdbcPersistenceTest {
     public static final class RestartFixture {
         public static void main(String[] args) throws Exception {
             Map<String, Object> settings = Map.ofEntries(
+                    Map.entry("server.address", "127.0.0.1"),
                     Map.entry("server.port", "0"),
+                    // 禁用独立管理监听，避免环境配置将子进程端点暴露到回环以外。
+                    Map.entry("management.server.port", "-1"),
                     Map.entry("spring.profiles.active", "test"),
                     Map.entry("spring.main.banner-mode", "off"),
                     Map.entry("cm-agent.persistence.mode", "jdbc"),

@@ -77,7 +77,7 @@ public final class ApprovalExpiryBrowserFixture {
         properties.put("spring.profiles.active", "test");
         properties.put("server.address", "127.0.0.1");
         properties.put("server.port", "18093");
-        properties.put("management.server.address", "127.0.0.1");
+        // 管理端点复用主服务的回环地址；Spring Boot 不允许同端口单独指定管理地址。
         properties.put("management.server.port", "18093");
         properties.put("cm-agent.persistence.mode", "memory");
         properties.put("cm-agent.skills.enabled", "true");
