@@ -120,6 +120,7 @@ class GovernedSkillAccessServiceTest {
     @Test
     void 固定脚本执行并拒绝相同调用重复运行() {
         DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        when(sandbox.open(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap())).thenCallRealMethod();
         GovernedSkillAccessService execution = executionService(sandbox);
         SkillReadRequest request = scriptRequest("script-1");
         when(sandbox.execute(org.mockito.ArgumentMatchers.eq(request), org.mockito.ArgumentMatchers.anyMap(),
@@ -142,6 +143,7 @@ class GovernedSkillAccessServiceTest {
     @Test
     void 沙箱准备的固定资源预算在之后读取时仍被扣减() {
         DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        when(sandbox.open(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap())).thenCallRealMethod();
         GovernedSkillAccessService execution = executionService(sandbox);
         when(sandbox.execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn("结果");
@@ -155,6 +157,7 @@ class GovernedSkillAccessServiceTest {
     @Test
     void 撤销与跨租户或其他主体请求不进入沙箱() {
         DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        when(sandbox.open(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap())).thenCallRealMethod();
         GovernedSkillAccessService execution = executionService(sandbox);
         PrincipalRef other = new PrincipalRef(UUID.randomUUID(), "other", "其他主体", Set.of("agent:run"));
         SkillReadRequest foreign = new SkillReadRequest(other, agent, runId, "foreign", UUID.randomUUID(), skillId,
@@ -178,6 +181,7 @@ class GovernedSkillAccessServiceTest {
     @Test
     void 严格开始审计失败不执行且诊断脱敏(CapturedOutput output) {
         DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        when(sandbox.open(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap())).thenCallRealMethod();
         GovernedSkillAccessService execution = executionService(sandbox);
         org.mockito.Mockito.doThrow(new IllegalStateException("api_key=verification-only-value https://internal.example.local"))
                 .when(audit).append(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
@@ -198,6 +202,7 @@ class GovernedSkillAccessServiceTest {
     @Test
     void 执行期间撤销后丢弃输出并禁止成功审计() {
         DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        when(sandbox.open(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap())).thenCallRealMethod();
         GovernedSkillAccessService execution = executionService(sandbox);
         when(sandbox.execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.any()))
                 .thenAnswer(ignored -> {
@@ -220,6 +225,7 @@ class GovernedSkillAccessServiceTest {
     @Test
     void 脚本失败的错误编号与日志审计一致(CapturedOutput output) {
         DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        when(sandbox.open(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap())).thenCallRealMethod();
         GovernedSkillAccessService execution = executionService(sandbox);
         SkillReadRequest request = scriptRequest("failed-script");
         when(sandbox.execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.any()))
@@ -245,8 +251,36 @@ class GovernedSkillAccessServiceTest {
     }
 
     @Test
+    void 清理成功后在事务外复核端点策略才允许交付() {
+        executionService(mock(DockerSkillSandbox.class));
+        var inTransaction = new java.util.concurrent.atomic.AtomicBoolean();
+        var closed = new java.util.concurrent.atomic.AtomicBoolean();
+        var observed = new com.cmagent.server.service.SkillUnitOfWork() {
+            public <T> T execute(Supplier<T> operation) {
+                inTransaction.set(true);
+                try { return store.execute(operation); } finally { inTransaction.set(false); }
+            }
+        };
+        var backend = mock(com.cmagent.core.runtime.SkillSandboxBackend.class);
+        var handle = mock(com.cmagent.core.runtime.SkillSandboxBackend.Execution.class);
+        when(backend.open(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap())).thenReturn(handle);
+        when(handle.execute(org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.anyString())).thenReturn("成功输出");
+        org.mockito.Mockito.doAnswer(call -> { closed.set(true); return null; }).when(handle).close();
+        org.mockito.Mockito.doAnswer(call -> {
+            assertThat(closed.get()).isTrue();
+            assertThat(inTransaction.get()).isFalse();
+            return null;
+        }).when(handle).verifyAccess();
+        var execution = new GovernedSkillAccessService(runs, store.snapshots(), store.definitions(), store.versions(), store.resources(),
+                store.bindings(), store.trials(), store.loads(), observed, audit, properties, Clock.fixed(NOW, ZoneOffset.UTC), backend);
+        assertThat(execution.execute(scriptRequest("verify-outside-transaction"), "")).isEqualTo("成功输出");
+        verify(handle).verifyAccess();
+    }
+
+    @Test
     void 成功收口审计失败时丢弃输出且保持审计错误分类(CapturedOutput output) {
         DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        when(sandbox.open(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap())).thenCallRealMethod();
         GovernedSkillAccessService execution = executionService(sandbox);
         when(sandbox.execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn("private-output");

@@ -3,10 +3,28 @@
 cm-agent:
   skills:
     sandbox:
-      enabled: ${CM_AGENT_SKILL_SANDBOX_ENABLED:false}
+      enabled: ${CM_AGENT_SKILL_SANDBOX_ENABLED:true}
       image: ${CM_AGENT_SKILL_SANDBOX_IMAGE:python:3.12-alpine}
       runtime: ${CM_AGENT_SKILL_SANDBOX_RUNTIME:}
       timeout: 15s
       max-input-bytes: 32768
       max-output-bytes: 32768
       max-concurrent: 2
+      backend: docker
+      # 精确host:port列表由部署者控制，空列表拒绝所有远程目标。
+      allowed-targets: ${CM_AGENT_SKILL_SANDBOX_ALLOWED_TARGETS:}
+      # 独立32字节Base64主密钥；不提供默认可用密钥，未配置时拒绝端点管理写入。
+      encryption-key: ${CM_AGENT_SKILL_SANDBOX_ENCRYPTION_KEY:}
+      connection:
+        # 留空保留R0本地环境兼容，显式LOCAL/SSH/TLS不继承全局Docker或SSH配置。
+        mode: ${CM_AGENT_SKILL_SANDBOX_CONNECTION_MODE:}
+        host: ${CM_AGENT_SKILL_SANDBOX_HOST:}
+        port: ${CM_AGENT_SKILL_SANDBOX_PORT:0}
+        username: ${CM_AGENT_SKILL_SANDBOX_USERNAME:}
+        # 旧部署默认私钥；PASSWORD只使用明确Secret文件，不在子进程环境传递密码。
+        ssh-auth-type: ${CM_AGENT_SKILL_SANDBOX_SSH_AUTH_TYPE:KEY}
+        password-file: ${CM_AGENT_SKILL_SANDBOX_PASSWORD_FILE:}
+        private-key-file: ${CM_AGENT_SKILL_SANDBOX_PRIVATE_KEY_FILE:}
+        known-hosts-file: ${CM_AGENT_SKILL_SANDBOX_KNOWN_HOSTS_FILE:}
+        ca-certificate-file: ${CM_AGENT_SKILL_SANDBOX_CA_CERTIFICATE_FILE:}
+        client-certificate-file: ${CM_AGENT_SKILL_SANDBOX_CLIENT_CERTIFICATE_FILE:}

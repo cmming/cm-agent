@@ -25,7 +25,8 @@ class DockerSkillSandboxTest {
         var command = new DockerSkillSandbox(properties).command("cm-agent-skill-test");
         assertThat(command).contains("--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
                 "--user=65534:65534", "--pids-limit=32", "--memory=128m", "--memory-swap=128m", "--cpus=0.5",
-                "--pull=never", "--runtime=runsc", "--log-driver=none", "--entrypoint=python")
+                "--pull=never", "--runtime=runsc", "--log-driver=none", "--entrypoint=python",
+                "--tmpfs=/workspace:rw,noexec,nosuid,nodev,size=16m,mode=1777,uid=65534,gid=65534")
                 .doesNotContain("--privileged", "--volume", "-v", "sh", "bash", "/var/run/docker.sock");
     }
 

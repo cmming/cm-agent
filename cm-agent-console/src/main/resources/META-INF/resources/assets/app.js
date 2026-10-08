@@ -446,6 +446,13 @@
                     });
                     state.skillsPage.mount();
                 }
+                if (window.CmAgentSandboxEndpoints && !state.sandboxPage) {
+                    state.sandboxPage = window.CmAgentSandboxEndpoints.createSandboxPage({
+                        api, getSessionEpoch: () => sessionEpoch.capture(),
+                        getPermissions: () => state.currentUser?.permissions || [], document
+                    });
+                    state.sandboxPage.mount();
+                }
                 break;
             case "chatPage":
                 await loadAgents(session);

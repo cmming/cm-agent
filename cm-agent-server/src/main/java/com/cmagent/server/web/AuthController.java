@@ -48,6 +48,11 @@ public class AuthController {
             "tool:mcp:invoke",
             "skill:read",
             "skill:write",
+            "sandbox:read",
+            "sandbox:write",
+            "sandbox:delete",
+            "sandbox:test",
+            "sandbox:credential:write",
             "audit:read",
             "apikey:write"
     );

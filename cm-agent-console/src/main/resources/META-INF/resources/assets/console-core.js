@@ -8,10 +8,12 @@
     }
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     function formatError(status, body, fallbackText) {
-        if (status === 403) {
+        // 沙箱目标拒绝与端点不存在有具体恢复动作及关联编号，保留服务端安全说明。
+        const sandboxFailure = typeof body?.code === "string" && body.code.startsWith("SKILL_SANDBOX_");
+        if (status === 403 && !sandboxFailure) {
             return "请求失败(403)：没有权限执行此操作。";
         }
-        if (status === 404) {
+        if (status === 404 && !sandboxFailure) {
             return "请求失败(404)：请求的资源不存在或已不可用。";
         }
         const structuredMessage = body && typeof body === "object"

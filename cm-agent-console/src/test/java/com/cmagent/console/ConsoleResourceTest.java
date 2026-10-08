@@ -122,7 +122,7 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.26", "/assets/console-core.js?v=2.0.13", "/assets/styles.css?v=2.0.17")
+                    .contains("/assets/app.js?v=2.0.27", "/assets/console-core.js?v=2.0.14", "/assets/styles.css?v=2.0.17")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }

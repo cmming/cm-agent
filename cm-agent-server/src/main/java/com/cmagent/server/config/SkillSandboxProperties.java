@@ -1,9 +1,34 @@
 package com.cmagent.server.config;
 
+import org.springframework.boot.context.properties.NestedConfigurationProperty;
+
 import java.time.Duration;
 
 /** 仅由部署者控制的沙箱策略，技能元数据和模型参数不能覆盖安全边界。 */
 public class SkillSandboxProperties {
+    /** 只由部署注册的后端标识，不能指定实现类。 */
+    private String backend = "docker";
+    /** 远程 host:port 的精确白名单，空集合拒绝远程端点。 */
+    private java.util.List<String> allowedTargets = java.util.List.of();
+    /** 独立沙箱凭据主密钥，默认不提供任何可用密钥。 */
+    private String encryptionKey = "";
+    /** 部署默认连接；空 mode 保留旧 DOCKER_* 环境行为，显式配置后不继承。嵌套注解仅用于展开连接配置元数据。 */
+    @NestedConfigurationProperty
+    private final DockerConnectionProperties connection = new DockerConnectionProperties();
+    /** @return 默认后端标识 */
+    public String getBackend() { return backend; }
+    /** @param value 默认后端标识 */
+    public void setBackend(String value) { backend = value; }
+    /** @return 部署允许目标 */
+    public java.util.List<String> getAllowedTargets() { return allowedTargets; }
+    /** @param value 精确 host:port 清单 */
+    public void setAllowedTargets(java.util.List<String> value) { allowedTargets = java.util.List.copyOf(value); }
+    /** @return 仅供加密组件使用的主密钥，禁止诊断输出 */
+    public String getEncryptionKey() { return encryptionKey; }
+    /** @param value 外部注入的 Base64 主密钥 */
+    public void setEncryptionKey(String value) { encryptionKey = value; }
+    /** @return 部署默认连接 */
+    public DockerConnectionProperties getConnection() { return connection; }
     /** 默认关闭，升级不会自动允许执行导入代码。 */
     private boolean enabled;
     /** 部署者预拉取的可信 Python 镜像；生产应使用 digest 固定内容。 */

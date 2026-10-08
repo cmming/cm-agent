@@ -1,5 +1,21 @@
 # 发布说明
 
+## 未发布：远程 Docker SSH 账号密码认证
+
+- SSH新增可选`sshAuthType=PASSWORD`，旧省略仍为`KEY`；主机用户名/密码与严格known_hosts配套，不支持Registry或daemon HTTP Basic认证。
+- 密码通过JSch 2.28.7内存会话到固定Docker Unix socket，不进入子进程参数、环境或生成文件；不回退私钥、本地或重试旧密码。保留既有私钥/TLS传输。
+- 控制台增加认证选择与掩码只写输入，类型切换需完整新材料及凭据写权限；凭据省略仅同类型保留，轮换失效探测，在途连接仍固定。
+- PostgreSQL/MySQL新增V17认证类型及中文注释，V16旧端点升级默认KEY。混合版本实例不能管理PASSWORD端点，应统一升级后启用；主密钥、租户、审计与既有隔离限额保持。
+- 实际验证与平台证据见[账号密码认证账本](superpowers/progress/2026-10-01-remote-docker-password-auth-ledger.md)。本轮未部署。
+
+## 未发布：R1 租户沙箱端点与远程 Docker
+
+- 新增无 Spring/JDBC 的后端 SPI、统一限额注册器和固定连接生命周期。Docker 支持显式 LOCAL、SSH 严格主机身份验证与双向 TLS；当前调用执行/清理固定原主机，不自动重放或回退。
+- 新增本租户端点 API、独立读/写/删除/探测/凭据权限与严格审计。默认选择要求当前配置版本探测通过；轮换或更新后重新探测，停用/删除在交付阶段复核。
+- SSH/TLS 材料使用独立部署主密钥 AES/GCM 加密，绑定租户、端点及凭据版本；响应不回显明文/密文。V16 两库新增端点及默认表、中文原生注释、tenant 组合外键和 CAS/租户锁。
+- v2 技能页增加端点列表—详情—操作视图，支持保存→测试→默认、轮换、删除、失败保留普通表单与错误编号。原技能导入、发布、Run/TEST 治理与容器隔离保持兼容。
+- 显式连接不读取全局 Docker/SSH 配置。旧远程 DOCKER_HOST 须迁移为 SSH/TLS；缺失沙箱主密钥拒绝管理写入。部署前需授予管理角色新增权限、准备可信镜像和目标允许列表；没有跨主密钥自动重加密、跨实例执行接管或非 Docker 后端。实际验收见[本轮账本](superpowers/progress/2026-09-30-skill-sandbox-ledger.md)。
+
 ## 未发布：技能 Python 容器沙箱
 
 - 新增默认关闭的 `cm-agent.skills.sandbox` 策略和受治理 `run_skill_script` 工具；仅执行当前 Run 固定版本中已登记的 Python 脚本，支持同版本文本资源与有界 stdin。开启后导入白名单自动补入 `.py`，能力接口新增执行开关、语言与限额字段。

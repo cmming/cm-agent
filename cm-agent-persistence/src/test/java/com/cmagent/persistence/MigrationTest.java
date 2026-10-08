@@ -64,7 +64,7 @@ class MigrationTest {
             "skill_releases",
             "skill_preflight_checks",
             "skill_preflight_items",
-            "skill_trials"
+            "skill_trials", "skill_sandbox_endpoints", "skill_sandbox_defaults"
     );
 
     @Container
@@ -98,11 +98,23 @@ class MigrationTest {
         CmAgentFlyway.configure(dataSource).cleanDisabled(false).load().clean();
         int firstStage = CmAgentFlyway.configure(dataSource).target("12").load().migrate().migrationsExecuted;
         seedLegacyRun(dataSource);
-        int secondStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
+        int secondStage = CmAgentFlyway.configure(dataSource).target("16").load().migrate().migrationsExecuted;
+        // V16端点没有认证类型字段；升级必须保留原SSH私钥语义，不能隐式切换密码认证。
+        JdbcClient.create(dataSource).sql("""
+                INSERT INTO skill_sandbox_endpoints
+                (id,tenant_id,display_name,backend,connection_mode,host,port,username,enabled,
+                 encrypted_credential,credential_version,revision,probe_revision,probe_status,deleted,created_at,updated_at)
+                VALUES ('90000000-0000-0000-0000-000000000020','90000000-0000-0000-0000-000000000001',
+                '旧SSH端点','docker','SSH','example.invalid',22,'fixture',true,'',0,1,0,'NOT_TESTED',false,:now,:now)
+                """).param("now", Timestamp.from(java.time.Instant.now())).update();
+        int passwordStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
 
         assertThat(firstStage).isEqualTo(12);
-        assertThat(secondStage).isEqualTo(3);
-        assertSchemaContract(firstStage + secondStage, jdbcUrl, username, password);
+        assertThat(secondStage).isEqualTo(4);
+        assertThat(passwordStage).isEqualTo(1);
+        assertThat(JdbcClient.create(dataSource).sql("SELECT ssh_auth_type FROM skill_sandbox_endpoints WHERE id='90000000-0000-0000-0000-000000000020'")
+                .query(String.class).single()).isEqualTo("KEY");
+        assertSchemaContract(firstStage + secondStage + passwordStage, jdbcUrl, username, password);
         assertThat(JdbcClient.create(dataSource).sql("""
                         SELECT skills_json FROM run_skill_snapshots
                         WHERE tenant_id = '90000000-0000-0000-0000-000000000001'
@@ -285,7 +297,7 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(15);
+        assertThat(migrationsExecuted).isEqualTo(17);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);

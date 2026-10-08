@@ -2,6 +2,7 @@ package com.cmagent.server.config;
 
 import com.cmagent.server.service.SkillPackageLimits;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.NestedConfigurationProperty;
 
 import java.util.List;
 
@@ -27,7 +28,8 @@ public class SkillProperties {
     private int maxRunBytes = 8 * 1024 * 1024;
     private int maxLoadAttempts = 32;
     private int maxLoadedBytes = 256 * 1024;
-    /** 独立的执行策略；默认关闭，不由技能包修改。 */
+    /** 独立的执行策略；默认关闭，不由技能包修改。嵌套注解让元数据处理器展开独立类，不改变JVM配置绑定。 */
+    @NestedConfigurationProperty
     private final SkillSandboxProperties sandbox = new SkillSandboxProperties();
 
     /** @return 是否允许新增、更新、启用和绑定技能 */

@@ -1,0 +1,21 @@
+.sandbox-tabs { display:flex; gap:8px; margin-bottom:16px; border-bottom:1px solid var(--line, #dde3eb); padding-bottom:8px; }
+.sandbox-tabs [aria-selected="true"] { background:var(--accent-soft, #e8f0f9); color:var(--accent, #285a90); }
+.sandbox-management-grid[hidden], .skills-management-grid[hidden], .sandbox-field[hidden] { display:none; }
+.sandbox-management-grid { grid-template-columns:minmax(240px, 0.8fr) minmax(0, 1.7fr); align-items:start; }
+.sandbox-management-grid > .form-status { grid-column:1 / -1; }
+.sandbox-field { display:grid; gap:6px; margin-bottom:16px; }
+.sandbox-field textarea { min-height:100px; font-family:monospace; resize:vertical; width:100%; }
+.sandbox-field input, .sandbox-field select { max-width:100%; }
+.sandbox-field input[type="checkbox"] { width:18px; height:18px; }
+.sandbox-resource-item { display:flex; flex-direction:column; align-items:flex-start; gap:6px; width:100%; text-align:left; overflow-wrap:anywhere; }
+.sandbox-resource-item span { font-size:13px; color:var(--muted, #667386); }
+.sandbox-resource-item[aria-pressed="true"] { border-color:var(--accent, #285a90); background:var(--accent-soft, #e8f0f9); }
+.sandbox-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+body[data-console-version="v2"] #skillsPage .sandbox-tabs .button[aria-selected="true"] { background:#eaf2ff; color:#214f88; border-color:#7faaf5; }
+body[data-console-version="v2"] #skillsPage .sandbox-management-grid .resource-item[aria-pressed="true"] { background:#f1f6ff; border-color:#7faaf5; }
+body[data-console-version="v2"] #sandboxEndpointDetail > h2 { font-size:16px; margin:0 0 8px; }
+body[data-console-version="v2"] #sandboxEndpointDetail .sandbox-field { gap:6px; margin-bottom:12px; }
+body[data-console-version="v2"] #sandboxEndpointDetail .sandbox-field > label { margin:0; }
+body[data-console-version="v2"] #sandboxEndpointDetail .sandbox-checkbox-field { display:flex; align-items:center; gap:8px; }
+body[data-console-version="v2"] #sandboxEndpointDetail .sandbox-checkbox-field input { margin:0; }
+@media(max-width:900px) { .sandbox-management-grid { grid-template-columns:minmax(0, 1fr); } }

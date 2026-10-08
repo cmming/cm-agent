@@ -45,6 +45,26 @@ public class ErrorDiagnosticLogger {
      * @param upstreamResponse 上游响应正文；没有响应正文时传入 {@code null}
      */
     public void error(DiagnosticContext context, Throwable failure, String upstreamResponse) {
+        error(context, failure, upstreamResponse, "-", "-");
+    }
+
+    /**
+     * 为领域资源记录一次带脱敏堆栈的失败，不把端点编号误放入Agent或工具字段。
+     *
+     * <p>资源字段必须来自服务端路由及已认证的租户上下文，不能放入地址、凭据或请求正文。
+     * 本方法与普通诊断共用同一日志边界，调用方不应再重复记录该异常。</p>
+     *
+     * @param context 已认证且具有响应错误编号的诊断上下文
+     * @param failure 失败异常，消息会脱敏并保留原堆栈位置
+     * @param resourceType 服务端固定的资源类型
+     * @param resourceId 路由中已校验的资源编号或服务端操作标识
+     */
+    public void error(DiagnosticContext context, Throwable failure, String resourceType, String resourceId) {
+        error(context, failure, null, resourceType, resourceId);
+    }
+
+    private void error(DiagnosticContext context, Throwable failure, String upstreamResponse,
+                       String resourceType, String resourceId) {
         Objects.requireNonNull(context, "context 不能为空");
         Objects.requireNonNull(failure, "failure 不能为空");
         String safeReason = SQL_STATEMENT.matcher(sanitizer.sanitize(redactor.redact(failure.getMessage()), List.of()))
@@ -53,9 +73,11 @@ public class ErrorDiagnosticLogger {
         RuntimeException safeFailure = new RuntimeException(safeReason.isBlank() ? "未提供异常消息" : safeReason);
         safeFailure.setStackTrace(failure.getStackTrace());
         log.error(
-                "操作失败。errorId={}, boundary={}, errorCode={}, tenantId={}, principalId={}, agentId={}, runId={}, toolId={}, toolCallId={}, source={}, exceptionType={}, reason={}, upstreamResponse={}",
+                "操作失败。errorId={}, boundary={}, errorCode={}, tenantId={}, principalId={}, agentId={}, runId={}, toolId={}, toolCallId={}, source={}, resourceType={}, resourceId={}, exceptionType={}, reason={}, upstreamResponse={}",
                 context.errorId(), context.boundary(), context.errorCode(), context.tenantId(), context.principalId(),
                 context.agentId(), context.runId(), context.toolId(), context.toolCallId(), context.source(),
+                sanitizer.sanitize(redactor.redact(resourceType), List.of()),
+                sanitizer.sanitize(redactor.redact(resourceId), List.of()),
                 failure.getClass().getName(), safeReason, safeUpstreamResponse, safeFailure
         );
     }

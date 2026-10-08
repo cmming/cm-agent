@@ -91,6 +91,12 @@ public enum ApiErrorCode {
     SKILL_SANDBOX_UNAVAILABLE,
     /** 脚本非零退出，原始诊断输出不对外泄露。 */
     SKILL_SANDBOX_FAILED,
+    /** 端点不属于当前租户或已删除。 */ SKILL_SANDBOX_ENDPOINT_NOT_FOUND,
+    /** 配置版本、默认选择或探测已过期。 */ SKILL_SANDBOX_ENDPOINT_CONFLICT,
+    /** 主机或端口不在部署允许范围。 */ SKILL_SANDBOX_TARGET_DENIED,
+    /** SSH或TLS身份校验失败。 */ SKILL_SANDBOX_AUTH_FAILED,
+    /** 清理无法确认，实例保留并发占用。 */ SKILL_SANDBOX_CLEANUP_FAILED,
+    /** 加密主密钥或认证材料不可用。 */ SKILL_SANDBOX_CREDENTIAL_UNAVAILABLE,
     RUNTIME_ERROR,
     AUDIT_UNAVAILABLE,
     PERSISTENCE_UNAVAILABLE,

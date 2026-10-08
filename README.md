@@ -6,6 +6,14 @@ CM Agent 是基于 AgentScope Java 的企业级智能体开源底座。第一阶
 
 ### 技能脚本沙箱
 
+本地/远程 Docker（SSH、双向 TLS）、租户端点管理、默认选择、凭据加密与 V16 迁移详见
+[沙箱端点部署与管理](docs/skill-sandbox-endpoints.md)。配置项、默认值、环境变量和账号密码 YAML 示例见
+[技能脚本沙箱与远程 Docker 配置](docs/configuration.md#技能脚本沙箱与远程-docker)。通用扩展使用注册的后端 SPI；当前仅交付 Docker 后端。
+
+远程 SSH 可选私钥或主机账号密码认证，控制台在“沙箱端点 → SSH 认证方式”选择；密码只写、加密保存，
+仍须提供可信 known_hosts。部署默认连接可配置 `ssh-auth-type: PASSWORD` 与 Secret 文件 `password-file`。
+旧端点默认私钥，数据库升级新增 V17；账号密码不用于 Registry 登录或 Docker HTTP Basic。
+
 技能脚本执行默认关闭。管理员启用 `cm-agent.skills.sandbox.enabled=true` 后，Skill ZIP 白名单自动补入
 `.py`；仍须完成候选导入、真实 TEST、发布和 Agent 绑定流程。模型通过 `run_skill_script` 运行当前快照
 中的 Python 脚本，并通过 `stdin` 传递输入文本。脚本可按相对路径读取同版本资源，`print` 输出作为脱敏

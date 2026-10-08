@@ -1,6 +1,6 @@
 # 配置说明
 
-本文档说明阶段3服务端的 profile、真实 AgentScope Runtime、持久化、安全和敏感信息配置。`local`/`test` 可显式使用 fake runtime；生产 profile 必须关闭 fake runtime、启用 AgentScope Runtime，并使用外部签发、受控验证的 JWT。
+本文档说明服务端的 profile、真实 AgentScope Runtime、技能脚本沙箱、持久化、安全和敏感信息配置。`local`/`test` 可显式使用 fake runtime；生产 profile 必须关闭 fake runtime、启用 AgentScope Runtime，并使用外部签发、受控验证的 JWT。
 
 ## Profile 选择
 
@@ -19,6 +19,7 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 | `postgres`、`mysql` | Rocky VM 集成验证 | 使用 JDBC/Flyway；仅限联调，不是生产凭据来源 |
 | `prod`、`production` | 生产或类生产 | 必须使用 JDBC，关闭 fake runtime，禁用 bootstrap admin 和开发 JWT fallback |
 | `supabase` | Supabase PostgreSQL | 必须使用 JDBC，关闭 fake runtime，禁用 bootstrap admin 和开发 JWT fallback |
+| `skill-sandbox` | 可选技能脚本沙箱配置 | 与环境 profile 显式组合；该 profile 本身仍默认关闭执行，不能替代环境安全配置 |
 
 `prod` profile 通过 Spring profile group 复用 `production` 配置。生产 profile 启动时，如果缺少安全 JWT secret、误用 memory、启用 bootstrap admin 或混入不允许的 profile，服务应启动失败。
 
@@ -59,11 +60,97 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 ## Skill 配置与权限
 
-Skill 只接受 ZIP 中的 `SKILL.md` 和文本资源；不支持二进制、网络地址或写入型资源。资源扩展名由 `cm-agent.skills.allowed-resource-types` 配置，默认开放 `.md`、`.txt`、`.json`、`.yaml`、`.yml`、`.csv`、`.html`、`.js`、`.cjs` 和 `.sh`。扩展名只是控制哪些文本资料可以进入技能包；服务端不会执行这些资源。`cm-agent.skills.enabled` 默认关闭，启用前应先在 `test` 或隔离环境验证包结构、容量和模型上下文成本。服务端公开能力接口会返回当前允许扩展名、归档/解压大小、文件数、单资源/指令上限和单 Agent 绑定上限；浏览器不得自行放宽这些限制。
+Skill 只接受 ZIP 中的 `SKILL.md` 和文本资源；不支持二进制、网络地址或写入型资源。资源扩展名由 `cm-agent.skills.allowed-resource-types` 配置，默认开放 `.md`、`.txt`、`.json`、`.yaml`、`.yml`、`.csv`、`.html`、`.js`、`.cjs` 和 `.sh`。扩展名控制导入范围，不授予执行权限；沙箱默认关闭。启用 `cm-agent.skills.sandbox.enabled` 后，白名单自动补入 `.py`，通过受治理的 `run_skill_script` 执行当前 Run 快照中的 Python 脚本；其他语言仍作为文本资源。`cm-agent.skills.enabled` 默认关闭，启用前应先在 `test` 或隔离环境验证包结构、容量和模型上下文成本。服务端公开能力接口会返回当前允许扩展名、归档/解压大小、文件数、单资源/指令上限和单 Agent 绑定上限；浏览器不得自行放宽这些限制。
 
 读取技能需要 `skill:read`，上传、版本更新和启停需要 `skill:write`。Agent 绑定同时要求 `agent:write` 与 `skill:read`，运行本身仍需要既有 `agent:run`；绑定不会授予任何业务 Tool 权限。生产变更权限后，应重新签发 JWT 或等待身份系统的短时令牌刷新，不能依赖前端隐藏按钮作为安全边界。
 
 启用开关后，部署者仍应先备份 JDBC 数据库并完成 Flyway 迁移。新 Run 固定当前版本快照；更新技能不会修改旧 Run。停用、解绑或访问纪元变化会阻止旧 Run 后续读取和审批恢复，页面应提示重新发起，而不是自动重放消息或审批。
+
+## 技能脚本沙箱与远程 Docker
+
+以下配置均属于 `cm-agent.skills.sandbox`，默认值以当前 Server 配置类为准，与 `application-skill-sandbox.yml` 一致。表中的环境变量是该可选 profile 显式提供的占位符；未加载它时，这些自定义别名不会自动映射到对应属性。也可以直接通过外部 YAML 或 Spring 配置设置完整属性名。`—` 表示该 profile 未提供专用环境变量占位符。
+
+### 执行策略与凭据管理
+
+| 完整配置项 | 默认值 | 环境变量（加载 `skill-sandbox`） | 用途与约束 |
+| --- | --- | --- | --- |
+| `cm-agent.skills.sandbox.enabled` | `false` | `CM_AGENT_SKILL_SANDBOX_ENABLED` | 技能脚本执行开关；加载 profile 不会自动开启。技能管理开关 `cm-agent.skills.enabled` 单独配置 |
+| `cm-agent.skills.sandbox.image` | `python:3.12-alpine` | `CM_AGENT_SKILL_SANDBOX_IMAGE` | 部署者指定的可信 Python 镜像，须在实际 Docker daemon 预拉取；生产建议固定 digest，执行时不自动拉取 |
+| `cm-agent.skills.sandbox.runtime` | 空字符串 | `CM_AGENT_SKILL_SANDBOX_RUNTIME` | 可选强化 OCI runtime；为空使用 Docker 默认值，明确指定后不可用则失败，不自动回退 |
+| `cm-agent.skills.sandbox.timeout` | `15s` | — | 整次容器启动、输入与执行预算，允许 `1s`～`20s`；应小于 AgentScope 工具超时 |
+| `cm-agent.skills.sandbox.max-input-bytes` | `32768` | — | 脚本 stdin 的 UTF-8 字节上限，允许 `1`～`32768` |
+| `cm-agent.skills.sandbox.max-output-bytes` | `32768` | — | stdout 与 stderr 合计原始字节上限，允许 `1`～`32768` |
+| `cm-agent.skills.sandbox.max-concurrent` | `2` | — | 单实例执行并发上限，允许 `1`～`2`；不是租户或集群总配额 |
+| `cm-agent.skills.sandbox.backend` | `docker` | — | 已注册的后端标识；当前仅交付 Docker 实现，不能填写实现类或任意服务 URL |
+| `cm-agent.skills.sandbox.allowed-targets` | 空列表 | `CM_AGENT_SKILL_SANDBOX_ALLOWED_TARGETS` | 部署者控制的远程 `host:port` 精确允许列表；空列表拒绝全部远程目标，不影响 LOCAL。推荐使用 YAML 列表，不接受通配符、CIDR 或 URL |
+| `cm-agent.skills.sandbox.encryption-key` | 空字符串 | `CM_AGENT_SKILL_SANDBOX_ENCRYPTION_KEY` | 控制台凭据加密的独立 32 字节随机主密钥，以 Base64 编码并由部署 Secret 注入；不得复用 JWT 或模型密钥 |
+
+镜像与 runtime 名称在启动期校验，时间、输入输出及并发配置只能在上述范围内调整。禁网、非 root、只读根文件系统和 CPU/内存/PID 等隔离策略由执行器固定约束，本轮没有新增可放宽这些边界的配置项。导入、TEST、发布、绑定及 Run 授权要求继续生效。
+
+主密钥缺失或无效时不会提供默认密钥：服务可按既有配置启动，但端点管理写入和已存远程凭据解密被拒绝，读接口只返回配置状态。此密钥用于租户端点凭据，部署默认连接的文件材料由部署者提供。更换主密钥前须安排旧材料解密与重新加密；当前没有自动跨主密钥轮换接口。生产端点使用 JDBC 持久化并完成 V16、V17 迁移，memory 仅限 local/test。
+
+### 部署默认连接
+
+| 完整配置项 | 默认值 | 环境变量（加载 `skill-sandbox`） | 用途与约束 |
+| --- | --- | --- | --- |
+| `cm-agent.skills.sandbox.connection.mode` | 空字符串 | `CM_AGENT_SKILL_SANDBOX_CONNECTION_MODE` | 空值保留 R0 本地环境兼容；显式模式为 `LOCAL`、`SSH`、`TLS` |
+| `cm-agent.skills.sandbox.connection.host` | 空字符串 | `CM_AGENT_SKILL_SANDBOX_HOST` | SSH/TLS 主机名或 IP，不含协议、用户信息和路径；须精确登记在允许列表 |
+| `cm-agent.skills.sandbox.connection.port` | `0` | `CM_AGENT_SKILL_SANDBOX_PORT` | LOCAL 必须为 `0`；SSH/TLS 必须显式指定 `1`～`65535`，不会自动使用 `22` 或 `2376` |
+| `cm-agent.skills.sandbox.connection.username` | 空字符串 | `CM_AGENT_SKILL_SANDBOX_USERNAME` | SSH 主机账号；LOCAL/TLS 必须为空 |
+| `cm-agent.skills.sandbox.connection.ssh-auth-type` | `KEY` | `CM_AGENT_SKILL_SANDBOX_SSH_AUTH_TYPE` | 本轮账号密码需求新增；SSH 可选 `KEY`、`PASSWORD`，LOCAL/TLS 仅接受 `KEY`，不会自动尝试其他认证方式 |
+| `cm-agent.skills.sandbox.connection.password-file` | 空字符串 | `CM_AGENT_SKILL_SANDBOX_PASSWORD_FILE` | 本轮账号密码需求新增；仅 SSH PASSWORD 使用的部署 Secret 文件路径，不能直接填写密码 |
+| `cm-agent.skills.sandbox.connection.private-key-file` | 空字符串 | `CM_AGENT_SKILL_SANDBOX_PRIVATE_KEY_FILE` | SSH KEY 私钥或双向 TLS 客户端私钥文件；PASSWORD 必须清空 |
+| `cm-agent.skills.sandbox.connection.known-hosts-file` | 空字符串 | `CM_AGENT_SKILL_SANDBOX_KNOWN_HOSTS_FILE` | SSH 两种认证都必需的可信 known_hosts 文件；主机条目按原 host 别名匹配，不附端口 |
+| `cm-agent.skills.sandbox.connection.ca-certificate-file` | 空字符串 | `CM_AGENT_SKILL_SANDBOX_CA_CERTIFICATE_FILE` | 双向 TLS 的可信 CA 证书文件；PASSWORD 必须清空 |
+| `cm-agent.skills.sandbox.connection.client-certificate-file` | 空字符串 | `CM_AGENT_SKILL_SANDBOX_CLIENT_CERTIFICATE_FILE` | 双向 TLS 的客户端证书链文件；PASSWORD 必须清空 |
+
+| 连接方式 | 必需参数与材料 | 部署要求 |
+| --- | --- | --- |
+| LOCAL | `mode: LOCAL`，host/username 为空、port 为 0 | 本机 socket；Server 需要 Docker CLI |
+| SSH KEY | host、port、username、私钥和 known_hosts；`ssh-auth-type: KEY` | Server 需要 Docker CLI 与 OpenSSH 客户端；私钥不能依赖交互口令 |
+| SSH PASSWORD | host、port、username、密码文件和 known_hosts；`ssh-auth-type: PASSWORD` | Server 需要 Docker CLI；通过 JSch 内存认证，远端 sshd 须允许 password 认证，不支持 keyboard-interactive/MFA |
+| TLS | host、port、CA、客户端证书链与私钥；username 为空 | Server 需要 Docker CLI；私钥为未加密 PKCS#8 PEM（RSA/EC），证书与私钥匹配，服务端 SAN 覆盖配置 host |
+
+SSH 账号须能访问远端 Linux 的 `/var/run/docker.sock` 并允许 Unix socket 转发。账号密码指远端 SSH 主机认证，不是 Registry 登录或 Docker HTTP Basic。密码文件内容原样读取，不 trim：须非空，UTF-8 长度不超过 4096 字节，不含 NUL/CR/LF，也不能带末尾换行；总认证材料不超过 128KiB。KEY/TLS 不接受密码，PASSWORD 不接受私钥或 TLS 证书。部署文件由部署者管理，控制台不能提交这些文件路径；密码不进入 CLI 参数、子进程环境、日志、审计或浏览器存储。
+
+远程目标的每个 DNS 解析地址均须通过安全校验，拒绝未指定、链路本地和组播地址；私网和回环目标也必须在允许列表中显式登记。连接固定已校验 IP，SSH 严格验证原 host 的 known_hosts，TLS 严格验证原 host 证书身份。显式 LOCAL/SSH/TLS 不继承全局 Docker context、DOCKER_HOST 或用户 SSH 配置。mode 留空只兼容本地 unix/npipe 的 DOCKER_HOST；旧远程 DOCKER_HOST 被拒绝，须迁移为 SSH/TLS。
+
+### SSH 账号密码示例与运行期选择
+
+可以在部署的外部配置中使用下面的占位示例，或加载 `test,skill-sandbox` / `production,skill-sandbox` 等环境组合并设置上表的环境变量。生产组合仍须满足已有 JDBC、JWT、真实 Runtime 等要求；不能把 local/test 混入生产组合。示例没有可用凭据，Secret 文件和主密钥由部署者提供。
+
+```yaml
+cm-agent:
+  skills:
+    enabled: true
+    sandbox:
+      enabled: true
+      backend: docker
+      image: python:3.12-alpine
+      runtime: ""
+      timeout: 15s
+      max-input-bytes: 32768
+      max-output-bytes: 32768
+      max-concurrent: 2
+      allowed-targets:
+        - sandbox.example.invalid:22
+      encryption-key: ${CM_AGENT_SKILL_SANDBOX_ENCRYPTION_KEY:}
+      connection:
+        mode: SSH
+        host: sandbox.example.invalid
+        port: 22
+        username: sandbox
+        ssh-auth-type: PASSWORD
+        password-file: /run/secrets/sandbox-ssh-password
+        known-hosts-file: /run/secrets/sandbox-known-hosts
+        private-key-file: ""
+        ca-certificate-file: ""
+        client-certificate-file: ""
+```
+
+执行优先使用当前可信租户的默认端点；没有租户默认时使用上述部署连接。选择后的失败不会回退其他端点或本地。每次调用固定端点及配置、凭据和连接版本，运行期切换默认值不会改动已经执行中的连接。
+
+控制台“技能管理 → 沙箱端点”管理的是租户端点元数据和加密凭据，不修改这些部署配置。API 的 `sshAuthType`、`credentials.password` 是请求字段，不是新增 YAML 配置；控制台只写密码并只读配置状态，不能提交主密钥、宿主文件路径、镜像或资源限额。权限、API、迁移和完整连接操作见[沙箱端点部署与管理](skill-sandbox-endpoints.md)。
 
 ## 模型配置管理
 

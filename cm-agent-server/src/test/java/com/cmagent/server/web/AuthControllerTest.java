@@ -59,6 +59,11 @@ class AuthControllerTest {
             "tool:mcp:invoke",
             "skill:read",
             "skill:write",
+            "sandbox:read",
+            "sandbox:write",
+            "sandbox:delete",
+            "sandbox:test",
+            "sandbox:credential:write",
             "audit:read",
             "apikey:write"
     };
@@ -80,6 +85,7 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("系统管理员"))
                 .andExpect(jsonPath("$.permissions.length()").value(EXPECTED_PERMISSIONS.length))
+                .andExpect(jsonPath("$.permissions", org.hamcrest.Matchers.hasItems("sandbox:read","sandbox:write","sandbox:delete","sandbox:test","sandbox:credential:write")))
                 .andExpect(jsonPath("$.permissions[0]").value(EXPECTED_PERMISSIONS[0]))
                 .andExpect(jsonPath("$.permissions[1]").value(EXPECTED_PERMISSIONS[1]))
                 .andExpect(jsonPath("$.permissions[2]").value(EXPECTED_PERMISSIONS[2]))

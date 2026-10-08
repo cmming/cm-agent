@@ -111,6 +111,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(SkillAccessException.class)
     public ResponseEntity<ApiErrorResponse> skillFailure(SkillAccessException failure) {
         HttpStatus status = switch (failure.code()) {
+            case SKILL_SANDBOX_ENDPOINT_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case SKILL_SANDBOX_ENDPOINT_CONFLICT -> HttpStatus.CONFLICT;
+            case SKILL_SANDBOX_TARGET_DENIED -> HttpStatus.FORBIDDEN;
+            case SKILL_SANDBOX_AUTH_FAILED -> HttpStatus.BAD_GATEWAY;
+            case SKILL_SANDBOX_CLEANUP_FAILED, SKILL_SANDBOX_CREDENTIAL_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
             case SKILL_PACKAGE_INVALID, SKILL_RESOURCE_UNSUPPORTED, SKILL_SANDBOX_INVALID -> HttpStatus.BAD_REQUEST;
             case SKILL_SANDBOX_DUPLICATE -> HttpStatus.CONFLICT;
             case SKILL_SANDBOX_LIMIT_EXCEEDED -> HttpStatus.TOO_MANY_REQUESTS;

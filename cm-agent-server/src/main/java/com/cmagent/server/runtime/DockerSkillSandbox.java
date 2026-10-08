@@ -26,7 +26,7 @@ import java.util.concurrent.TimeoutException;
  * 强化 OCI runtime 或专用执行主机。本类不会降级到宿主 Python/Shell，也不拉取镜像。
  * 每次调用独立持有进程和有界输出，超时、中断、异常均按唯一容器名清理。</p>
  */
-public class DockerSkillSandbox {
+public class DockerSkillSandbox implements com.cmagent.core.runtime.SkillSandboxBackend {
     /** 固定引导程序，模型只能提供 JSON 数据；资源仅写入容器的私有 tmpfs。 */
     private static final String BOOTSTRAP = """
             import json, sys, os, pathlib, io, runpy
@@ -59,6 +59,56 @@ public class DockerSkillSandbox {
         this.permits = new Semaphore(properties.getMaxConcurrent());
     }
 
+    /** @return 固定Docker后端标识 */
+    @Override public String backendId() { return "docker"; }
+
+    /** 一次句柄固定传输；默认空配置仍调用原执行入口，保留旧测试与扩展的覆盖行为。 */
+    @Override public Execution open(SkillReadRequest request, Map<String,String> connection) {
+        DockerDaemonConnection daemon = connection.isEmpty()?null:connection(connection,properties.getTimeout());
+        return new Execution() {
+            /** 单次句柄禁止重放，关闭先中断实际执行线程并等待同一连接的清理。 */ private Thread running;
+            /** 只在短同步区改变生命周期，不持锁执行外部进程。 */ private boolean closed,invoked;
+            public String execute(Map<String,String> files,String stdin) {
+                synchronized(this){
+                    if(closed || invoked)throw failure(request,ApiErrorCode.SKILL_SANDBOX_INVALID,"沙箱句柄已关闭或已执行");
+                    invoked=true;running=Thread.currentThread();
+                }
+                try{return daemon==null?DockerSkillSandbox.this.execute(request,files,stdin):DockerSkillSandbox.this.execute(request, files, stdin, daemon);}
+                finally{synchronized(this){running=null;notifyAll();}}
+            }
+            public void close() {
+                Thread active;
+                synchronized(this){if(closed)return;closed=true;active=running;}
+                boolean interrupted=Thread.interrupted(),stopped=true;
+                try{
+                    if(active!=null && active!=Thread.currentThread()){
+                        active.interrupt();
+                        try{active.join(6000);stopped=!active.isAlive();}
+                        catch(InterruptedException error){interrupted=true;stopped=false;}
+                    }
+                    if(daemon!=null)daemon.close();
+                    if(!stopped)throw failure(request,ApiErrorCode.SKILL_SANDBOX_CLEANUP_FAILED,"沙箱执行无法确认停止");
+                }finally{if(interrupted)Thread.currentThread().interrupt();}
+            }
+        };
+    }
+
+    /** @param values 仅来自已授权配置的参数 @return 本次私有传输 */
+    static DockerDaemonConnection connection(Map<String,String> values) {
+        return connection(values,java.time.Duration.ofSeconds(15));
+    }
+    /** 初次认证与建连占用执行预算；探测使用默认的有界连接预算。 */
+    private static DockerDaemonConnection connection(Map<String,String> values,java.time.Duration budget) {
+        var mode=com.cmagent.core.domain.SandboxConnectionMode.valueOf(values.get("mode"));
+        if(mode==com.cmagent.core.domain.SandboxConnectionMode.LOCAL) return DockerDaemonConnection.local();
+        try {
+            return DockerDaemonConnection.remote(mode,values.get("host"),java.net.InetAddress.getByName(values.get("address")),
+                Integer.parseInt(values.get("port")),values.get("username"),
+                new SandboxCredentials(values.get("privateKey"),values.get("knownHosts"),values.get("caCertificate"),values.get("clientCertificate"),values.get("password")),budget,
+                com.cmagent.core.domain.SandboxSshAuthType.valueOf(values.getOrDefault("sshAuthType","KEY")));
+        } catch(java.net.UnknownHostException impossible) { throw new IllegalArgumentException("已固定目标地址无效"); }
+    }
+
     /**
      * 执行已授权固定资源；脚本、资源和输入不会出现在命令参数或日志中。
      *
@@ -69,6 +119,13 @@ public class DockerSkillSandbox {
      * @throws SkillAccessException 关闭、限额、超时、脚本失败或 Docker 不可用时抛出
      */
     public String execute(SkillReadRequest request, Map<String, String> files, String stdin) {
+        try (var daemon= DockerDaemonConnection.legacy()) {
+            return execute(request,files,stdin,daemon);
+        }
+    }
+
+    /** 所有进程包括清理都使用当前固定daemon，禁止重新解析默认端点。 */
+    private String execute(SkillReadRequest request, Map<String, String> files, String stdin, DockerDaemonConnection daemon) {
         if (!properties.isEnabled()) throw failure(request, ApiErrorCode.SKILL_SANDBOX_DISABLED, "技能沙箱未启用");
         if (stdin == null || stdin.getBytes(StandardCharsets.UTF_8).length > properties.getMaxInputBytes()
                 || !safePath(request.path()) || !request.path().endsWith(".py")
@@ -86,8 +143,9 @@ public class DockerSkillSandbox {
         var workers = Executors.newVirtualThreadPerTaskExecutor();
         try {
             byte[] payload = mapper.writeValueAsBytes(Map.of("files", files, "path", request.path(), "stdin", stdin));
-            long deadline = System.nanoTime() + properties.getTimeout().toNanos();
-            process = start(command(name));
+            long deadline = daemon.deadline(properties.getTimeout());
+            var arguments=command(name);
+            process = daemon.start(arguments.subList(1,arguments.size()));
             launched = true;
             Process running = process;
             Future<?> writer = workers.submit(() -> {
@@ -111,7 +169,9 @@ public class DockerSkillSandbox {
             String output = reader.get(remaining(deadline), TimeUnit.NANOSECONDS);
             if (!running.waitFor(remaining(deadline), TimeUnit.NANOSECONDS)) throw new TimeoutException();
             int exit = running.exitValue();
-            if (exit >= 125 && exit <= 127) throw failure(request, ApiErrorCode.SKILL_SANDBOX_UNAVAILABLE, "技能沙箱或解释器不可用");
+            if (exit >= 125 && exit <= 127) throw failure(request,
+                    daemon.authenticationFailed() ? ApiErrorCode.SKILL_SANDBOX_AUTH_FAILED : ApiErrorCode.SKILL_SANDBOX_UNAVAILABLE,
+                    daemon.authenticationFailed() ? "沙箱远程身份校验失败" : "技能沙箱或解释器不可用");
             if (exit != 0) throw failure(request, ApiErrorCode.SKILL_SANDBOX_FAILED, "技能脚本执行失败，请检查脚本逻辑");
             writer.get(remaining(deadline), TimeUnit.NANOSECONDS);
             return sanitizer.sanitize(output, List.of());
@@ -129,12 +189,12 @@ public class DockerSkillSandbox {
             // 清理必须先于线程池关闭，否则阻塞的 stdin/stdout 会让关闭一直等待。
             if (process != null) process.destroyForcibly();
             boolean interrupted = Thread.interrupted();
-            boolean cleaned = !launched || cleanup(name);
+            boolean cleaned = !launched || cleanup(daemon,name);
             workers.shutdownNow();
             if (interrupted) Thread.currentThread().interrupt();
             // 清理无法确认时保留占用名额，防止残留容器继续执行而新请求突破实例并发上限。
             if (cleaned) permits.release();
-            if (!cleaned) throw failure(request, ApiErrorCode.SKILL_SANDBOX_UNAVAILABLE, "技能沙箱清理失败，请联系管理员");
+            if (!cleaned) throw failure(request, ApiErrorCode.SKILL_SANDBOX_CLEANUP_FAILED, "技能沙箱清理失败，请联系管理员");
         }
     }
 
@@ -144,30 +204,20 @@ public class DockerSkillSandbox {
                 "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
                 "--user=65534:65534", "--pids-limit=32", "--memory=128m", "--memory-swap=128m", "--cpus=0.5",
                 "--ulimit=nofile=64:64", "--log-driver=none",
-                "--tmpfs=/workspace:rw,noexec,nosuid,nodev,size=16m,mode=1777",
-                "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777", "--workdir=/workspace", "-i"));
+                // 部分daemon/runc组合会恢复挂载点权限；显式UID/GID保证私有tmpfs仍由固定非root用户可写。
+                // 已在Docker 23独立vfs daemon验证，仍保留noexec/nosuid/nodev及16MiB上限。
+                "--tmpfs=/workspace:rw,noexec,nosuid,nodev,size=16m,mode=1777,uid=65534,gid=65534",
+                "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777,uid=65534,gid=65534", "--workdir=/workspace", "-i"));
         if (!properties.getRuntime().isEmpty()) command.add("--runtime=" + properties.getRuntime());
         command.addAll(List.of("--entrypoint=python", properties.getImage(), "-I", "-B", "-u", "-c", BOOTSTRAP));
         return command;
     }
 
-    /** 保留 Docker 客户端所需环境；不把 Server 的模型/JWT/数据库凭据继承给客户端进程。 */
-    private static Process start(List<String> command) throws IOException {
-        ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
-        Map<String, String> original = Map.copyOf(builder.environment());
-        builder.environment().clear();
-        original.forEach((key, value) -> {
-            if (List.of("PATH", "SYSTEMROOT", "WINDIR", "DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH")
-                    .contains(key.toUpperCase(java.util.Locale.ROOT))) builder.environment().put(key, value);
-        });
-        return builder.start();
-    }
-
     /** 仅删除当前随机命名容器；自动删除后的“不存在”是正常结果，其他清理失败必须拒绝成功。 */
-    private static boolean cleanup(String name) {
+    private static boolean cleanup(DockerDaemonConnection daemon,String name) {
         Process remove = null;
         try {
-            remove = start(List.of("docker", "rm", "-f", name));
+            remove = daemon.start(List.of("rm", "-f", name));
             if (!remove.waitFor(5, TimeUnit.SECONDS)) { remove.destroyForcibly(); return false; }
             // docker rm 的错误输出很短且只含本次随机名称；不返回也不记录原文。
             String result = new String(remove.getInputStream().readNBytes(4096), StandardCharsets.UTF_8);

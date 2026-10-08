@@ -61,12 +61,11 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
     private final SkillProperties properties;
     private final Clock clock;
     /** 服务级复用沙箱并发门控，执行期间不持有数据库事务。 */
-    private final DockerSkillSandbox sandbox;
+    private final com.cmagent.core.runtime.SkillSandboxBackend sandbox;
     /** 只记录可信上下文与脱敏异常，不记录脚本、输入或输出正文。 */
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GovernedSkillAccessService.class);
 
     /** 创建技能读取治理服务并固定全部安全和提交依赖。 */
-    @Autowired
     public GovernedSkillAccessService(
             RunRepository runs, RunSkillSnapshotRepository snapshots,
             SkillDefinitionRepository definitions, SkillVersionRepository versions,
@@ -76,6 +75,19 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
             AuditAppender audit, SkillProperties properties) {
         this(runs, snapshots, definitions, versions, resources, bindings, trials, records,
                 workUnit, audit, properties, Clock.systemUTC());
+    }
+
+    /** Spring注入可替换执行接口；保留旧构造器仅兼容嵌入和R0单元测试。 */
+    @Autowired
+    public GovernedSkillAccessService(
+            RunRepository runs, RunSkillSnapshotRepository snapshots,
+            SkillDefinitionRepository definitions, SkillVersionRepository versions,
+            SkillResourceRepository resources, AgentSkillBindingRepository bindings,
+            SkillTrialRepository trials, SkillLoadRecordRepository records, SkillUnitOfWork workUnit,
+            AuditAppender audit, SkillProperties properties,
+            @org.springframework.beans.factory.annotation.Qualifier("managedSkillSandbox")
+            com.cmagent.core.runtime.SkillSandboxBackend sandbox) {
+        this(runs,snapshots,definitions,versions,resources,bindings,trials,records,workUnit,audit,properties,Clock.systemUTC(),sandbox);
     }
 
     GovernedSkillAccessService(
@@ -94,7 +106,7 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
             SkillDefinitionRepository definitions, SkillVersionRepository versions,
             SkillResourceRepository resources, AgentSkillBindingRepository bindings,
             SkillTrialRepository trials, SkillLoadRecordRepository records, SkillUnitOfWork workUnit,
-            AuditAppender audit, SkillProperties properties, Clock clock, DockerSkillSandbox sandbox) {
+            AuditAppender audit, SkillProperties properties, Clock clock, com.cmagent.core.runtime.SkillSandboxBackend sandbox) {
         this.runs = Objects.requireNonNull(runs, "runs 不能为空");
         this.snapshots = Objects.requireNonNull(snapshots, "snapshots 不能为空");
         this.definitions = Objects.requireNonNull(definitions, "definitions 不能为空");
@@ -138,15 +150,21 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
             java.util.Map<String, String> files = workUnit.execute(() -> prepareExecution(request));
             // 审计不可用时禁止创建容器，不能将严格失败降级成普通工具错误。
             executionAudit(request, "STARTED", "技能沙箱开始执行");
-            String output = sandbox.execute(request, files, stdin);
-            workUnit.execute(() -> {
-                checkExecutionState(request);
-                ResolvedResource current = resolve(request, snapshots.lock(request.principal().tenantId(), request.runId()));
-                if (current.failure() != null) throw current.failure();
-                executionAudit(request, "SUCCEEDED", "技能沙箱执行成功");
-                return null;
-            });
-            return output;
+            try (var execution = sandbox.open(request, java.util.Map.of())) {
+                String output = execution.execute(files, stdin);
+                // 连接和认证材料清理成功后才能写成功审计；句柄须幂等关闭，交付前仍复核撤销。
+                execution.close();
+                // 端点策略复核可能包含DNS解析，放在事务外，避免出站等待持有Run/快照锁。
+                execution.verifyAccess();
+                workUnit.execute(() -> {
+                    checkExecutionState(request);
+                    ResolvedResource current = resolve(request, snapshots.lock(request.principal().tenantId(), request.runId()));
+                    if (current.failure() != null) throw current.failure();
+                    executionAudit(request, "SUCCEEDED", "技能沙箱执行成功");
+                    return null;
+                });
+                return output;
+            }
         } catch (SkillAccessException failure) {
             try {
                 executionAudit(request, "FAILED", failure.code().name() + " errorId=" + failure.errorId());
