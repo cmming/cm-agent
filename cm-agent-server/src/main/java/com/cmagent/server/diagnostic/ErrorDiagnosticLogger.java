@@ -25,7 +25,7 @@ public class ErrorDiagnosticLogger {
     }
 
     /**
-     * 记录失败原因和原始异常堆栈位置；异常消息会先脱敏，避免日志泄露请求内容或凭据。
+     * 记录脱敏原因链和原始堆栈位置；数据库原因按 JDBC 编号分类，避免日志泄露 SQL 参数或行数据。
      *
      * @param context 可检索的上下文
      * @param failure 原始失败，用于保留堆栈位置
@@ -67,18 +67,18 @@ public class ErrorDiagnosticLogger {
                        String resourceType, String resourceId) {
         Objects.requireNonNull(context, "context 不能为空");
         Objects.requireNonNull(failure, "failure 不能为空");
-        String safeReason = SQL_STATEMENT.matcher(sanitizer.sanitize(redactor.redact(failure.getMessage()), List.of()))
-                .replaceAll("<已脱敏SQL>");
+        var snapshot = DiagnosticExceptionSanitizer.sanitize(failure, this::safeReason);
+        String safeReason = snapshot.failure().getMessage();
         String safeUpstreamResponse = safeReason(upstreamResponse);
-        RuntimeException safeFailure = new RuntimeException(safeReason.isBlank() ? "未提供异常消息" : safeReason);
-        safeFailure.setStackTrace(failure.getStackTrace());
         log.error(
-                "操作失败。errorId={}, boundary={}, errorCode={}, tenantId={}, principalId={}, agentId={}, runId={}, toolId={}, toolCallId={}, source={}, resourceType={}, resourceId={}, exceptionType={}, reason={}, upstreamResponse={}",
+                "操作失败。errorId={}, boundary={}, errorCode={}, tenantId={}, principalId={}, agentId={}, runId={}, toolId={}, toolCallId={}, source={}, resourceType={}, resourceId={}, exceptionType={}, reason={}, upstreamResponse={}, sqlState={}, vendorCode={}, databaseExceptionType={}, databaseReason={}",
                 context.errorId(), context.boundary(), context.errorCode(), context.tenantId(), context.principalId(),
                 context.agentId(), context.runId(), context.toolId(), context.toolCallId(), context.source(),
                 sanitizer.sanitize(redactor.redact(resourceType), List.of()),
                 sanitizer.sanitize(redactor.redact(resourceId), List.of()),
-                failure.getClass().getName(), safeReason, safeUpstreamResponse, safeFailure
+                failure.getClass().getName(), safeReason, safeUpstreamResponse,
+                snapshot.sqlState(), snapshot.vendorCode(), snapshot.databaseExceptionType(),
+                snapshot.databaseReason(), snapshot.failure()
         );
     }
 

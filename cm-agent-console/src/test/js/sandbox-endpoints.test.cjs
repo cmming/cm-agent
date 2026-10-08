@@ -4,7 +4,7 @@ const {buildPayload, canSetDefault} = require("../../main/resources/META-INF/res
 const {errorMessage} = require("../../main/resources/META-INF/resources/console/v2/assets/sandbox-endpoints.js");
 const core = require("../../main/resources/META-INF/resources/assets/console-core.js");
 // 简化DOM只验证安全状态与真实事件编排，布局和原生输入由独立浏览器验收。
-function endpointHarness({permissions=["sandbox:read","sandbox:write","sandbox:credential:write"],enabled=true,key=true}={}) {
+function endpointHarness({permissions=["sandbox:read","sandbox:write","sandbox:credential:write"],enabled=true,key=true,request}={}) {
     class Node {
         constructor(tag){this.tag=tag;this.children=[];this.listeners={};this.dataset={};this.value="";this.className="";}
         append(...nodes){this.children.push(...nodes);}
@@ -27,6 +27,7 @@ function endpointHarness({permissions=["sandbox:read","sandbox:write","sandbox:c
         username:"fixture",enabled:true,hasCredential:true,credentialVersion:1,revision:1,probeRevision:0,probeStatus:"NOT_TESTED"};
     const api={request:async(url,options)=>{
         requests.push({url,options});
+        if(request)return request(url,options,{enabled,credentialKeyConfigured:key,items:[endpoint]});
         if(!options)return {enabled,credentialKeyConfigured:key,items:[endpoint]};
         throw Object.assign(new Error("测试参数拒绝"),{code:"SKILL_SANDBOX_INVALID",errorId:"fixture-error-id"});
     }};
@@ -35,6 +36,34 @@ function endpointHarness({permissions=["sandbox:read","sandbox:write","sandbox:c
     return {page,requests,field:name=>document.getElementById("sandbox-"+name),form:()=>document.getElementById("sandboxEndpointForm"),
         status:()=>document.getElementById("sandboxPageStatus"),flush:()=>new Promise(resolve=>setImmediate(resolve))};
 }
+test("离开沙箱页清空认证输入，旧表单与刷新不再发起请求",async()=>{
+    const flow=endpointHarness();await flow.page.reload();
+    const form=flow.form();
+    for(const name of ["privateKey","knownHosts","caCertificate","clientCertificate","password"])flow.field(name).value="测试材料";
+    flow.page.dispose();
+    for(const name of ["privateKey","knownHosts","caCertificate","clientCertificate","password"])assert.equal(flow.field(name).value,"");
+    form.fire("submit");await flow.page.reload();
+    assert.equal(flow.requests.length,1);
+});
+test("离开后迟到的列表响应不能更新页面",async()=>{
+    let finish;
+    const flow=endpointHarness({request:(_url,_options,result)=>new Promise(resolve=>{finish=()=>resolve(result);})});
+    const loading=flow.page.reload();flow.status().textContent="新页面提示";
+    flow.page.dispose();finish();await loading;
+    assert.equal(flow.form(),undefined);assert.equal(flow.status().textContent,"新页面提示");
+});
+test("离开后迟到的保存成功或失败不覆盖提示、不恢复旧表单、不触发刷新",async()=>{
+    for(const failed of [false,true]){
+        let finish;
+        const flow=endpointHarness({request:(_url,options,result)=>!options?result:new Promise((resolve,reject)=>{
+            finish=()=>failed?reject(new Error("测试失败")):resolve(result.items[0]);
+        })});
+        await flow.page.reload();flow.form().fire("submit");
+        flow.page.dispose();flow.status().textContent="新页面提示";finish();await flow.flush();
+        assert.equal(flow.status().textContent,"新页面提示");assert.equal(flow.requests.length,2);
+        assert.equal(flow.field("displayName").disabled,true);
+    }
+});
 test("密码只写，提交失败清空材料保留元数据，认证切换不能沿用旧材料",async()=>{
     const flow=endpointHarness();await flow.page.reload();
     assert.equal(flow.field("password").type,"password");assert.equal(flow.field("password").value,"");

@@ -42,6 +42,11 @@
         })[status] || "试运行状态未知";
     }
 
+    function versionStateLabel(state) {
+        return ({CANDIDATE: "待验证候选", CURRENT_PUBLISHED: "当前正式版本",
+            PREVIOUSLY_PUBLISHED: "曾发布，可回滚", UNPUBLISHED_HISTORY: "未发布历史"})[state] || "未知版本状态";
+    }
+
     // 恢复展示只读取权威状态；批准或网络断线均不能触发再次提交或自动执行工具。
     async function loadTrialState(request, skillId, runId) {
         const base = `/api/skills/${encodeURIComponent(skillId)}/trials/${encodeURIComponent(runId)}`;
@@ -54,6 +59,7 @@
         const scope = createRequestScope(getSessionEpoch);
         let selectedId = "";
         let selectedMappingRevision = null;
+        let uploadBusy = false;
         const byId = (id) => document.getElementById(id);
         const status = (message, tone = "neutral") => {
             const node = byId("skillPageStatus");
@@ -85,7 +91,7 @@
                 const list = byId("skillList"); list.replaceChildren();
                 if (!items.length) {
                     const empty = document.createElement("div"); empty.className = "skill-list-empty";
-                    empty.append(text("strong", "尚未导入技能"), text("p", "从右侧导入受控 ZIP 包后，可在这里核验并启用。"));
+                    empty.append(text("strong", "尚未导入技能"), text("p", "展开下方“导入新技能”，上传 ZIP 后开始核验与发布。"));
                     list.append(empty);
                 }
                 items.forEach((skill) => {
@@ -93,10 +99,12 @@
                     button.dataset.skillId = skill.id || ""; button.setAttribute("aria-pressed", "false");
                     const heading = document.createElement("span"); heading.className = "skill-resource-heading";
                     heading.append(text("strong", skill.name || "未命名技能"), statusBadge(skill.enabled));
-                    button.append(heading, text("span", skill.description || "未提供技能说明", "skill-resource-description"));
+                    button.append(heading, text("span", skill.description || "未提供技能说明", "skill-resource-description"),
+                        text("span", `${skill.versionNo ? `v${skill.versionNo} · ` : ""}${skill.candidateVersionId ? "有候选待验证" : skill.publishedVersionId ? "已正式发布" : "尚未发布"}`, "skill-list-version"));
                     button.addEventListener("click", () => select(skill.id)); list.append(button);
                 });
                 status("");
+                return ticket;
             } catch (error) { if (scope.isCurrent(ticket)) status(error.message, "error"); }
         }
         async function select(id) {
@@ -111,12 +119,60 @@
                 const title = document.createElement("div"); title.append(text("h2", summary.name || "技能详情"), text("p", summary.description || "未提供描述"));
                 header.append(title, statusBadge(summary.enabled));
                 const metadata = document.createElement("dl"); metadata.className = "skill-detail-metadata";
-                metadata.append(text("dt", "当前版本"), text("dd", `v${summary.currentVersionNo || "—"}`), text("dt", "使用状态"), text("dd", summary.enabled ? "可绑定到 Agent" : "停用后不可绑定或读取"));
+                metadata.append(text("dt", "当前查看版本"), text("dd", summary.versionNo ? `v${summary.versionNo}` : "版本信息不可用"), text("dt", "使用状态"), text("dd", summary.enabled
+                    ? summary.publishedVersionId ? "已启用；正式运行按 Agent 绑定策略使用已发布版本" : "已启用但尚未发布，暂不能用于正式运行"
+                    : "停用后不可绑定或读取"));
                 detail.append(header, metadata);
+                if (getPermissions().includes("skill:write")) {
+                    const upgrade = document.createElement("details"); upgrade.className = "skill-upgrade";
+                    upgrade.append(text("summary", "上传新版本"));
+                    const form = document.createElement("form"); form.className = "skill-version-upload-form";
+                    const label = text("label", "新版本 ZIP 技能包");
+                    const file = document.createElement("input"); file.type = "file"; file.accept = ".zip,application/zip"; file.required = true;
+                    label.append(file);
+                    const help = text("p", `包内 SKILL.md 的 name 必须保持为 ${summary.name || "当前技能名称"}。上传只形成候选，原正式版本继续使用。${summary.candidateVersionId ? "新内容会替换当前候选，此前试运行不能用于发布新候选。" : "验证并发布后，新建运行才会按绑定策略使用它。"}`, "field-help");
+                    const submit = text("button", "上传为候选版本", "button primary"); submit.type = "submit";
+                    const refresh = text("button", "刷新技能详情", "button ghost"); refresh.type = "button";
+                    refresh.addEventListener("click", () => { if (!uploadBusy) select(id); });
+                    const actions = document.createElement("div"); actions.className = "skill-upload-actions"; actions.append(submit, refresh);
+                    const result = text("p", "", "form-status"); result.setAttribute("aria-live", "polite");
+                    form.append(label, help, actions, result); upgrade.append(form); detail.append(upgrade);
+                    form.addEventListener("submit", async (event) => {
+                        event.preventDefault();
+                        if (uploadBusy || !scope.isCurrent(ticket) || !getPermissions().includes("skill:write")) return;
+                        const selectedFile = file.files?.[0];
+                        if (!selectedFile) { result.textContent = "请选择新版本 ZIP 技能包。"; result.dataset.tone = "error"; return; }
+                        const body = new FormData(); body.append("file", selectedFile, selectedFile.name);
+                        // 双指针来自当前详情快照，不能在发送前悄悄刷新，避免覆盖其他管理员刚上传或发布的版本。
+                        if (summary.candidateVersionId) body.append("expectedCandidateVersionId", summary.candidateVersionId);
+                        if (summary.publishedVersionId) body.append("expectedPublishedVersionId", summary.publishedVersionId);
+                        uploadBusy = true; submit.disabled = true; file.disabled = true; refresh.disabled = true;
+                        submit.textContent = "正在上传…"; result.textContent = "正在上传候选版本，请稍候。"; result.dataset.tone = "neutral";
+                        try {
+                            const updated = await api.request(`/api/skills/${encodeURIComponent(id)}/versions`, {method: "POST", body});
+                            if (!scope.isCurrent(ticket)) return;
+                            const next = updated.summary || updated;
+                            const unchanged = next.candidateVersionId === summary.candidateVersionId && next.publishedVersionId === summary.publishedVersionId;
+                            const message = unchanged ? "内容与现有版本一致，未新增版本。" : "新候选已上传；请完成依赖预检、试运行和发布。原正式版本未变更。";
+                            const listTicket = await reload();
+                            if (!scope.isCurrent(listTicket)) return;
+                            const detailTicket = await select(id);
+                            if (scope.isCurrent(detailTicket)) status(message, "success");
+                        } catch (error) {
+                            if (!scope.isCurrent(ticket)) return;
+                            result.textContent = `${error.message} ${error.code === "SKILL_CANDIDATE_CONFLICT" ? "请刷新技能详情，核对最新候选与正式版本后重新选择 ZIP。" : "文件已保留；请核对原因后重试。若连接中断，请先刷新详情确认上传结果。"}`;
+                            result.dataset.tone = "error";
+                        } finally {
+                            uploadBusy = false; submit.disabled = false; file.disabled = false; refresh.disabled = false; submit.textContent = "上传为候选版本";
+                        }
+                    });
+                }
                 const release = document.createElement("section"); release.className = "skill-release-workspace";
                 release.append(text("h3", "发布工作区"), text("p", "按“依赖预检 → 指定版本试运行 → 人工发布”推进；候选不会进入正式运行。", "field-help"));
                 const pointers = document.createElement("dl"); pointers.className = "skill-release-pointers";
-                pointers.append(text("dt", "候选版本"), text("dd", summary.candidateVersionId ? summary.candidateVersionId.slice(0, 8) : "当前没有候选"), text("dt", "正式版本"), text("dd", summary.publishedVersionId ? summary.publishedVersionId.slice(0, 8) : "尚未发布"));
+                const candidate = text("dd", summary.candidateVersionId ? "正在读取版本号…" : "当前没有候选");
+                const published = text("dd", summary.publishedVersionId ? "正在读取版本号…" : "尚未发布");
+                pointers.append(text("dt", "候选版本"), candidate, text("dt", "正式版本"), published);
                 release.append(pointers);
                 const dependencies = document.createElement("div"); dependencies.className = "skill-dependency-summary";
                 dependencies.append(text("strong", "依赖映射"), text("p", "正在读取当前候选的工具依赖。", "field-help")); release.append(dependencies);
@@ -156,17 +212,23 @@
                     });
                     dependencies.replaceChildren(text("strong", "依赖映射"), rows);
                 } catch (error) { dependencies.replaceChildren(text("strong", "依赖映射"), text("p", error.message, "field-help")); }
-                const history = document.createElement("section"); history.className = "skill-version-history";
-                history.append(text("h4", "版本历史与回滚"), text("p", "回滚会重新发布历史版本，只影响之后按跟随策略创建的 Run。", "field-help"));
+                const history = document.createElement("details"); history.className = "skill-version-history";
+                history.append(text("summary", "版本历史与回滚"), text("p", "回滚会重新发布历史版本，只影响之后按跟随策略创建的 Run。", "field-help"));
                 const historyList = document.createElement("ul"); historyList.className = "skill-dependency-list";
                 history.append(historyList); release.append(history);
                 try {
                     const versions = await api.request(`/api/skills/${encodeURIComponent(id)}/versions`);
                     if (!scope.isCurrent(ticket)) return;
+                    [[candidate, summary.candidateVersionId], [published, summary.publishedVersionId]].forEach(([node, versionId]) => {
+                        if (!versionId) return;
+                        const version = versions.find((item) => item.versionId === versionId);
+                        node.textContent = version ? `v${version.versionNo}` : "版本号不可用";
+                        node.title = versionId;
+                    });
                     if (!versions.length) historyList.append(text("li", "尚无版本历史。"));
                     versions.forEach((version) => {
                         const row = document.createElement("li");
-                        row.append(text("span", `v${version.versionNo} · ${version.state}`));
+                        row.append(text("span", `v${version.versionNo} · ${versionStateLabel(version.state)}`));
                         if (version.state === "PREVIOUSLY_PUBLISHED" && getPermissions().includes("skill:write")) {
                             const rollback = document.createElement("button"); rollback.type = "button"; rollback.className = "button ghost"; rollback.textContent = "回滚到此版本";
                             rollback.addEventListener("click", async () => {
@@ -181,7 +243,11 @@
                         }
                         historyList.append(row);
                     });
-                } catch (error) { historyList.append(text("li", `版本历史读取失败：${error.message}`)); }
+                } catch (error) {
+                    if (summary.candidateVersionId) candidate.textContent = "版本信息读取失败";
+                    if (summary.publishedVersionId) published.textContent = "版本信息读取失败";
+                    historyList.append(text("li", `版本历史读取失败：${error.message}`));
+                }
                 if (summary.candidateVersionId && getPermissions().includes("skill:write")) {
                     const preflight = document.createElement("div"); preflight.className = "skill-preflight-actions";
                     const check = document.createElement("button"); check.type = "button"; check.className = "button ghost"; check.textContent = "执行候选结构预检";
@@ -412,7 +478,7 @@
                 }
                 detail.append(release);
                 const resourceSection = document.createElement("section"); resourceSection.className = "skill-resource-section";
-                resourceSection.append(text("h3", "受控资源"), text("p", "选择资源可在下方预览当前版本内容。", "field-help"));
+                resourceSection.append(text("h3", "受控资源"), text("p", `正在查看${summary.candidateVersionId ? "候选" : "正式"}版本${summary.versionNo ? ` v${summary.versionNo}` : ""}。选择资源可预览内容。`, "field-help"));
                 const resourceActions = document.createElement("div"); resourceActions.className = "skill-resource-actions";
                 const resources = document.createElement("div");
                 resources.id = "skillResourceContent";
@@ -447,20 +513,40 @@
                     });
                     actions.append(toggle); detail.append(actions);
                 }
+                return ticket;
             } catch (error) { if (scope.isCurrent(ticket)) { byId("skillDetail").classList.remove("skill-detail-content"); byId("skillDetail").replaceChildren(text("p", error.message, "empty-state")); } }
         }
         async function upload(event) {
             event.preventDefault(); if (!getPermissions().includes("skill:write")) return status("没有导入技能的权限。", "error");
+            if (uploadBusy) return;
             const file = byId("skillFile").files[0]; if (!file) return status("请选择 ZIP 技能包。", "error");
             const form = new FormData(); form.append("file", file, file.name);
+            const ticket = scope.issue("import");
+            const controls = byId("skillUploadForm").querySelectorAll("input, button");
+            uploadBusy = true; controls.forEach((node) => { node.disabled = true; });
             status("正在导入技能包…");
-            try { await api.request("/api/skills", {method: "POST", body: form}); status("技能已导入，初始状态为未启用。", "success"); await reload(); }
-            catch (error) { status(error.message, "error"); }
+            try {
+                const created = await api.request("/api/skills", {method: "POST", body: form});
+                if (!scope.isCurrent(ticket)) return;
+                const listTicket = await reload();
+                if (!scope.isCurrent(listTicket)) return;
+                const id = (created.summary || created).id;
+                const detailTicket = id ? await select(id) : listTicket;
+                if (scope.isCurrent(detailTicket)) { byId("skillFile").value = ""; status("技能已导入为未启用候选；请核验、试运行并发布。", "success"); }
+            } catch (error) {
+                if (scope.isCurrent(ticket)) status(`${error.message}${error.code === "SKILL_CONFLICT" ? " 如需升级，请选择已有技能并使用“上传新版本”。" : ""}`, "error");
+            } finally { uploadBusy = false; controls.forEach((node) => { node.disabled = !getPermissions().includes("skill:write"); }); }
         }
-        return {mount() { byId("refreshSkillsBtn").addEventListener("click", reload); byId("skillUploadForm").addEventListener("submit", upload); reload(); }, reload, dispose() { scope.invalidate(); selectedId = ""; }};
+        return {mount() { byId("refreshSkillsBtn").addEventListener("click", async () => {
+            const id = selectedId;
+            const listTicket = await reload();
+            if (id && scope.isCurrent(listTicket)) await select(id);
+        }); byId("skillUploadForm").addEventListener("submit", upload);
+            byId("skillUploadForm").querySelectorAll("input, button").forEach((node) => { node.disabled = !getPermissions().includes("skill:write"); });
+            reload(); }, reload, dispose() { scope.invalidate(); selectedId = ""; }};
     }
     function preflightStatus(response) {
         return response?.check?.status || "未知";
     }
-    return {canPublishTrial, createRequestScope, createSkillPage, eligibleTrialAgents, loadTrialState, preflightStatus, runStatusLabel, trialStatusLabel};
+    return {canPublishTrial, createRequestScope, createSkillPage, eligibleTrialAgents, loadTrialState, preflightStatus, runStatusLabel, trialStatusLabel, versionStateLabel};
 });

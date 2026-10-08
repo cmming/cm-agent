@@ -28,6 +28,25 @@ class ApiExceptionHandlerTest {
     private MockMvc mockMvc;
 
     @Test
+    void JDBC诊断保留数据库编号但接口只返回稳定脱敏错误(CapturedOutput output) throws Exception {
+        mockMvc.perform(get("/test/persistence-length")
+                        .header(RequestCorrelationFilter.ERROR_ID_HEADER, "jdbc-diagnostic-error-id"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("PERSISTENCE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message").value("数据服务暂不可用"))
+                .andExpect(jsonPath("$.errorId").value("jdbc-diagnostic-error-id"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string(RequestCorrelationFilter.ERROR_ID_HEADER, "jdbc-diagnostic-error-id"))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("private-row-value"))))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("sqlState"))))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("SQLException"))));
+        org.assertj.core.api.Assertions.assertThat(output.getOut())
+                .contains("errorId=jdbc-diagnostic-error-id", "sqlState=22001", "vendorCode=1406",
+                        "字段长度超限", "Caused by:")
+                .doesNotContain("private-row-value", "private-jdbc-password", "private-db.invalid", "INSERT INTO");
+    }
+
+    @Test
     void 沙箱失败保持独立状态错误码和原错误编号() throws Exception {
         mockMvc.perform(get("/test/sandbox/SKILL_SANDBOX_TIMEOUT"))
                 .andExpect(status().isGatewayTimeout())
@@ -135,6 +154,13 @@ class ApiExceptionHandlerTest {
 
     @RestController
     static class FailingController {
+        @GetMapping("/test/persistence-length")
+        void persistenceLength() {
+            throw new org.springframework.dao.DataIntegrityViolationException(
+                    "SQL [INSERT INTO private_table VALUES ('private-row-value')]",
+                    new java.sql.SQLException("Data too long private-row-value jdbc:mysql://user:private-jdbc-password@private-db.invalid/db",
+                            "22001", 1406));
+        }
         @GetMapping("/test/sandbox/{code}")
         public void sandbox(@PathVariable("code") com.cmagent.api.ApiErrorCode code) {
             throw new com.cmagent.core.runtime.SkillAccessException(code, "技能沙箱受控失败", "sandbox-error-id", true);

@@ -141,6 +141,41 @@ class GovernedSkillAccessServiceTest {
     }
 
     @Test
+    void 新默认预算允许较大资源集且多次沙箱准备仍累计扣减() {
+        DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
+        when(sandbox.open(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap())).thenCallRealMethod();
+        GovernedSkillAccessService execution = executionService(sandbox);
+        when(sandbox.execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn("结果");
+        // 每份资源都符合默认导入上限；总量超过旧 256 KiB，模拟完整文档技能的沙箱准备。
+        String content = "x".repeat(256 * 1024);
+        store.execute(() -> {
+            store.resources().insertAll(java.util.stream.IntStream.range(0, 5)
+                    .mapToObj(index -> new com.cmagent.core.domain.SkillResource(tenant, skillId, versionId,
+                            "resources/reference-" + index + ".txt", "text/plain", content, content.length(), "a".repeat(64)))
+                    .toList());
+            return null;
+        });
+        int preparedBytes = store.versions().find(tenant, skillId, versionId).orElseThrow()
+                .content().getBytes(java.nio.charset.StandardCharsets.UTF_8).length
+                + store.resources().list(tenant, skillId, versionId).stream()
+                .mapToInt(com.cmagent.core.domain.SkillResource::byteLength).sum();
+        assertThat(execution.execute(scriptRequest("large-first"), "")).isEqualTo("结果");
+        properties.setMaxLoadedBytes(preparedBytes * 2);
+        properties.validate();
+        assertThat(execution.execute(scriptRequest("large-second"), "")).isEqualTo("结果");
+        var rejected = scriptRequest("large-third");
+        assertThatThrownBy(() -> execution.execute(rejected, ""))
+                .isInstanceOfSatisfying(SkillAccessException.class, failure -> {
+                    assertThat(failure.code()).isEqualTo(ApiErrorCode.SKILL_LOAD_LIMIT_EXCEEDED);
+                    assertThat(failure.errorId()).isEqualTo(rejected.attemptId().toString());
+                    assertThat(failure.safeMessage()).isEqualTo("本轮技能读取已达上限");
+                });
+        verify(sandbox, times(2)).execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.anyString());
+        assertThat(store.loads().listForBudget(tenant, runId)).hasSize(2);
+    }
+
+    @Test
     void 沙箱准备的固定资源预算在之后读取时仍被扣减() {
         DockerSkillSandbox sandbox = mock(DockerSkillSandbox.class);
         when(sandbox.open(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap())).thenCallRealMethod();

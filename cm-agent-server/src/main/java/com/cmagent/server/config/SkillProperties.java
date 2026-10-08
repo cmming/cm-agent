@@ -7,10 +7,10 @@ import org.springframework.boot.context.properties.NestedConfigurationProperty;
 import java.util.List;
 
 /**
- * 技能上传和运行预算配置；容量类限制只允许从经过评审的默认值向下收紧。
+ * 技能上传和运行预算配置；部署值可在服务端明确规定的硬上限内调整。
  *
- * <p>限制不能由技能包元数据覆盖。若未来需要放大默认值，必须重新评估内存、模型上下文
- * 和拒绝服务风险，而不是通过部署配置静默扩大。</p>
+ * <p>限制不能由技能包元数据覆盖。默认值与硬上限分开：部署者可以收紧预算，
+ * 或在硬上限内按实际包体量调整；超过硬上限仍拒绝启动，不能静默解除资源边界。</p>
  */
 @ConfigurationProperties(prefix = "cm-agent.skills")
 public class SkillProperties {
@@ -18,16 +18,20 @@ public class SkillProperties {
     private boolean enabled;
     private List<String> allowedResourceTypes = List.of(
             ".md", ".txt", ".json", ".yaml", ".yml", ".csv");
-    private int maxZipBytes = 2 * 1024 * 1024;
+    /** ZIP 上传默认 4 MiB，部署配置最多允许 16 MiB；解压后的总大小另行限制。 */
+    private int maxZipBytes = 4 * 1024 * 1024;
     private int maxExpandedBytes = 4 * 1024 * 1024;
-    private int maxFiles = 64;
+    /** ZIP 默认最多 256 个文件，部署配置最多允许 512 个文件。 */
+    private int maxFiles = 256;
     private int maxInstructionBytes = 32 * 1024;
-    private int maxResourceBytes = 64 * 1024;
+    /** 单资源默认 256 KiB，部署配置最多允许 1 MiB，不代表单 Run 的累计预算。 */
+    private int maxResourceBytes = 256 * 1024;
     private int maxPathLength = 240;
     private int maxBoundSkills = 20;
     private int maxRunBytes = 8 * 1024 * 1024;
     private int maxLoadAttempts = 32;
-    private int maxLoadedBytes = 256 * 1024;
+    /** 单 Run 累计读取及沙箱准备预算默认与硬上限均为 16 MiB，重复准备仍累计扣减。 */
+    private int maxLoadedBytes = 16 * 1024 * 1024;
     /** 独立的执行策略；默认关闭，不由技能包修改。嵌套注解让元数据处理器展开独立类，不改变JVM配置绑定。 */
     @NestedConfigurationProperty
     private final SkillSandboxProperties sandbox = new SkillSandboxProperties();
@@ -84,15 +88,15 @@ public class SkillProperties {
     public int getMaxLoadAttempts() { return maxLoadAttempts; }
     /** @param value 单 Run 累计读取尝试次数上限 */
     public void setMaxLoadAttempts(int value) { this.maxLoadAttempts = value; }
-    /** @return 单 Run 累计交付模型原文字节上限 */
+    /** @return 单 Run 累计交付模型原文与准备沙箱资源的字节预算 */
     public int getMaxLoadedBytes() { return maxLoadedBytes; }
-    /** @param value 单 Run 累计交付模型原文字节上限 */
+    /** @param value 单 Run 累计交付模型原文与准备沙箱资源的字节预算 */
     public void setMaxLoadedBytes(int value) { this.maxLoadedBytes = value; }
 
     /**
-     * 校验数值限制处于 1 到默认值之间，并确认资源扩展名格式可安全用于后缀匹配。
+     * 校验数值限制处于 1 到服务端硬上限之间，并确认资源扩展名格式可安全用于后缀匹配。
      *
-     * @throws IllegalStateException 任一限制为零、负数或超过第一版默认值时抛出
+     * @throws IllegalStateException 任一限制为零、负数或超过服务端硬上限时抛出
      */
     public void validate() {
         sandbox.validate();
@@ -105,16 +109,16 @@ public class SkillProperties {
                         "cm-agent.skills.allowed-resource-types 必须是以点号开头的扩展名");
             }
         }
-        check("max-zip-bytes", maxZipBytes, 2 * 1024 * 1024);
+        check("max-zip-bytes", maxZipBytes, 16 * 1024 * 1024);
         check("max-expanded-bytes", maxExpandedBytes, 4 * 1024 * 1024);
-        check("max-files", maxFiles, 64);
+        check("max-files", maxFiles, 512);
         check("max-instruction-bytes", maxInstructionBytes, 32 * 1024);
-        check("max-resource-bytes", maxResourceBytes, 64 * 1024);
+        check("max-resource-bytes", maxResourceBytes, 1024 * 1024);
         check("max-path-length", maxPathLength, 240);
         check("max-bound-skills", maxBoundSkills, 20);
         check("max-run-bytes", maxRunBytes, 8 * 1024 * 1024);
         check("max-load-attempts", maxLoadAttempts, 32);
-        check("max-loaded-bytes", maxLoadedBytes, 256 * 1024);
+        check("max-loaded-bytes", maxLoadedBytes, 16 * 1024 * 1024);
     }
 
     /** @return 供无落盘解析器使用的限制快照 */

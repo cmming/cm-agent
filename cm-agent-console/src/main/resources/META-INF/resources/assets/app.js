@@ -214,6 +214,7 @@
         }
 
         sessionEpoch.invalidate();
+        disposeSkillPages();
         submitStateGuard.invalidateAll();
         toolLoadRevision.invalidate();
         agentDetailRevision.invalidate();
@@ -242,6 +243,14 @@
         return true;
     }
 
+    // 跨页导航只替换 body，不重新执行目标脚本；旧组件仍持有旧 DOM 与请求状态，必须先释放再重建。
+    function disposeSkillPages() {
+        state.skillsPage?.dispose();
+        state.sandboxPage?.dispose();
+        state.skillsPage = null;
+        state.sandboxPage = null;
+    }
+
     function reportPageNavigationError(error) {
         const status = $("globalStatus") || $("loginStatus");
         setStatus(status, error.message, "error");
@@ -264,6 +273,7 @@
 
     async function logout(message = "已安全退出。", redirectTarget = "") {
         sessionEpoch.invalidate();
+        disposeSkillPages();
         submitStateGuard.invalidateAll();
         toolLoadRevision.invalidate();
         agentDetailRevision.invalidate();

@@ -19,7 +19,7 @@ public record SkillPackageLimits(
         int pathLength
 ) {
 
-    /** 第一版经过评审的默认上限，只允许配置层向下收紧。 */
+    /** 独立解析器的保守默认值；服务端使用配置快照传入限制，不依赖此历史默认值。 */
     public static SkillPackageLimits defaults() {
         return new SkillPackageLimits(
                 2 * 1024 * 1024, 4 * 1024 * 1024, 64,

@@ -8,6 +8,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -107,14 +108,30 @@ class MigrationTest {
                 VALUES ('90000000-0000-0000-0000-000000000020','90000000-0000-0000-0000-000000000001',
                 '旧SSH端点','docker','SSH','example.invalid',22,'fixture',true,'',0,1,0,'NOT_TESTED',false,:now,:now)
                 """).param("now", Timestamp.from(java.time.Instant.now())).update();
-        int passwordStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
+        int passwordStage = CmAgentFlyway.configure(dataSource).target("17").load().migrate().migrationsExecuted;
+
+        JdbcClient jdbc = JdbcClient.create(dataSource);
+        String existingDescription = jdbc.sql("SELECT description FROM skill_versions WHERE id='90000000-0000-0000-0000-000000000006'")
+                .query(String.class).single();
+        // 用 DOCX 包的实际描述长度复现旧 schema 的完整性错误；失败语句不会改变历史值。
+        assertThatThrownBy(() -> updateLegacyDescription(jdbc, "d".repeat(835)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        int descriptionStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
+        assertThat(descriptionStage).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT description FROM skill_versions WHERE id='90000000-0000-0000-0000-000000000006'")
+                .query(String.class).single()).isEqualTo(existingDescription);
+        String boundaryDescription = "中".repeat(1023) + "😀";
+        updateLegacyDescription(jdbc, boundaryDescription);
+        assertThat(jdbc.sql("SELECT description FROM skill_versions WHERE id='90000000-0000-0000-0000-000000000006'")
+                .query(String.class).single()).isEqualTo(boundaryDescription);
+        updateLegacyDescription(jdbc, existingDescription);
 
         assertThat(firstStage).isEqualTo(12);
         assertThat(secondStage).isEqualTo(4);
         assertThat(passwordStage).isEqualTo(1);
         assertThat(JdbcClient.create(dataSource).sql("SELECT ssh_auth_type FROM skill_sandbox_endpoints WHERE id='90000000-0000-0000-0000-000000000020'")
                 .query(String.class).single()).isEqualTo("KEY");
-        assertSchemaContract(firstStage + secondStage + passwordStage, jdbcUrl, username, password);
+        assertSchemaContract(firstStage + secondStage + passwordStage + descriptionStage, jdbcUrl, username, password);
         assertThat(JdbcClient.create(dataSource).sql("""
                         SELECT skills_json FROM run_skill_snapshots
                         WHERE tenant_id = '90000000-0000-0000-0000-000000000001'
@@ -123,6 +140,11 @@ class MigrationTest {
                 .contains("90000000-0000-0000-0000-000000000005");
 
         verifySkillReleaseMigration(JdbcClient.create(dataSource));
+    }
+
+    private static void updateLegacyDescription(JdbcClient jdbc, String description) {
+        jdbc.sql("UPDATE skill_versions SET description=:description WHERE id='90000000-0000-0000-0000-000000000006'")
+                .param("description", description).update();
     }
 
     @Test
@@ -297,7 +319,7 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(17);
+        assertThat(migrationsExecuted).isEqualTo(18);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
@@ -313,6 +335,11 @@ class MigrationTest {
                                 .isNotBlank());
             }
             assertThat(indexNames(connection, "agent_definitions")).contains("idx_agent_definitions_tenant");
+            try (ResultSet column = connection.getMetaData().getColumns(null, null, "skill_versions", "description")) {
+                assertThat(column.next()).isTrue();
+                assertThat(column.getInt("COLUMN_SIZE")).isEqualTo(1024);
+                assertThat(column.getString("REMARKS")).contains("1024", "Unicode");
+            }
             assertThat(columnComments(connection, "skill_load_records").get("status"))
                     .contains("沙箱资源准备", "不代表交付模型或脚本成功");
             assertThat(indexNames(connection, "tool_definitions")).contains("idx_tool_definitions_tenant");

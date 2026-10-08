@@ -541,7 +541,7 @@ body[data-console-version="v2"] .skills-page-note {
 }
 
 body[data-console-version="v2"] #skillsPage .skills-management-grid {
-    grid-template-columns: minmax(252px, .38fr) minmax(0, 1fr);
+    grid-template-columns: minmax(252px, 300px) minmax(0, 1fr);
 }
 
 body[data-console-version="v2"] #skillsPage .skill-list-panel .panel-heading {
@@ -725,6 +725,51 @@ body[data-console-version="v2"] .skill-import-panel { background: #fbfcff; }
 body[data-console-version="v2"] .skill-upload-form { display: grid; gap: 8px; }
 body[data-console-version="v2"] .skill-upload-form .field-help { margin: 0 0 4px; }
 body[data-console-version="v2"] .skill-upload-form code { font-family: Cascadia Code, Consolas, monospace; }
+
+/* 技能页将导入留在列表栏，升级与发布留在当前对象上下文；不影响其他管理页。 */
+body[data-console-version="v2"][data-page="skillsPage"] .workspace-crumb { color: #68768a; }
+body[data-console-version="v2"] #skillsPage { --muted: #526174; }
+body[data-console-version="v2"] #skillsPage .page-intro p { color: var(--muted); }
+body[data-console-version="v2"] #skillsPage .skill-page-status:empty { display: none; }
+body[data-console-version="v2"] #skillsPage .skill-page-status { margin: 0 0 14px; }
+body[data-console-version="v2"] #skillsPage .skill-import-panel {
+    margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); background: transparent;
+}
+body[data-console-version="v2"] #skillsPage .skill-import-panel summary,
+body[data-console-version="v2"] #skillsPage .skill-upgrade summary,
+body[data-console-version="v2"] #skillsPage .skill-version-history summary {
+    width: fit-content; padding: 8px 0; color: var(--text); font-size: 14px; font-weight: 650; cursor: pointer;
+}
+body[data-console-version="v2"] #skillsPage .skill-upgrade summary { color: var(--accent); }
+body[data-console-version="v2"] #skillsPage .skill-import-panel .field-help,
+body[data-console-version="v2"] #skillsPage .skill-upgrade .field-help { margin: 4px 0 12px; line-height: 1.65; }
+body[data-console-version="v2"] #skillsPage .skill-upload-form input,
+body[data-console-version="v2"] #skillsPage .skill-version-upload-form input { width: 100%; min-width: 0; box-sizing: border-box; }
+body[data-console-version="v2"] #skillsPage .skill-version-upload-form { display: grid; gap: 8px; padding-top: 8px; }
+body[data-console-version="v2"] #skillsPage .skill-version-upload-form label { display: grid; gap: 8px; font-size: 13px; font-weight: 650; }
+body[data-console-version="v2"] #skillsPage .skill-version-upload-form .form-status:empty { display: none; }
+body[data-console-version="v2"] #skillsPage .skill-upload-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+body[data-console-version="v2"] #skillsPage .skill-list-version { color: var(--text); font-size: 12px; }
+body[data-console-version="v2"] #skillsPage .skill-resource-heading { flex-wrap: wrap; justify-content: flex-start; }
+body[data-console-version="v2"] #skillsPage .skill-resource-heading strong { overflow-wrap: anywhere; }
+body[data-console-version="v2"] #skillsPage .skill-detail-header h2 { overflow-wrap: anywhere; }
+body[data-console-version="v2"] #skillsPage .skill-release-workspace {
+    padding: 18px 0 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent;
+}
+body[data-console-version="v2"] #skillsPage .skill-release-pointers dd { font-family: inherit; font-variant-numeric: tabular-nums; }
+body[data-console-version="v2"] #skillsPage .skill-version-history .skill-dependency-list { margin-top: 8px; }
+body[data-console-version="v2"] #skillsPage .skill-version-history li { padding: 4px 0; }
+body[data-console-version="v2"] #skillsPage .skill-version-history li .button { margin-left: 8px; }
+body[data-console-version="v2"] #skillsPage .skill-resource-link { min-height: 36px; }
+body[data-console-version="v2"] #skillsPage summary:hover { color: var(--accent); }
+body[data-console-version="v2"] #skillsPage summary:focus-visible,
+body[data-console-version="v2"] #skillsPage .skill-resource-link:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 3px;
+}
+@media (max-width: 600px) {
+    body[data-console-version="v2"] #skillsPage .skill-upload-actions { flex-direction: column; }
+    body[data-console-version="v2"] #skillsPage .skill-upload-actions .button { width: 100%; }
+}
 
 @media (max-width: 900px) {
     body[data-console-version="v2"] .page-intro { margin-bottom: 14px; padding-bottom: 12px; }

@@ -66,7 +66,34 @@ Skill 只接受 ZIP 中的 `SKILL.md` 和文本资源；不支持二进制、网
 
 启用开关后，部署者仍应先备份 JDBC 数据库并完成 Flyway 迁移。新 Run 固定当前版本快照；更新技能不会修改旧 Run。停用、解绑或访问纪元变化会阻止旧 Run 后续读取和审批恢复，页面应提示重新发起，而不是自动重放消息或审批。
 
+技能 `description` 最多包含 1024 个 Unicode 字符。JDBC 环境需应用 V18，将 `skill_versions.description` 从历史的 `VARCHAR(500)` 扩为 `VARCHAR(1024)`；否则长描述包可能解析成功后在落库时失败。该迁移保留既有内容、摘要和版本指针，不授予资源执行权限；原版文档技能仍须满足资源白名单、容量和运行依赖要求。
+
 ## 技能脚本沙箱与远程 Docker
+
+### 技能容量与运行预算
+
+以下数值取自 `SkillProperties`，单位为 UTF-8 字节或文件/尝试次数；部署覆盖值必须在 1 到硬上限之间。
+
+| 配置项 | 默认值 | 硬上限 | 作用阶段 |
+|---|---:|---:|---|
+| `cm-agent.skills.max-zip-bytes` | 4194304（4 MiB） | 16777216（16 MiB） | 上传 ZIP 压缩大小 |
+| `cm-agent.skills.max-expanded-bytes` | 4194304（4 MiB） | 4194304（4 MiB） | 导入时全部文件解压总大小 |
+| `cm-agent.skills.max-files` | 256 | 512 | 导入文件数量 |
+| `cm-agent.skills.max-instruction-bytes` | 32768（32 KiB） | 32768（32 KiB） | `SKILL.md` 正文大小 |
+| `cm-agent.skills.max-resource-bytes` | 262144（256 KiB） | 1048576（1 MiB） | 导入时单个资源大小 |
+| `cm-agent.skills.max-path-length` | 240 | 240 | 资源相对路径长度 |
+| `cm-agent.skills.max-bound-skills` | 20 | 20 | 单 Agent 技能绑定数量 |
+| `cm-agent.skills.max-run-bytes` | 8388608（8 MiB） | 8388608（8 MiB） | 单 Run 固定技能快照准备大小 |
+| `cm-agent.skills.max-load-attempts` | 32 | 32 | 单 Run 累计读取/准备尝试次数 |
+| `cm-agent.skills.max-loaded-bytes` | 16777216（16 MiB） | 16777216（16 MiB） | 单 Run 累计读取与沙箱资源准备预算 |
+
+导入容量与运行预算分别检查：包能导入不代表可以无限次读取或执行。沙箱每次准备会将固定版本的全部资源和 `SKILL.md` 一起预留到累计预算中；之前的模型读取也计入同一 Run 预算。次数用尽或新资源超过剩余字节预算均返回 `413/SKILL_LOAD_LIMIT_EXCEEDED`，默认 32 次仍保持，不应在同一 Run 盲目重试。新 Run 重新计量。
+
+这些属性不属于 `cm-agent.skills.sandbox`。独立解析器的 `SkillPackageLimits.defaults()` 保留历史保守值，服务端导入使用 `SkillProperties.toPackageLimits()` 的配置快照。修改源码或部署配置后需按发布流程构建/重启才能生效；实际配置覆盖可能比这里的默认值更严格。
+
+HTTP 上传还受 `spring.servlet.multipart.max-file-size` 和 `spring.servlet.multipart.max-request-size` 限制。扩大 ZIP 配置并不会自动扩大 multipart 限制，部署者需同时核对两者。
+
+### 沙箱执行与连接配置
 
 以下配置均属于 `cm-agent.skills.sandbox`，默认值以当前 Server 配置类为准，与 `application-skill-sandbox.yml` 一致。表中的环境变量是该可选 profile 显式提供的占位符；未加载它时，这些自定义别名不会自动映射到对应属性。也可以直接通过外部 YAML 或 Spring 配置设置完整属性名。`—` 表示该 profile 未提供专用环境变量占位符。
 

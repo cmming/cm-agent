@@ -102,6 +102,23 @@ class JdbcSkillRepositoriesTest {
         JdbcSkillReleaseRepository releases = new JdbcSkillReleaseRepository(jdbc);
         JdbcSkillTrialRepository trials = new JdbcSkillTrialRepository(jdbc, transactions);
 
+        // 同时覆盖旧长度边界、官方 DOCX 描述长度与新上限；补充平面字符按 Unicode 字符计数。
+        for (String description : List.of("中".repeat(500), "中".repeat(501), "d".repeat(835), "中".repeat(1023) + "😀")) {
+            UUID skillId = UUID.randomUUID(), versionId = UUID.randomUUID();
+            SkillDefinition definition = definition(TENANT_A, skillId, versionId, "long-" + skillId, false, 0);
+            SkillVersion version = new SkillVersion(versionId, TENANT_A, skillId, 1, description, Map.of(),
+                    "# 大资源回归", SHA256, "tester", NOW);
+            SkillResource schema = resource(TENANT_A, skillId, versionId, "schemas/sample.xsd", "x".repeat(242277));
+            execute(transactions, () -> {
+                definitions.insert(definition); versions.insert(version); resources.insertAll(List.of(schema));
+                return null;
+            });
+            assertThat(versions.find(TENANT_A, skillId, versionId)).contains(version);
+            assertThat(resources.list(TENANT_A, skillId, versionId)).containsExactly(schema);
+            assertThat(versions.find(TENANT_B, skillId, versionId)).isEmpty();
+            assertThat(resources.list(TENANT_B, skillId, versionId)).isEmpty();
+        }
+
         UUID skillA = UUID.randomUUID();
         UUID skillB = UUID.randomUUID();
         UUID versionA1 = UUID.randomUUID();

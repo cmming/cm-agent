@@ -23,17 +23,18 @@ class SkillPropertiesTest {
     }
 
     @Test
-    void 默认关闭并使用设计约定的全部上限() {
+    void 默认关闭并提供当前服务端容量快照() {
         SkillProperties properties = new SkillProperties();
 
         properties.validate();
 
         assertThat(properties.isEnabled()).isFalse();
-        assertThat(properties.toPackageLimits()).isEqualTo(SkillPackageLimits.defaults());
+        assertThat(properties.toPackageLimits()).isEqualTo(new SkillPackageLimits(
+                4 * 1024 * 1024, 4 * 1024 * 1024, 256, 32 * 1024, 256 * 1024, 240));
         assertThat(properties.getMaxBoundSkills()).isEqualTo(20);
         assertThat(properties.getMaxRunBytes()).isEqualTo(8 * 1024 * 1024);
         assertThat(properties.getMaxLoadAttempts()).isEqualTo(32);
-        assertThat(properties.getMaxLoadedBytes()).isEqualTo(256 * 1024);
+        assertThat(properties.getMaxLoadedBytes()).isEqualTo(16 * 1024 * 1024);
         assertThat(properties.getAllowedResourceTypes()).containsExactly(
                 ".md", ".txt", ".json", ".yaml", ".yml", ".csv");
     }
@@ -51,11 +52,11 @@ class SkillPropertiesTest {
     }
 
     @Test
-    void 拒绝零值和放大默认上限() {
+    void 拒绝零值和超过服务端硬上限() {
         SkillProperties zero = new SkillProperties();
         zero.setMaxFiles(0);
         SkillProperties expanded = new SkillProperties();
-        expanded.setMaxZipBytes(2 * 1024 * 1024 + 1);
+        expanded.setMaxZipBytes(16 * 1024 * 1024 + 1);
 
         assertThatThrownBy(zero::validate)
                 .isInstanceOf(IllegalStateException.class)
@@ -63,6 +64,25 @@ class SkillPropertiesTest {
         assertThatThrownBy(expanded::validate)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("max-zip-bytes");
+    }
+
+    @Test
+    void 部署值可在硬上限内放大但不能越界() {
+        SkillProperties properties = new SkillProperties();
+        properties.setMaxZipBytes(16 * 1024 * 1024);
+        properties.setMaxFiles(512);
+        properties.setMaxResourceBytes(1024 * 1024);
+        properties.setMaxLoadedBytes(16 * 1024 * 1024);
+        properties.validate();
+
+        properties.setMaxFiles(513);
+        assertThatThrownBy(properties::validate).isInstanceOf(IllegalStateException.class).hasMessageContaining("max-files");
+        properties.setMaxFiles(512);
+        properties.setMaxResourceBytes(1024 * 1024 + 1);
+        assertThatThrownBy(properties::validate).isInstanceOf(IllegalStateException.class).hasMessageContaining("max-resource-bytes");
+        properties.setMaxResourceBytes(1024 * 1024);
+        properties.setMaxLoadedBytes(16 * 1024 * 1024 + 1);
+        assertThatThrownBy(properties::validate).isInstanceOf(IllegalStateException.class).hasMessageContaining("max-loaded-bytes");
     }
 
     @Test

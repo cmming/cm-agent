@@ -27,7 +27,7 @@
         return payload;
     }
     function createSandboxPage({api, getSessionEpoch, getPermissions, document}) {
-        let mounted = false, listing = null, selected = null, busy = false, revision = 0;
+        let mounted = false, disposed = false, listing = null, selected = null, busy = false, revision = 0;
         const byId = (id) => document.getElementById(id);
         const allowed = (name) => getPermissions().includes("sandbox:" + name);
         const writable = () => allowed("write") && Boolean(listing?.enabled && listing?.credentialKeyConfigured);
@@ -62,7 +62,7 @@
             });
         }
         function edit(endpoint) {
-            if (busy) return;
+            if (busy || disposed) return;
             selected = endpoint || null; clearSecrets(); drawList();
             const detail = byId("sandboxEndpointDetail"); detail.replaceChildren();
             detail.append(node("h2", endpoint ? endpoint.displayName : "新建沙箱端点"),
@@ -146,6 +146,7 @@
             form.append(node("p", "凭据加密保存，仅返回配置状态。远程主机须由部署者加入允许范围；此处不能放宽执行限额。", "field-help"), save);
             form.addEventListener("submit", (event) => {
                 event.preventDefault();
+                if (disposed) return;
                 const value = (name) => form.querySelector('[name="' + name + '"]').value;
                 const credentials = replace.querySelector("input").checked && mode.value !== "LOCAL"
                     ? {privateKey: mode.value === "SSH" && auth.value === "PASSWORD" ? "" : value("privateKey"), knownHosts: mode.value === "SSH" ? value("knownHosts") : "",
@@ -177,19 +178,20 @@
             }
         }
         async function reload() {
+            if (disposed) return;
             const ticket = ++revision, session = getSessionEpoch();
             try {
                 const result = await api.request(base);
-                if (ticket !== revision || session !== getSessionEpoch()) return;
+                if (disposed || ticket !== revision || session !== getSessionEpoch()) return;
                 listing = result; byId("sandboxCreateBtn").disabled = !allowed("write") || !result.enabled || !result.credentialKeyConfigured;
                 byId("sandboxAvailability").textContent = !result.enabled ? "部署尚未启用技能沙箱。"
                     : !result.credentialKeyConfigured ? "端点管理需要部署者配置凭据主密钥。" : "端点与默认选择仅属于当前租户。";
                 const current = selected && listing.items.find((entry) => entry.id === selected.id);
                 drawList(); edit(current || listing.items[0] || null);
-            } catch (error) { if (ticket === revision && session === getSessionEpoch()) status(errorMessage(error), "error"); }
+            } catch (error) { if (!disposed && ticket === revision && session === getSessionEpoch()) status(errorMessage(error), "error"); }
         }
         async function mutate(path, method, body, message) {
-            if (busy) return; busy = true; const session = getSessionEpoch();
+            if (busy || disposed) return; busy = true; const session = getSessionEpoch();
             const controls = [...byId("sandboxEndpointDetail").querySelectorAll("button,input,select,textarea")]
                 .map((control) => ({control, disabled: control.disabled}));
             controls.forEach(({control}) => control.disabled = true);
@@ -197,14 +199,14 @@
             status("正在处理…");
             try {
                 const result = await api.request(base + path, {method, ...(body ? {body: JSON.stringify(body)} : {})});
-                if (session !== getSessionEpoch()) return;
+                if (disposed || session !== getSessionEpoch()) return;
                 if (result?.id) selected = result;
                 succeeded = true;
                 status(message, "success");
-            } catch (error) { if (session === getSessionEpoch()) status(errorMessage(error), "error"); }
+            } catch (error) { if (!disposed && session === getSessionEpoch()) status(errorMessage(error), "error"); }
             finally {
                 busy = false;
-                if (session === getSessionEpoch()) {
+                if (!disposed && session === getSessionEpoch()) {
                     const saving = (method === "POST" && path === "") || (method === "PUT" && path !== "/default");
                     if (!succeeded && saving) controls.forEach(({control, disabled}) => control.disabled = disabled);
                     else await reload();
@@ -212,7 +214,7 @@
             }
         }
         function mount() {
-            if (mounted) return; mounted = true;
+            if (mounted || disposed) return; mounted = true;
             const page = byId("skillsPage"), skills = page.querySelector(".skills-management-grid");
             skills.id = "sandboxSkillPanel"; skills.setAttribute("role", "tabpanel");
             const tabs = node("div", null, "sandbox-tabs"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "技能管理视图");
@@ -231,7 +233,7 @@
             const tabButtons = [];
             [["技能与发布", skills], ["沙箱端点", workspace]].forEach(([title, panel], index) => {
                 const tab = button(title, () => {
-                    if (busy) return;
+                    if (busy || disposed) return;
                     clearSecrets();
                     tabButtons.forEach((entry, position) => entry.setAttribute("aria-selected", String(position === index)));
                     skills.hidden = index !== 0; workspace.hidden = index !== 1;
@@ -245,7 +247,10 @@
             });
             skills.before(tabs); skills.after(workspace);
         }
-        return {mount, reload};
+        return {mount, reload, dispose() {
+            // 离开页面时清除尚未提交的认证输入，并阻止迟到请求访问新页面中同名的 DOM 节点。
+            disposed = true; revision += 1; clearSecrets(); listing = null; selected = null;
+        }};
     }
     return {buildPayload, canSetDefault, createSandboxPage, errorMessage};
 });
