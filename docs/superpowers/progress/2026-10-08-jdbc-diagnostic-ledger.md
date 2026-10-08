@@ -2,7 +2,7 @@
 
 修订：R0；日期：2026-10-08；工作模式：mode=default。
 
-Git：`codex/skills-version-console`，HEAD `5b881a8f0db8c0bf7cf2ce7d0f15c7c69a4c2443`；未提交。已有无关改动未覆盖。
+Git：`codex/skills-version-console`，验证基线 `5b881a8f0db8c0bf7cf2ce7d0f15c7c69a4c2443`；当时未提交，当前提交见末尾记录。已有无关改动未覆盖。
 
 | 编号 | 状态 | 目标与验收 | 依赖 |
 |---|---|---|---|
@@ -64,3 +64,12 @@ docker run --rm --network host \
 - [设计](../specs/2026-10-08-jdbc-diagnostic-design.md)
 - [计划](../plans/2026-10-08-jdbc-diagnostic.md)
 - [实现说明](../implementation/2026-10-08-jdbc-diagnostic-implementation-design.md)
+
+## 2026-10-08 本地提交记录
+
+- 用户已明确授权提交已完成修正，并选择同时纳入手工容量调整、先同步测试与配置文档。
+- 实现提交：`7337e6388f2de4b344a4431581493c3ff65bfbd1`，标题“完善技能版本控制台、导入容量与数据库诊断”，分支 `codex/skills-version-console`，59 个文件。包含技能版本控制台/导航、V18 长描述修复、JDBC 诊断及容量同步；本次补记提交编号另作纯文档提交。
+- 提交前按当前源码复核：Rocky Java 专项119项和MySQL原包接口3项通过（共122项执行），Node111项通过；失败/错误/跳过均0。容量默认值与硬边界、沙箱累计准备、大资源原包双库导入均已检查；历史测试记录保持，不冒充全仓库或真实脚本验收。
+- 59 个显式路径的暂存范围、敏感片段、文档链接及 `git diff --cached --check` 已检查。初次暂存发现新文档 EOF 多余空行，仅修正本任务文档后检查通过。
+- `application.yml`、`application-mysql.yml`、未跟踪 `application-ok.yml` 与 `.codex/`、`.workbuddy/` 保持未提交。未推送、未合并、未部署，未重启用户服务或操作其数据库。
+- 原生浏览器 ZIP 上传仍保留技能控制台 R0 的扩展权限阻塞；本轮数据库原包导入测试不替代该浏览器验收。
