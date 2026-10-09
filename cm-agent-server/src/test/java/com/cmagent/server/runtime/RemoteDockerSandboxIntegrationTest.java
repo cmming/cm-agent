@@ -176,6 +176,16 @@ class RemoteDockerSandboxIntegrationTest {
         var docker=new DockerSkillSandbox(p.getSandbox());var managed=new ManagedSkillSandbox(List.of(docker),p,service,audit,mapper);
         String script="import os,pathlib,socket\nassert os.getuid()==65534\nassert not pathlib.Path('/var/run/docker.sock').exists()\nassert not pathlib.Path('/host').exists()\nprint('remote-isolated')";
         assertThat(managed.execute(request,Map.of("main.py",script),"")).isEqualTo("remote-isolated\n");
+        // 同一端点传回文件；测试密钥只启用策略校验，不保存到业务配置。
+        var artifacts=p.getSandbox().getArtifacts();artifacts.setEnabled(true);artifacts.setRootDirectory("/tmp/artifact-test-only");artifacts.setEncryptionKey(Base64.getEncoder().encodeToString(key));
+        byte[] bytes;
+        try(var execution=managed.open(request,Map.of())){
+            var received=new java.io.ByteArrayOutputStream();
+            String fixed=Files.readString(Path.of("src/test/resources/skill-artifacts/scripts/main.py"));
+            assertThat(execution.execute(Map.of("main.py",fixed),"",(name,size,input)->{assertThat(name).isEqualTo("测试文档.docx");input.transferTo(received);})).contains("已生成测试文档");
+            bytes=received.toByteArray();FileSystemSkillArtifactStorage.validateFormat("测试文档.docx",bytes);assertThat(bytes).isNotEmpty();
+        }
+        artifacts.setEnabled(false);
         // 凭据轮换后探测失效；旧调用已打开的连接不切换，后续调用必须等新版本通过。
         try(var pinned=managed.open(request,Map.of())){
             var updated=service.update(principal,endpoint.id(),1,"轮换后的临时端点","docker",mode,host,port,user,true,credentials,auth);

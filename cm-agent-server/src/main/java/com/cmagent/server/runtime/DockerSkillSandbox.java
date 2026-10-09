@@ -69,11 +69,21 @@ public class DockerSkillSandbox implements com.cmagent.core.runtime.SkillSandbox
             /** 单次句柄禁止重放，关闭先中断实际执行线程并等待同一连接的清理。 */ private Thread running;
             /** 只在短同步区改变生命周期，不持锁执行外部进程。 */ private boolean closed,invoked;
             public String execute(Map<String,String> files,String stdin) {
+                return invoke(files,stdin,null);
+            }
+            public String execute(Map<String,String> files,String stdin,com.cmagent.core.runtime.SkillArtifactSink sink) {
+                return invoke(files,stdin,sink);
+            }
+            private String invoke(Map<String,String> files,String stdin,com.cmagent.core.runtime.SkillArtifactSink sink) {
                 synchronized(this){
                     if(closed || invoked)throw failure(request,ApiErrorCode.SKILL_SANDBOX_INVALID,"沙箱句柄已关闭或已执行");
                     invoked=true;running=Thread.currentThread();
                 }
-                try{return daemon==null?DockerSkillSandbox.this.execute(request,files,stdin):DockerSkillSandbox.this.execute(request, files, stdin, daemon);}
+                try{
+                    if(sink==null)return daemon==null?DockerSkillSandbox.this.execute(request,files,stdin):DockerSkillSandbox.this.execute(request,files,stdin,daemon);
+                    if(daemon!=null)return DockerSkillSandbox.this.execute(request,files,stdin,daemon,sink);
+                    try(var local=DockerDaemonConnection.legacy()){return DockerSkillSandbox.this.execute(request,files,stdin,local,sink);}
+                }
                 finally{synchronized(this){running=null;notifyAll();}}
             }
             public void close() {
@@ -126,6 +136,12 @@ public class DockerSkillSandbox implements com.cmagent.core.runtime.SkillSandbox
 
     /** 所有进程包括清理都使用当前固定daemon，禁止重新解析默认端点。 */
     private String execute(SkillReadRequest request, Map<String, String> files, String stdin, DockerDaemonConnection daemon) {
+        return execute(request,files,stdin,daemon,null);
+    }
+
+    /** 文件接收器只在当前连接内消费；禁用时继续使用原 stdout 文本协议。 */
+    private String execute(SkillReadRequest request, Map<String,String> files,String stdin,DockerDaemonConnection daemon,
+            com.cmagent.core.runtime.SkillArtifactSink sink) {
         if (!properties.isEnabled()) throw failure(request, ApiErrorCode.SKILL_SANDBOX_DISABLED, "技能沙箱未启用");
         if (stdin == null || stdin.getBytes(StandardCharsets.UTF_8).length > properties.getMaxInputBytes()
                 || !safePath(request.path()) || !request.path().endsWith(".py")
@@ -139,12 +155,20 @@ public class DockerSkillSandbox implements com.cmagent.core.runtime.SkillSandbox
         String name = "cm-agent-skill-" + java.util.UUID.randomUUID();
         Process process = null;
         boolean launched = false;
+        boolean collect=sink!=null&&properties.getArtifacts().isEnabled();
         // 独立虚拟线程并行写 stdin 和读 stdout，避免大包/大量输出造成管道互相等待。
         var workers = Executors.newVirtualThreadPerTaskExecutor();
         try {
-            byte[] payload = mapper.writeValueAsBytes(Map.of("files", files, "path", request.path(), "stdin", stdin));
-            long deadline = daemon.deadline(properties.getTimeout());
-            var arguments=command(name);
+            var artifactPolicy=properties.getArtifacts();
+            var inputPayload=new java.util.LinkedHashMap<String,Object>();
+            inputPayload.put("files",files);inputPayload.put("path",request.path());inputPayload.put("stdin",stdin);
+            if(collect)inputPayload.put("artifactPolicy",Map.of("text",properties.getMaxOutputBytes(),
+                "types",artifactPolicy.getAllowedTypes(),"file",artifactPolicy.getMaxFileBytes(),
+                "count",artifactPolicy.getMaxFilesPerCall(),"total",artifactPolicy.getMaxTotalBytesPerCall(),
+                "scriptTimeout",properties.getTimeout().toMillis()/1000.0,"collectionTimeout",artifactPolicy.getCollectionTimeout().toMillis()/1000.0));
+            byte[] payload = mapper.writeValueAsBytes(inputPayload);
+            long deadline = daemon.deadline(properties.getTimeout().plus(collect?artifactPolicy.getCollectionTimeout():java.time.Duration.ZERO));
+            var arguments=command(name,collect);
             process = daemon.start(arguments.subList(1,arguments.size()));
             launched = true;
             Process running = process;
@@ -154,6 +178,7 @@ public class DockerSkillSandbox implements com.cmagent.core.runtime.SkillSandbox
             });
             Future<String> reader = workers.submit(() -> {
                 try (var output = running.getInputStream(); var bytes = new ByteArrayOutputStream()) {
+                    if(collect)return new SkillArtifactProtocol().read(output,request,artifactPolicy,properties.getMaxOutputBytes(),sink);
                     byte[] chunk = new byte[4096];
                     int count;
                     while ((count = output.read(chunk)) != -1) {
@@ -181,6 +206,14 @@ public class DockerSkillSandbox implements com.cmagent.core.runtime.SkillSandbox
             Thread.currentThread().interrupt();
             throw failure(request, ApiErrorCode.SKILL_SANDBOX_TIMEOUT, "技能沙箱执行已中断");
         } catch (java.util.concurrent.ExecutionException failure) {
+            // 文件帧缺失可能是解释器先失败；优先保留原沙箱超时、输出预算与连接错误语义。
+            if(collect && exited(process)){
+                int exit=process.exitValue();
+                if(exit==4)throw failure(request,ApiErrorCode.SKILL_SANDBOX_TIMEOUT,"技能沙箱执行超时");
+                if(exit==3)throw failure(request,ApiErrorCode.SKILL_SANDBOX_LIMIT_EXCEEDED,"技能沙箱输出超过上限");
+                if(exit==2)throw failure(request,ApiErrorCode.SKILL_SANDBOX_FAILED,"技能脚本执行失败，请检查脚本逻辑");
+                if(exit>=125&&exit<=127)throw failure(request,daemon.authenticationFailed()?ApiErrorCode.SKILL_SANDBOX_AUTH_FAILED:ApiErrorCode.SKILL_SANDBOX_UNAVAILABLE,"技能沙箱或远程连接不可用");
+            }
             if (failure.getCause() instanceof SkillAccessException controlled) throw controlled;
             throw unavailable(request, failure);
         } catch (IOException failure) {
@@ -198,8 +231,18 @@ public class DockerSkillSandbox implements com.cmagent.core.runtime.SkillSandbox
         }
     }
 
+    /** 帧读取失败后短暂等候退出码，不延长脚本执行预算；中断仍交给清理边界处理。 */
+    private static boolean exited(Process process){
+        try{return process!=null&&process.waitFor(100,TimeUnit.MILLISECONDS);}
+        catch(InterruptedException e){Thread.currentThread().interrupt();return false;}
+    }
+
     /** 参数逐个传给 Docker，禁止 Shell 拼接；安全参数不允许由包或模型覆盖。 */
     List<String> command(String name) {
+        return command(name,false);
+    }
+    /** 固定引导程序只由部署开关与服务端接收器选择，模型不可覆盖。 */
+    private List<String> command(String name,boolean collect) {
         List<String> command = new ArrayList<>(List.of("docker", "run", "--rm", "--pull=never", "--name", name,
                 "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
                 "--user=65534:65534", "--pids-limit=32", "--memory=128m", "--memory-swap=128m", "--cpus=0.5",
@@ -209,7 +252,7 @@ public class DockerSkillSandbox implements com.cmagent.core.runtime.SkillSandbox
                 "--tmpfs=/workspace:rw,noexec,nosuid,nodev,size=16m,mode=1777,uid=65534,gid=65534",
                 "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777,uid=65534,gid=65534", "--workdir=/workspace", "-i"));
         if (!properties.getRuntime().isEmpty()) command.add("--runtime=" + properties.getRuntime());
-        command.addAll(List.of("--entrypoint=python", properties.getImage(), "-I", "-B", "-u", "-c", BOOTSTRAP));
+        command.addAll(List.of("--entrypoint=python", properties.getImage(), "-I", "-B", "-u", "-c", collect?SkillArtifactProtocol.BOOTSTRAP:BOOTSTRAP));
         return command;
     }
 
@@ -221,7 +264,22 @@ public class DockerSkillSandbox implements com.cmagent.core.runtime.SkillSandbox
             if (!remove.waitFor(5, TimeUnit.SECONDS)) { remove.destroyForcibly(); return false; }
             // docker rm 的错误输出很短且只含本次随机名称；不返回也不记录原文。
             String result = new String(remove.getInputStream().readNBytes(4096), StandardCharsets.UTF_8);
-            return remove.exitValue() == 0 || result.contains("No such container");
+            if(remove.exitValue()==0||result.contains("No such container"))return true;
+            // --rm 与显式 rm 可能同时触发删除；只有同一连接复查确认不存在，才承认清理成功。
+            if(result.contains("already in progress")){
+                long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);
+                while(System.nanoTime()<end){
+                    Thread.sleep(50);
+                    Process retry=daemon.start(List.of("rm","-f",name));
+                    try{
+                        if(!retry.waitFor(300,TimeUnit.MILLISECONDS))return false;
+                        String reply=new String(retry.getInputStream().readNBytes(4096),StandardCharsets.UTF_8);
+                        if(retry.exitValue()==0||reply.contains("No such container"))return true;
+                        if(!reply.contains("already in progress"))return false;
+                    }finally{if(retry.isAlive())retry.destroyForcibly();}
+                }
+            }
+            return false;
         } catch (InterruptedException failure) {
             Thread.currentThread().interrupt();
             return false;

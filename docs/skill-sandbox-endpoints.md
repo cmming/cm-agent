@@ -80,3 +80,9 @@ V16增加skill_sandbox_endpoints和skill_sandbox_defaults，PostgreSQL/MySQL方�
 Docker/JDBC/Flyway验证仅在ssh rocky的maven:3.9.9-eclipse-temurin-21容器执行，须核对HEAD与覆盖文件SHA256。CM_AGENT_TEST_SANDBOX=true启用R0真实隔离回归；CM_AGENT_TEST_REMOTE_SANDBOX=true启用项目一次性SSH/TLS网关夹具。可信Maven验证容器访问宿主socket以管理Testcontainers；技能容器没有宿主挂载，远程daemon夹具也不挂载宿主socket。夹具临时生成测试认证材料并自动清理，不使用生产凭据。SSH/TLS 使用项目专用 daemon；仅可信测试 daemon 夹具以 privileged 启动嵌套容器，不挂载宿主 Docker socket，不修改宿主时钟或生产身份策略。时钟/网络受限时，可用CM_AGENT_TEST_SSH_PACKAGE_DIR指定通过可信HTTPS下载的官方APK目录；夹具离线安装仍验证Alpine签名。
 
 实际命令、结果、浏览器证据与未执行项见[本轮账本](superpowers/progress/2026-09-30-skill-sandbox-ledger.md)。断连后不能确认删除时该实例保留配额并返回失败，运维只检查本项目cm-agent-skill-*对象；没有跨实例自动接管或脚本重放。
+
+## 端点执行后的文件交付
+
+文件策略是独立部署配置 `cm-agent.skills.sandbox.artifacts`，不在租户端点表保存路径或文件密钥。LOCAL、SSH KEY、SSH PASSWORD、TLS 均在当前固定连接中完成执行、退出前回传和清理，禁止切换端点或回退本机。服务端持久卷不挂载到执行主机容器。
+
+固定 Python 使用 `os.environ["CM_AGENT_ARTIFACT_DIR"]` 获取 `/workspace/output`，只写允许类型的普通文件。链接、特殊文件、逃逸路径、畸形帧和超限拒绝本次调用；有效文件先暂存，Run 及严格审计成功才公开。控制台 TEST、运行详情和聊天回复中的“生成文件”使用当前会话鉴权下载；显示文件名、类型、大小与有效期。端点后续停用不会变更历史文件归属，保留期和下载权限仍重新核验。配置与备份说明见 [配置文档](configuration.md#技能沙箱文件产物) 和 [运维文档](operations.md#文件产物持久卷与补偿)。

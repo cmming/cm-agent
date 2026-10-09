@@ -36,6 +36,16 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class RunPersistenceServiceTest {
+    @Test void 文件发布只能在运行保存和严格审计之后(){
+        var artifacts=org.mockito.Mockito.mock(SkillArtifactService.class);service.configureArtifacts(artifacts);
+        RunRecord success=runningRun.complete(RunStatus.SUCCEEDED,"完成","",STARTED_AT);
+        when(runRepository.complete(eq(TENANT_ID),eq(RUN_ID),eq(RunStatus.SUCCEEDED),eq("完成"),eq(""),any())).thenReturn(success);
+        service.complete(principal,runningRun,new AgentRunResult(RUN_ID,RunStatus.SUCCEEDED,"完成",List.of(),STARTED_AT,STARTED_AT,""),List.of());
+        var order=org.mockito.Mockito.inOrder(auditAppender,runRepository,toolCallRepository,artifacts);
+        order.verify(auditAppender).append(any(),any(),any(),any(),any(),any(),any());
+        order.verify(runRepository).complete(eq(TENANT_ID),eq(RUN_ID),eq(RunStatus.SUCCEEDED),eq("完成"),eq(""),any());
+        order.verify(toolCallRepository).saveAll(any(),any());order.verify(artifacts).finalizeRun(success);
+    }
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID AGENT_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
     private static final UUID RUN_ID = UUID.fromString("30000000-0000-0000-0000-000000000001");

@@ -111,6 +111,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(SkillAccessException.class)
     public ResponseEntity<ApiErrorResponse> skillFailure(SkillAccessException failure) {
         HttpStatus status = switch (failure.code()) {
+            case SKILL_ARTIFACT_INVALID -> HttpStatus.BAD_REQUEST;
+            case SKILL_ARTIFACT_LIMIT_EXCEEDED -> HttpStatus.PAYLOAD_TOO_LARGE;
+            case SKILL_ARTIFACT_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case SKILL_ARTIFACT_EXPIRED -> HttpStatus.GONE;
+            case SKILL_ARTIFACT_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
             case SKILL_SANDBOX_ENDPOINT_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case SKILL_SANDBOX_ENDPOINT_CONFLICT -> HttpStatus.CONFLICT;
             case SKILL_SANDBOX_TARGET_DENIED -> HttpStatus.FORBIDDEN;

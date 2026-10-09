@@ -55,7 +55,7 @@
         return {trial, approval};
     }
 
-    function createSkillPage({api, getSessionEpoch, getPermissions, document}) {
+    function createSkillPage({api, getSessionEpoch, getPermissions, document, artifacts}) {
         const scope = createRequestScope(getSessionEpoch);
         let selectedId = "";
         let selectedMappingRevision = null;
@@ -286,6 +286,11 @@
                         preview.append(text("p", `${trialStatusLabel(trialResponse.status)} · Run：${runStatusLabel(data.status)}`, "field-help"));
                         preview.append(text("h6", "最终输出"));
                         preview.append(text("pre", data.output || (data.status === "WAITING_APPROVAL" ? "当前运行等待审批，完成后会更新输出。" : "本次运行没有文本输出。"), "skill-trial-output"));
+                        if (trialResponse.runId && artifacts) {
+                            const files = document.createElement("section");
+                            preview.append(files);
+                            artifacts.mount(files, `/api/skills/${encodeURIComponent(selectedId)}/trials/${encodeURIComponent(trialResponse.runId)}/artifacts`);
+                        }
                         if (data.errorMessage) {
                             const error = text("p", data.errorMessage, "form-status");
                             error.dataset.tone = "error";
@@ -474,9 +479,31 @@
                             });
                         }
                     }
+                    if (!currentTrialRunId && permissions.includes("agent:read")) {
+                        // 完成的 TEST 不依赖浏览器存储；刷新/跨页导航只查询当前主体的最新固定版本。
+                        api.request(`/api/skills/${encodeURIComponent(id)}/trials/latest?versionId=${encodeURIComponent(summary.candidateVersionId)}`).then(async (latest) => {
+                            if (!latest?.runId || !scope.isCurrent(ticket) || currentTrialRunId) return;
+                            currentTrialRunId = latest.runId; refreshTrial.hidden = false;
+                            await refreshCurrentTrial();
+                        }).catch((error) => {
+                            if (scope.isCurrent(ticket)) {result.textContent = `${error.message} 最近试运行读取失败，请刷新状态。`; result.dataset.tone = "error";}
+                        });
+                    }
                     release.append(trial);
                 }
                 detail.append(release);
+                if (artifacts && !getPermissions().includes("skill:write") && getPermissions().includes("agent:read")) {
+                    const versionId = summary.candidateVersionId || summary.publishedVersionId;
+                    if (versionId) {
+                        const recent = document.createElement("section"); recent.className = "detail-section"; detail.append(recent);
+                        api.request(`/api/skills/${encodeURIComponent(id)}/trials/latest?versionId=${encodeURIComponent(versionId)}`).then((latest) => {
+                            if (!scope.isCurrent(ticket) || !latest?.runId) return;
+                            recent.append(text("h4", "最近试运行"), text("p", `试运行结果：${trialStatusLabel(latest.status)}。`, "field-help"));
+                            const files = document.createElement("div"); recent.append(files);
+                            artifacts.mount(files, `/api/skills/${encodeURIComponent(id)}/trials/${encodeURIComponent(latest.runId)}/artifacts`);
+                        }).catch((error) => {if (scope.isCurrent(ticket)) recent.append(text("p", error.message, "form-status"));});
+                    }
+                }
                 const resourceSection = document.createElement("section"); resourceSection.className = "skill-resource-section";
                 resourceSection.append(text("h3", "受控资源"), text("p", `正在查看${summary.candidateVersionId ? "候选" : "正式"}版本${summary.versionNo ? ` v${summary.versionNo}` : ""}。选择资源可预览内容。`, "field-help"));
                 const resourceActions = document.createElement("div"); resourceActions.className = "skill-resource-actions";

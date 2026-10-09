@@ -201,6 +201,12 @@ public class SkillTrialService {
         requireOwner(principal, trial);
         return trial;
     }
+    /** 刷新只恢复当前主体的同一固定版本，历史查询不能扩大技能或 TEST owner 边界。 */
+    public java.util.Optional<SkillTrial> latest(PrincipalRef principal,UUID skillId,UUID versionId){
+        if(definitions.find(principal.tenantId(),skillId).isEmpty()||versions.find(principal.tenantId(),skillId,versionId).isEmpty())throw notFound();
+        return trials.findLatest(principal.tenantId(),skillId,versionId,principal.principalId())
+            .filter(t->t.tenantId().equals(principal.tenantId())&&t.skillId().equals(skillId)&&t.versionId().equals(versionId)&&t.createdBy().equals(principal.principalId()));
+    }
 
     /**
      * 查询当前主体拥有的 TEST Run 结果明细。

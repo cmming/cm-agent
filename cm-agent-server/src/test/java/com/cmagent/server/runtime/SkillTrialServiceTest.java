@@ -43,6 +43,15 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class SkillTrialServiceTest {
+    @Test void 最新试运行复核技能版本并按当前主体查询(){
+        when(definitions.find(tenant,skill)).thenReturn(Optional.of(new com.cmagent.core.domain.SkillDefinition(skill,tenant,"测试",version,version,true,0,0,"tester","tester",NOW,NOW)));
+        when(versions.find(tenant,skill,version)).thenReturn(Optional.of(new com.cmagent.core.domain.SkillVersion(version,tenant,skill,1,"测试",java.util.Map.of(),"技能","0".repeat(64),"tester",NOW)));
+        when(trials.findLatest(tenant,skill,version,"tester")).thenReturn(Optional.of(runningTrial()));
+        assertThat(service.latest(principal,skill,version).orElseThrow().runId()).isEqualTo(run);
+        verify(trials).findLatest(tenant,skill,version,"tester");
+        when(trials.findLatest(tenant,skill,version,"tester")).thenReturn(Optional.of(new SkillTrial(run,tenant,skill,version,agent,0,SkillTrialStatus.RUNNING,false,"other",NOW,NOW)));
+        assertThat(service.latest(principal,skill,version)).isEmpty();
+    }
     private static final Instant NOW = Instant.parse("2026-09-22T00:00:00Z");
     private final UUID tenant = UUID.randomUUID();
     private final UUID skill = UUID.randomUUID();

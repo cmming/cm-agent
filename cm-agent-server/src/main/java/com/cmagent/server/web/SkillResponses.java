@@ -185,12 +185,13 @@ public final class SkillResponses {
      * @param sandboxTimeoutSeconds 容器启动与执行时间上限
      * @param sandboxMaxInputBytes 脚本 stdin 字节上限
      * @param sandboxMaxOutputBytes 脚本原始输出字节上限
+     * @param artifacts 文件收集的真实部署策略，不含根目录或密钥
      */
     public record Capabilities(boolean enabled, List<String> allowedExtensions, int maxZipBytes,
                                int maxExpandedBytes, int maxFiles, int maxInstructionBytes,
                                int maxResourceBytes, int maxPathLength, int maxBoundSkills,
                                boolean sandboxEnabled, List<String> scriptLanguages, long sandboxTimeoutSeconds,
-                               int sandboxMaxInputBytes, int sandboxMaxOutputBytes) {
+                               int sandboxMaxInputBytes, int sandboxMaxOutputBytes, ArtifactCapabilities artifacts) {
         public Capabilities {
             allowedExtensions = List.copyOf(allowedExtensions);
             scriptLanguages = List.copyOf(scriptLanguages);
@@ -374,6 +375,30 @@ public final class SkillResponses {
         public static TrialToolCall from(RunToolCall toolCall) {
             return new TrialToolCall(toolCall.toolName(), toolCall.inputSummary(), toolCall.outputSummary(),
                     toolCall.status(), toolCall.durationMillis(), toolCall.authorized(), toolCall.errorMessage());
+        }
+    }
+    /**
+     * 文件策略公开投影，不包含目录或密钥。
+     * @param enabled 当前是否允许收集
+     * @param allowedTypes 允许文件类型
+     * @param maxFilesPerCall 单次文件数
+     * @param maxFileBytes 单文件字节数
+     * @param maxTotalBytesPerCall 单次总字节数
+     * @param maxTotalBytesPerRun 单运行总字节数
+     * @param maxStoredBytesPerTenant 租户存储字节数
+     * @param maxFilesPerRun 单运行文件数
+     * @param maxFilesPerTenant 租户存储文件数
+     * @param retentionSeconds 保留期秒数
+     */
+    public record ArtifactCapabilities(boolean enabled,List<String> allowedTypes,int maxFilesPerCall,long maxFileBytes,
+            long maxTotalBytesPerCall,long maxTotalBytesPerRun,long maxStoredBytesPerTenant,int maxFilesPerRun,int maxFilesPerTenant,long retentionSeconds) {
+        public ArtifactCapabilities {allowedTypes=List.copyOf(allowedTypes);}
+        /** 从执行所用的同一配置投影，能力接口不能自行放宽限制。 */
+        static ArtifactCapabilities from(com.cmagent.server.config.SkillProperties properties) {
+            var p=properties.getSandbox().getArtifacts();
+            return new ArtifactCapabilities(properties.isEnabled()&&properties.getSandbox().isEnabled()&&p.isEnabled(),
+                p.getAllowedTypes(),p.getMaxFilesPerCall(),p.getMaxFileBytes(),p.getMaxTotalBytesPerCall(),
+                p.getMaxTotalBytesPerRun(),p.getMaxStoredBytesPerTenant(),p.getMaxFilesPerRun(),p.getMaxFilesPerTenant(),p.getRetention().toSeconds());
         }
     }
 }

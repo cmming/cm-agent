@@ -257,6 +257,10 @@ class JdbcSkillRepositoriesTest {
         });
         assertThat(trials.find(TENANT_A, RUN_A)).contains(trial);
         assertThat(trials.list(TENANT_A, skillA, versionA1)).containsExactly(trial);
+        assertThat(trials.findLatest(TENANT_A,skillA,versionA1,"tester")).contains(trial);
+        assertThat(trials.findLatest(TENANT_A,skillA,versionA1,"other")).isEmpty();
+        assertThat(trials.findLatest(TENANT_A,skillA,versionA1,"TESTER")).isEmpty();
+        assertThat(trials.findLatest(TENANT_B,skillA,versionA1,"tester")).isEmpty();
         assertThatThrownBy(() -> trials.insert(new SkillTrial(
                 UUID.randomUUID(), TENANT_A, skillA, versionA1, AGENT_A, 0,
                 SkillTrialStatus.RUNNING, false, "tester", NOW, NOW)))

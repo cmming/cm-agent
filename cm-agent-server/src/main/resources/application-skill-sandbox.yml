@@ -15,6 +15,23 @@ cm-agent:
       allowed-targets: ${CM_AGENT_SKILL_SANDBOX_ALLOWED_TARGETS:}
       # 独立32字节Base64主密钥；不提供默认可用密钥，未配置时拒绝端点管理写入。
       encryption-key: ${CM_AGENT_SKILL_SANDBOX_ENCRYPTION_KEY:}
+      # 文件产物独立开关、持久卷和 AES-256 密钥；开启沙箱不会自动开启文件下载。
+      artifacts:
+        enabled: ${CM_AGENT_SKILL_ARTIFACTS_ENABLED:false}
+        storage: filesystem
+        root-directory: ${CM_AGENT_SKILL_ARTIFACTS_ROOT_DIRECTORY:}
+        encryption-key: ${CM_AGENT_SKILL_ARTIFACTS_ENCRYPTION_KEY:}
+        allowed-types: [.docx, .pptx, .pdf, .txt, .csv, .json]
+        max-files-per-call: 8
+        max-file-bytes: 4194304
+        max-total-bytes-per-call: 8388608
+        max-total-bytes-per-run: 33554432
+        max-stored-bytes-per-tenant: 268435456
+        max-files-per-run: 64
+        max-files-per-tenant: 4096
+        retention: 7d
+        cleanup-interval: 5m
+        collection-timeout: 5s
       connection:
         # 留空保留R0本地环境兼容，显式LOCAL/SSH/TLS不继承全局Docker或SSH配置。
         mode: ${CM_AGENT_SKILL_SANDBOX_CONNECTION_MODE:}

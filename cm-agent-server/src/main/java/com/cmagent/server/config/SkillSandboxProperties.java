@@ -6,6 +6,11 @@ import java.time.Duration;
 
 /** 仅由部署者控制的沙箱策略，技能元数据和模型参数不能覆盖安全边界。 */
 public class SkillSandboxProperties {
+    /** 独立文件收集与存储策略；默认关闭，不改变原文本执行行为。 */
+    @NestedConfigurationProperty
+    private final SkillArtifactProperties artifacts = new SkillArtifactProperties();
+    /** @return 文件产物部署策略 */
+    public SkillArtifactProperties getArtifacts() { return artifacts; }
     /** 只由部署注册的后端标识，不能指定实现类。 */
     private String backend = "docker";
     /** 远程 host:port 的精确白名单，空集合拒绝远程端点。 */
@@ -75,6 +80,7 @@ public class SkillSandboxProperties {
 
     /** 启动期校验；配置只能收紧首版限额，不能静默扩大攻击面。 */
     public void validate() {
+        artifacts.validate();
         if (image == null || !image.matches("[a-zA-Z0-9][a-zA-Z0-9./_:@-]{0,255}")
                 || runtime == null || !runtime.matches("[a-zA-Z0-9_.-]{0,64}")) {
             throw new IllegalStateException("技能沙箱镜像或 runtime 配置不合法");

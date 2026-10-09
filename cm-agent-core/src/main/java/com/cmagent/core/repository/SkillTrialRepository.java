@@ -16,6 +16,18 @@ public interface SkillTrialRepository {
 
     /** 按创建时间倒序列出指定技能版本的试运行历史。 */
     List<SkillTrial> list(UUID tenantId, UUID skillId, UUID versionId);
+    /**
+     * 当前认证主体的最新指定版本 TEST，用于页面刷新后恢复；不得返回其他创建者。
+     * @param tenantId 可信租户
+     * @param skillId 路径技能
+     * @param versionId 已校验版本
+     * @param principalId 当前认证主体，不能取自请求体
+     * @return 当前主体最新记录，无记录返回空
+     */
+    default Optional<SkillTrial> findLatest(UUID tenantId,UUID skillId,UUID versionId,String principalId){
+        return list(tenantId,skillId,versionId).stream().filter(t->t.createdBy().equals(principalId))
+            .max(java.util.Comparator.comparing(SkillTrial::createdAt).thenComparing(t->t.runId().toString()));
+    }
 
     /** 使用当前状态做条件更新，状态已变化时返回 {@code false}。 */
     boolean update(SkillTrial next, com.cmagent.core.domain.SkillTrialStatus expectedStatus);

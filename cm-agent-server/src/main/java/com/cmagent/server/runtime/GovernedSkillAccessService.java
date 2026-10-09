@@ -62,6 +62,11 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
     private final Clock clock;
     /** 服务级复用沙箱并发门控，执行期间不持有数据库事务。 */
     private final com.cmagent.core.runtime.SkillSandboxBackend sandbox;
+    /** Spring 装配完成后固定产物编排；旧嵌入构造器保留纯文本行为。 */
+    private SkillArtifactService artifacts;
+    /** 生命周期装配在首次调用前完成，不在执行中切换服务。 */
+    @Autowired
+    void configureArtifacts(SkillArtifactService artifacts) { this.artifacts=artifacts; }
     /** 只记录可信上下文与脱敏异常，不记录脚本、输入或输出正文。 */
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GovernedSkillAccessService.class);
 
@@ -150,8 +155,9 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
             java.util.Map<String, String> files = workUnit.execute(() -> prepareExecution(request));
             // 审计不可用时禁止创建容器，不能将严格失败降级成普通工具错误。
             executionAudit(request, "STARTED", "技能沙箱开始执行");
-            try (var execution = sandbox.open(request, java.util.Map.of())) {
-                String output = execution.execute(files, stdin);
+            try (var collection=artifacts==null?null:artifacts.begin(request);
+                 var execution = sandbox.open(request, java.util.Map.of())) {
+                String output = collection==null?execution.execute(files, stdin):execution.execute(files,stdin,collection);
                 // 连接和认证材料清理成功后才能写成功审计；句柄须幂等关闭，交付前仍复核撤销。
                 execution.close();
                 // 端点策略复核可能包含DNS解析，放在事务外，避免出站等待持有Run/快照锁。
@@ -163,6 +169,7 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
                     executionAudit(request, "SUCCEEDED", "技能沙箱执行成功");
                     return null;
                 });
+                if(collection!=null)collection.complete();
                 return output;
             }
         } catch (SkillAccessException failure) {
@@ -226,6 +233,8 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
     }
 
     private static void logExecutionFailure(SkillReadRequest request, SkillAccessException failure) {
+        // 文件存储/下载服务已记录同一异常时只补严格失败审计，不重复技术诊断。
+        if(!failure.claimDiagnostic())return;
         String template = "技能沙箱失败。errorId={}, operation=SKILL_EXECUTE, errorCode={}, tenantId={}, principalId={}, resourceType=SKILL, resourceId={}, versionId={}, runId={}, toolCallId={}";
         Object[] context = {failure.errorId(), failure.code(), request.principal().tenantId(),
                 request.principal().principalId(), request.skillId(), request.versionId(), request.runId(), request.modelCallId()};

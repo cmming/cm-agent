@@ -40,6 +40,16 @@ public interface SkillSandboxBackend {
     interface Execution extends AutoCloseable {
         /** @param files 固定资源 @param stdin 有界输入 @return 输出 */
         String execute(Map<String, String> files, String stdin);
+        /**
+         * 执行并同步交付有界文件流；旧后端默认只返回文本，保持扩展兼容。
+         * @param files 固定技能资源
+         * @param stdin 有界标准输入
+         * @param sink 当前调用独占的文件接收器，不能保存二进制到文本结果
+         * @return 脱敏文本结果
+         */
+        default String execute(Map<String, String> files, String stdin, SkillArtifactSink sink) {
+            return execute(files, stdin);
+        }
         /** 交付前检查端点停用/撤销，允许资源关闭后调用；默认扩展没有管理端点。 */
         default void verifyAccess() {}
         /** 幂等释放临时材料；必须终止正在运行的任务，资源无法确认清理时必须失败。 */

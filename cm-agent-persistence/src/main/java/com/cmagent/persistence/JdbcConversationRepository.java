@@ -22,6 +22,15 @@ import java.util.UUID;
  * 列表使用 {@code updated_at + id} 复合游标，保证数据库排序与 Core 分页语义一致。</p>
  */
 public class JdbcConversationRepository implements ConversationRepository {
+    /** 消息与会话同时限制 tenant，避免仅凭 runId 把另一租户关联进当前下载。 */
+    @Override
+    public Optional<Conversation> findByRun(UUID tenantId,UUID runId) {
+        return jdbcClient.sql("""
+            SELECT DISTINCT c.id,c.tenant_id,c.agent_id,c.title,c.created_by,c.created_at,c.updated_at
+            FROM conversations c JOIN messages m ON m.conversation_id=c.id AND m.tenant_id=c.tenant_id
+            WHERE c.tenant_id=:tenant AND m.run_id=:run
+            """).param("tenant",tenantId.toString()).param("run",runId.toString()).query(this::mapConversation).optional();
+    }
     private final JdbcClient jdbcClient;
 
     /**

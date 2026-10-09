@@ -12,9 +12,14 @@ import java.util.Objects;
  */
 public final class SkillAccessException extends RuntimeException {
 
-    private final ApiErrorCode code;
-    private final String errorId;
-    private final boolean fatal;
+    /** 可跨层传递的稳定失败分类。 */ private final ApiErrorCode code;
+    /** 对外错误与后台诊断共用的编号。 */ private final String errorId;
+    /** 是否必须中止当前运行。 */ private final boolean fatal;
+    /** 只协调同一异常的日志归属，不参与授权或业务判定。 */
+    private final java.util.concurrent.atomic.AtomicBoolean diagnosticClaimed=new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** @return 仅第一次调用返回 true；最接近最终失败边界的日志记录者认领诊断，避免跨层重复堆栈。 */
+    public boolean claimDiagnostic(){return diagnosticClaimed.compareAndSet(false,true);}
 
     /**
      * 创建脱敏的技能访问异常。

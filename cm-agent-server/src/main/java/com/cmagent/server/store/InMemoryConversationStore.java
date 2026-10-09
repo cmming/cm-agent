@@ -24,6 +24,18 @@ import java.util.concurrent.ConcurrentHashMap;
  * 保存，服务重启后会话、消息和锁都会丢失，因此不能作为生产持久化方案。</p>
  */
 public class InMemoryConversationStore implements ConversationRepository, ConversationMessageRepository {
+    /** 在会话自身锁内检查关联消息，运行文件仍须另外验证 Run 创建者。 */
+    @Override
+    public Optional<Conversation> findByRun(UUID tenantId,UUID runId) {
+        for(var conversation:conversations.values()) {
+            if(!conversation.tenantId().equals(tenantId))continue;
+            synchronized(conversationLocks.computeIfAbsent(conversation.id(),ignored->new Object())) {
+                if(messages.getOrDefault(conversation.id(),List.of()).stream().anyMatch(message->runId.equals(message.runId())))
+                    return Optional.of(conversation);
+            }
+        }
+        return Optional.empty();
+    }
     private final ConcurrentHashMap<UUID, Conversation> conversations = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, List<ConversationMessage>> messages = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Object> conversationLocks = new ConcurrentHashMap<>();

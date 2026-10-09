@@ -35,6 +35,15 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/skills/{skillId}/trials")
 public class SkillTrialController {
+    /** 在刷新和跨页导航后恢复当前主体最新 TEST；无记录返回 204，不泄露他人历史。 */
+    @GetMapping("/latest")
+    public ResponseEntity<SkillResponses.Trial> latest(@PathVariable("skillId")UUID skillId,
+            @org.springframework.web.bind.annotation.RequestParam("versionId")UUID versionId,Authentication authentication){
+        PrincipalRef principal=principal(authentication);
+        authorize(principal,"skill:read","SKILL",skillId.toString());authorize(principal,"agent:read","SKILL",skillId.toString());
+        var latest=trials.latest(principal,skillId,versionId);
+        return latest.isEmpty()?ResponseEntity.noContent().build():ResponseEntity.ok(trialResponse(principal,latest.orElseThrow()));
+    }
     private final SkillTrialService trials;
     private final ToolApprovalService approvals;
     private final PermissionEvaluator permissions;

@@ -65,7 +65,7 @@ class MigrationTest {
             "skill_releases",
             "skill_preflight_checks",
             "skill_preflight_items",
-            "skill_trials", "skill_sandbox_endpoints", "skill_sandbox_defaults"
+            "skill_trials", "skill_sandbox_endpoints", "skill_sandbox_defaults", "skill_artifacts"
     );
 
     @Container
@@ -117,7 +117,7 @@ class MigrationTest {
         assertThatThrownBy(() -> updateLegacyDescription(jdbc, "d".repeat(835)))
                 .isInstanceOf(DataIntegrityViolationException.class);
         int descriptionStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
-        assertThat(descriptionStage).isEqualTo(1);
+        assertThat(descriptionStage).isEqualTo(2);
         assertThat(jdbc.sql("SELECT description FROM skill_versions WHERE id='90000000-0000-0000-0000-000000000006'")
                 .query(String.class).single()).isEqualTo(existingDescription);
         String boundaryDescription = "中".repeat(1023) + "😀";
@@ -319,7 +319,7 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(18);
+        assertThat(migrationsExecuted).isEqualTo(19);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);

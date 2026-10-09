@@ -408,3 +408,42 @@ Run、ToolCall、Conversation 与 Message 使用当前认证主体的 tenant 条
 - 模型 timeout 或 Provider 故障会把运行收口为失败；授权拒绝优先映射为拒绝；审计失败保持严格语义并传播。AgentScope 2.0.2 的工具层只暴露通用取消信号，系统仅根据其明确生成的超时结果判定工具 timeout，不能把该信号视为通用手动取消能力。
 - 工具可能产生外部副作用。超时、中断或 Provider 重试不能证明外部系统已经回滚，工具实现与下游接口必须使用 `runId`、`toolCallId` 或业务幂等键实现去重。
 - metrics、集中式日志/追踪、备份治理和 CI/CD 不应在当前配置文档中被视为已交付能力，对应工作列入[中文路线图](roadmap.md)的阶段4-5。
+
+## 技能沙箱文件产物
+
+配置前缀为 `cm-agent.skills.sandbox.artifacts`，绑定 `SkillSandboxProperties#getArtifacts()` 与 `SkillArtifactProperties`。文件开关默认关闭，启用沙箱不等于启用文件产物。显式加载 `skill-sandbox` profile 时可使用 `CM_AGENT_SKILL_ARTIFACTS_ENABLED`、`CM_AGENT_SKILL_ARTIFACTS_ROOT_DIRECTORY`、`CM_AGENT_SKILL_ARTIFACTS_ENCRYPTION_KEY` 注入对应配置；其他 profile 使用标准 Spring 属性绑定。密钥必须是独立的 32 字节 Base64 Secret，不能复用 JWT、模型或沙箱端点密钥；目录必须是仓库与静态资源之外、服务账户独占的持久卷。
+
+| 属性 | 默认值 | 约束/语义 |
+|---|---|---|
+| enabled | false | 文件收集与下载开关 |
+| storage | filesystem | 首版实现；存储 SPI 可由部署代码替换，不提供 S3 |
+| root-directory | 空 | 显式私有持久卷，不挂载进技能容器 |
+| encryption-key | 空 | 独立 AES-256 密钥，不提供可用默认值 |
+| allowed-types | .docx,.pptx,.pdf,.txt,.csv,.json | 只能收紧；与脚本资源白名单独立 |
+| max-files-per-call | 8 | 1～8 |
+| max-file-bytes | 4194304 | 1～4 MiB，明文字节 |
+| max-total-bytes-per-call | 8388608 | 不小于单文件，不超过 8 MiB |
+| max-total-bytes-per-run | 33554432 | 不小于调用预算，不超过 32 MiB；补偿删除不返还 Run 累计预算 |
+| max-stored-bytes-per-tenant | 268435456 | 不小于 Run 预算，不超过 1 GiB；实际删除才归还租户容量 |
+| max-files-per-run | 64 | 不小于调用数量，不超过 64；含删除历史 |
+| max-files-per-tenant | 4096 | 不小于 Run 数量，不超过 4096；未实际删除都占用 |
+| retention | 7d | 1 分钟～30 天；成功发布时重新计算 |
+| cleanup-interval | 5m | 10 秒～1 小时；每批最多 100 个候选 |
+| collection-timeout | 5s | 大于 0 且不超过 5 秒，原脚本超时不会延长 |
+
+启用示例（Secret 由部署系统注入）：
+
+```yaml
+cm-agent:
+  skills:
+    sandbox:
+      artifacts:
+        enabled: true
+        root-directory: ${CM_AGENT_SKILL_ARTIFACTS_ROOT_DIRECTORY}
+        encryption-key: ${CM_AGENT_SKILL_ARTIFACTS_ENCRYPTION_KEY}
+```
+
+生产还需启用技能和沙箱、配置 JDBC/Flyway。调用固定包内 Python 将附件写入 `/workspace/output`（环境变量 `CM_AGENT_ARTIFACT_DIR`）；容器退出前回传，stdout 仍受原 32 KiB 限额。二进制只保存在独立 AES/GCM 文件，不进入数据库 TEXT、模型上下文或检查点。DOCX/PPTX 有界检查 ZIP 结构并拒绝宏；PDF 检查格式标记，不保证任意文件安全或复杂文档兼容。首版只有固定 Python，原 Anthropic docx.zip 的 Node.js 动态脚本不在兼容范围。
+
+正式/会话 Run 列表为 `GET /api/agents/{agentId}/runs/{runId}/artifacts`；TEST 为 `GET /api/skills/{skillId}/trials/{runId}/artifacts`；统一下载为 `GET /api/skill-artifacts/{artifactId}/content`。需当前认证、Run owner 和 `agent:read`；TEST 额外需要 `skill:read` 与原 TEST owner，会话复核原会话 owner。等待审批或失败不下载。响应仅附件下载，禁缓存，无 URL 令牌、预览、Range 和共享。
+TEST恢复入口为 GET /api/skills/{skillId}/trials/latest?versionId={versionId}，仅返回当前主体当前版本最近记录，无记录204；需要 skill:read 和 agent:read，不自动执行或替用户发布。控制台最多并行下载两个文件，服务端每实例最多四项完整解密下载，单文件仍受4MiB硬限额。下载租约5分钟，补偿扫描每批100项；同一文件被占用时返回可重试503。

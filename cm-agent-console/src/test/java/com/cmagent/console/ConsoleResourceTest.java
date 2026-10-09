@@ -44,7 +44,7 @@ class ConsoleResourceTest {
         String app = resource("META-INF/resources/assets/app.js");
 
         assertThat(login)
-                .contains("data-console-version=\"v2\"", "id=\"loginForm\"", "/console/v1/", "skills.js?v=2.1.0")
+                .contains("data-console-version=\"v2\"", "id=\"loginForm\"", "/console/v1/", "skills.js?v=2.1.2")
                 .doesNotContain("id=\"overviewPage\"", "id=\"agentsPage\"");
         assertThat(overview)
                 .contains("data-page=\"overviewPage\"", "id=\"overviewPage\"", "id=\"overviewPrimaryAction\"", "配置首个模型", "完成首个 Agent")
@@ -69,7 +69,7 @@ class ConsoleResourceTest {
                 .contains(
                         "data-page=\"skillsPage\"", "id=\"skillsPage\"", "id=\"skillList\"", "id=\"skillDetail\"",
                         "class=\"management-detail-stack skills-detail-stack\"", "id=\"skillUploadForm\"",
-                        "skills.js?v=2.1.0", "选择一个技能"
+                        "skills.js?v=2.1.2", "选择一个技能"
                 )
                 .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
         assertThat(skillsScript).contains(
@@ -123,7 +123,7 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.28", "/assets/console-core.js?v=2.0.14", "/assets/styles.css?v=2.0.17")
+                    .contains("/assets/app.js?v=2.0.29", "/assets/console-core.js?v=2.0.15", "/assets/styles.css?v=2.0.17", "skill-artifacts.js?v=1.0.2", "skill-artifacts.css?v=1.0.0")
                     .contains("/console/v2/assets/sandbox-endpoints.js?v=1.1.1", "/console/v2/assets/sandbox-endpoints.css?v=1.0.0")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }

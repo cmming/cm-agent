@@ -42,7 +42,7 @@ final class AgentScopeSkillExecutionBridge implements AgentTool {
     public String getName() { return TOOL_NAME; }
 
     @Override
-    public String getDescription() { return "在隔离沙箱中执行本轮技能的 Python 脚本。使用目录中的 skillId 和包内 .py 路径，stdin 为输入文本；不提供网络访问。"; }
+    public String getDescription() { return "在隔离沙箱中执行本轮技能的 Python 脚本。使用目录中的 skillId 和包内 .py 路径，stdin 为输入文本；不提供网络访问。启用文件产物时，固定脚本将文件写入 CM_AGENT_ARTIFACT_DIR 指定的 /workspace/output，运行成功后用户可在控制台下载；文件字节不返回模型。"; }
 
     @Override
     public Map<String, Object> getParameters() {

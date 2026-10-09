@@ -198,3 +198,6 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 ## 文档语言
 
 生产文档默认使用中文。英文文档可以作为翻译补充，但不能替代中文文档。
+
+技能沙箱可通过独立 `cm-agent.skills.sandbox.artifacts` 配置收集固定 Python 生成的文件：脚本写入 `CM_AGENT_ARTIFACT_DIR` 指定的 `/workspace/output`，容器退出前传输，服务端持久卷独立 AES/GCM 加密，JDBC V19 保存归属与配额。Run 成功持久化且严格审计成功后，创建者可在 v2 技能 TEST、运行详情和聊天回复下载；等待审批、失败与跨主体不交付。默认关闭，生产必须显式提供私有持久卷、独立密钥和 JDBC；详见[文件配置](docs/configuration.md#技能沙箱文件产物)与[运维说明](docs/operations.md#文件产物持久卷与补偿)。固定 Python 验收技能位于 `cm-agent-server/src/test/resources/skill-artifacts`；原 Anthropic docx.zip 的 Node.js 动态脚本仍不受支持。
+控制台会在选择技能时恢复本人当前版本最近的 TEST 结果；刷新或跨页返回后重新选择技能即可继续查看/下载，不自动重放执行。仅有读取权限的用户也可读取本人结果，试运行和发布仍需原写权限。产物组件最多并行下载两个文件，额外点击会提示等待。

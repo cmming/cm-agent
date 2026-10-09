@@ -106,6 +106,9 @@
         getSessionEpoch: () => sessionEpoch.capture(),
         onUnauthorized: () => logout("登录状态已失效，请重新登录。")
     });
+    const artifactManager = window.CmAgentArtifacts?.createManager({
+        api, getSessionEpoch: () => sessionEpoch.capture(), document
+    });
 
     function setStatus(element, message = "", tone = "neutral") {
         if (!element) return;
@@ -245,6 +248,7 @@
 
     // 跨页导航只替换 body，不重新执行目标脚本；旧组件仍持有旧 DOM 与请求状态，必须先释放再重建。
     function disposeSkillPages() {
+        artifactManager?.dispose();
         state.skillsPage?.dispose();
         state.sandboxPage?.dispose();
         state.skillsPage = null;
@@ -450,6 +454,7 @@
                 if (window.CmAgentSkills && !state.skillsPage) {
                     state.skillsPage = window.CmAgentSkills.createSkillPage({
                         api,
+                        artifacts: artifactManager,
                         getSessionEpoch: () => sessionEpoch.capture(),
                         getPermissions: () => state.currentUser?.permissions || [],
                         document
@@ -2907,6 +2912,11 @@
         appendChatBlocks(bubble, blocks);
         if (!blocks.length) bubble.append(element("p", {text: "消息内容为空。"}));
         article.append(bubble);
+        if (!isUser && message.runId && state.selectedAgentId && artifactManager) {
+            const files = element("section");
+            article.append(files);
+            artifactManager.mount(files, `/api/agents/${encodeURIComponent(state.selectedAgentId)}/runs/${encodeURIComponent(message.runId)}/artifacts`, {hideEmpty: true});
+        }
         return article;
     }
 
@@ -3545,6 +3555,11 @@
         skillsSection.id = "runSkillLoads";
         skillsSection.append(element("h3", {text: "技能读取记录"}), emptyState(core.formatSkillLoadState({loading: true})));
         container.replaceChildren(heading, inputSection, outputSection, metadataSection, callsSection, skillsSection);
+        if (run.id && run.agentId && artifactManager) {
+            const files = element("section", {className: "detail-section"});
+            container.append(files);
+            artifactManager.mount(files, `/api/agents/${encodeURIComponent(run.agentId)}/runs/${encodeURIComponent(run.id)}/artifacts`);
+        }
     }
 
     async function loadRunSkillLoads(agentId, runId, revision, session) {

@@ -181,3 +181,10 @@
 - 阶段5 CI/CD 交付流水线、发布自动化、稳定性工程和正式版本承诺。
 
 详细边界见[中文路线图](roadmap.md)。
+
+## 未发布：技能沙箱文件产物 R0
+
+- 固定包内 Python 可将普通附件写入 `/workspace/output`，通过有界二进制协议在同一 LOCAL/SSH KEY/SSH PASSWORD/TLS 连接退出前回传；原禁网、非 root、无宿主挂载及 stdout 预算保留。
+- 新增独立文件配置、AES/GCM 私有卷存储、JDBC V19 元数据与跨实例配额/租约。调用只保留 PENDING，Run 成功持久化和严格审计后发布；失败补偿与过期清理不提前返还容量。
+- 新增正式/会话/TEST 列表和统一鉴权下载，复核创建者及权限，完整解密认证后以附件交付。v2 三个结果区域增加文件卡片，复用当前会话 fetch/Blob 保存与导航清理。
+- 首版不支持原 docx.zip 的 Node.js 动态脚本、预览、分享、Range 或 S3；真实模型检查点长度问题 X1 不在本次修复范围。实际验收及未执行项见 [工作包账本](superpowers/progress/2026-10-08-skill-artifacts-ledger.md)。本轮未提交、未部署。

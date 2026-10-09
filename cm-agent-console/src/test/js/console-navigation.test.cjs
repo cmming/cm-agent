@@ -17,6 +17,7 @@ function navigationHarness() {
     const state = {};
     const invalidate = {invalidate() {}, invalidateAll() {}};
     const context = {
+        artifactManager: {dispose() { events.push("dispose-artifacts"); }},
         state, pageNavigationRevision: 0, currentPage: "overviewPage", sessionEpoch: invalidate,
         window: {fetch: async (url) => ({ok: true, text: async () => url}), scrollTo() {}, history: {pushState() {}, replaceState() {}}},
         document: {body: {dataset: {}, replaceChildren() { events.push("replace-body"); }}, importNode: (node) => node},
@@ -48,7 +49,7 @@ test("技能页离开后释放双组件，重复进入为新 DOM 创建新实例
     await flow.navigate("/console/v2/tools.html");
     assert.equal(firstSkill.disposed, true);
     assert.equal(firstSandbox.disposed, true);
-    assert.deepEqual(flow.events, ["dispose-skillsPage", "dispose-sandboxPage", "replace-body"]);
+    assert.deepEqual(flow.events, ["dispose-artifacts", "dispose-skillsPage", "dispose-sandboxPage", "replace-body"]);
     assert.equal(flow.state.skillsPage, null);
     await flow.navigate("/console/v2/skills.html");
     assert.notEqual(flow.state.skillsPage, firstSkill);

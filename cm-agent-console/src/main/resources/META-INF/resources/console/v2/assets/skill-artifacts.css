@@ -1,0 +1,10 @@
+/* 产物属于当前结果区域，沿用受控工作台的行式信息与操作布局。 */
+.skill-artifacts {margin-block-start: 1.25rem; min-width: 0;}
+.skill-artifacts h4 {margin: 0 0 .5rem; font-size: 1rem;}
+.skill-artifact-list {list-style: none; margin: .75rem 0 0; padding: 0;}
+.skill-artifact-row {display: flex; align-items: center; gap: 1rem; padding: .875rem 0; border-bottom: 1px solid var(--border, #dce3ea);}
+.skill-artifact-info {display: grid; gap: .375rem; min-width: 0; flex: 1;}
+.skill-artifact-name {overflow-wrap: anywhere;}
+.skill-artifact-row .button {flex-shrink: 0;}
+.skill-artifact-info .field-help {margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums;}
+@media (max-width: 600px) {.skill-artifact-row {align-items: flex-start; flex-direction: column; gap: .75rem;}.skill-artifact-row .button {width: 100%;}}

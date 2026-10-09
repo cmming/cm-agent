@@ -493,6 +493,7 @@
         return {request, stream};
 
         async function request(path, options = {}) {
+            const {responseType, ...fetchOptions} = options;
             const headers = new Headers(options.headers || {});
             // FormData 的边界由浏览器生成；手工设置 JSON 或 multipart Content-Type 都会破坏 ZIP 上传。
             const isMultipart = typeof FormData !== "undefined" && options.body instanceof FormData;
@@ -508,7 +509,38 @@
             }
 
             // 显式携带同源 Cookie，避免嵌入式浏览器对 fetch 默认凭据策略的实现差异破坏 v2 跨页会话。
-            const response = await fetchImpl(path, {...options, headers, credentials: "same-origin"});
+            const response = await fetchImpl(path, {...fetchOptions, headers, credentials: "same-origin"});
+            if (response.ok && responseType === "blob") {
+                const size = Number(response.headers.get("Content-Length"));
+                const errorId = response.headers.get("X-Error-Id") || "—";
+                const incomplete = () => new Error(`文件下载不完整或超过上限，请重试（错误编号：${errorId}）`);
+                if (!Number.isSafeInteger(size) || size < 1 || size > 4194304) {
+                    await response.body?.cancel();
+                    throw incomplete();
+                }
+                if (!response.body?.getReader) {
+                    const blob = await response.blob();
+                    if (blob.size !== size) throw incomplete();
+                    return blob;
+                }
+                const reader = response.body.getReader();
+                const chunks = [];
+                let received = 0;
+                try {
+                    while (true) {
+                        const next = await reader.read();
+                        if (next.done) break;
+                        received += next.value.byteLength;
+                        if (received > size) throw incomplete();
+                        chunks.push(next.value);
+                    }
+                    if (received !== size) throw incomplete();
+                    return new Blob(chunks, {type: response.headers.get("Content-Type") || "application/octet-stream"});
+                } finally {
+                    await reader.cancel();
+                    reader.releaseLock();
+                }
+            }
             const rawBody = await response.text();
             let body = null;
             if (rawBody) {

@@ -17,6 +17,13 @@ import java.util.UUID;
 
 /** 使用 JDBC 记录指定技能版本试运行；runId 同时承担受控授权来源。 */
 public final class JdbcSkillTrialRepository implements SkillTrialRepository {
+    /** 先按 tenant 和原 owner 过滤再 LIMIT，避免最新记录泄露他人 TEST 或遗漏当前主体。 */
+    @Override public Optional<SkillTrial> findLatest(UUID tenantId,UUID skillId,UUID versionId,String principalId){
+        return jdbcClient.sql("SELECT * FROM skill_trials WHERE tenant_id=:tenant AND skill_id=:skill AND version_id=:version AND created_by=:owner ORDER BY created_at DESC,run_id DESC LIMIT 1")
+            .param("tenant",tenantId.toString()).param("skill",skillId.toString()).param("version",versionId.toString()).param("owner",principalId).query(this::map).optional()
+            // MySQL 默认排序规则可能忽略大小写；最终 owner 判等沿用 Java 的精确语义。
+            .filter(t->t.createdBy().equals(principalId));
+    }
     private static final String TRIAL_COLUMNS = """
             run_id, tenant_id, skill_id, version_id, agent_id, mapping_revision,
             status, qualifies_release, created_by, created_at, updated_at

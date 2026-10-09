@@ -78,7 +78,7 @@ public class SkillController {
                 properties.isEnabled() && properties.getSandbox().isEnabled(),
                 properties.isEnabled() && properties.getSandbox().isEnabled() ? List.of("python") : List.of(),
                 properties.getSandbox().getTimeout().toSeconds(), properties.getSandbox().getMaxInputBytes(),
-                properties.getSandbox().getMaxOutputBytes());
+                properties.getSandbox().getMaxOutputBytes(),SkillResponses.ArtifactCapabilities.from(properties));
     }
 
     /** 分页查询当前租户技能。 */

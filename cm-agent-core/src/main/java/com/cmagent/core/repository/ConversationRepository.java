@@ -11,6 +11,11 @@ import java.util.UUID;
 /** 会话元数据的租户隔离存储契约。 */
 public interface ConversationRepository {
     /**
+     * 按可信 Run 查找其会话；普通单轮 Run 返回空，不能跨租户匹配消息。
+     * 旧嵌入实现保持兼容；Server 的 memory/JDBC 实现必须覆盖本方法以复核下载 owner。
+     */
+    default Optional<Conversation> findByRun(UUID tenantId, UUID runId) { return Optional.empty(); }
+    /**
      * 保存新会话。
      *
      * <p>实现必须验证参数 {@code tenantId} 与会话所属租户一致，不能允许调用方借由领域对象

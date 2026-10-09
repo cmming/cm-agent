@@ -44,6 +44,11 @@ public class RunPersistenceService {
     private final AuditAppender auditAppender;
     private final SensitiveDataRedactor redactor;
     private final TransactionTemplate transactionTemplate;
+    /** 运行终态与产物发布共用现有短事务，嵌入测试未装配时保持旧行为。 */
+    private SkillArtifactService artifacts;
+    /** Spring 在服务投入使用前完成装配，避免扩大旧构造器调用方范围。 */
+    @Autowired
+    void configureArtifacts(SkillArtifactService artifacts) { this.artifacts=artifacts; }
 
     @Autowired
     /**
@@ -206,6 +211,7 @@ public class RunPersistenceService {
                         principal.tenantId(), runningRun.id(), status, output, errorMessage, finishedAt
                 );
                 toolCallRepository.saveAll(principal.tenantId(), new RunToolCallBatch(principal.tenantId(), toolCalls));
+                if(artifacts!=null)artifacts.finalizeRun(saved);
                 log.info("Agent 运行完成。runId={}, tenantId={}, agentId={}, status={}, toolCallCount={}",
                         saved.id(), saved.tenantId(), saved.agentId(), status, toolCalls.size());
                 return saved;
@@ -217,6 +223,7 @@ public class RunPersistenceService {
                 );
                 toolCallRepository.saveAll(principal.tenantId(), new RunToolCallBatch(principal.tenantId(), toolCalls));
                 appendAudit(principal, row, status, completionMessage(status));
+                if(artifacts!=null)artifacts.finalizeRun(row);
                 return row;
             }));
             log.info("Agent 运行完成。runId={}, tenantId={}, agentId={}, status={}, toolCallCount={}", completedRow.id(), completedRow.tenantId(), completedRow.agentId(), status, toolCalls.size());
@@ -245,13 +252,17 @@ public class RunPersistenceService {
         Objects.requireNonNull(runningRun, "runningRun 不能为空");
         Instant finishedAt = finishedAt(runningRun, Instant.now());
         if (transactionTemplate == null) {
-            return runRepository.complete(
+            RunRecord failed=runRepository.complete(
                     principal.tenantId(), runningRun.id(), RunStatus.FAILED, "", CONTROLLED_FAILURE, finishedAt
             );
+            if(artifacts!=null)artifacts.finalizeRun(failed);
+            return failed;
         }
-        return requireResult(transactionTemplate.execute(transactionStatus -> runRepository.complete(
-                principal.tenantId(), runningRun.id(), RunStatus.FAILED, "", CONTROLLED_FAILURE, finishedAt
-        )));
+        return requireResult(transactionTemplate.execute(transactionStatus -> {
+            RunRecord failed=runRepository.complete(principal.tenantId(),runningRun.id(),RunStatus.FAILED,"",CONTROLLED_FAILURE,finishedAt);
+            if(artifacts!=null)artifacts.finalizeRun(failed);
+            return failed;
+        }));
     }
 
     /**

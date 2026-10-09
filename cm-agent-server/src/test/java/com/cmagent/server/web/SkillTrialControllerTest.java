@@ -38,6 +38,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class SkillTrialControllerTest {
+    @Test void 刷新只查询认证主体的最新版本试运行()throws Exception{
+        when(trials.latest(any(),eq(SKILL_ID),eq(VERSION_ID))).thenReturn(java.util.Optional.empty());
+        mockMvc.perform(get("/api/skills/"+SKILL_ID+"/trials/latest").param("versionId",VERSION_ID.toString())
+            .header("Authorization","Bearer "+jwtService.createToken(TENANT_ID,"owner","创建者",List.of("skill:read","agent:read"))))
+            .andExpect(status().isNoContent());
+        verify(trials).latest(org.mockito.ArgumentMatchers.argThat(p->p.principalId().equals("owner")&&p.tenantId().equals(TENANT_ID)),eq(SKILL_ID),eq(VERSION_ID));
+        mockMvc.perform(get("/api/skills/"+SKILL_ID+"/trials/latest").param("versionId",VERSION_ID.toString())
+            .header("Authorization","Bearer "+jwtService.createToken(TENANT_ID,"owner","创建者",List.of("skill:read"))))
+            .andExpect(status().isForbidden());
+    }
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID SKILL_ID = UUID.randomUUID();
     private static final UUID VERSION_ID = UUID.randomUUID();
