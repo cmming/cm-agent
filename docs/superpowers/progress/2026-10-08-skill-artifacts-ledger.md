@@ -146,3 +146,31 @@ X1：用户日志 MySQL 22001/1406 与检查点 TEXT 容量风险仍存在；只
 提交范围为 skill-artifacts R0 的80个相关变更文件，包含双库V19迁移、测试、控制台及生产说明；保留用户已有配置、根index.html、.codex/和.workbuddy/。后续ManagedSkillSandbox排版与已验证快照相比，忽略空白和注释后逻辑一致；保留当前排版，不覆盖用户编辑。最新前端feedback及browser-feedback摘要核对一致。
 
 提交前复核实际验证报告、显式文件范围、敏感信息模式、注释规范、文档链接及差异格式；本次提交阶段不重复执行已通过的业务测试，既有报告仍对应账本列出的实际快照和命令。T1～T6、T8完成，T7部分完成；真实模型与X1检查点闭环仍未验收。自动安装依赖、按技能选择环境与Node.js执行未实现，近期问答未增加这些能力。
+
+## 2026-10-09 T7 容量及失败补偿补验
+
+用户要求继续完成未完成步骤；本次基线为 codex/skills-version-console / fb601ed3d696f8dce3bd5728163228ffcb14406d。仅追加验收测试和本组六份文档，不重复实现T1～T6，不修改用户配置、运行服务或旧迁移。本次新增修改未提交，不推送、不合并、不部署；fb601ed是上一阶段已提交实现。
+
+新增 [SkillArtifactCheckpointIntegrationTest](../../../cm-agent-server/src/test/java/com/cmagent/server/runtime/SkillArtifactCheckpointIntegrationTest.java)：固定Python在真实Docker生成DOCX并进入PENDING，合成State通过RepositoryAgentStateStore的JSON序列化、现有AES/GCM和JdbcRuntimeCheckpointRepository写入。MySQL8.4在encrypted_payload的CHARACTER_OCTET_LENGTH=65535边界上，对加密后超过边界的50000字符ASCII合成状态，UPDATE与INSERT均确认SQLState=22001、驱动错误码1406及目标字段encrypted_payload。原状态完整恢复、首次插入失败不留记录；实际RunPersistenceService失败收口与审计后，文件仍不可见且下载404，清理后元数据DELETED、密文文件不存在。PostgreSQL16-alpine同样状态完整保存/恢复，Run成功后文件READY且完整下载。
+
+此证据确认当前实现中X1容量风险的具体字段及合成复现，不证明用户原真实模型请求的载荷大小或唯一根因；不修复或扩容X1，不截断/关闭状态保存。测试在检查点异常后显式调用生产失败收口组件，不冒称完整AgentScope执行编排或真实模型端到端成功。
+
+实际验证：本机Maven3.9.4/JDK21.0.11，mvn -q -pl cm-agent-server -am -Dtest=SkillArtifactCheckpointIntegrationTest,RepositoryAgentStateStoreTest -Dsurefire.failIfNoSpecifiedTests=false -Dcm-agent.agentscope.studio.enabled=false test，退出0；4项快速测试通过，2项容器测试按开关跳过。本机未执行Docker/JDBC。Rocky独立目录 /root/cm-agent-artifacts-checkpoint-fb601ed-20261009，HEAD与本机基线一致；557个源码/POM/SQL/测试资源SHA-256逐项通过，已提交文件按HEAD字节核验，新增测试按当前实际文件核验，不复制用户工作树脏配置。Docker23.0.6，maven:3.9.9-eclipse-temurin-21确认Maven3.9.9/JDK21.0.7；定向6项全部通过、0失败/错误/跳过。验证容器已正常退出，没有留下本次命名运行容器，不执行全局清理。
+
+当前状态：T1～T6、T8原交付保留；T7追加双库容量/失败补偿证据，仍部分完成。剩余真实模型配置尚未由用户提供，已请求隔离测试配置路径及非生产用途确认，不读取或借用用户运行服务凭据。原提示词明确X1修复不在范围，已向用户请求是否将其作为独立修复纳入；答复前不新增扩容迁移、不默认同意。原Anthropic技能Node.js兼容与自动依赖安装仍不在范围。
+
+### 本次远程命令与证据
+
+远程脚本先核对HEAD和 checkpoint-20261009-SHA256SUMS，再执行 docker run --rm --name cm-agent-artifacts-checkpoint-fb601ed-validation --network host -e CM_AGENT_TEST_SANDBOX=true -v /root/cm-agent-artifacts-checkpoint-fb601ed-20261009:/workspace -v /root/.m2:/root/.m2 -v /var/run/docker.sock:/var/run/docker.sock -v /usr/bin/docker:/usr/bin/docker:ro -w /workspace maven:3.9.9-eclipse-temurin-21 sh -c 'mvn -v && mvn -o -q -s /root/.m2/settings-docker.xml -Dmaven.repo.local=/root/.m2/repository -pl cm-agent-server -am -Dtest=SkillArtifactCheckpointIntegrationTest,RepositoryAgentStateStoreTest -Dsurefire.failIfNoSpecifiedTests=false -DargLine=-Xmx384m -Dcm-agent.agentscope.studio.enabled=false test'。可信验证容器的socket挂载仅管理项目夹具，技能容器仍无宿主挂载。
+
+验证日志 validation-checkpoint-20261009.log 与557项摘要结果在上述远程独立目录；脱离仓库的本机证据位于 C:/Users/chmi/Documents/Codex/skill-artifacts-20261008/，包含 checkpoint-summary-20261009.json、两个Surefire XML、checkpoint-local-20261009.log、源摘要及远程脚本，不纳入Git。首次本机命令因PowerShell未引用带点-D参数而在生命周期解析阶段退出1，引用完整参数后退出0；首次远程准备因bundle只导出HEAD而没有分支引用，改为明确fetch HEAD并创建codex分支；首份摘要采用CRLF被sha256sum当作路径结尾，改成LF后557项通过。以上失败均在容器业务测试开始前纠正，不算测试通过或外部阻塞。
+
+本轮只补测试与验收记录，没有生产配置或接口行为变化，因此没有新增生产文档或release-notes行为条目。代码注释说明测试边界与资源生命周期；未提交。
+
+## 2026-10-09 补验提交与 master 合并记录
+
+用户最新指令授权将本次补验修改提交并合并到本地master，覆盖本次补验阶段“不提交、不合并”的限制；不授权推送或部署。提交范围仅SkillArtifactCheckpointIntegrationTest及本组六份文档，共7个文件；提交说明为“补充检查点容量与文件产物失败补偿验收”，最终编号以对应git log记录为准，历史“未提交”保留为阶段快照。
+
+合并前master=5b881a8f0db8c0bf7cf2ce7d0f15c7c69a4c2443，是codex/skills-version-console的祖先，采用git merge --ff-only快进；会同时纳入本分支此前已提交的技能控制台/容量/诊断和文件产物变更。用户未提交的application配置、根index.html、.codex/、.workbuddy/不纳入提交，也不暂存或覆盖。合并后以master是否包含本次补验提交以及受保护文件摘要不变作为实际成功条件。
+
+代码与本次已通过Rocky验证的新增测试一致，提交/快进不引入新业务逻辑，不重复执行该6项测试；再次检查文档链接及暂存差异。T7仍为部分完成，隔离真实模型配置与X1独立修复范围确认仍未收到；提交和合并不表示真实模型已验收，不新增X1扩容迁移。
