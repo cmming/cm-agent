@@ -377,6 +377,8 @@ AgentScope 2.0.2 的 Studio 初始化会注册进程级系统消息 Hook；因�
 
 JDBC 模式创建 DataSource，并在启动时由 Flyway 执行迁移。`CmAgentFlyway` 只扫描 `classpath:db/migration/*.sql` 中的公共迁移，并依据 JDBC 元数据加载 `db/migration/postgresql` 或 `db/migration/mysql` 中的当前数据库方言迁移，避免同时解析两种不兼容的注释 DDL。已发布的 `V1__init_schema.sql` 不修改；V8 为全部 18 张业务表和 135 个字段写入中文数据库原生注释。生产环境需先核对 Flyway 历史，再按发布流程应用新迁移。
 
+V20 修复较大问答状态写入 MySQL 时的 `22001/1406` 错误：将 `runtime_checkpoints.encrypted_payload` 从 `TEXT` 扩为 `LONGTEXT`；PostgreSQL 保持 `TEXT` 并同步中文字段注释。状态会经过 JSON 序列化、AES/GCM 加密及 Base64 编码，旧 MySQL 字段的 65,535 字节容量可能在文件生成后保存运行状态时耗尽，不能按 TXT 文件本身的大小判断。迁移保留既有密文、状态槽和失效时间，不需要更换加密主密钥；修改技能文件大小配置不能替代 V20。更新服务端与 persistence 依赖后，按发布流程执行启动迁移并核对 Flyway V20 成功记录，再重试原问答。应用数据库 DDL 前应评估表规模和维护窗口；扩容仍受数据库通信包及应用既有限额约束，不表示允许无限状态。
+
 ## 安全配置
 
 | 配置项 | 说明 |

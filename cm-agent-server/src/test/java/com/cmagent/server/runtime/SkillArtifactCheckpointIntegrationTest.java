@@ -29,7 +29,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.sql.SQLException;
@@ -44,9 +43,9 @@ import static org.assertj.core.api.Assertions.*;
 /**
  * 在 Rocky 隔离数据库中核实检查点容量与文件交付边界。
  *
- * <p>固定 Python 真正生成 DOCX，再用合成 State 经过现有序列化、加密和 JDBC 保存链路。
- * MySQL 超限后调用实际 Run 失败收口与文件清理；PostgreSQL 验证完整状态恢复后成功发布。
- * 此验证不调用真实模型，不修改历史迁移，也不替代真实模型与执行编排的端到端验收。</p>
+ * <p>固定 Python 真正生成 TXT，再用合成 State 经过现有序列化、加密和 JDBC 保存链路。
+ * MySQL V19 保留超限后的 Run 失败收口与文件清理回归；V20 后两库验证完整状态恢复及成功交付。
+ * 此验证不调用真实模型，也不替代真实模型与执行编排的端到端验收。</p>
  */
 @Testcontainers
 @EnabledIfEnvironmentVariable(named = "CM_AGENT_TEST_SANDBOX", matches = "true")
@@ -71,6 +70,11 @@ class SkillArtifactCheckpointIntegrationTest {
         verify(postgres, false);
     }
 
+    @Test
+    void MySQL扩容后较大检查点完整恢复且TXT可下载() throws Exception {
+        verify(mysql, false);
+    }
+
     private void verify(JdbcDatabaseContainer<?> db, boolean limited) throws Exception {
         var properties = new SkillProperties();
         properties.getSandbox().setEnabled(true);
@@ -79,7 +83,9 @@ class SkillArtifactCheckpointIntegrationTest {
         policy.setRootDirectory(volume.toString());
         policy.setEncryptionKey(Base64.getEncoder().encodeToString(new SecureRandom().generateSeed(32)));
         var ds = new DriverManagerDataSource(db.getJdbcUrl(), db.getUsername(), db.getPassword());
-        CmAgentFlyway.configure(ds).load().migrate();
+        // 两个 MySQL 用例共用容器，先清理测试专属 schema，使 V19 失败回归不受执行顺序影响。
+        CmAgentFlyway.configure(ds).cleanDisabled(false).load().clean();
+        CmAgentFlyway.configure(ds).target(limited ? "19" : "20").load().migrate();
         var jdbc = JdbcClient.create(ds);
         var tx = new TransactionTemplate(new DataSourceTransactionManager(ds));
         UUID tenant = UUID.randomUUID(), agent = UUID.randomUUID(), model = UUID.randomUUID(), run = UUID.randomUUID();
@@ -94,7 +100,7 @@ class SkillArtifactCheckpointIntegrationTest {
                 List.of(), "fixture", "fixture"));
         var principal = new PrincipalRef(tenant, "fixture", "隔离验收", Set.of("agent:read"));
         var runs = new JdbcRunRepository(jdbc);
-        var running = RunRecord.create(run, tenant, agent, principal.principalId(), "生成 DOCX", Instant.now());
+        var running = RunRecord.create(run, tenant, agent, principal.principalId(), "生成 TXT", Instant.now());
         runs.save(tenant, running);
         var rows = new JdbcSkillArtifactRepository(jdbc, tx);
         var storage = new FileSystemSkillArtifactStorage(policy);
@@ -110,8 +116,13 @@ class SkillArtifactCheckpointIntegrationTest {
         // 执行、传输和清理固定于同一个句柄；只有正常关闭后才开始检查点保存阶段。
         try (var collection = artifacts.begin(request);
              var execution = new DockerSkillSandbox(properties.getSandbox()).open(request, Map.of())) {
-            execution.execute(Map.of("scripts/main.py", Files.readString(
-                    Path.of("src/test/resources/skill-artifacts/scripts/main.py"))), "", collection);
+            execution.execute(Map.of("scripts/main.py", """
+                    import os
+                    import pathlib
+                    output = pathlib.Path(os.environ["CM_AGENT_ARTIFACT_DIR"]) / "测试文本.txt"
+                    output.write_text("检查点扩容后的文本文件验收", encoding="utf-8")
+                    print("已生成测试文本")
+                    """), "", collection);
             collection.complete();
         }
         var artifact = rows.list(tenant, run).getFirst();
@@ -151,14 +162,21 @@ class SkillArtifactCheckpointIntegrationTest {
         } else {
             stateStore.save(user, run.toString(), "state", large);
             assertThat(stateStore.get(user, run.toString(), "state", CheckpointState.class)).contains(large);
+            var unicodeState = new CheckpointState("中文😀".repeat(20_000));
+            stateStore.save(user, run.toString(), "new-state", unicodeState);
+            assertThat(stateStore.get(user, run.toString(), "new-state", CheckpointState.class)).contains(unicodeState);
+            stateStore.save(user, run.toString(), "state-list", List.of(large, unicodeState));
+            assertThat(stateStore.getList(user, run.toString(), "state-list", CheckpointState.class))
+                    .containsExactly(large, unicodeState);
             assertThat(checkpoints.find(UUID.randomUUID(), user, run.toString(), "state")).isEmpty();
-            persistence.complete(principal, running, new AgentRunResult(run, RunStatus.SUCCEEDED, "生成固定文档",
+            persistence.complete(principal, running, new AgentRunResult(run, RunStatus.SUCCEEDED, "生成固定文本",
                     List.of(), running.startedAt(), Instant.now(), ""), List.of());
             assertThat(artifacts.list(principal, agent, run, null).files()).hasSize(1);
             try (var download = artifacts.download(principal, artifact.id())) {
                 var bytes = new ByteArrayOutputStream();
                 download.write(bytes);
                 assertThat((long) bytes.size()).isEqualTo(artifact.sizeBytes());
+                assertThat(bytes.toString(StandardCharsets.UTF_8)).isEqualTo("检查点扩容后的文本文件验收");
             }
         }
     }

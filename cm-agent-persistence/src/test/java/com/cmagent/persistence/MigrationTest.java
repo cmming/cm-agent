@@ -116,7 +116,7 @@ class MigrationTest {
         // 用 DOCX 包的实际描述长度复现旧 schema 的完整性错误；失败语句不会改变历史值。
         assertThatThrownBy(() -> updateLegacyDescription(jdbc, "d".repeat(835)))
                 .isInstanceOf(DataIntegrityViolationException.class);
-        int descriptionStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
+        int descriptionStage = CmAgentFlyway.configure(dataSource).target("19").load().migrate().migrationsExecuted;
         assertThat(descriptionStage).isEqualTo(2);
         assertThat(jdbc.sql("SELECT description FROM skill_versions WHERE id='90000000-0000-0000-0000-000000000006'")
                 .query(String.class).single()).isEqualTo(existingDescription);
@@ -125,13 +125,16 @@ class MigrationTest {
         assertThat(jdbc.sql("SELECT description FROM skill_versions WHERE id='90000000-0000-0000-0000-000000000006'")
                 .query(String.class).single()).isEqualTo(boundaryDescription);
         updateLegacyDescription(jdbc, existingDescription);
+        int checkpointStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
+        assertThat(checkpointStage).isEqualTo(1);
 
         assertThat(firstStage).isEqualTo(12);
         assertThat(secondStage).isEqualTo(4);
         assertThat(passwordStage).isEqualTo(1);
         assertThat(JdbcClient.create(dataSource).sql("SELECT ssh_auth_type FROM skill_sandbox_endpoints WHERE id='90000000-0000-0000-0000-000000000020'")
                 .query(String.class).single()).isEqualTo("KEY");
-        assertSchemaContract(firstStage + secondStage + passwordStage + descriptionStage, jdbcUrl, username, password);
+        assertSchemaContract(firstStage + secondStage + passwordStage + descriptionStage + checkpointStage,
+                jdbcUrl, username, password);
         assertThat(JdbcClient.create(dataSource).sql("""
                         SELECT skills_json FROM run_skill_snapshots
                         WHERE tenant_id = '90000000-0000-0000-0000-000000000001'
@@ -319,7 +322,7 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(19);
+        assertThat(migrationsExecuted).isEqualTo(20);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);

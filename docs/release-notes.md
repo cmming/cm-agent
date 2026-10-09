@@ -1,5 +1,11 @@
 # 发布说明
 
+## 未发布：问答文件生成检查点容量修复
+
+- 新增 PostgreSQL/MySQL V20：MySQL 的 `runtime_checkpoints.encrypted_payload` 扩为 `LONGTEXT`，PostgreSQL 保留 `TEXT` 并同步中文注释，修复大运行状态在检查点保存阶段触发字段长度超限的问题。
+- 保留完整 AES/GCM 密文、旧数据及租户边界，不截断状态或关闭保存；JDBC 部署必须按流程应用 V20 后重试。文件下载仍需运行成功与既有授权，不因扩容提前放行。
+- 双库升级、状态往返及 TXT 交付的实际结果见[修复账本](superpowers/progress/2026-10-09-checkpoint-payload-capacity-ledger.md)；真实模型原请求的复验与部署状态单独记录。
+
 ## 未发布：技能容量配置同步
 
 - 纳入手工调整的容量值：ZIP 默认 4 MiB/硬上限 16 MiB，文件数默认 256/硬上限 512，单资源默认 256 KiB/硬上限 1 MiB，单 Run 累计读取及沙箱准备预算 16 MiB。
