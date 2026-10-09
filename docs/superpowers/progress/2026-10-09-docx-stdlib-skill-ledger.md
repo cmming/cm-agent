@@ -1,5 +1,7 @@
 # 标准库 DOCX 技能进度账本
 
+当前修订：R1；实际修订日：2026-10-09；mode=default。当前交付为 1.0.1，修复沙箱输入流兼容缺陷。下方 R0 和首次提交记录保留历史；当前范围与验证以 R1 为准。本轮提交记录见进度账本，历史未提交状态保留。
+
 R0；2026-10-09；mode=default。Git 基线：`c8e7a90a78915703cbbf5443de54280ba96af548`；未提交、未推送、未导入/发布/部署。
 
 | 编号 | 状态 | 本次实际证据 |
@@ -41,3 +43,30 @@ R0；2026-10-09；mode=default。Git 基线：`c8e7a90a78915703cbbf5443de54280ba
 提交后核对提交文件清单与剩余工作树；用户原有控制台、application 配置、.codex/、.workbuddy/ 保持原状。未推送、未导入、未发布或部署。
 
 关联：[清单](../checklists/2026-10-09-docx-stdlib-skill-checklist.md)、[提示词](../prompts/2026-10-09-docx-stdlib-skill-prompt.md)、[设计](../specs/2026-10-09-docx-stdlib-skill-design.md)、[计划](../plans/2026-10-09-docx-stdlib-skill.md)、[实现](../implementation/2026-10-09-docx-stdlib-skill-implementation-design.md)。
+
+
+## R1 实际验证与遗留
+
+日期2026-10-09；mode=default；本轮基线 dc541e7ddc59022411a9ed7b3a9727f421d8c073；本轮未提交，R0已提交。用户错误码 SKILL_SANDBOX_FAILED，errorId=4d252c56-8272-4f0e-8af1-bd4669324ec6；当前仓库没有 logs 目录，未查到该线上日志。通用文案本身不能证明具体根因，以下是本轮独立复现证据。
+
+- T5完成：旧main.py在StringIO输入、有效输出目录下退出2，DOCX_INTERNAL_ERROR，零文件。当前DockerSkillSandbox文本引导确定使用StringIO；文件产物引导采用子进程管道。
+- T6完成：固定脚本兼容两类输入及无reconfigure输出；新增四项回归；python -I -S -B -m unittest discover -s skill-packages/tests -v：16项通过。
+- T7完成：quick_validate为Skill is valid；当前Java解析器 VerifySkillZip dist/skills/docx-stdlib-1.0.1.zip 返回 CM_AGENT_PARSER_OK resources=3。
+- T7远程：Rocky Docker23.0.6；Maven3.9.9/JDK21.0.7；独立工作区HEAD与本地dc541e7相同，通过增量bundle同步。修复的未提交技能以ZIP传输，摘要校验，不伪称已进入Git基线。
+- 服务端引导通过临时 ExportSandboxBootstrap.java 从当前Java源文本块导出；java21保持转义语义。远程 verify_cm_agent_bootstraps.py --zip .../docx-stdlib-1.0.1.zip --previous-zip .../docx-stdlib-1.0.0.zip --text-bootstrap .../text-bootstrap.py --artifact-bootstrap .../artifact-bootstrap.py：PREVIOUS_STRINGIO_FAILURE_REPRODUCED、CURRENT_TEXT_BOOTSTRAP_OK、ARTIFACTS_DISABLED_CONFIGURATION_FAILURE_CONFIRMED、CURRENT_ARTIFACT_BOOTSTRAP_CMA1_DOCX_OK bytes=3589。
+- Rocky `docker run ... python:3.12-alpine python -I -S -B /input/container_check_101.py`：16项全部通过，随后原始双引导检查再次通过。容器只操作项目验证目录，无生产挂载/全局清理，不沿用旧12项。
+- 最终ZIP SHA256：9a0afabbc9634f6503e03a03ca521569e828fe8c837742dcc6b8942e5219b9fd；本地与远程核对。初版修复ZIP的8502cd2c摘要在更新包内说明后已失效，不作为最终交付摘要。
+- T8待做（部署使用阶段）：当前系统 sandboxEnabled、artifacts.enabled 未提供；真实输入、上传候选/TEST/下载尚未执行，不能将隔离成功冒充线上闭环。已请求用户仅提供公开能力值，不请求令牌或凭据。
+
+源码没有修改OOXML正文布局，原Word单页视觉证据继续适用；没有Java/API/数据库行为修改，未运行全量Maven/双库测试。平台对非零脚本退出仍隐藏stdout并返回通用SKILL_SANDBOX_FAILED；需要配置就绪和新候选TEST来判定当前使用者的问题。用户无关修改保留。当前范围为T5～T7实现与T8环境待确认。
+
+
+## 本次授权提交记录
+
+用户再次明确要求“将修改的内容提交”，本轮将 DOCX 1.0.1 输入流兼容修复、Server Lombok 编译支持和 Windows 固定沙箱引导参数修复合并为一次本地提交；对应六份工作包一并交付。上文未提交状态是验证阶段历史记录，不改变已记录证据。
+
+提交说明：`修复 DOCX 技能兼容性与 Windows 沙箱引导`。提交编号通过 `git log -1 --format="%h %s" --grep="修复 DOCX 技能兼容性与 Windows 沙箱引导"` 查询，避免同一提交文档自引用编号。未推送、未导入技能、未部署或重启用户服务。
+
+只暂存相关源码、测试、说明和工作包；保留用户已有的控制台首页、application 配置、SkillArtifactProtocol 诊断日志及排版、.codex/、.workbuddy/。Lombok 的 provided 依赖是编译支持所必需，和注解处理器一并纳入。
+
+本次重新执行 `python -m unittest discover -s skill-packages/tests -p test_*.py -v`：16 项通过；同一会话的附件前端测试 5 项通过。已有 Windows 9 项、Rocky 18 项和 Lombok 编译/打包证据仍对应功能未变的修复，未重复创建已清理夹具或重跑全量 Maven/数据库测试。最终暂存空白、文本资源、工作包链接和敏感信息检查通过。用户现场 TEST 与下载闭环仍需部署后复验。

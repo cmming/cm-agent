@@ -2,7 +2,7 @@
 name: docx-stdlib
 description: 使用 Python 标准库生成可下载的中文 Word DOCX 文档，适用于报告、方案、会议纪要及带标题、段落、列表和表格的文档；通过 CM Agent 固定脚本沙箱执行，不安装第三方依赖。
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 # 标准库 Word 文档生成
@@ -17,6 +17,8 @@ metadata:
 4. 脚本返回 `created` 仅表示生成成功；等待 Run 成功且控制台出现文件产物后，提示用户通过系统附件下载。不得声称仅凭文件名或标准输出已交付可下载附件。
 
 管理员需启用技能沙箱及文件产物收集，并允许 `.docx`。导入后按系统既有流程完成候选 TEST、发布和 Agent 绑定；包本身不修改配置、不授予权限。文件产物关闭时明确说明环境未就绪，不改用标准输出传送二进制。
+
+可用最小输入：`{"filename":"技能测试.docx","title":"技能测试","blocks":[{"type":"paragraph","text":"中文、English、<、>、&"}]}`。必须传入 JSON 内容，而非这段内容的 Markdown 代码围栏。排查 `SKILL_SANDBOX_FAILED` 时需区分输入格式与文件产物环境；平台可能隐藏非零退出时的脚本 stdout，不能仅凭该通用错误断言脚本逻辑仍有缺陷。
 
 ## 内容与范围
 

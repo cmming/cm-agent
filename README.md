@@ -71,6 +71,8 @@ JDBC 模式新增 V15，仅更新 `skill_load_records.status` 的中文原生注
 
 ### 本地开发
 
+Server 模块支持 Lombok，依赖版本由 Spring Boot BOM 管理，并同时配置了 Lombok 与 Spring Boot 配置元数据注解处理器。Lombok 仅参与编译，不作为运行时依赖；IDE 应重新导入 Maven 项目并启用注解处理，Maven 构建使用项目配置。扩展处理器列表时需保留这两个处理器，否则可能导致 `@Slf4j` 无法生成 `log` 字段或缺少配置元数据。
+
 本地开发调试必须显式选择 `local` profile。该 profile 加载 `application-local.yml`，启用 memory 持久化、fake runtime、本地 bootstrap admin 和本地专用 JWT 配置。无 profile 启动时不会自动加载 `local`。
 
 ```powershell

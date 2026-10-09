@@ -11,6 +11,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Future;
@@ -252,7 +253,13 @@ public class DockerSkillSandbox implements com.cmagent.core.runtime.SkillSandbox
                 "--tmpfs=/workspace:rw,noexec,nosuid,nodev,size=16m,mode=1777,uid=65534,gid=65534",
                 "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777,uid=65534,gid=65534", "--workdir=/workspace", "-i"));
         if (!properties.getRuntime().isEmpty()) command.add("--runtime=" + properties.getRuntime());
-        command.addAll(List.of("--entrypoint=python", properties.getImage(), "-I", "-B", "-u", "-c", collect?SkillArtifactProtocol.BOOTSTRAP:BOOTSTRAP));
+        // Windows Java → Docker CLI 已复现：直接传入含双引号的多行代码会把 runner="import ..."
+        // 截断为 runner=import，Python 在发送 CMA1 之前即语法失败。仅编码服务端固定引导代码，
+        // 让 -c 参数不含双引号；技能资源和用户输入仍经 stdin，不能覆盖引导程序或隔离参数。
+        String bootstrap = collect ? SkillArtifactProtocol.BOOTSTRAP : BOOTSTRAP;
+        String encoded = Base64.getEncoder().encodeToString(bootstrap.getBytes(StandardCharsets.UTF_8));
+        command.addAll(List.of("--entrypoint=python", properties.getImage(), "-I", "-B", "-u", "-c",
+                "import base64;exec(base64.b64decode('" + encoded + "'))"));
         return command;
     }
 

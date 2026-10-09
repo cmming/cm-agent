@@ -282,10 +282,16 @@ def unique_object(pairs):
 
 
 def main():
-    # Windows 重定向默认编码可能是 GBK；协议始终输出 UTF-8，保持跨平台 JSON 一致。
-    sys.stdout.reconfigure(encoding="utf-8")
+    # Windows 管道可能默认 GBK；沙箱或测试的文本流未必支持 reconfigure。
+    configure = getattr(sys.stdout, "reconfigure", None)
+    if callable(configure):
+        configure(encoding="utf-8")
     try:
-        raw = sys.stdin.buffer.read(MAX_INPUT + 1)
+        # CM Agent 文本沙箱使用 StringIO，文件产物沙箱使用普通管道；两者均须
+        # 按 UTF-8 字节计量，不能假定所有 stdin 都有 buffer，也不能把字符数当字节数。
+        binary_input = getattr(sys.stdin, "buffer", None)
+        raw = (binary_input.read(MAX_INPUT + 1) if binary_input is not None
+               else sys.stdin.read(MAX_INPUT + 1).encode("utf-8"))
         if len(raw) > MAX_INPUT:
             raise ValueError("JSON 输入超过 32768 字节")
         spec = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_object,

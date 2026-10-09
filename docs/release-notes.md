@@ -1,5 +1,11 @@
 # 发布说明
 
+## 未发布：Windows 技能沙箱引导参数修复
+
+- 服务端固定 Python 引导程序通过 Base64 包裹后交给 Docker CLI，修复 Windows Java 命令参数中的双引号被破坏、文件产物引导代码在输出 `CMA1` 前触发语法错误的问题。
+- 覆盖 Windows → SSH 账号密码 → Rocky Docker 的非空 stdin 与 DOCX 文件帧回传；技能脚本和输入仍经 stdin，权限、隔离参数、输出预算、超时与清理策略保持原约束。
+- 部署更新后的 Server 并重启后生效，无技能 ZIP、配置键或数据库迁移。实际验证和用户现场复验边界见[修复账本](superpowers/progress/2026-10-09-windows-sandbox-bootstrap-ledger.md)。
+
 ## 未发布：问答文件生成检查点容量修复
 
 - 新增 PostgreSQL/MySQL V20：MySQL 的 `runtime_checkpoints.encrypted_payload` 扩为 `LONGTEXT`，PostgreSQL 保留 `TEXT` 并同步中文注释，修复大运行状态在检查点保存阶段触发字段长度超限的问题。

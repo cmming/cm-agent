@@ -99,6 +99,8 @@ HTTP 上传还受 `spring.servlet.multipart.max-file-size` 和 `spring.servlet.m
 
 ### 执行策略与凭据管理
 
+Windows Server 调用远程 Linux Docker 时，固定 Python 引导程序使用 Base64 包裹以避免 Java→Docker CLI 参数传递破坏双引号。包裹内容只来自服务端固定代码，技能脚本和输入仍经 stdin，不增加用户可配置的命令或降低隔离限制。旧 Server 在文件产物模式可能于输出 `CMA1` 前报 Python 语法错误；更新并重启 Server 后再 TEST，无需重新制作 DOCX 技能 ZIP。
+
 | 完整配置项 | 默认值 | 环境变量（加载 `skill-sandbox`） | 用途与约束 |
 | --- | --- | --- | --- |
 | `cm-agent.skills.sandbox.enabled` | `false` | `CM_AGENT_SKILL_SANDBOX_ENABLED` | 技能脚本执行开关；加载 profile 不会自动开启。技能管理开关 `cm-agent.skills.enabled` 单独配置 |

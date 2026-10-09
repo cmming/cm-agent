@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.*;
 @EnabledOnOs(OS.WINDOWS)
 @EnabledIfEnvironmentVariable(named="CM_AGENT_TEST_PASSWORD_WINDOWS",matches="true")
 class PasswordSshWindowsFixtureTest {
-    @Test void Windows内存口令认证到Rocky临时Docker且轮换后在途连接保留()throws Exception{
+    @Test void Windows密码SSH回传DOCX且轮换后在途连接保留()throws Exception{
         String fixture=System.getProperty("sandbox.fixture.name");
         assertThat(fixture).matches("cm-agent-password-win-[a-z0-9-]+");
         int remotePort=Integer.parseInt(System.getProperty("sandbox.fixture.port"));
@@ -41,6 +41,26 @@ class PasswordSshWindowsFixtureTest {
             var credentials=new SandboxCredentials("","localhost "+publicKey,"","",password);
             try(var relay=PasswordSshRelay.open("localhost",InetAddress.getByName("127.0.0.1"),localPort,"root",credentials,Duration.ofSeconds(8));
                     var http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()){
+                // HTTP 探测成功不能证明 Windows CLI 正确传递多行 Python；必须覆盖实际文件帧和非空 stdin。
+                var policy=new com.cmagent.server.config.SkillSandboxProperties();policy.setEnabled(true);
+                var artifacts=policy.getArtifacts();artifacts.setEnabled(true);
+                artifacts.setRootDirectory("/tmp/windows-artifact-fixture");
+                artifacts.setEncryptionKey(Base64.getEncoder().encodeToString(new byte[32]));
+                var connection=new HashMap<String,String>(Map.of("mode","SSH","host","localhost","address","127.0.0.1",
+                    "port",String.valueOf(localPort),"username","root","knownHosts",credentials.knownHosts(),"privateKey","",
+                    "caCertificate","","clientCertificate","","sshAuthType","PASSWORD"));
+                connection.put("password",password);
+                String script="import sys\nassert sys.stdin.read() == '中文输入'\n"
+                    +Files.readString(Path.of("src/test/resources/skill-artifacts/scripts/main.py"));
+                var received=new java.io.ByteArrayOutputStream();
+                try(var execution=new DockerSkillSandbox(policy).open(DockerSkillSandboxIntegrationTest.request(),connection)){
+                    assertThat(execution.execute(Map.of("scripts/main.py",script),"中文输入",(name,size,input)->{
+                        assertThat(name).isEqualTo("测试文档.docx");byte[] bytes=input.readAllBytes();
+                        assertThat(bytes).hasSize((int)size);FileSystemSkillArtifactStorage.validateFormat(name,bytes);
+                        received.write(bytes);
+                    })).contains("已生成测试文档");
+                }
+                assertThat(received.size()).isPositive();
                 setPassword(fixture," "+UUID.randomUUID()+" 轮换口令 ");
                 var response=http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+relay.port()+"/_ping")).timeout(Duration.ofSeconds(3)).build(),HttpResponse.BodyHandlers.ofString());
                 assertThat(response.statusCode()).isEqualTo(200);assertThat(response.body()).isEqualTo("OK");

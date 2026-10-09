@@ -138,16 +138,26 @@
             <artifactId>mysql</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Lombok 只参与编译，版本沿用 Spring Boot BOM，不作为服务运行时依赖。 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
-            <!-- 仅在编译期生成配置元数据，供IDE识别配置项；不加入服务运行依赖。 -->
+            <!-- 显式处理器路径只执行列表中的处理器；配置元数据与 Lombok 字段生成必须同时声明。 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
                     <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </path>
                         <path>
                             <groupId>org.springframework.boot</groupId>
                             <artifactId>spring-boot-configuration-processor</artifactId>

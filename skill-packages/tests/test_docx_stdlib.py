@@ -19,12 +19,23 @@ NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 
 
 class DocxStdlibTest(unittest.TestCase):
-    def run_script(self, raw, directory, env_ready=True):
+    def run_script(self, raw, directory, env_ready=True, text_input=False, text_output=False):
         env = os.environ.copy()
         env.pop("CM_AGENT_ARTIFACT_DIR", None)
         if env_ready:
             env["CM_AGENT_ARTIFACT_DIR"] = str(directory)
-        return subprocess.run([sys.executable, "-I", "-S", str(SCRIPT)], input=raw,
+        command = [sys.executable, "-I", "-S", str(SCRIPT)]
+        if text_input or text_output:
+            # 复现平台 runpy + StringIO 启动，避免仅测试宿主二进制管道。
+            code = "import io,runpy,sys\n"
+            if text_input:
+                code += "sys.stdin=io.StringIO(sys.stdin.read())\n"
+            if text_output:
+                code += "original=sys.stdout;sys.stdout=io.StringIO()\n"
+            code += "try:\n runpy.run_path(sys.argv[1],run_name='__main__')\n"
+            code += "finally:\n " + ("original.write(sys.stdout.getvalue())\n" if text_output else "pass\n")
+            command = [sys.executable, "-X", "utf8", "-I", "-S", "-c", code, str(SCRIPT)]
+        return subprocess.run(command, input=raw,
                               capture_output=True, env=env, timeout=10)
 
     def check_failure(self, raw, code="DOCX_INPUT_INVALID", env_ready=True):
@@ -107,6 +118,40 @@ class DocxStdlibTest(unittest.TestCase):
 
     def test_missing_output_directory_is_explicit(self):
         self.check_failure(SAMPLE.read_bytes(), "DOCX_OUTPUT_NOT_READY", False)
+
+    def test_stringio_input_generates_real_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            process = self.run_script(SAMPLE.read_bytes(), directory, text_input=True)
+            self.assertEqual(process.returncode, 0, process.stdout)
+            self.assertEqual(process.stderr, b"")
+            result = json.loads(process.stdout)
+            with zipfile.ZipFile(Path(directory) / result["filename"]) as archive:
+                self.assertIn("word/document.xml", archive.namelist())
+
+    def test_stringio_stdout_without_reconfigure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            process = self.run_script(SAMPLE.read_bytes(), directory, text_input=True, text_output=True)
+            self.assertEqual(process.returncode, 0, process.stderr)
+            self.assertEqual(json.loads(process.stdout)["status"], "created")
+
+    def test_stringio_utf8_byte_budget(self):
+        raw = json.dumps({"blocks": [{"type": "paragraph", "text": "中" * 12000}]}, ensure_ascii=False).encode()
+        self.assertLess(len(raw.decode()), 32768)
+        with tempfile.TemporaryDirectory() as directory:
+            process = self.run_script(raw, directory, text_input=True)
+            self.assertEqual(process.returncode, 2)
+            result = json.loads(process.stdout)
+            self.assertEqual(result["errorCode"], "DOCX_INPUT_INVALID")
+            self.assertIn("32768", result["message"])
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_stringio_without_artifacts_returns_configuration_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            process = self.run_script(SAMPLE.read_bytes(), directory, env_ready=False, text_input=True)
+            self.assertEqual(process.returncode, 2)
+            self.assertEqual(process.stderr, b"")
+            self.assertEqual(json.loads(process.stdout)["errorCode"], "DOCX_OUTPUT_NOT_READY")
+            self.assertEqual(list(Path(directory).iterdir()), [])
 
     def test_existing_file_is_preserved(self):
         with tempfile.TemporaryDirectory() as directory:

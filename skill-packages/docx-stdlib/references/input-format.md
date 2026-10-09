@@ -2,6 +2,8 @@
 
 UTF-8 JSON 对象通过标准输入传入。Python 3.10+，无需 pip、python-docx、lxml、Node.js 或 Office。仅执行固定 `scripts/main.py`，不接受 Python 代码、模板路径、任意输出目录或网络链接。
 
+1.0.1 同时兼容 CM Agent 文本沙箱的 `StringIO` 和文件产物沙箱的二进制 stdin 管道。两种入口都按 UTF-8 编码后的字节数限制输入。启用文件产物仍是生成和下载 DOCX 的前置条件；仅能读取 stdin 不代表系统已具备附件交付能力。
+
 | 字段 | 约束 |
 |---|---|
 | filename | 可选；默认 `文档.docx`，最多 80 字符，单个安全文件名，禁止路径、保留设备名及覆盖 |
