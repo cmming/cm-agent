@@ -1,0 +1,14 @@
+{
+  "filename": "标准库文档示例.docx",
+  "title": "项目周报",
+  "subtitle": "标准库 DOCX 生成技能示例",
+  "blocks": [
+    {"type": "heading", "level": 1, "text": "本周进展"},
+    {"type": "paragraph", "text": "已完成文档内容整理。中文、英文以及特殊符号 <、>、& 会作为文字安全保留。"},
+    {"type": "list", "items": ["使用固定 Python 脚本", "通过系统附件下载"]},
+    {"type": "heading", "level": 2, "text": "任务状态"},
+    {"type": "table", "headers": ["任务", "状态", "说明"], "widths": [2, 1, 4], "rows": [["内容整理", "完成", "已整理标题、段落、列表及表格"], ["发布验收", "待做", "导入后按系统流程完成真实 TEST 和发布"]]},
+    {"type": "heading", "level": 1, "text": "下一步"},
+    {"type": "list", "ordered": true, "items": ["导入技能 ZIP", "真实试运行并检查文件", "发布后绑定 Agent"]}
+  ]
+}
