@@ -1031,11 +1031,13 @@ test("历史合并过滤其他会话Agent待办与非法时间并保留更高版
 });
 
 // 仅模拟标准 DOM 边界；加载、分组、消息关联、错误重试使用实际 app.js 函数。
-function historyFlowHarness(request) {
+function historyFlowHarness(request, ux = false) {
     const vm = require("node:vm");
     const app = fs.readFileSync(path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"), "utf8");
     function node(tag, options = {}) {
+        const attributes = new Map();
         const result = {tag, className: options.className || "", textContent: options.text || "", dataset: {}, children: [],
+            getAttribute: name => attributes.get(name), setAttribute: (name, value) => attributes.set(name, value),
             append(...children) { for (const child of children) { child.parent = this; this.children.push(child); } },
             replaceChildren(...children) { this.children = []; this.append(...children); },
             remove() { this.parent.children = this.parent.children.filter((child) => child !== this); },
@@ -1049,12 +1051,16 @@ function historyFlowHarness(request) {
             all() { return this.children.flatMap((child) => [child, ...child.all()]); }};
         result.scrollIntoViewCalls = 0;
         result.scrollIntoView = () => { result.scrollIntoViewCalls += 1; };
-        result.classList = {add(name) { result.className += ` ${name}`; }};
+        result.classList = {add(name) { result.className += ` ${name}`; }, toggle(name, enabled) {
+            const names = new Set(result.className.split(" ")); if (enabled) names.add(name); else names.delete(name);
+            result.className = [...names].join(" ");
+        }};
         return result;
     }
     const root = node("main");
     const ids = Object.fromEntries(["chatApprovalHistoryRegion", "chatApprovalHistoryList", "chatApprovalRegion", "chatMessageList",
-        "chatApprovalHistorySummary", "chatApprovalHistoryStatus", "loadMoreApprovalHistoryBtn", "refreshApprovalHistoryBtn", "chatFormStatus"]
+        "chatApprovalHistorySummary", "chatApprovalHistoryStatus", "loadMoreApprovalHistoryBtn", "refreshApprovalHistoryBtn", "chatFormStatus",
+        "chatApprovalHistoryToggle", "chatApprovalHistoryBody"]
         .map((id) => [id, node("div")]));
     root.append(...Object.values(ids));
     const state = {selectedAgentId: "agent", selectedConversationId: "conversation", approvalHistory: [],
@@ -1062,6 +1068,7 @@ function historyFlowHarness(request) {
     const requests = [];
     let session = 0;
     const context = {state, core, document: root, element: node, $: (id) => ids[id],
+        chatUx: {enabled: () => ux, reconcile() {}},
         shortIdentifier: (id) => id.slice(0, 8), setStatus: (target, message) => { target.textContent = message; },
         sessionEpoch: {capture: () => session, isCurrent: (value) => value === session},
         chatLoadRevision: core.createLoadRevisionGate(), approvalHistoryRevision: core.createLoadRevisionGate(),
@@ -1080,6 +1087,19 @@ function historyFlowHarness(request) {
     vm.runInNewContext(`${loading}\n${history}\nglobalThis.actions = {loadChatMessages, refreshApprovalState, resetApprovalHistory, loadApprovalHistory, renderApprovalHistory, createApprovalHistoryGroup};`, context);
     return {state, requests, ids, node, actions: context.actions, changeSession: () => { session += 1; }};
 }
+
+test("v2空历史保持紧凑但读取失败展开原因和错误编号而不伪装为空", () => {
+    const flow = historyFlowHarness(async () => ({}), true);
+    flow.actions.renderApprovalHistory();
+    assert.equal(flow.ids.chatApprovalHistoryBody.hidden, true);
+    assert.equal(flow.ids.chatApprovalHistorySummary.textContent, "暂无已处理审批");
+    flow.state.approvalHistoryError = "历史不可用（错误码：PERSISTENCE_UNAVAILABLE）（错误编号：history-ux）";
+    flow.actions.renderApprovalHistory();
+    assert.equal(flow.ids.chatApprovalHistoryBody.hidden, false);
+    assert.equal(flow.ids.chatApprovalHistoryToggle.getAttribute("aria-expanded"), "true");
+    assert.match(flow.ids.chatApprovalHistorySummary.textContent, /不表示没有历史/);
+    assert.match(flow.ids.chatApprovalHistoryStatus.textContent, /PERSISTENCE_UNAVAILABLE.*history-ux/);
+});
 
 test("实际会话加载在重新进入时恢复历史并保留待审批入口", async () => {
     const entries = [historyFixture("one"), historyFixture("two", {decidedAt: "2026-09-03T05:00:00Z"})];

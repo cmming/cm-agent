@@ -123,10 +123,25 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.30", "/assets/console-core.js?v=2.0.16", "/assets/styles.css?v=2.0.17", "skill-artifacts.js?v=1.0.2", "skill-artifacts.css?v=1.0.0")
+                    .contains("/assets/app.js?v=2.0.31", "/assets/console-core.js?v=2.0.16", "/assets/styles.css?v=2.0.17", "skill-artifacts.js?v=1.0.2", "skill-artifacts.css?v=1.0.0")
                     .contains("/console/v2/assets/sandbox-endpoints.js?v=1.1.1", "/console/v2/assets/sandbox-endpoints.css?v=1.0.0")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
+    }
+
+    @Test
+    void 聊天工作区保留兼容入口并提供可达的输入阅读与历史控件() throws IOException {
+        String chat = resource("META-INF/resources/console/v2/chat.html");
+        assertThat(chat).contains(
+                "id=\"newChatConversationTopBtn\" type=\"button\" hidden",
+                "id=\"chatConversationSearch\"", "查找已加载会话", "最多加载 50 个",
+                "id=\"chatLatestBtn\"", "id=\"chatSessionsToggle\"", "aria-controls=\"chatSessionPanel\"",
+                "Enter 发送", "Shift+Enter 换行", "aria-describedby=\"chatInputHint\"",
+                "id=\"chatApprovalHistoryToggle\"", "aria-controls=\"chatApprovalHistoryBody\"",
+                "<span>停止本轮</span>", "<span>核对状态</span>");
+        assertThat(chat).doesNotContain("id=\"chatMessageList\" class=\"chat-message-list\" aria-live=\"polite\"");
+        assertThat(resource("META-INF/resources/console/v2/assets/multipage.css"))
+                .contains("[data-page=\"chatPage\"] .workspace", ".chat-reading-region", "overflow-anchor: none", "data-sessions-open");
     }
 
     @Test

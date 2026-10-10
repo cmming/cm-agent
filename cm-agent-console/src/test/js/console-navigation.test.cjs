@@ -18,6 +18,7 @@ function navigationHarness() {
     const invalidate = {invalidate() {}, invalidateAll() {}};
     const context = {
         artifactManager: {dispose() { events.push("dispose-artifacts"); }},
+        chatUx: {reset() { events.push("reset-chat"); }},
         state, pageNavigationRevision: 0, currentPage: "overviewPage", sessionEpoch: invalidate,
         window: {fetch: async (url) => ({ok: true, text: async () => url}), scrollTo() {}, history: {pushState() {}, replaceState() {}}},
         document: {body: {dataset: {}, replaceChildren() { events.push("replace-body"); }}, importNode: (node) => node},
@@ -49,7 +50,8 @@ test("技能页离开后释放双组件，重复进入为新 DOM 创建新实例
     await flow.navigate("/console/v2/tools.html");
     assert.equal(firstSkill.disposed, true);
     assert.equal(firstSandbox.disposed, true);
-    assert.deepEqual(flow.events, ["dispose-artifacts", "dispose-skillsPage", "dispose-sandboxPage", "replace-body"]);
+    assert.deepEqual(flow.events, ["dispose-artifacts", "dispose-skillsPage", "dispose-sandboxPage", "reset-chat", "replace-body"]);
+    assert.equal(flow.state.chatBusy, false);
     assert.equal(flow.state.skillsPage, null);
     await flow.navigate("/console/v2/skills.html");
     assert.notEqual(flow.state.skillsPage, firstSkill);
@@ -70,6 +72,7 @@ test("迟到导航响应不能释放较新页面已创建的技能组件", async
     assert.equal(await older, false);
     assert.equal(flow.state.skillsPage, skill);
     assert.equal(skill.disposed, false);
+    assert.equal(flow.events.filter(event => event === "reset-chat").length, 1);
 });
 
 test("导航读取失败保留当前技能工作区，不提前释放组件", async () => {
@@ -77,7 +80,9 @@ test("导航读取失败保留当前技能工作区，不提前释放组件", as
     await flow.navigate("/console/v2/skills.html");
     const skill = flow.state.skillsPage;
     flow.context.window.fetch = async () => ({ok: false, status: 503});
+    flow.events.length = 0;
     await assert.rejects(flow.navigate("/console/v2/tools.html"), /页面加载失败/);
     assert.equal(flow.state.skillsPage, skill);
     assert.equal(skill.disposed, false);
+    assert.equal(flow.events.includes("reset-chat"), false);
 });

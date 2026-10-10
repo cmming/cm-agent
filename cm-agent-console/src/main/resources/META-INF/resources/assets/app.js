@@ -113,6 +113,11 @@
     const artifactManager = window.CmAgentArtifacts?.createManager({
         api, getSessionEpoch: () => sessionEpoch.capture(), document
     });
+    const chatUx = createChatUxController({
+        document, window,
+        getKey: () => `${state.selectedAgentId}/${state.selectedConversationId}`,
+        getEpoch: () => sessionEpoch.capture()
+    });
 
     function setStatus(element, message = "", tone = "neutral") {
         if (!element) return;
@@ -223,6 +228,8 @@
         sessionEpoch.invalidate();
         disposeSkillPages();
         submitStateGuard.invalidateAll();
+        chatUx.reset();
+        state.chatBusy = false;
         toolLoadRevision.invalidate();
         agentDetailRevision.invalidate();
         modelConfigLoadRevision.invalidate();
@@ -281,6 +288,8 @@
 
     async function logout(message = "已安全退出。", redirectTarget = "") {
         sessionEpoch.invalidate();
+        chatUx.reset();
+        if (isMultiPage) state.chatBusy = false;
         disposeSkillPages();
         submitStateGuard.invalidateAll();
         toolLoadRevision.invalidate();
@@ -2351,6 +2360,198 @@
         });
     }
 
+    /** 仅在 v2 聊天页面启用；草稿和未确认发送快照只存当前页面内存，不形成重放队列。 */
+    function createChatUxController({document, window, getKey, getEpoch}) {
+        const drafts = new Map();
+        const submissions = new Map();
+        let messageKey = "", follow = true, composing = false, compositionCommit = false;
+        let observer = null;
+        let latestMessages = [];
+        const node = id => document.getElementById(id);
+        const enabled = () => document.body.dataset.consoleVersion === "v2" && !!node("chatConversationSearch");
+        const nearBottom = () => {
+            const list = node("chatMessageList");
+            return !list || list.scrollHeight - list.clientHeight - list.scrollTop <= 48;
+        };
+        function showLatest() {
+            const button = node("chatLatestBtn");
+            if (button) button.hidden = follow;
+        }
+        function scroll(force = false) {
+            if (!enabled()) return false;
+            if (force) follow = true;
+            const list = node("chatMessageList");
+            if (follow && list) list.scrollTop = list.scrollHeight;
+            showLatest();
+            return true;
+        }
+        function captureReading() {
+            if (!enabled()) return null;
+            const list = node("chatMessageList");
+            const same = messageKey === getKey();
+            const top = list.getBoundingClientRect().top;
+            const anchor = same && !follow ? [...list.querySelectorAll(".chat-message")]
+                .find(article => article.getBoundingClientRect().bottom > top) : null;
+            return {key: getKey(), follow: !same || follow, top: list.scrollTop,
+                anchor: anchor?.dataset.messageKey, offset: anchor ? anchor.getBoundingClientRect().top - top : 0};
+        }
+        function restoreReading(snapshot) {
+            if (!enabled() || !snapshot || snapshot.key !== getKey()) return;
+            messageKey = snapshot.key;
+            follow = snapshot.follow;
+            const list = node("chatMessageList");
+            if (!follow) {
+                const anchor = [...list.querySelectorAll(".chat-message")]
+                    .find(article => article.dataset.messageKey === snapshot.anchor);
+                list.scrollTop = snapshot.top;
+                if (anchor) list.scrollTop += anchor.getBoundingClientRect().top
+                    - list.getBoundingClientRect().top - snapshot.offset;
+            }
+            scroll();
+        }
+        function resizeInput() {
+            if (!enabled()) return;
+            const input = node("chatInput");
+            input.style.height = "0px";
+            input.style.height = `${Math.min(144, Math.max(48, input.scrollHeight))}px`;
+        }
+        function rememberDraft() {
+            if (enabled()) drafts.set(getKey(), node("chatInput").value);
+        }
+        function activate() {
+            if (!enabled()) return;
+            node("chatInput").value = drafts.get(getKey()) || "";
+            const status = node("chatFormStatus"), submission = submissions.get(getKey());
+            if (status) {
+                status.textContent = submission?.unknown
+                    ? `${submission.message} 请核对本轮状态；未确认前不会再次发送。` : "";
+                status.dataset.tone = submission?.unknown ? "error" : "neutral";
+            }
+            composing = compositionCommit = false;
+            resizeInput();
+        }
+        function beginSubmission(input) {
+            if (!enabled()) return;
+            submissions.set(getKey(), {input, accepted: false, unknown: false,
+                baseline: new Set(latestMessages.map(chatMessageIdentity))});
+            drafts.set(getKey(), input);
+        }
+        function acceptSubmission() {
+            if (!enabled()) return;
+            const submission = submissions.get(getKey());
+            if (submission) submission.accepted = true;
+            if (submission?.unknown && node("chatFormStatus")) {
+                node("chatFormStatus").textContent = "已核对：请求已写入，请查看本轮结果。";
+                node("chatFormStatus").dataset.tone = "neutral";
+            }
+            submissions.delete(getKey());
+            drafts.delete(getKey());
+            node("chatInput").value = "";
+            resizeInput();
+        }
+        function failSubmission(error) {
+            if (!enabled()) return;
+            const submission = submissions.get(getKey());
+            if (!submission) return;
+            // 网络断线和 5xx 无法证明写入未发生；保留输入并锁定，只接受 GET 查询确认已写入。
+            const rejected = [400, 401, 403, 404, 405, 413, 422, 429].includes(error?.status);
+            submission.unknown = !rejected;
+            submission.message = error.message || "发送结果暂时无法确认。";
+            if (rejected) submissions.delete(getKey());
+            node("chatInput").value = submission.input;
+            resizeInput();
+        }
+        function reconcile(messages) {
+            if (!enabled()) return;
+            const submission = submissions.get(getKey());
+            // 活跃 Run 可能由另一浏览器发起，不能单凭它清除本页未确认输入；需读到本次新增用户消息。
+            if (submission && messages.some(message => message.role === "USER"
+                && !submission.baseline.has(chatMessageIdentity(message))
+                && chatMessageText(message).trim() === submission.input.trim())) acceptSubmission();
+            latestMessages = messages;
+        }
+        const isUnknown = () => enabled() && !!submissions.get(getKey())?.unknown;
+        async function copyText(text, button, status) {
+            const epoch = getEpoch(), key = getKey();
+            button.disabled = true;
+            try {
+                if (!window.navigator.clipboard?.writeText) throw new Error("COPY_UNAVAILABLE");
+                await window.navigator.clipboard.writeText(text);
+                if (epoch === getEpoch() && key === getKey() && button.isConnected) {
+                    status.textContent = "已复制";
+                    status.dataset.tone = "success";
+                }
+            } catch {
+                // 剪贴板拒绝属于本地可恢复失败，不展示原始异常或伪造服务端错误编号。
+                if (epoch === getEpoch() && key === getKey() && button.isConnected) {
+                    status.textContent = "浏览器未允许复制，请手动选择文本复制。";
+                    status.dataset.tone = "error";
+                }
+            } finally {
+                if (epoch === getEpoch() && button.isConnected) button.disabled = false;
+            }
+        }
+        function bind() {
+            observer?.disconnect();
+            if (!enabled()) return;
+            const list = node("chatMessageList"), input = node("chatInput");
+            list.addEventListener("scroll", () => { follow = nearBottom(); showLatest(); });
+            node("chatLatestBtn").addEventListener("click", () => scroll(true));
+            input.addEventListener("input", () => { rememberDraft(); resizeInput(); });
+            input.addEventListener("compositionstart", () => { composing = true; });
+            input.addEventListener("compositionend", () => { composing = false; compositionCommit = true; });
+            input.addEventListener("keyup", () => { compositionCommit = false; });
+            input.addEventListener("blur", () => { composing = compositionCommit = false; });
+            input.addEventListener("keydown", event => {
+                if (!shouldSubmitChatInput(event, composing || compositionCommit, input.disabled, input.value)) return;
+                event.preventDefault();
+                node("chatForm").requestSubmit();
+            });
+            if (window.MutationObserver) {
+                // 文件和执行过程异步挂载也只在跟随模式滚动；用户阅读旧内容时不主动改位置。
+                observer = new window.MutationObserver(() => scroll());
+                observer.observe(list, {childList: true, subtree: true, characterData: true});
+            }
+            resizeInput();
+        }
+        function reset() {
+            observer?.disconnect();
+            observer = null;
+            drafts.clear(); submissions.clear(); latestMessages = [];
+            messageKey = ""; follow = true; composing = compositionCommit = false;
+        }
+        return {enabled, bind, reset, scroll, captureReading, restoreReading, resizeInput,
+            rememberDraft, activate, beginSubmission, acceptSubmission, failSubmission, reconcile, isUnknown, copyText};
+    }
+
+    function shouldSubmitChatInput(event, composing, disabled, value) {
+        return event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey
+            && !event.repeat && !event.isComposing && event.keyCode !== 229 && !composing && !disabled && !!value.trim();
+    }
+
+    function chatMessageIdentity(message) {
+        return String(message.messageId || message.id || `${message.role}:${message.runId}:${message.sequence}`);
+    }
+
+    function chatMessageText(message) {
+        return (message.contentBlocks || []).filter(block => block.type === "TEXT").map(block => String(block.text || "")).join("\n\n");
+    }
+
+    function chatConversationGroups(conversations, query, now = new Date()) {
+        const needle = query.trim().toLocaleLowerCase();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime();
+        const groups = new Map();
+        conversations.filter(item => (item.title || "新会话").toLocaleLowerCase().includes(needle))
+            .forEach(item => {
+                const time = new Date(item.updatedAt).getTime();
+                const label = time >= today ? "今天" : time >= yesterday ? "昨天" : "更早";
+                if (!groups.has(label)) groups.set(label, []);
+                groups.get(label).push(item);
+            });
+        return [...groups];
+    }
+
     async function initializeChatPage() {
         if (!$("chatPage")) return;
         if (!state.selectedAgentId) {
@@ -2359,6 +2560,7 @@
             return;
         }
         await loadConversations(state.selectedAgentId);
+        chatUx.activate();
         if (state.selectedConversationId) {
             await loadChatMessages(state.selectedAgentId, state.selectedConversationId);
         } else {
@@ -2369,6 +2571,7 @@
     function renderChatConversations() {
         const container = $("chatConversationList");
         if (!container) return;
+        if (chatUx.enabled()) $("chatCurrentAgent").textContent = state.agents.find(agent => agent.id === state.selectedAgentId)?.name || "请选择 Agent";
         container.replaceChildren();
         if (!state.selectedAgentId) {
             container.append(emptyState("请先选择可用 Agent。"));
@@ -2376,6 +2579,26 @@
         }
         if (!state.conversations.length) {
             container.append(emptyState("暂无会话，点击“新会话”或发送消息开始。"));
+            return;
+        }
+        if (chatUx.enabled()) {
+            const groups = chatConversationGroups(state.conversations, $("chatConversationSearch").value);
+            $("chatConversationSearchHint").textContent = `仅查找已加载的 ${state.conversations.length} 个会话，最多加载 50 个。`;
+            if (!groups.length) container.append(emptyState("没有匹配的已加载会话，请调整关键词。"));
+            for (const [label, conversations] of groups) {
+                container.append(element("h3", {className: "chat-date-group", text: label}));
+                conversations.forEach(conversation => {
+                    const button = element("button", {className: "chat-conversation-item", type: "button"});
+                    const title = conversation.title || "新会话";
+                    button.title = title;
+                    button.classList.toggle("active", conversation.id === state.selectedConversationId);
+                    if (conversation.id === state.selectedConversationId) button.setAttribute("aria-current", "true");
+                    button.append(element("strong", {text: title}), element("span", {text: core.formatDateTime(conversation.updatedAt)}));
+                    button.addEventListener("click", () => selectChatConversation(conversation.id)
+                        .catch(error => setStatus($("chatFormStatus"), error.message, "error")));
+                    container.append(button);
+                });
+            }
             return;
         }
         state.conversations.forEach((conversation) => {
@@ -2394,7 +2617,9 @@
     async function selectChatConversation(conversationId) {
         if (!conversationId || state.chatBusy) return;
         state.selectedConversationId = conversationId;
+        chatUx.activate();
         renderChatConversations();
+        closeChatSessionPanel();
         await loadChatMessages(state.selectedAgentId, conversationId);
     }
 
@@ -2409,6 +2634,8 @@
         });
         state.selectedAgentId = agentId;
         state.selectedConversationId = created.id;
+        chatUx.activate();
+        closeChatSessionPanel();
         await loadConversations(agentId);
         await loadChatMessages(agentId, created.id);
         setStatus($("chatFormStatus"), "新会话已创建。", "success");
@@ -2447,6 +2674,7 @@
             if (!isCurrent()) return false;
             state.chatRunStatuses = page?.runStatuses || {};
             setActiveChatRun(activeRun || null);
+            chatUx.reconcile(Array.isArray(page?.items) ? page.items : []);
             renderChatMessages(Array.isArray(page?.items) ? page.items : []);
             state.pendingApprovals = new Map((Array.isArray(approvalPage?.items) ? approvalPage.items : [])
                 .map((approval) => [approval.approvalId, approval]));
@@ -2847,6 +3075,17 @@
         const refresh = $("refreshApprovalHistoryBtn");
         if (refresh) { refresh.disabled = state.approvalHistoryBusy; refresh.textContent = state.approvalHistoryError ? "重试加载历史" : "刷新记录"; }
         setStatus($("chatApprovalHistoryStatus"), state.approvalHistoryError, "error");
+        if (chatUx.enabled()) {
+            const toggle = $("chatApprovalHistoryToggle");
+            toggle.textContent = state.approvalHistory.length ? `审批历史 · ${state.approvalHistory.length} 条` : "审批历史";
+            const expanded = toggle.getAttribute("aria-expanded") === "true";
+            $("chatApprovalHistoryBody").hidden = !expanded && !state.approvalHistoryError;
+            region.classList.toggle("is-empty", !state.approvalHistory.length && !state.approvalHistoryError);
+            if (state.approvalHistoryError) toggle.setAttribute("aria-expanded", "true");
+            if (!state.approvalHistory.length && !state.approvalHistoryError && !expanded) {
+                $("chatApprovalHistorySummary").textContent = state.approvalHistoryBusy ? "正在读取审批历史…" : "暂无已处理审批";
+            }
+        }
     }
 
     // 独立只读渲染器不复用决定表单，历史记录即使携带 canDecide=true 也不显示操作控件。
@@ -2887,22 +3126,29 @@
     function renderChatMessages(messages) {
         const container = $("chatMessageList");
         if (!container) return;
+        const reading = chatUx.captureReading();
         container.replaceChildren();
         const conversation = state.conversations.find((item) => item.id === state.selectedConversationId);
         $("chatConversationTitle").textContent = conversation?.title || "当前会话";
+        $("chatConversationTitle").title = conversation?.title || "当前会话";
         if (!messages.length) {
             renderChatWelcome("当前会话还没有消息，输入问题开始聊天。", false);
             return;
         }
         messages.forEach((message) => container.append(createChatMessage(message)));
-        scrollChatToBottom();
+        if (reading) chatUx.restoreReading(reading);
+        else scrollChatToBottom();
     }
 
     function renderChatWelcome(message, replace = true) {
         const container = $("chatMessageList");
         if (!container) return;
         if (replace) container.replaceChildren();
-        $("chatConversationTitle").textContent = state.selectedConversationId ? "当前会话" : "请选择会话";
+        const title = chatUx.enabled() && state.selectedConversationId
+            ? state.conversations.find(item => item.id === state.selectedConversationId)?.title || "当前会话"
+            : state.selectedConversationId ? "当前会话" : "请选择会话";
+        $("chatConversationTitle").textContent = title;
+        if (chatUx.enabled()) $("chatConversationTitle").title = title;
         const welcome = element("div", {className: "chat-welcome"});
         welcome.append(
             element("span", {className: "runs-detail-mark", text: "◌"}),
@@ -2915,6 +3161,7 @@
     function createChatMessage(message) {
         const isUser = message.role === "USER";
         const article = element("article", {className: `chat-message ${isUser ? "chat-message-user" : "chat-message-agent"}`});
+        if (chatUx.enabled()) article.dataset.messageKey = chatMessageIdentity(message);
         if (message.runId) article.dataset.runId = message.runId;
         const label = isUser ? "你" : (message.senderName || "Agent");
         article.append(element("p", {className: "chat-message-label", text: label}));
@@ -2923,6 +3170,22 @@
         appendChatBlocks(bubble, blocks);
         if (!blocks.length) bubble.append(element("p", {text: "消息内容为空。"}));
         article.append(bubble);
+        if (chatUx.enabled() && !isUser && chatMessageText(message)) {
+            const actions = element("div", {className: "chat-message-actions"});
+            const copy = element("button", {className: "button ghost compact", type: "button", text: "复制正文"});
+            const feedback = element("span", {className: "chat-copy-status"});
+            feedback.setAttribute("role", "status");
+            copy.addEventListener("click", () => chatUx.copyText(chatMessageText(message), copy, feedback));
+            actions.append(copy, feedback);
+            article.append(actions);
+            bubble.querySelectorAll(".markdown-code-block").forEach(block => {
+                const codeCopy = element("button", {className: "button ghost compact chat-code-copy", type: "button", text: "复制代码"});
+                const codeStatus = element("span", {className: "chat-copy-status"});
+                codeStatus.setAttribute("role", "status");
+                codeCopy.addEventListener("click", () => chatUx.copyText(block.querySelector("code").textContent, codeCopy, codeStatus));
+                block.append(codeCopy, codeStatus);
+            });
+        }
         if (state.chatRunStatuses[message.runId] === "CANCELLED") {
             article.append(element("p", {className: "chat-stopped-note", text: isUser
                 ? "本轮已停止" : "本轮已停止，回答可能不完整"}));
@@ -3119,7 +3382,8 @@
         step.content.replaceChildren(payloads);
     }
 
-    function scrollChatToBottom() {
+    function scrollChatToBottom(force = false) {
+        if (chatUx.scroll(force)) return;
         const container = $("chatMessageList");
         if (container) container.scrollTop = container.scrollHeight;
     }
@@ -3139,8 +3403,9 @@
         const resuming = [...state.approvalSubmissions].some((id) => state.pendingApprovals.has(id)
             || state.approvalHistory.some((approval) => approval.approvalId === id));
         const active = Boolean(state.activeChatRun);
-        if (sendButton) sendButton.disabled = state.chatBusy || state.chatLoading || active || waiting || resuming;
-        if (input) input.disabled = state.chatBusy || state.chatLoading || active || waiting || resuming;
+        const unknown = chatUx.isUnknown();
+        if (sendButton) sendButton.disabled = state.chatBusy || state.chatLoading || active || waiting || resuming || unknown;
+        if (input) input.disabled = state.chatBusy || state.chatLoading || active || waiting || resuming || unknown;
         const stop = $("chatStopBtn");
         if (stop) {
             stop.hidden = !active;
@@ -3154,14 +3419,17 @@
             liveStatus.textContent = state.activeChatRun?.status === "CANCELLING" ? "正在停止，等待执行收口"
                 : state.chatCancelPending ? "正在提交停止" : state.chatBusy ? "正在生成" : activePhase.includes("RESUMING") ? "正在恢复运行"
                 : activePhase.includes("CHECKING") ? "正在核对审批状态" : resuming ? "正在提交审批"
-                    : state.chatLoading ? "正在确认会话状态" : waiting ? "请先处理待审批操作"
+                    : state.chatLoading ? "正在确认会话状态" : unknown ? "发送结果未确认，请核对本轮状态" : waiting ? "请先处理待审批操作"
                         : active ? "本轮仍在运行" : "已就绪";
             liveStatus.classList.toggle("is-streaming", state.chatBusy);
+            if (chatUx.enabled()) liveStatus.dataset.phase = unknown ? "unknown"
+                : state.activeChatRun?.status === "CANCELLING" ? "stopping"
+                    : waiting ? "approval" : state.chatLoading ? "loading" : active || state.chatBusy || resuming ? "running" : "ready";
         }
     }
 
     async function sendChatMessage() {
-        if (state.chatBusy || state.chatLoading || state.activeChatRun || [...state.pendingApprovals.values()]
+        if (chatUx.isUnknown() || state.chatBusy || state.chatLoading || state.activeChatRun || [...state.pendingApprovals.values()]
                 .some((approval) => approval.status === "PENDING" || state.approvalSubmissions.has(approval.approvalId))
                 || state.approvalHistory.some((approval) => state.approvalSubmissions.has(approval.approvalId))) return;
         const agentId = $("chatAgentSelect")?.value;
@@ -3171,11 +3439,18 @@
             return;
         }
         let streamedOutput = "";
+        const operationSession = sessionEpoch.capture();
+        let operationConversationId = null;
+        const operationCurrent = () => sessionEpoch.isCurrent(operationSession)
+            && state.selectedAgentId === agentId && (!operationConversationId || state.selectedConversationId === operationConversationId);
         try {
             setChatBusy(true);
             await withSubmitState($("chatSendBtn"), async () => {
                 state.selectedAgentId = agentId;
                 const conversationId = await ensureConversation(agentId);
+                operationConversationId = conversationId;
+                if (!operationCurrent()) return;
+                chatUx.beginSubmission($("chatInput").value);
                 const session = sessionEpoch.capture();
                 const isCurrent = () => sessionEpoch.isCurrent(session) && state.selectedAgentId === agentId
                     && state.selectedConversationId === conversationId;
@@ -3183,8 +3458,8 @@
                 container.querySelector(".chat-welcome")?.remove();
                 container.append(createChatMessage({role: "USER", contentBlocks: [{type: "TEXT", text: input}]}));
                 const streamMessage = appendChatStreamingMessage();
-                scrollChatToBottom();
-                $("chatInput").value = "";
+                scrollChatToBottom(true);
+                if (!chatUx.enabled()) $("chatInput").value = "";
                 setStatus($("chatFormStatus"), "正在接收回答…", "neutral");
                 let result = null;
                 let approvalRequired = null;
@@ -3194,6 +3469,7 @@
                 }, (event) => {
                     if (!isCurrent()) return;
                     if (event.type === "started") {
+                        chatUx.acceptSubmission();
                         setActiveChatRun({id: event.data?.runId, status: "RUNNING"});
                     } else if (event.type === "delta") {
                         const delta = String(event.data?.delta || "");
@@ -3204,8 +3480,10 @@
                     } else if (event.type === "progress") {
                         renderChatProgress(streamMessage, event.data);
                     } else if (event.type === "completed") {
+                        chatUx.acceptSubmission();
                         result = event.data;
                     } else if (event.type === "approval-required") {
+                        chatUx.acceptSubmission();
                         approvalRequired = event.data;
                     } else if (event.type === "error") {
                         throw streamEventError(event.data, "会话运行失败");
@@ -3221,12 +3499,15 @@
                         : "回答已完成。", approvalRequired ? "neutral" : "success");
             });
         } catch (error) {
-            setStatus($("chatFormStatus"), error.message, "error");
+            if (!operationCurrent()) return;
+            chatUx.failSubmission(error);
+            setStatus($("chatFormStatus"), chatUx.isUnknown()
+                ? `${error.message} 请核对本轮状态；未确认前不会再次发送。` : error.message, "error");
             if (state.selectedConversationId) {
                 loadChatMessages(agentId, state.selectedConversationId).catch(() => {});
             }
         } finally {
-            setChatBusy(false);
+            if (operationCurrent()) setChatBusy(false);
         }
     }
 
@@ -3852,7 +4133,29 @@
         activeItem.scrollIntoView({block: "nearest", inline: "center"});
     }
 
+    function closeChatSessionPanel() {
+        const toggle = $("chatSessionsToggle");
+        if (!toggle || toggle.getAttribute("aria-expanded") !== "true") return;
+        toggle.setAttribute("aria-expanded", "false");
+        $("chatPage").dataset.sessionsOpen = "false";
+        toggle.focus();
+    }
+
     function bindPageControls() {
+        chatUx.bind();
+        bind("chatConversationSearch", "input", renderChatConversations);
+        bind("chatSessionsToggle", "click", () => {
+            const toggle = $("chatSessionsToggle");
+            const expanded = toggle.getAttribute("aria-expanded") !== "true";
+            toggle.setAttribute("aria-expanded", String(expanded));
+            $("chatPage").dataset.sessionsOpen = String(expanded);
+            if (expanded) $("chatAgentSelect").focus();
+        });
+        bind("chatApprovalHistoryToggle", "click", () => {
+            const toggle = $("chatApprovalHistoryToggle");
+            toggle.setAttribute("aria-expanded", String(toggle.getAttribute("aria-expanded") !== "true"));
+            renderApprovalHistory();
+        });
         bind("loginForm", "submit", (event) => { event.preventDefault(); login(); });
         bind("logoutBtn", "click", () => logout());
         bind("agentForm", "submit", (event) => { event.preventDefault(); createAgent(); });
@@ -3905,6 +4208,8 @@
             const agentId = $("chatAgentSelect").value;
             state.selectedAgentId = agentId;
             state.selectedConversationId = "";
+            chatUx.activate();
+            if ($("chatConversationSearch")) $("chatConversationSearch").value = "";
             state.pendingApprovals.clear();
             approvalDrafts.clear();
             resetApprovalHistory();
@@ -3915,9 +4220,9 @@
             state.chatCancelPending = false;
             renderChatApprovals();
             loadConversations(agentId)
-                .then(() => state.selectedConversationId
+                .then(() => { chatUx.activate(); return state.selectedConversationId
                     ? loadChatMessages(agentId, state.selectedConversationId)
-                    : renderChatWelcome("当前 Agent 还没有会话，发送第一条消息即可开始。"))
+                    : renderChatWelcome("当前 Agent 还没有会话，发送第一条消息即可开始。"); })
                 .catch((error) => setStatus($("chatFormStatus"), error.message, "error"));
         });
         bind("newChatConversationBtn", "click", () => createChatConversation()

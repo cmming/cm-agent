@@ -6,7 +6,7 @@
     <meta name="referrer" content="same-origin">
     <title>会话聊天 | CM Agent 控制台 v2</title>
     <link rel="stylesheet" href="/assets/styles.css?v=2.0.17">
-    <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.3.0">
+    <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.3.1">
     <link rel="stylesheet" href="/console/v2/assets/sandbox-endpoints.css?v=1.0.0">
     <link rel="stylesheet" href="/console/v2/assets/skill-artifacts.css?v=1.0.0">
     <link rel="stylesheet" href="/assets/chat-stop.css?v=1.0.0">
@@ -30,25 +30,26 @@
         <header class="workspace-header"><p class="workspace-crumb">当前工作区 <span aria-hidden="true">/</span> <b>会话聊天</b></p><div class="user-actions"><span class="online-dot" aria-label="系统运行正常"></span><span class="system-status">系统运行正常</span><span class="user-avatar" aria-hidden="true">管</span><span id="currentUser" class="sr-only">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
         <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
         <section id="chatPage" class="page-view chat-page" aria-label="会话聊天工作区">
-            <div class="page-intro"><div><p class="eyebrow">连续对话</p><h1>会话聊天</h1><p>选择 Agent，在同一会话中保留上下文并实时查看回答、思考和工具调用。</p></div><button id="newChatConversationTopBtn" class="button primary" type="button">新会话</button></div>
-            <aside class="panel chat-session-panel" aria-label="会话列表">
+            <div class="page-intro"><div><h1>会话聊天</h1><p>保留上下文，实时查看回答、思考和工具调用。</p></div><button id="chatSessionsToggle" class="button ghost" type="button" aria-controls="chatSessionPanel" aria-expanded="false">会话与 Agent</button><button id="newChatConversationTopBtn" type="button" hidden aria-hidden="true" tabindex="-1">新会话</button></div>
+            <aside id="chatSessionPanel" class="panel chat-session-panel" aria-label="会话列表">
                 <div class="chat-agent-picker">
                     <label for="chatAgentSelect">当前 Agent</label>
                     <select id="chatAgentSelect"></select>
                 </div>
-                <div class="panel-heading"><div><p class="eyebrow">历史会话</p><h2>继续聊天</h2></div><button id="newChatConversationBtn" class="button ghost compact" type="button">新会话</button></div>
-                <p class="chat-session-note">会话会保留最近消息历史；切换后可继续发送。</p>
+                <div class="panel-heading"><h2>历史会话</h2><button id="newChatConversationBtn" class="button primary compact" type="button">新会话</button></div>
+                <label class="sr-only" for="chatConversationSearch">查找已加载会话</label>
+                <input id="chatConversationSearch" type="search" placeholder="查找已加载会话" aria-describedby="chatConversationSearchHint">
+                <p id="chatConversationSearchHint" class="chat-session-note">仅查找当前 Agent 已加载的会话，最多加载 50 个。</p>
                 <div id="chatConversationList" class="chat-conversation-list"><p class="empty-state">正在加载会话。</p></div>
             </aside>
             <section class="panel chat-main-panel" aria-label="消息内容">
-                <div class="chat-main-heading"><div><p class="eyebrow">消息</p><h2 id="chatConversationTitle">请选择会话</h2></div><span id="chatLiveStatus" class="chat-live-status">已就绪</span></div>
-                <div id="chatMessageList" class="chat-message-list" aria-live="polite"><div class="chat-welcome"><span class="runs-detail-mark" aria-hidden="true">◌</span><h3>开始一段会话</h3><p>选择 Agent 后发送第一条消息，系统会自动创建会话并保存上下文。</p></div></div>
+                <div class="chat-main-heading"><div><p id="chatCurrentAgent" class="chat-current-agent">当前 Agent</p><h2 id="chatConversationTitle" tabindex="0">请选择会话</h2></div><span id="chatLiveStatus" class="chat-live-status" role="status" aria-live="polite">已就绪</span></div>
+                <div class="chat-reading-region"><div id="chatMessageList" class="chat-message-list" aria-label="会话消息" tabindex="0"><div class="chat-welcome"><h3>开始一段会话</h3><p>选择 Agent 后发送第一条消息，系统会自动创建会话并保存上下文。</p></div></div><button id="chatLatestBtn" class="button ghost compact" type="button" hidden>回到最新</button></div>
                 <section id="chatApprovalHistoryRegion" class="chat-approval-history-region" aria-labelledby="chatApprovalHistoryHeading" hidden>
-                    <div class="chat-approval-history-heading"><h3 id="chatApprovalHistoryHeading">审批历史</h3><button id="refreshApprovalHistoryBtn" class="button ghost compact" type="button">刷新记录</button></div>
-                    <p id="chatApprovalHistorySummary" class="chat-approval-history-note" role="status">正在读取审批历史…</p>
-                    <div id="chatApprovalHistoryList" class="chat-approval-history-list"></div>
+                    <div class="chat-approval-history-heading"><h3 id="chatApprovalHistoryHeading"><button id="chatApprovalHistoryToggle" class="button ghost compact" type="button" aria-controls="chatApprovalHistoryBody" aria-expanded="false">审批历史</button></h3><p id="chatApprovalHistorySummary" class="chat-approval-history-note" role="status">正在读取审批历史…</p><button id="refreshApprovalHistoryBtn" class="button ghost compact" type="button">刷新记录</button></div>
+                    <div id="chatApprovalHistoryBody" hidden><div id="chatApprovalHistoryList" class="chat-approval-history-list"></div>
                     <button id="loadMoreApprovalHistoryBtn" class="button ghost compact" type="button" hidden>加载更早审批</button>
-                    <p id="chatApprovalHistoryStatus" class="form-status" role="status" aria-live="polite"></p>
+                    <p id="chatApprovalHistoryStatus" class="form-status" role="status" aria-live="polite"></p></div>
                 </section>
                 <section id="chatApprovalRegion" class="chat-approval-region" aria-labelledby="chatApprovalHeading" hidden>
                     <div class="chat-approval-heading"><div><h3 id="chatApprovalHeading">待审批操作</h3><p>核对脱敏参数，为每项选择允许或拒绝，再提交本次决定。</p></div><span class="risk-badge">高风险 HIGH</span></div>
@@ -57,8 +58,8 @@
                 </section>
                 <form id="chatForm" class="chat-composer">
                     <label class="sr-only" for="chatInput">输入消息</label>
-                    <textarea id="chatInput" rows="3" required placeholder="输入消息，按发送继续当前会话…"></textarea>
-                    <div class="chat-composer-footer"><span>执行过程仅展示模型提供的思考与脱敏工具摘要；写入请求不会自动重试。</span><div class="chat-run-actions"><button id="chatRefreshRunBtn" class="button ghost chat-icon-button" type="button" title="核对本轮状态" aria-label="核对本轮状态"><img src="/assets/icons/refresh-cw.svg" alt="" width="18" height="18"></button><button id="chatStopBtn" class="button ghost chat-icon-button chat-stop-button" type="button" title="停止本轮" aria-label="停止本轮" hidden><img src="/assets/icons/square.svg" alt="" width="18" height="18"></button><button id="chatSendBtn" class="button primary" type="submit">发送</button></div></div>
+                    <textarea id="chatInput" rows="2" required placeholder="输入消息，Enter 发送，Shift+Enter 换行" aria-describedby="chatInputHint"></textarea>
+                    <div class="chat-composer-footer"><div><span id="chatInputHint">Enter 发送 · Shift+Enter 换行</span><details class="chat-guidance"><summary>执行与重试说明</summary><p>执行过程仅展示模型提供的思考与脱敏工具摘要；写入请求不会自动重试。未确认输入仅保留在当前页面，刷新后不保留。</p></details></div><div class="chat-run-actions"><button id="chatRefreshRunBtn" class="button ghost chat-icon-button" type="button" title="核对本轮状态" aria-label="核对本轮状态"><img src="/assets/icons/refresh-cw.svg" alt="" width="18" height="18"><span>核对状态</span></button><button id="chatStopBtn" class="button ghost chat-icon-button chat-stop-button" type="button" title="停止本轮" aria-label="停止本轮" hidden><img src="/assets/icons/square.svg" alt="" width="18" height="18"><span>停止本轮</span></button><button id="chatSendBtn" class="button primary" type="submit">发送</button></div></div>
                     <p id="chatFormStatus" class="form-status" aria-live="polite"></p>
                 </form>
             </section>
@@ -68,7 +69,7 @@
 <script src="/assets/console-core.js?v=2.0.16"></script>
 <script src="/console/v2/assets/sandbox-endpoints.js?v=1.1.1"></script>
 <script src="/console/v2/assets/skill-artifacts.js?v=1.0.2"></script>
-<script src="/assets/app.js?v=2.0.30"></script>
+<script src="/assets/app.js?v=2.0.31"></script>
 <script src="/console/v2/assets/skills.js?v=2.1.2"></script>
 </body>
 </html>
