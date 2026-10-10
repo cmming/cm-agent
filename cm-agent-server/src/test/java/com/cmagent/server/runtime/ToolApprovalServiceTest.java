@@ -25,7 +25,7 @@ class ToolApprovalServiceTest {
     private final UUID conversation = UUID.randomUUID();
     private final PrincipalRef principal = new PrincipalRef(tenant, "initiator", "发起人", Set.of("agent:run", "agent:approve"));
     private final InMemoryToolApprovalRepository repository = new InMemoryToolApprovalRepository();
-    private final RunExecutionService execution = mock(RunExecutionService.class);
+    private final RunExecutionService execution = RunExecutionTestDouble.mockExecution();
     private final RunRepository runs = mock(RunRepository.class);
     private final RuntimeCheckpointRepository checkpoints = mock(RuntimeCheckpointRepository.class);
     private final RunPersistenceService persistence = mock(RunPersistenceService.class);
@@ -67,7 +67,7 @@ class ToolApprovalServiceTest {
         assertThatThrownBy(() -> service.validateForSubmission(principal, agent, conversation, view.approvalId(), 9,
                 List.of(new ToolApprovalService.ItemDecision(view.items().getFirst().itemId(), ToolApprovalDecision.APPROVE))))
                 .isInstanceOfSatisfying(ResponseStatusException.class, error -> assertThat(error.getStatusCode().value()).isEqualTo(409));
-        verifyNoInteractions(execution);
+        RunExecutionTestDouble.assertNoExecution(execution);
     }
 
     @Test
@@ -99,7 +99,7 @@ class ToolApprovalServiceTest {
         assertThat(repository.find(tenant, agent, conversation, approvalId).orElseThrow().status()).isEqualTo(ToolApprovalStatus.EXPIRED);
         verify(checkpoints).deleteSession(tenant, tenant + ":initiator", runId.toString());
         verify(runs).expireWaitingApproval(eq(waiting), any());
-        verifyNoInteractions(execution);
+        RunExecutionTestDouble.assertNoExecution(execution);
     }
 
     @Test
@@ -126,7 +126,7 @@ class ToolApprovalServiceTest {
         verify(runs).expireWaitingApproval(eq(waiting), any());
         verify(audit).append(tenant, "initiator", "TOOL_APPROVAL_EXPIRE", "TOOL_APPROVAL", approvalId.toString(),
                 "EXPIRED", "高风险工具审批请求已过期");
-        verifyNoInteractions(execution);
+        RunExecutionTestDouble.assertNoExecution(execution);
     }
 
     private ToolApprovalService.ToolApprovalView create() {
@@ -152,7 +152,8 @@ class ToolApprovalServiceTest {
             assertThat(view.items().getFirst().inputSummary()).doesNotContain("private-test-marker", "internal.invalid");
         });
         assertThat(history).extracting(ToolApprovalService.ToolApprovalView::approvalId).doesNotContain(pending.approvalId());
-        verifyNoInteractions(execution, persistence, checkpoints);
+        RunExecutionTestDouble.assertNoExecution(execution);
+        verifyNoInteractions(persistence, checkpoints);
     }
 
     @Test
@@ -160,7 +161,8 @@ class ToolApprovalServiceTest {
         var approval = create();
         RunRecord waiting = RunRecord.create(approval.runId(), tenant, agent, "initiator", "输入", Instant.now()).waitForApproval();
         when(runs.findByTenantAndAgentAndId(tenant, agent, approval.runId())).thenReturn(java.util.Optional.of(waiting));
-        when(execution.resumePrepared(any(), any(), any(), any(), any(), any(), any()))
+        when(runs.resumeWaitingApproval(waiting)).thenReturn(true);
+        when(execution.runPreparedAndFinalize(any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Agent 已禁用"));
 
         assertThatThrownBy(() -> service.decideAndResume(principal, agent, conversation, approval.approvalId(), 0,

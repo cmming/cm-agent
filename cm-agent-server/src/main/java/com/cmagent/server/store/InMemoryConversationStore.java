@@ -151,6 +151,23 @@ public class InMemoryConversationStore implements ConversationRepository, Conver
         }
     }
 
+    @Override
+    public List<ConversationMessage> listByRun(UUID tenantId, UUID conversationId, UUID runId) {
+        requireConversation(tenantId, conversationId);
+        synchronized (lock(conversationId)) {
+            return messages.get(conversationId).stream().filter(message -> runId.equals(message.runId())).toList();
+        }
+    }
+
+    @Override
+    public List<UUID> activeRunCandidates(UUID tenantId, UUID conversationId) {
+        requireConversation(tenantId, conversationId);
+        synchronized (lock(conversationId)) {
+            return messages.get(conversationId).stream().map(ConversationMessage::runId)
+                    .filter(Objects::nonNull).distinct().toList();
+        }
+    }
+
     private Conversation requireConversation(UUID tenantId, UUID conversationId) {
         Conversation conversation = conversations.get(conversationId);
         if (conversation == null || !tenantId.equals(conversation.tenantId())) {

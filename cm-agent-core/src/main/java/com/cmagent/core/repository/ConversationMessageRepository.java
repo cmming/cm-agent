@@ -10,6 +10,20 @@ import java.util.UUID;
 /** 会话内消息顺序追加和分页读取契约。 */
 public interface ConversationMessageRepository {
     /**
+     * 列出需要核对活动状态的 Run 候选；调用方仍须按可信 Agent 与租户查询 Run。
+     * JDBC 实现应在存储层过滤活动状态，memory 可返回全部关联标识。
+     */
+    default List<UUID> activeRunCandidates(UUID tenantId, UUID conversationId) {
+        throw new UnsupportedOperationException("当前会话仓储未实现完整活动运行查询，禁止使用截断历史判断可以发送");
+    }
+    /**
+     * 按可信租户与会话查询关联 Run 的消息，供停止归属校验与部分消息去重。
+     * 不能用客户端传入的 Run 标识绕过会话过滤。
+     */
+    default List<ConversationMessage> listByRun(UUID tenantId, UUID conversationId, UUID runId) {
+        throw new UnsupportedOperationException("当前会话仓储未实现按运行查询，禁止用截断历史校验运行归属");
+    }
+    /**
      * 追加消息并由实现分配会话内连续序号。
      *
      * <p>同一会话的并发追加必须串行化；调用方只提交草稿，不能自行决定 {@code sequence}。

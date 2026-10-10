@@ -23,6 +23,7 @@ import java.util.UUID;
  * @param conversationId 可选的持久化会话标识；为空表示单轮或试运行
  * @param skills 本次运行已固定版本的技能集合
  * @param skillDependencies 按技能标识分组的固定依赖解析
+ * @param cancellation 本运行独享的停止信号，由可信服务端创建，不接受客户端覆盖
  */
 public record AgentRunRequest(
         UUID runId,
@@ -34,8 +35,16 @@ public record AgentRunRequest(
         List<ToolDefinition> tools,
         UUID conversationId,
         List<SkillVersionView> skills,
-        Map<UUID, List<SkillDependencyResolution>> skillDependencies
+        Map<UUID, List<SkillDependencyResolution>> skillDependencies,
+        com.cmagent.core.runtime.RunCancellation cancellation
 ) {
+    /** 保留原十参数构造方式，嵌入式调用默认拥有独立且未请求停止的信号。 */
+    public AgentRunRequest(UUID runId, UUID tenantId, AgentDefinition agent, ModelConfig modelConfig,
+                           PrincipalRef principal, String input, List<ToolDefinition> tools, UUID conversationId,
+                           List<SkillVersionView> skills, Map<UUID, List<SkillDependencyResolution>> skillDependencies) {
+        this(runId, tenantId, agent, modelConfig, principal, input, tools, conversationId, skills,
+                skillDependencies, new com.cmagent.core.runtime.RunCancellation());
+    }
     /** 保留既有七参数单轮调用方式。 */
     public AgentRunRequest(
             UUID runId, UUID tenantId, AgentDefinition agent, ModelConfig modelConfig,
@@ -68,6 +77,7 @@ public record AgentRunRequest(
      * 依赖映射已在服务端预检阶段解析，本构造器只冻结结果，不授予额外工具权限。</p>
      */
     public AgentRunRequest {
+        Objects.requireNonNull(cancellation, "cancellation 不能为空");
         Objects.requireNonNull(runId, "runId 不能为空");
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(agent, "agent 不能为空");

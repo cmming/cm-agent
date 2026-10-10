@@ -154,7 +154,7 @@ public class ConversationController {
         List<ConversationMessage> items = conversationService.messages(
                 principal, agentId, conversationId, new MessagePageRequest(limit, afterSequence));
         Long nextSequence = items.size() == limit && !items.isEmpty() ? items.getLast().sequence() : null;
-        return new MessagePage(items, nextSequence);
+        return new MessagePage(items, nextSequence, conversationService.runStatuses(principal, agentId, items));
     }
 
     @PostMapping("/{conversationId}/messages")
@@ -170,6 +170,55 @@ public class ConversationController {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:run", "CONVERSATION", conversationId.toString());
         return conversationService.send(principal, agentId, conversationId, request.input());
+    }
+
+    /**
+     * 幂等停止本轮，仅原发起人且具有运行权限可操作；202 代表停止已接受而非执行已退出。
+     * tenant 来自认证主体，完整资源关联由会话服务再次校验。
+     */
+    @PostMapping("/{conversationId}/runs/{runId}/cancel")
+    public org.springframework.http.ResponseEntity<com.cmagent.core.domain.RunRecord> cancel(
+            @PathVariable("agentId") UUID agentId, @PathVariable("conversationId") UUID conversationId,
+            @PathVariable("runId") UUID runId, Authentication authentication, HttpServletRequest request) {
+        PrincipalRef principal = principal(authentication);
+        controlDiagnostic(request, principal, agentId, conversationId, runId);
+        authorize(principal, "agent:run", "RUN", runId.toString());
+        var run = conversationService.cancel(principal, agentId, conversationId, runId);
+        return org.springframework.http.ResponseEntity.status(run.status().isActive() ? HttpStatus.ACCEPTED : HttpStatus.OK).body(run);
+    }
+
+    /** 查询权威状态不重放模型或工具，刷新与网络结果不确定时均使用该只读入口。 */
+    @GetMapping("/{conversationId}/runs/{runId}")
+    public com.cmagent.core.domain.RunRecord run(
+            @PathVariable("agentId") UUID agentId, @PathVariable("conversationId") UUID conversationId,
+            @PathVariable("runId") UUID runId, Authentication authentication, HttpServletRequest request) {
+        PrincipalRef principal = principal(authentication);
+        controlDiagnostic(request, principal, agentId, conversationId, runId);
+        authorize(principal, "agent:read", "RUN", runId.toString());
+        return conversationService.run(principal, agentId, conversationId, runId);
+    }
+
+    /** 恢复刷新或 started 丢失后的活动运行，空结果表示当前会话没有活动运行。 */
+    @GetMapping("/{conversationId}/active-run")
+    public org.springframework.http.ResponseEntity<com.cmagent.core.domain.RunRecord> activeRun(
+            @PathVariable("agentId") UUID agentId, @PathVariable("conversationId") UUID conversationId,
+            Authentication authentication, HttpServletRequest request) {
+        PrincipalRef principal = principal(authentication);
+        controlDiagnostic(request, principal, agentId, conversationId, null);
+        authorize(principal, "agent:read", "CONVERSATION", conversationId.toString());
+        var run = conversationService.activeRun(principal, agentId, conversationId);
+        return run == null ? org.springframework.http.ResponseEntity.noContent().build()
+                : org.springframework.http.ResponseEntity.ok(run);
+    }
+
+    /** 路由标识仅供定位，tenant/主体取认证上下文；诊断器会脱敏并统一关联 errorId。 */
+    private void controlDiagnostic(HttpServletRequest request, PrincipalRef principal, UUID agentId,
+                                   UUID conversationId, UUID runId) {
+        request.setAttribute(ErrorDiagnosticLogger.DiagnosticContext.class.getName(),
+                new ErrorDiagnosticLogger.DiagnosticContext(RequestCorrelationFilter.errorIdOf(request),
+                        "CONVERSATION_RUN_CONTROL", ApiErrorCode.INTERNAL_ERROR.name(), principal.tenantId().toString(),
+                        principal.principalId(), agentId.toString(), runId == null ? "-" : runId.toString(),
+                        "-", "-", "CONVERSATION:" + conversationId));
     }
 
     @PostMapping(value = "/{conversationId}/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -412,6 +461,9 @@ public class ConversationController {
             code = skillFailure.code();
             message = skillFailure.safeMessage();
             errorId = skillFailure.errorId();
+        } else if (failure instanceof com.cmagent.server.runtime.RunControlException controlFailure) {
+            code = controlFailure.errorCode();
+            message = controlFailure.getReason();
         } else if (failure instanceof ResponseStatusException statusFailure) {
             int status = statusFailure.getStatusCode().value();
             if (approvalFlow) {
@@ -539,10 +591,21 @@ public class ConversationController {
         }
     }
 
-    /** 按会话内稳定序号正序返回的消息列表页。 */
-    public record MessagePage(List<ConversationMessage> items, Long nextSequence) {
+    /**
+     * 按会话内稳定序号正序返回消息及关联状态，旧客户端可忽略新增字段。
+     * @param items 当前页消息，包含已脱敏的内容
+     * @param nextSequence 下一页稳定序号游标，无下一页时为空
+     * @param runStatuses 当前页关联 Run 的权威状态，用于标记停止后不完整的回答
+     */
+    public record MessagePage(List<ConversationMessage> items, Long nextSequence,
+                              java.util.Map<UUID, com.cmagent.core.domain.RunStatus> runStatuses) {
+        /** 保留既有响应构造入口，新字段是附加信息，旧客户端可忽略。 */
+        public MessagePage(List<ConversationMessage> items, Long nextSequence) {
+            this(items, nextSequence, java.util.Map.of());
+        }
         public MessagePage {
             items = List.copyOf(items);
+            runStatuses = java.util.Map.copyOf(runStatuses);
         }
     }
 

@@ -50,6 +50,30 @@ import java.util.function.Supplier;
 /** 编排审批创建、原子决定、Run 恢复、会话消息和安全视图。 */
 @Service
 public class ToolApprovalService {
+    /**
+     * 撤销同一 Run 的全部待审批并删除原发起人的检查点；调用方持有共享运行锁与短事务。
+     * 包含已到期但尚未扫描的请求，不能因为查询过滤过期时间而留下可处理的 PENDING。
+     */
+    void cancelWaiting(PrincipalRef principal, RunRecord run, UUID conversationId) {
+        for (ToolApprovalRequest pending : approvalRepository.listPending(
+                principal.tenantId(), run.agentId(), conversationId, Instant.EPOCH, PENDING_LIMIT)) {
+            if (!run.id().equals(pending.runId())) continue;
+            if (!run.principalId().equals(pending.requestedBy())) {
+                throw new IllegalStateException("审批与运行发起人不一致");
+            }
+            if (transactionTemplate == null) auditCancellation(principal, pending);
+            if (!approvalRepository.cancelPending(pending, principal.principalId(), principal.displayName(), clock.instant())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "审批状态已变化，请刷新后核对");
+            }
+            if (transactionTemplate != null) auditCancellation(principal, pending);
+        }
+        deleteCheckpoint(principal, run);
+    }
+
+    private void auditCancellation(PrincipalRef principal, ToolApprovalRequest pending) {
+        auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_CANCEL",
+                "TOOL_APPROVAL", pending.id().toString(), "CANCELLED", "运行已停止，待审批操作已取消");
+    }
     private static final int PENDING_LIMIT = 50;
     private static final long POLICY_VERSION = 1L;
 
@@ -305,7 +329,13 @@ public class ToolApprovalService {
         }
         Map<UUID, ToolApprovalDecision> decisions = validateDecisions(current, submitted);
         ToolApprovalStatus status = aggregate(decisions.values());
-        boolean accepted = inTransaction(() -> {
+        var acceptedExecution = runExecutionService.controls().withRun(current.runId(), () -> {
+            boolean changed = inTransaction(() -> {
+            RunRecord run = runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, current.runId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "运行不存在"));
+            if (run.status() != RunStatus.WAITING_APPROVAL) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "运行已停止或结束，不能恢复审批");
+            }
             boolean decided = approvalRepository.decide(
                     principal.tenantId(), agentId, conversationId, approvalId, expectedVersion, status,
                     decisions, principal.principalId(), principal.displayName(), now);
@@ -313,12 +343,27 @@ public class ToolApprovalService {
                 // 决定和审计先在短事务中提交，Runtime 恢复始终位于数据库事务之外。
                 auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_DECIDE",
                         "TOOL_APPROVAL", approvalId.toString(), status.name(), "高风险工具审批决定已提交");
+                if (status != ToolApprovalStatus.DENIED) {
+                    if (!runRepository.resumeWaitingApproval(run)) {
+                        throw new ResponseStatusException(HttpStatus.CONFLICT, "运行状态已变化，不能恢复审批");
+                    }
+                    run = run.resumeAfterApproval();
+                }
             }
             return decided;
+            });
+            if (changed) {
+                // 只在短事务成功提交后发布句柄，避免提交失败遗留可停止的虚假执行。
+                RunRecord acceptedRun = runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, current.runId())
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "运行不存在"));
+                return runExecutionService.controls().register(acceptedRun, conversationId);
+            }
+            return null;
         });
-        if (!accepted) {
+        if (acceptedExecution == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "审批状态已变化，请刷新后重试");
         }
+        try {
         ToolApprovalRequest decided = require(principal, agentId, conversationId, approvalId);
         decisionConsumer.accept(view(principal, decided));
 
@@ -328,20 +373,40 @@ public class ToolApprovalService {
         if (status == ToolApprovalStatus.DENIED) {
             AgentRunResult denied = new AgentRunResult(
                     waitingRun.id(), RunStatus.DENIED, "", List.of(), waitingRun.startedAt(), now, "工具调用已被用户拒绝");
-            RunRecord completed = runPersistenceService.complete(principal, waitingRun, denied, List.of());
+            RunRecord completed = runExecutionService.controls().withRun(waitingRun.id(), () -> inTransaction(() -> {
+                var control = runExecutionService.controls().find(waitingRun.id());
+                AgentRunResult result = control != null && control.cancellation().isRequested()
+                        ? new AgentRunResult(waitingRun.id(), RunStatus.CANCELLED, "", List.of(), waitingRun.startedAt(), now, "")
+                        : denied;
+                RunRecord row = runPersistenceService.complete(principal, waitingRun, result, List.of());
+                deleteCheckpoint(principal, waitingRun);
+                runExecutionService.controls().release(waitingRun.id());
+                return row;
+            }));
             runtimeResult = new AgentRuntimeResult(new AgentRunResult(
                     completed.id(), completed.status(), completed.output(), List.of(), completed.startedAt(),
                     completed.finishedAt(), completed.errorMessage()), null);
-            deleteCheckpoint(principal, waitingRun);
         } else {
             List<RuntimeApprovalDecisions.Item> runtimeDecisions = current.items().stream()
                     .map(item -> new RuntimeApprovalDecisions.Item(
                             item.toolCallId(), item.toolId(), item.inputHash(), decisions.get(item.id())))
                     .toList();
             try {
-                runtimeResult = runExecutionService.resumePrepared(
-                        principal, agentId, waitingRun, conversationId, new RuntimeApprovalDecisions(runtimeDecisions),
-                        deltaConsumer, progressConsumer);
+                runtimeResult = runExecutionService.runPreparedAndFinalize(
+                        principal, agentId, waitingRun, "", conversationId, new RuntimeApprovalDecisions(runtimeDecisions),
+                        deltaConsumer, progressConsumer, finish -> inTransaction(() -> {
+                            AgentRuntimeResult result = finish.get();
+                            if (result.run().status() == RunStatus.CANCELLED) deleteCheckpoint(principal, waitingRun);
+                            if (result.run().status() == RunStatus.WAITING_APPROVAL) {
+                                create(principal, agentId, conversationId, waitingRun.id(), result.pendingApproval());
+                            } else if (result.assistantMessage() != null) {
+                                messageRepository.append(principal.tenantId(), new ConversationMessageDraft(
+                                        UUID.randomUUID(), principal.tenantId(), conversationId, MessageRole.ASSISTANT,
+                                        result.assistantMessage().senderName(), result.assistantMessage().contentBlocks(),
+                                        waitingRun.id(), clock.instant()));
+                            }
+                            return result;
+                        }));
             } catch (RuntimeException failure) {
                 // Agent/模型停用等前置失败可能发生在 Runtime 自身的收口边界之前，审批既已接受，
                 // 此时必须清除状态槽并关闭仍活动的 Run，不能留下可误重放的待调用工具。
@@ -364,14 +429,16 @@ public class ToolApprovalService {
         ConversationMessage assistant = null;
         ToolApprovalView nextApproval = null;
         if (runtimeResult.run().status() == RunStatus.WAITING_APPROVAL) {
-            nextApproval = create(principal, agentId, conversationId, waitingRun.id(), runtimeResult.pendingApproval());
+            nextApproval = listPending(principal, agentId, conversationId).stream()
+                    .filter(item -> item.runId().equals(waitingRun.id())).findFirst().orElseThrow();
         } else if (runtimeResult.assistantMessage() != null) {
-            assistant = messageRepository.append(principal.tenantId(), new ConversationMessageDraft(
-                    UUID.randomUUID(), principal.tenantId(), conversationId, MessageRole.ASSISTANT,
-                    runtimeResult.assistantMessage().senderName(), runtimeResult.assistantMessage().contentBlocks(),
-                    waitingRun.id(), now));
+            assistant = messageRepository.listByRun(principal.tenantId(), conversationId, waitingRun.id()).stream()
+                    .filter(message -> message.role() == MessageRole.ASSISTANT).reduce((first, last) -> last).orElse(null);
         }
         return new ApprovalResumeOutcome(view(principal, decided), runtimeResult.run(), assistant, nextApproval);
+        } finally {
+            runExecutionService.controls().release(current.runId(), acceptedExecution);
+        }
     }
 
     /**
@@ -551,12 +618,13 @@ public class ToolApprovalService {
         Supplier<Boolean> guardedOperation = () -> skillWorkUnit == null
                 ? operation.get() : skillWorkUnit.execute(operation);
         if (transactionTemplate == null) {
-            return guardedOperation.get();
+            return runExecutionService.controls().withRun(request.runId(), guardedOperation);
         }
         // 使用同一事务管理器；只为本条收口设置超时，不修改共享模板的运行时配置。
         TransactionTemplate expiryTransaction = new TransactionTemplate(transactionTemplate.getTransactionManager());
         expiryTransaction.setTimeout(10);
-        return Boolean.TRUE.equals(expiryTransaction.execute(status -> guardedOperation.get()));
+        return runExecutionService.controls().withRun(request.runId(),
+                () -> Boolean.TRUE.equals(expiryTransaction.execute(status -> guardedOperation.get())));
     }
 
     /** 仅处理同一可信 TEST Run 的等待试运行，保留已完成发布依据和正式会话的隔离。 */

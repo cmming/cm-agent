@@ -702,6 +702,8 @@
             SUCCEEDED: {label: "成功", tone: "success"},
             SANDBOX_PREPARED: {label: "沙箱资源已准备", tone: "neutral"},
             RUNNING: {label: "运行中", tone: "warning"},
+            CANCELLING: {label: "停止中", tone: "warning"},
+            CANCELLED: {label: "已停止", tone: "neutral"},
             WAITING_APPROVAL: {label: "等待审批", tone: "warning"},
             FAILED: {label: "失败", tone: "error"},
             DENIED: {label: "已拒绝", tone: "error"}

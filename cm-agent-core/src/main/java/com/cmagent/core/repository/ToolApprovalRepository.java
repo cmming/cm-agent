@@ -18,6 +18,13 @@ import java.util.UUID;
  * 所有查询都必须带 tenant、Agent 和 conversation 条件，不能依赖客户端传入的 tenant。</p>
  */
 public interface ToolApprovalRepository {
+    /**
+     * 原子撤销同一可信运行快照下的 PENDING 请求，保留明细原决定，不伪造成用户拒绝。
+     * 版本或归属变化时返回 false；旧实现明确拒绝停止而非静默忽略。
+     */
+    default boolean cancelPending(ToolApprovalRequest snapshot, String actor, String displayName, Instant now) {
+        throw new UnsupportedOperationException("当前审批仓储不支持撤销");
+    }
 
     /**
      * 仅供服务端系统任务跨租户发现过期 PENDING，覆盖会话及独立 TEST。

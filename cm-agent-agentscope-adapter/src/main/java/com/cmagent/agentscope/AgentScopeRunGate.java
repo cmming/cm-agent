@@ -33,6 +33,14 @@ import java.util.function.Supplier;
  */
 final class AgentScopeRunGate {
 
+    /** 与服务端本轮控制句柄共享的信号；独立桥接测试默认使用新的未停止信号。 */
+    private com.cmagent.core.runtime.RunCancellation cancellation = new com.cmagent.core.runtime.RunCancellation();
+
+    /** 只在工具桥接器发布前绑定，之后所有调用线程使用同一停止边界。 */
+    void bindCancellation(com.cmagent.core.runtime.RunCancellation cancellation) {
+        this.cancellation = java.util.Objects.requireNonNull(cancellation);
+    }
+
     private final ReentrantLock invocationLock = new ReentrantLock(true);
     private final AtomicReference<ToolInvocationInfrastructureException> infrastructureFailure =
             new AtomicReference<>();
@@ -86,16 +94,19 @@ final class AgentScopeRunGate {
             throwIfSkillFailure();
             throwIfToolTimedOut();
             throwIfInvocationInterrupted();
-            try {
-                ToolInvocationResult result = gateway.invoke(request);
-                throwIfInfrastructureFailure();
-                throwIfSkillFailure();
-                throwIfToolTimedOut();
-                throwIfInvocationInterrupted();
-                return result;
-            } catch (ToolInvocationInfrastructureException failure) {
-                infrastructureFailure.compareAndSet(null, failure);
-                throw infrastructureFailure.get();
+            try (var invocation = cancellation.enter()) {
+                // 先发布严格失败再释放许可，否则停止线程可能把审计失败误判成成功停止。
+                try {
+                    ToolInvocationResult result = gateway.invoke(request);
+                    throwIfInfrastructureFailure();
+                    throwIfSkillFailure();
+                    throwIfToolTimedOut();
+                    throwIfInvocationInterrupted();
+                    return result;
+                } catch (ToolInvocationInfrastructureException failure) {
+                    infrastructureFailure.compareAndSet(null, failure);
+                    throw infrastructureFailure.get();
+                }
             }
         } finally {
             invocationLock.unlock();
@@ -130,19 +141,21 @@ final class AgentScopeRunGate {
             throwIfSkillFailure();
             throwIfToolTimedOut();
             throwIfInvocationInterrupted();
-            try {
-                SkillReadResult result = gateway.load(request, nativeLoader);
-                throwIfInfrastructureFailure();
-                throwIfSkillFailure();
-                throwIfToolTimedOut();
-                throwIfInvocationInterrupted();
-                return result;
-            } catch (SkillAccessException failure) {
-                if (failure.fatal()) {
-                    fatalSkillFailure.compareAndSet(null, failure);
-                    throw fatalSkillFailure.get();
+            try (var invocation = cancellation.enter()) {
+                try {
+                    SkillReadResult result = gateway.load(request, nativeLoader);
+                    throwIfInfrastructureFailure();
+                    throwIfSkillFailure();
+                    throwIfToolTimedOut();
+                    throwIfInvocationInterrupted();
+                    return result;
+                } catch (SkillAccessException failure) {
+                    if (failure.fatal()) {
+                        fatalSkillFailure.compareAndSet(null, failure);
+                        throw fatalSkillFailure.get();
+                    }
+                    throw failure;
                 }
-                throw failure;
             }
         } finally {
             invocationLock.unlock();
@@ -232,7 +245,7 @@ final class AgentScopeRunGate {
      * @return 本次运行是否收到过工具调用取消或中断信号
      */
     boolean isInvocationInterrupted() {
-        return invocationInterrupted.get();
+        return invocationInterrupted.get() || cancellation.isRequested();
     }
 
     /**
@@ -248,7 +261,7 @@ final class AgentScopeRunGate {
      * 在工具调用被取消或中断后以内部控制异常停止当前执行链。
      */
     private void throwIfInvocationInterrupted() {
-        if (invocationInterrupted.get()) {
+        if (invocationInterrupted.get() || cancellation.isRequested()) {
             throw new RunAbortedException();
         }
     }

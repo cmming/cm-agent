@@ -38,6 +38,10 @@ import java.util.function.Consumer;
  * 服务端安全及持久化实现解耦。</p>
  */
 public class AgentScopeRuntimeAdapter implements AgentRuntime {
+    @Override
+    public boolean supportsCancellation() {
+        return executor instanceof AgentScopeReActExecutor;
+    }
     private static final Logger log = LoggerFactory.getLogger(AgentScopeRuntimeAdapter.class);
 
     private final ModelCredentialProvider credentialProvider;

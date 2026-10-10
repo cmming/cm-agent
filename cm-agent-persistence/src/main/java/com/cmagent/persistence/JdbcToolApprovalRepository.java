@@ -27,6 +27,24 @@ import java.util.UUID;
  */
 public final class JdbcToolApprovalRepository implements ToolApprovalRepository {
     @Override
+    public boolean cancelPending(ToolApprovalRequest snapshot, String actor, String displayName, Instant now) {
+        if (snapshot.status() != ToolApprovalStatus.PENDING || snapshot.conversationId() == null) return false;
+        // 请求头和原版本竞争，明细保持未决定；取消不是逐项拒绝，也不能覆盖已经提交的允许。
+        return jdbcClient.sql("""
+                UPDATE tool_approval_requests SET status = 'CANCELLED', version_no = version_no + 1,
+                    decided_by = :actor, decided_by_display_name = :displayName,
+                    decided_at = :now, updated_at = :now
+                WHERE tenant_id = :tenantId AND agent_id = :agentId AND conversation_id = :conversationId
+                  AND run_id = :runId AND id = :id AND requested_by = :requestedBy
+                  AND status = 'PENDING' AND version_no = :version AND approval_scope = 'CONVERSATION'
+                """)
+                .param("actor", actor).param("displayName", displayName).param("now", Timestamp.from(now))
+                .param("tenantId", snapshot.tenantId().toString()).param("agentId", snapshot.agentId().toString())
+                .param("conversationId", snapshot.conversationId().toString()).param("runId", snapshot.runId().toString())
+                .param("id", snapshot.id().toString()).param("requestedBy", snapshot.requestedBy())
+                .param("version", snapshot.version()).update() == 1;
+    }
+    @Override
     public List<ToolApprovalRequest> findExpiredPending(com.cmagent.core.domain.ApprovalExpiryPage page) {
         // 系统边界内跨租户发现，V14 的 status/expires_at/id 索引支持有界游标扫描。
         String cursor = page.afterId() == null ? "" : """

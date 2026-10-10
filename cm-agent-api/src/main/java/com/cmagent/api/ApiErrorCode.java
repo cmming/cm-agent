@@ -12,6 +12,10 @@ public enum ApiErrorCode {
     TENANT_NOT_FOUND,
     AGENT_NOT_FOUND,
     CONVERSATION_NOT_FOUND,
+    /** 同会话仍有活动运行，或停止与状态变化发生冲突。 */
+    RUN_CONTROL_CONFLICT,
+    /** 执行句柄不可达或当前 Runtime 未实现实际停止控制。 */
+    RUN_CONTROL_UNAVAILABLE,
     /** 审批请求不存在或不属于当前可信资源边界。 */
     TOOL_APPROVAL_NOT_FOUND,
     /** 审批决定缺失、重复或包含不属于当前请求的明细。 */

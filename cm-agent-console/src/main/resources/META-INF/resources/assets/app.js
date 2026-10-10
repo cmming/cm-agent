@@ -66,6 +66,9 @@
         approvalHistoryError: "",
         chatBusy: false,
         chatLoading: false,
+        activeChatRun: null,
+        chatCancelPending: false,
+        chatRunStatuses: {},
         auditEvents: [],
         auditCursor: ""
     };
@@ -87,6 +90,7 @@
     const sessionEpoch = core.createSessionEpochGate();
     const submitStateGuard = core.createSubmitStateGuard();
     let pageNavigationRevision = 0;
+    let chatRunTimer = null;
 
     const pageInfo = {
         overviewPage: ["能力总览", "查看当前租户已交付的 Agent 能力与最近活动。"],
@@ -307,6 +311,9 @@
         approvalDrafts.clear();
         resetApprovalHistory();
         state.chatLoading = false;
+        setActiveChatRun(null);
+        state.chatCancelPending = false;
+        state.chatRunStatuses = {};
         chatLoadRevision.invalidate();
         conversationLoadRevision.invalidate();
         if (isMultiPage) {
@@ -2430,13 +2437,16 @@
         renderApprovalHistory();
         renderChatApprovals();
         try {
-            const [page, approvalPage, historyResult] = await Promise.all([
+            const [page, approvalPage, historyResult, activeRun] = await Promise.all([
                 api.request(`${base}/messages?limit=200`),
                 api.request(`${base}/approvals?status=PENDING`),
                 // 历史读取失败不能伪装为空历史，也不影响已确认安全的待办发送状态。
-                api.request(`${base}/approvals/history?limit=20`).then((page) => ({page}), (error) => ({error}))
+                api.request(`${base}/approvals/history?limit=20`).then((page) => ({page}), (error) => ({error})),
+                api.request(`${base}/active-run`)
             ]);
             if (!isCurrent()) return false;
+            state.chatRunStatuses = page?.runStatuses || {};
+            setActiveChatRun(activeRun || null);
             renderChatMessages(Array.isArray(page?.items) ? page.items : []);
             state.pendingApprovals = new Map((Array.isArray(approvalPage?.items) ? approvalPage.items : [])
                 .map((approval) => [approval.approvalId, approval]));
@@ -2663,6 +2673,7 @@
                     decisionAccepted = true;
                     approvalDrafts.remove(approval.approvalId);
                     if (isCurrent()) {
+                        setActiveChatRun({id: event.data?.runId || approval.runId, status: "RUNNING"});
                         state.pendingApprovals.set(approval.approvalId, {...approval, ...event.data, canDecide: false,
                             items: approval.items.map((item) => ({...item, decision: payload.decisions.find((choice) => choice.itemId === item.itemId)?.decision}))});
                         state.approvalFeedback.set(approval.approvalId, {phase: "RESUMING", message: "决定已接受，正在处理原运行；无需再次提交。"});
@@ -2912,6 +2923,10 @@
         appendChatBlocks(bubble, blocks);
         if (!blocks.length) bubble.append(element("p", {text: "消息内容为空。"}));
         article.append(bubble);
+        if (state.chatRunStatuses[message.runId] === "CANCELLED") {
+            article.append(element("p", {className: "chat-stopped-note", text: isUser
+                ? "本轮已停止" : "本轮已停止，回答可能不完整"}));
+        }
         if (!isUser && message.runId && state.selectedAgentId && artifactManager) {
             const files = element("section");
             article.append(files);
@@ -3013,6 +3028,8 @@
         const labels = {
             RUNNING: "执行中",
             WAITING_APPROVAL: "等待审批",
+            CANCELLING: "停止中",
+            CANCELLED: "已停止",
             SUCCEEDED: "执行成功",
             FAILED: "执行失败",
             DENIED: "已拒绝"
@@ -3121,22 +3138,30 @@
         const input = $("chatInput");
         const resuming = [...state.approvalSubmissions].some((id) => state.pendingApprovals.has(id)
             || state.approvalHistory.some((approval) => approval.approvalId === id));
-        if (sendButton) sendButton.disabled = state.chatBusy || state.chatLoading || waiting || resuming;
-        if (input) input.disabled = state.chatBusy || state.chatLoading || waiting || resuming;
+        const active = Boolean(state.activeChatRun);
+        if (sendButton) sendButton.disabled = state.chatBusy || state.chatLoading || active || waiting || resuming;
+        if (input) input.disabled = state.chatBusy || state.chatLoading || active || waiting || resuming;
+        const stop = $("chatStopBtn");
+        if (stop) {
+            stop.hidden = !active;
+            stop.disabled = state.chatCancelPending || state.activeChatRun?.status === "CANCELLING" || state.chatLoading;
+        }
         const liveStatus = $("chatLiveStatus");
         if (liveStatus) {
             const activePhase = [...state.pendingApprovals.values(), ...state.approvalHistory]
                 .filter((approval) => state.approvalSubmissions.has(approval.approvalId))
                 .map((approval) => state.approvalFeedback.get(approval.approvalId)?.phase);
-            liveStatus.textContent = state.chatBusy ? "正在生成" : activePhase.includes("RESUMING") ? "正在恢复运行"
+            liveStatus.textContent = state.activeChatRun?.status === "CANCELLING" ? "正在停止，等待执行收口"
+                : state.chatCancelPending ? "正在提交停止" : state.chatBusy ? "正在生成" : activePhase.includes("RESUMING") ? "正在恢复运行"
                 : activePhase.includes("CHECKING") ? "正在核对审批状态" : resuming ? "正在提交审批"
-                    : state.chatLoading ? "正在确认会话状态" : waiting ? "请先处理待审批操作" : "已就绪";
+                    : state.chatLoading ? "正在确认会话状态" : waiting ? "请先处理待审批操作"
+                        : active ? "本轮仍在运行" : "已就绪";
             liveStatus.classList.toggle("is-streaming", state.chatBusy);
         }
     }
 
     async function sendChatMessage() {
-        if (state.chatBusy || state.chatLoading || [...state.pendingApprovals.values()]
+        if (state.chatBusy || state.chatLoading || state.activeChatRun || [...state.pendingApprovals.values()]
                 .some((approval) => approval.status === "PENDING" || state.approvalSubmissions.has(approval.approvalId))
                 || state.approvalHistory.some((approval) => state.approvalSubmissions.has(approval.approvalId))) return;
         const agentId = $("chatAgentSelect")?.value;
@@ -3151,6 +3176,9 @@
             await withSubmitState($("chatSendBtn"), async () => {
                 state.selectedAgentId = agentId;
                 const conversationId = await ensureConversation(agentId);
+                const session = sessionEpoch.capture();
+                const isCurrent = () => sessionEpoch.isCurrent(session) && state.selectedAgentId === agentId
+                    && state.selectedConversationId === conversationId;
                 const container = $("chatMessageList");
                 container.querySelector(".chat-welcome")?.remove();
                 container.append(createChatMessage({role: "USER", contentBlocks: [{type: "TEXT", text: input}]}));
@@ -3164,7 +3192,10 @@
                     method: "POST",
                     body: JSON.stringify({input})
                 }, (event) => {
-                    if (event.type === "delta") {
+                    if (!isCurrent()) return;
+                    if (event.type === "started") {
+                        setActiveChatRun({id: event.data?.runId, status: "RUNNING"});
+                    } else if (event.type === "delta") {
                         const delta = String(event.data?.delta || "");
                         if (!delta) return;
                         streamedOutput += delta;
@@ -3180,12 +3211,14 @@
                         throw streamEventError(event.data, "会话运行失败");
                     }
                 });
+                if (!isCurrent()) return;
                 if (!result && !approvalRequired) throw new Error("运行未返回最终结果，请刷新会话确认状态。");
                 await loadConversations(agentId);
                 await loadChatMessages(agentId, conversationId);
                 setStatus($("chatFormStatus"), approvalRequired
                     ? "运行已暂停，请处理下方高风险工具审批。"
-                    : "回答已完成。", approvalRequired ? "neutral" : "success");
+                    : result?.run?.status === "CANCELLED" ? "本轮已停止，已保留输出内容。"
+                        : "回答已完成。", approvalRequired ? "neutral" : "success");
             });
         } catch (error) {
             setStatus($("chatFormStatus"), error.message, "error");
@@ -3194,6 +3227,74 @@
             }
         } finally {
             setChatBusy(false);
+        }
+    }
+
+    // 轮询只查询权威状态，不关闭 SSE，也不重放消息、停止或审批写入；旧会话和旧登录的响应不得改动新页面。
+    function setActiveChatRun(run) {
+        window.clearTimeout(chatRunTimer);
+        state.activeChatRun = run?.id && ["RUNNING", "WAITING_APPROVAL", "CANCELLING"].includes(run.status) ? run : null;
+        updateChatSendAvailability();
+        if (!state.activeChatRun || run.status === "WAITING_APPROVAL") return;
+        const session = sessionEpoch.capture();
+        const agentId = state.selectedAgentId;
+        const conversationId = state.selectedConversationId;
+        const runId = run.id;
+        chatRunTimer = window.setTimeout(async () => {
+            const isCurrent = () => sessionEpoch.isCurrent(session) && state.selectedAgentId === agentId
+                && state.selectedConversationId === conversationId && state.activeChatRun?.id === runId;
+            if (!isCurrent()) return;
+            try {
+                const row = await api.request(`/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}`);
+                if (!isCurrent()) return;
+                if (["RUNNING", "WAITING_APPROVAL", "CANCELLING"].includes(row.status)) {
+                    setActiveChatRun(row);
+                } else {
+                    // 终态持久化与消息收口在同一短事务，刷新后才开放发送。
+                    const loaded = await loadChatMessages(agentId, conversationId);
+                    if (loaded && sessionEpoch.isCurrent(session) && state.selectedAgentId === agentId
+                            && state.selectedConversationId === conversationId && !state.activeChatRun) {
+                        setStatus($("chatFormStatus"), row.status === "CANCELLED"
+                            ? "本轮已停止，已保留输出内容。" : "本轮已结束。", "success");
+                    }
+                }
+            } catch (error) {
+                if (isCurrent()) {
+                    state.chatLoading = true;
+                    updateChatSendAvailability();
+                    setStatus($("chatFormStatus"), `${error.message} 请重新核对本轮状态。`, "error");
+                }
+            }
+        }, 1200);
+    }
+
+    async function stopChatRun() {
+        const run = state.activeChatRun;
+        if (!run || state.chatCancelPending || run.status === "CANCELLING") return;
+        const agentId = state.selectedAgentId;
+        const conversationId = state.selectedConversationId;
+        const session = sessionEpoch.capture();
+        const isCurrent = () => sessionEpoch.isCurrent(session) && state.selectedAgentId === agentId
+            && state.selectedConversationId === conversationId && state.activeChatRun?.id === run.id;
+        state.chatCancelPending = true;
+        updateChatSendAvailability();
+        try {
+            const row = await api.request(`/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(run.id)}/cancel`, {method: "POST"});
+            if (!isCurrent()) return;
+            setActiveChatRun(row);
+            setStatus($("chatFormStatus"), row.status === "CANCELLING" ? "已登记停止，正在等待当前执行退出。"
+                : row.status === "CANCELLED" ? "本轮已停止，已保留输出内容。" : "本轮已结束，正在核对最终结果。", "neutral");
+            if (!state.activeChatRun) await loadChatMessages(agentId, conversationId);
+        } catch (error) {
+            if (isCurrent()) {
+                state.chatLoading = true;
+                setStatus($("chatFormStatus"), `${error.message} 请核对本轮状态；系统不会自动重试停止。`, "error");
+            }
+        } finally {
+            if (sessionEpoch.isCurrent(session) && state.selectedConversationId === conversationId) {
+                state.chatCancelPending = false;
+                updateChatSendAvailability();
+            }
         }
     }
 
@@ -3792,6 +3893,12 @@
                 .catch((error) => setStatus($("runFormStatus"), error.message, "error"));
         });
         bind("chatForm", "submit", (event) => { event.preventDefault(); sendChatMessage(); });
+        bind("chatStopBtn", "click", stopChatRun);
+        bind("chatRefreshRunBtn", "click", () => {
+            if (state.selectedAgentId && state.selectedConversationId) {
+                loadChatMessages(state.selectedAgentId, state.selectedConversationId).catch(() => {});
+            }
+        });
         bind("loadMoreApprovalHistoryBtn", "click", () => loadApprovalHistory(true));
         bind("refreshApprovalHistoryBtn", "click", () => loadApprovalHistory(false));
         bind("chatAgentSelect", "change", () => {
@@ -3804,6 +3911,8 @@
             renderApprovalHistory();
             state.chatLoading = false;
             chatLoadRevision.invalidate();
+            setActiveChatRun(null);
+            state.chatCancelPending = false;
             renderChatApprovals();
             loadConversations(agentId)
                 .then(() => state.selectedConversationId

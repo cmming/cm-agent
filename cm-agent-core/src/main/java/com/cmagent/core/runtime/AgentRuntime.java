@@ -24,6 +24,14 @@ import java.util.function.Consumer;
 public interface AgentRuntime {
 
     /**
+     * 是否消费请求中的停止信号并等待在途调用退出。
+     * 默认关闭以保护旧 SPI：服务端不得将不具备实际控制能力的 Runtime 宣称为可停止。
+     */
+    default boolean supportsCancellation() {
+        return false;
+    }
+
+    /**
      * 执行一次 Agent 运行并返回结构化结果。
      *
      * @param request 当前运行请求，其租户一致性已在构造期校验

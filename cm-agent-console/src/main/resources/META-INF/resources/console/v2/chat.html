@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.3.0">
     <link rel="stylesheet" href="/console/v2/assets/sandbox-endpoints.css?v=1.0.0">
     <link rel="stylesheet" href="/console/v2/assets/skill-artifacts.css?v=1.0.0">
+    <link rel="stylesheet" href="/assets/chat-stop.css?v=1.0.0">
 </head>
 <body data-console-version="v2" data-page="chatPage">
 <div class="console-layout">
@@ -57,17 +58,17 @@
                 <form id="chatForm" class="chat-composer">
                     <label class="sr-only" for="chatInput">输入消息</label>
                     <textarea id="chatInput" rows="3" required placeholder="输入消息，按发送继续当前会话…"></textarea>
-                    <div class="chat-composer-footer"><span>执行过程仅展示模型提供的思考与脱敏工具摘要；写入请求不会自动重试。</span><button id="chatSendBtn" class="button primary" type="submit">发送</button></div>
+                    <div class="chat-composer-footer"><span>执行过程仅展示模型提供的思考与脱敏工具摘要；写入请求不会自动重试。</span><div class="chat-run-actions"><button id="chatRefreshRunBtn" class="button ghost chat-icon-button" type="button" title="核对本轮状态" aria-label="核对本轮状态"><img src="/assets/icons/refresh-cw.svg" alt="" width="18" height="18"></button><button id="chatStopBtn" class="button ghost chat-icon-button chat-stop-button" type="button" title="停止本轮" aria-label="停止本轮" hidden><img src="/assets/icons/square.svg" alt="" width="18" height="18"></button><button id="chatSendBtn" class="button primary" type="submit">发送</button></div></div>
                     <p id="chatFormStatus" class="form-status" aria-live="polite"></p>
                 </form>
             </section>
         </section>
     </main>
 </div>
-<script src="/assets/console-core.js?v=2.0.15"></script>
+<script src="/assets/console-core.js?v=2.0.16"></script>
 <script src="/console/v2/assets/sandbox-endpoints.js?v=1.1.1"></script>
 <script src="/console/v2/assets/skill-artifacts.js?v=1.0.2"></script>
-<script src="/assets/app.js?v=2.0.29"></script>
+<script src="/assets/app.js?v=2.0.30"></script>
 <script src="/console/v2/assets/skills.js?v=2.1.2"></script>
 </body>
 </html>

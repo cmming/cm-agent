@@ -36,8 +36,8 @@ import java.util.function.Consumer;
  * 编排会话、消息、Run 与 Runtime 的分段提交边界。
  *
  * <p>USER 消息和 {@code RUNNING} Run 在短事务中共同提交，随后才调用模型；模型调用绝不持有数据库事务。
- * 最终 assistant 快照存在时另行追加消息，因此模型或基础设施失败不会伪造 assistant 回复，但已成功提交的
- * USER 消息会作为可追溯会话事实保留。</p>
+ * 最终 Run 与 assistant/待审批快照在另一个短事务共同提交；停止与完成在单实例共享运行锁内竞争。
+ * 模型或基础设施失败不会伪造 assistant 回复，已成功提交的 USER 消息仍保留。</p>
  */
 @Service
 public class ConversationService {
@@ -195,7 +195,11 @@ public class ConversationService {
         String safeInput = redactor.redact(input);
         UUID runId = UUID.randomUUID();
         UUID userMessageId = UUID.randomUUID();
-        StartedState started = inTransaction(() -> {
+        StartedState started = executionService.controls().withConversation(conversationId, () -> inTransaction(() -> {
+            if (activeRun(principal, agentId, conversationId) != null) {
+                throw new RunControlException(com.cmagent.api.ApiErrorCode.RUN_CONTROL_CONFLICT,
+                        "当前会话仍有未结束运行，请先停止或核对运行状态");
+            }
             RunRecord run = runPersistenceService.start(principal, agentId, safeInput, runId);
             ConversationMessage userMessage = messageRepository.append(principal.tenantId(),
                     new ConversationMessageDraft(
@@ -206,7 +210,9 @@ public class ConversationService {
                         principal.tenantId(), conversationId, titleFrom(safeInput), userMessage.createdAt());
             }
             return new StartedState(run, userMessage);
-        });
+        }));
+        var execution = executionService.controls().register(started.run(), conversationId);
+        try {
         startedConsumer.accept(new ConversationRunStarted(
                 conversationId, runId, started.userMessage().id()));
 
@@ -224,28 +230,118 @@ public class ConversationService {
                         .map(run -> run.status() == RunStatus.FAILED)
                         .orElse(false))
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        String runtimeInput = promptComposer.compose(history, safeInput, failedRunIds);
-        AgentRuntimeResult runtimeResult = executionService.runPrepared(
-                principal, agentId, started.run(), runtimeInput, conversationId, deltaConsumer, progressConsumer);
-
-        if (runtimeResult.run().status() == RunStatus.WAITING_APPROVAL) {
-            approvalService.create(
-                    principal, agentId, conversationId, runId, runtimeResult.pendingApproval());
-        }
-
-        ConversationMessage assistantMessage = null;
-        if (runtimeResult.assistantMessage() != null) {
-            assistantMessage = messageRepository.append(principal.tenantId(), new ConversationMessageDraft(
+        Set<UUID> stoppedRunIds = history.stream().map(ConversationMessage::runId).filter(Objects::nonNull)
+                .filter(id -> runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, id)
+                        .map(run -> run.status() == RunStatus.CANCELLED).orElse(false))
+                .collect(java.util.stream.Collectors.toSet());
+        String runtimeInput = promptComposer.compose(history, safeInput, failedRunIds, stoppedRunIds);
+        java.util.concurrent.atomic.AtomicReference<ConversationMessage> assistant = new java.util.concurrent.atomic.AtomicReference<>();
+        AgentRuntimeResult runtimeResult = executionService.runPreparedAndFinalize(
+                principal, agentId, started.run(), runtimeInput, conversationId, null, deltaConsumer, progressConsumer,
+                finish -> inTransaction(() -> {
+                    AgentRuntimeResult result = finish.get();
+                    if (result.run().status() == RunStatus.CANCELLED) {
+                        approvalService.cancelWaiting(principal, started.run(), conversationId);
+                    }
+                    if (result.run().status() == RunStatus.WAITING_APPROVAL) {
+                        approvalService.create(principal, agentId, conversationId, runId, result.pendingApproval());
+                    }
+                    if (result.assistantMessage() != null) {
+                        assistant.set(messageRepository.append(principal.tenantId(), new ConversationMessageDraft(
                     UUID.randomUUID(), principal.tenantId(), conversationId, MessageRole.ASSISTANT,
-                    runtimeResult.assistantMessage().senderName(), runtimeResult.assistantMessage().contentBlocks(),
-                    runId, Instant.now()));
-        }
+                                result.assistantMessage().senderName(), result.assistantMessage().contentBlocks(),
+                                runId, Instant.now())));
+                    }
+                    return result;
+                }));
+        ConversationMessage assistantMessage = assistant.get();
         return new ConversationRunResult(
                 conversationId,
                 userMessageId,
                 assistantMessage == null ? null : assistantMessage.id(),
                 runtimeResult.run(),
                 assistantMessage);
+        } catch (RuntimeException failure) {
+            // 包含 Agent 停用等 Runtime 入场前失败；只关闭仍活动的本轮，保留原异常和严格审计失败语义。
+            executionService.controls().withRun(runId, () -> {
+                runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId)
+                        .filter(row -> row.status().isActive())
+                        .ifPresent(row -> runPersistenceService.completeFailure(principal, row));
+                return null;
+            });
+            throw failure;
+        } finally {
+            executionService.controls().release(runId, execution);
+        }
+    }
+
+    /** 查询会话内权威 Run；租户和 Agent 必须来自已认证上下文及已验证路由。 */
+    public RunRecord run(PrincipalRef principal, UUID agentId, UUID conversationId, UUID runId) {
+        get(principal, agentId, conversationId);
+        if (messageRepository.listByRun(principal.tenantId(), conversationId, runId).stream()
+                .noneMatch(message -> message.role() == MessageRole.USER)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "运行不存在或不属于当前会话");
+        }
+        return runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "运行不存在"));
+    }
+
+    /** 返回活动 Run，包含停止中及不可达执行句柄；查询不能自动重放或收口运行。 */
+    public RunRecord activeRun(PrincipalRef principal, UUID agentId, UUID conversationId) {
+        get(principal, agentId, conversationId);
+        return messageRepository.activeRunCandidates(principal.tenantId(), conversationId).stream()
+                .map(id -> runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, id))
+                .flatMap(java.util.Optional::stream).filter(run -> run.status().isActive())
+                .sorted(java.util.Comparator.comparing(RunRecord::startedAt).reversed()).findFirst().orElse(null);
+    }
+
+    /** 消息必须来自当前会话仓储页；只返回关联 Run 状态，不向前端暴露额外主体或运行输入。 */
+    public java.util.Map<UUID, RunStatus> runStatuses(PrincipalRef principal, UUID agentId, List<ConversationMessage> messages) {
+        java.util.Map<UUID, RunStatus> statuses = new java.util.LinkedHashMap<>();
+        for (ConversationMessage message : messages) {
+            if (!principal.tenantId().equals(message.tenantId())) throw new IllegalArgumentException("消息租户不一致");
+            if (message.runId() != null && !statuses.containsKey(message.runId())) {
+                runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, message.runId())
+                        .ifPresent(run -> statuses.put(run.id(), run.status()));
+            }
+        }
+        return java.util.Map.copyOf(statuses);
+    }
+
+    /**
+     * 停止当前主体发起的会话 Run。锁只覆盖状态及审计短事务，不等待模型或外部调用。
+     * 执行句柄不可达时明确拒绝，避免把重启遗留或其他实例执行误报为停止成功。
+     */
+    public RunRecord cancel(PrincipalRef principal, UUID agentId, UUID conversationId, UUID runId) {
+        return executionService.controls().withRun(runId, () -> {
+            RunRecord current = run(principal, agentId, conversationId, runId);
+            if (!current.principalId().equals(principal.principalId())) {
+                runPersistenceService.auditStop(principal, current, "DENIED", "仅允许本轮发起人停止");
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅允许本轮发起人停止");
+            }
+            if (!current.status().isActive()) return current;
+            var execution = executionService.controls().find(runId);
+            if (current.status() == RunStatus.WAITING_APPROVAL && execution == null) {
+                return inTransaction(() -> {
+                    RunRecord stopping = runPersistenceService.requestCancellation(principal, current);
+                    approvalService.cancelWaiting(principal, stopping, conversationId);
+                    return runPersistenceService.complete(principal, stopping, new com.cmagent.core.domain.AgentRunResult(
+                            runId, RunStatus.CANCELLED, "", List.of(), current.startedAt(), Instant.now(), ""), List.of());
+                });
+            }
+            if (execution == null || !execution.belongsTo(current, conversationId)) {
+                throw new RunControlException(com.cmagent.api.ApiErrorCode.RUN_CONTROL_UNAVAILABLE,
+                        "本轮执行句柄不可达，请核对服务实例或联系管理员处理遗留运行");
+            }
+            if (!executionService.supportsCancellation()) {
+                throw new RunControlException(com.cmagent.api.ApiErrorCode.RUN_CONTROL_UNAVAILABLE,
+                        "当前运行时不支持停止，请等待本轮结束");
+            }
+            if (current.status() == RunStatus.CANCELLING) return current;
+            RunRecord stopping = runPersistenceService.requestCancellation(principal, current);
+            execution.cancellation().request();
+            return stopping;
+        });
     }
 
     /**
@@ -288,6 +384,11 @@ public class ConversationService {
         return normalized.substring(0, normalized.offsetByCodePoints(0, 40));
     }
 
+    /**
+     * 启动短事务的结果；两项在提交后才用于发布 SSE。
+     * @param run 已保存的当前 Run
+     * @param userMessage 与 Run 关联的已保存用户消息
+     */
     private record StartedState(RunRecord run, ConversationMessage userMessage) {
     }
 

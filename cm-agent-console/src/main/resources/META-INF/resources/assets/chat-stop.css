@@ -1,0 +1,10 @@
+.chat-run-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.chat-composer-footer .chat-icon-button { width: 40px; height: 40px; min-width: 40px; max-width: 40px; flex: 0 0 40px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.chat-icon-button[hidden] { display: none; }
+.chat-icon-button img { width: 18px; height: 18px; }
+.chat-stop-button { border-color: #a54a43; }
+.chat-stopped-note { color: #765047; font-size: 12px; margin: 8px 0 0; }
+@media (max-width: 600px) {
+    .chat-composer-footer { flex-wrap: wrap; gap: 8px; }
+    .chat-run-actions { margin-left: auto; }
+}

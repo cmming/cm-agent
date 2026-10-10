@@ -27,6 +27,32 @@ import java.util.UUID;
  * 在同一会话内仍然安全；锁只覆盖短暂的持久化事务，绝不覆盖模型调用。</p>
  */
 public class JdbcConversationMessageRepository implements ConversationMessageRepository {
+    @Override
+    public List<UUID> activeRunCandidates(UUID tenantId, UUID conversationId) {
+        // 消息和 Run 两侧都限定 tenant，避免通过损坏关联跨租户读取；只返回活动运行候选。
+        return jdbcClient.sql("""
+                SELECT DISTINCT m.run_id FROM messages m
+                JOIN runs r ON r.id = m.run_id AND r.tenant_id = m.tenant_id
+                WHERE m.tenant_id = :tenantId AND m.conversation_id = :conversationId
+                  AND r.status IN ('RUNNING', 'WAITING_APPROVAL', 'CANCELLING')
+                """)
+                .param("tenantId", tenantId.toString()).param("conversationId", conversationId.toString())
+                .query(String.class).list().stream().map(UUID::fromString).toList();
+    }
+
+    @Override
+    public List<ConversationMessage> listByRun(UUID tenantId, UUID conversationId, UUID runId) {
+        return jdbcClient.sql("""
+                SELECT id, tenant_id, conversation_id, role, sequence_no, sender_name,
+                       content_blocks_json, run_id, created_at
+                FROM messages
+                WHERE tenant_id = :tenantId AND conversation_id = :conversationId AND run_id = :runId
+                ORDER BY sequence_no
+                """)
+                .param("tenantId", tenantId.toString()).param("conversationId", conversationId.toString())
+                .param("runId", runId.toString()).query(this::mapMessage).list();
+    }
+
     private static final TypeReference<List<MessageContentBlock>> BLOCKS_TYPE = new TypeReference<>() {
     };
 

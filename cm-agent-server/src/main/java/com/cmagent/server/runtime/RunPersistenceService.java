@@ -36,6 +36,25 @@ import java.util.UUID;
 @Service
 /** 封装运行记录和工具调用记录的事务性写入，保持启动、完成状态一致。 */
 public class RunPersistenceService {
+    /** 登记停止和严格审计共用短事务；调用方须持有本实例运行锁且已校验主体归属。 */
+    RunRecord requestCancellation(PrincipalRef principal, RunRecord snapshot) {
+        java.util.function.Supplier<RunRecord> operation = () -> {
+            if (transactionTemplate == null) auditStop(principal, snapshot, "CANCELLING", "本轮停止请求已接受");
+            if (!runRepository.requestCancellation(snapshot)) {
+                throw new org.springframework.web.server.ResponseStatusException(HttpStatus.CONFLICT, "运行状态已变化，请刷新后核对");
+            }
+            if (transactionTemplate != null) auditStop(principal, snapshot, "CANCELLING", "本轮停止请求已接受");
+            return snapshot.requestCancellation();
+        };
+        return transactionTemplate == null ? operation.get()
+                : requireResult(transactionTemplate.execute(status -> operation.get()));
+    }
+
+    /** 停止操作审计只包含可信身份与状态，不复制技术异常或模型输出。 */
+    void auditStop(PrincipalRef principal, RunRecord run, String status, String message) {
+        auditAppender.append(principal.tenantId(), principal.principalId(), "AGENT_RUN_CANCEL",
+                "RUN", run.id().toString(), status, message);
+    }
     private static final String CONTROLLED_FAILURE = "Agent 运行失败";
     private static final Logger log = LoggerFactory.getLogger(RunPersistenceService.class);
 
@@ -469,6 +488,7 @@ public class RunPersistenceService {
         return switch (status) {
             case SUCCEEDED -> "Agent 运行完成";
             case DENIED -> "Agent 运行被拒绝";
+            case CANCELLED -> "Agent 运行已由用户停止";
             default -> CONTROLLED_FAILURE;
         };
     }

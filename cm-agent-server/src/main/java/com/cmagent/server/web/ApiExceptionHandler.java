@@ -170,6 +170,18 @@ public class ApiExceptionHandler {
      * @param exception 当前捕获的异常，用于转换或记录失败信息。
      */
     public ResponseEntity<ApiErrorResponse> statusFailure(ResponseStatusException exception, HttpServletRequest request) {
+        if (exception instanceof com.cmagent.server.runtime.RunControlException control) {
+            String errorId = RequestCorrelationFilter.errorIdOf(request);
+            Object supplied = request.getAttribute(ErrorDiagnosticLogger.DiagnosticContext.class.getName());
+            var context = supplied instanceof ErrorDiagnosticLogger.DiagnosticContext trusted
+                    ? trusted : ErrorDiagnosticLogger.DiagnosticContext.api(errorId, control.errorCode().name(), request.getRequestURI());
+            // 受控冲突只记录固定中文原因与可信标识，既可行动又不打印异常堆栈或模型输入。
+            org.slf4j.LoggerFactory.getLogger(ApiExceptionHandler.class).warn(
+                    "运行控制未完成。errorId={}, errorCode={}, operation={}, tenantId={}, principalId={}, runId={}, resource={}, reason={}",
+                    errorId, control.errorCode(), context.boundary(), context.tenantId(), context.principalId(),
+                    context.runId(), context.source(), redactor.redact(control.getReason()));
+            return response(HttpStatus.CONFLICT, control.errorCode(), redactor.redact(control.getReason()), request);
+        }
         HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
         return switch (status) {
             // ResponseStatusException 的 BAD_REQUEST 仅由业务层受控文案构造；

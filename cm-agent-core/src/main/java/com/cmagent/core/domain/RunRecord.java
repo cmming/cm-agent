@@ -46,11 +46,8 @@ public record RunRecord(
         output = output == null ? "" : output;
         errorMessage = errorMessage == null ? "" : errorMessage;
         Objects.requireNonNull(startedAt, "startedAt 不能为空");
-        if (status == RunStatus.RUNNING && finishedAt != null) {
-            throw new IllegalArgumentException("RUNNING 状态不能有 finishedAt");
-        }
-        if (status == RunStatus.WAITING_APPROVAL && finishedAt != null) {
-            throw new IllegalArgumentException("WAITING_APPROVAL 状态不能有 finishedAt");
+        if (status.isActive() && finishedAt != null) {
+            throw new IllegalArgumentException(status + " 状态不能有 finishedAt");
         }
         if (!status.isActive() && finishedAt == null) {
             throw new IllegalArgumentException("终态必须有 finishedAt");
@@ -96,13 +93,19 @@ public record RunRecord(
                 RunStatus.RUNNING, input, "", "", startedAt, null);
     }
 
-    /** 将当前活动记录转换为成功或失败终态并保留运行类型。 */
+    /**
+     * 将活动记录收口为终态；已登记停止只能以 CANCELLED 或真实基础设施失败收口。
+     * @param status 不再活动的目标状态
+     * @param output 已脱敏正文，可为空
+     * @param errorMessage 已脱敏失败原因，正常停止时为空
+     * @param finishedAt 实际执行退出时间，不能早于开始时间
+     * @return 保留运行身份的终态快照
+     * @throws IllegalStateException 已结束或已停止运行被迟到完成覆盖时拒绝
+     */
     public RunRecord complete(RunStatus status, String output, String errorMessage, Instant finishedAt) {
-        if (status == RunStatus.RUNNING) {
-            throw new IllegalArgumentException("finalStatus 不能为 RUNNING");
-        }
-        if (status == RunStatus.WAITING_APPROVAL) {
-            throw new IllegalArgumentException("finalStatus 不能为 WAITING_APPROVAL");
+        if (status.isActive()) throw new IllegalArgumentException("finalStatus 不能为 " + status);
+        if (this.status == RunStatus.CANCELLING && status != RunStatus.CANCELLED && status != RunStatus.FAILED) {
+            throw new IllegalStateException("已登记停止不能被正常完成覆盖");
         }
         if (!this.status.isActive()) {
             throw new IllegalStateException("只能完成 RUNNING 状态的运行");
@@ -123,5 +126,21 @@ public record RunRecord(
         }
         return new RunRecord(id, tenantId, agentId, principalId, kind,
                 RunStatus.WAITING_APPROVAL, input, "", "", startedAt, null);
+    }
+
+    /** 登记停止并保留原运行身份与开始时间，仍不写入完成时间。 */
+    public RunRecord requestCancellation() {
+        if (status != RunStatus.RUNNING && status != RunStatus.WAITING_APPROVAL) {
+            throw new IllegalStateException("当前运行不能登记停止");
+        }
+        return new RunRecord(id, tenantId, agentId, principalId, kind, RunStatus.CANCELLING,
+                input, output, errorMessage, startedAt, null);
+    }
+
+    /** 审批接受后重新进入执行态，不重建运行身份、开始时间或新轮次。 */
+    public RunRecord resumeAfterApproval() {
+        if (status != RunStatus.WAITING_APPROVAL) throw new IllegalStateException("只能恢复等待审批的运行");
+        return new RunRecord(id, tenantId, agentId, principalId, kind, RunStatus.RUNNING,
+                input, output, errorMessage, startedAt, null);
     }
 }

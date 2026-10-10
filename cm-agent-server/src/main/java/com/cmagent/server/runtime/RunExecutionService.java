@@ -45,6 +45,12 @@ import java.util.function.Consumer;
 @Service
 /** 编排 Agent 单轮运行，连接运行时、工具治理、持久化和输出脱敏边界。 */
 public class RunExecutionService {
+    /** 所有会话、审批恢复与停止共享本实例的句柄和短锁，不提供跨实例命令路由。 */
+    private final RunControlRegistry controls = new RunControlRegistry();
+
+    RunControlRegistry controls() { return controls; }
+
+    boolean supportsCancellation() { return runtime.supportsCancellation(); }
     private static final String CONTROLLED_FAILURE = "Agent 运行失败";
     private static final int EXECUTION_TRACE_PAYLOAD_MAX_CHARACTERS = 12_000;
     private static final Logger log = LoggerFactory.getLogger(RunExecutionService.class);
@@ -285,6 +291,31 @@ public class RunExecutionService {
             Consumer<AgentTextDelta> deltaConsumer,
             Consumer<AgentProgressEvent> progressConsumer
     ) {
+        return executePrepared(principal, context, runningRun, runtimeInput, conversationId, approvalDecisions,
+                selection, deltaConsumer, progressConsumer, java.util.function.Supplier::get);
+    }
+
+    /**
+     * 会话调用在运行返回后提供短事务收口，原调用入口仍保留；外部执行不进入该事务。
+     * finalizer 必须调用供应器一次，并在同一短事务保存消息或待审批记录。
+     */
+    AgentRuntimeResult runPreparedAndFinalize(PrincipalRef principal, UUID agentId, RunRecord run, String input,
+            UUID conversationId, RuntimeApprovalDecisions decisions, Consumer<AgentTextDelta> deltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer,
+            java.util.function.Function<java.util.function.Supplier<AgentRuntimeResult>, AgentRuntimeResult> finalizer) {
+        if (!principal.tenantId().equals(run.tenantId()) || !agentId.equals(run.agentId())
+                || !principal.principalId().equals(run.principalId())) {
+            throw new IllegalArgumentException("运行不属于当前可信主体或 Agent");
+        }
+        return executePrepared(principal, resolve(principal, agentId), run, input, conversationId,
+                decisions, null, deltaConsumer, progressConsumer, finalizer);
+    }
+
+    private AgentRuntimeResult executePrepared(PrincipalRef principal, ResolvedRunContext context, RunRecord runningRun,
+            String runtimeInput, UUID conversationId, RuntimeApprovalDecisions approvalDecisions,
+            SkillRuntimeSelection selection, Consumer<AgentTextDelta> deltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer,
+            java.util.function.Function<java.util.function.Supplier<AgentRuntimeResult>, AgentRuntimeResult> finalizer) {
         Objects.requireNonNull(deltaConsumer, "deltaConsumer 不能为空");
         Objects.requireNonNull(progressConsumer, "progressConsumer 不能为空");
 
@@ -298,11 +329,22 @@ public class RunExecutionService {
             AgentRunRequest runtimeRequest = new AgentRunRequest(
                     runningRun.id(), principal.tenantId(), context.agent(), context.modelConfig(), principal,
                     runtimeInput, context.authorizedTools(), conversationId, skills.versions(),
-                    skills.dependencyResolutions()
+                    skills.dependencyResolutions(), controls.find(runningRun.id()) == null
+                            ? new com.cmagent.core.runtime.RunCancellation()
+                            : controls.find(runningRun.id()).cancellation()
             );
-            Consumer<AgentTextDelta> safeDelta = delta -> deltaConsumer.accept(new AgentTextDelta(
-                    delta.replyId(), delta.blockId(), redactor.redact(delta.delta())));
-            Consumer<AgentProgressEvent> safeProgress = progress -> progressConsumer.accept(redactProgress(progress));
+            Consumer<AgentTextDelta> safeDelta = delta -> {
+                String text = redactor.redact(delta.delta());
+                var execution = controls.find(runningRun.id());
+                if (execution != null) {
+                    if (execution.cancellation().isRequested()) return;
+                    execution.append(text);
+                }
+                deltaConsumer.accept(new AgentTextDelta(delta.replyId(), delta.blockId(), text));
+            };
+            Consumer<AgentProgressEvent> safeProgress = progress -> {
+                if (!runtimeRequest.cancellation().isRequested()) progressConsumer.accept(redactProgress(progress));
+            };
             runtimeEnvelope = approvalDecisions == null
                     ? runtime.runStructured(runtimeRequest, safeDelta, safeProgress)
                     : runtime.resumeStructured(runtimeRequest, approvalDecisions, safeDelta, safeProgress);
@@ -348,8 +390,28 @@ public class RunExecutionService {
             throw new RuntimeExecutionException(runtimeFailure);
         }
 
-        // Runtime 成功返回后持久化运行终态与工具调用，再基于持久化记录构造脱敏响应。
+        AgentRuntimeResult envelope = runtimeEnvelope;
+        // 停止与终态用同一短锁竞争，会话 finalizer 将消息/审批与 Run 收口放进同一数据库事务。
+        return controls.withRun(runningRun.id(), () -> {
+            AgentRuntimeResult result = finalizer.apply(() -> finalizeResult(principal, context, runningRun, envelope));
+            // 等待审批必须在同一短锁内释放句柄，否则停止可能把已返回的片段误认作仍可中断执行。
+            controls.release(runningRun.id());
+            return result;
+        });
+    }
+
+    private AgentRuntimeResult finalizeResult(PrincipalRef principal, ResolvedRunContext context,
+                                             RunRecord runningRun, AgentRuntimeResult runtimeEnvelope) {
         AgentRunResult runtimeResult = runtimeEnvelope.run();
+        var execution = controls.find(runningRun.id());
+        if (execution != null && execution.cancellation().isRequested()) {
+            String partial = redactor.redact(execution.output());
+            runtimeResult = new AgentRunResult(runningRun.id(), com.cmagent.core.domain.RunStatus.CANCELLED,
+                    partial, runtimeResult.toolCalls(), runningRun.startedAt(), java.time.Instant.now(), "");
+            runtimeEnvelope = new AgentRuntimeResult(runtimeResult, partial.isBlank() ? null
+                    : new AgentMessageSnapshot(runningRun.id().toString(), context.agent().name(),
+                            List.of(MessageContentBlock.text(partial))));
+        }
         if (runtimeResult.status() == com.cmagent.core.domain.RunStatus.WAITING_APPROVAL) {
             // 每次 ASK 都先保存当前片段已发生的工具事实；重复等待状态由持久化服务保持，不重复迁移。
             RunRecord waiting = persistenceService.waitForApproval(

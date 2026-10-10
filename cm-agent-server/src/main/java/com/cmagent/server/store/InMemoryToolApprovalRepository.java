@@ -17,6 +17,19 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** 仅供 memory profile 和测试使用的原子审批仓储。 */
 public final class InMemoryToolApprovalRepository implements ToolApprovalRepository {
+    @Override
+    public boolean cancelPending(ToolApprovalRequest snapshot, String actor, String displayName, Instant now) {
+        boolean[] changed = {false};
+        approvals.computeIfPresent(snapshot.id(), (id, current) -> {
+            if (!current.equals(snapshot) || current.status() != ToolApprovalStatus.PENDING) return current;
+            changed[0] = true;
+            return new ToolApprovalRequest(current.id(), current.tenantId(), current.agentId(), current.scope(),
+                    current.conversationId(), current.runId(), current.requestedBy(), current.requestedByDisplayName(),
+                    ToolApprovalStatus.CANCELLED, current.expiresAt(), current.version() + 1, current.checkpointRef(),
+                    current.createdAt(), now, actor, displayName, now, current.items());
+        });
+        return changed[0];
+    }
     private final Map<UUID, ToolApprovalRequest> approvals = new ConcurrentHashMap<>();
 
     @Override

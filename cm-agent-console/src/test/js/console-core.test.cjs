@@ -900,6 +900,7 @@ function approvalFlowHarness({stream, refresh} = {}) {
         $: () => ({focus() {}}), setStatus() {}, renderMarkdown() {}, renderChatProgress() {},
         appendChatStreamingMessage: () => ({article: {remove() {}}, output: {}}),
         loadConversations: async () => {},
+        setActiveChatRun: (run) => { state.activeChatRun = run; },
         refreshApprovalState: async () => {
             queries += 1;
             if (refresh) return refresh(state, approval);
@@ -1064,6 +1065,7 @@ function historyFlowHarness(request) {
         shortIdentifier: (id) => id.slice(0, 8), setStatus: (target, message) => { target.textContent = message; },
         sessionEpoch: {capture: () => session, isCurrent: (value) => value === session},
         chatLoadRevision: core.createLoadRevisionGate(), approvalHistoryRevision: core.createLoadRevisionGate(),
+        setActiveChatRun: (run) => { state.activeChatRun = run; },
         renderChatApprovals() {}, renderChatMessages(messages) {
             ids.chatMessageList.replaceChildren(...messages.map((message) => {
                 const item = node("article", {className: "chat-message"});
@@ -1071,7 +1073,7 @@ function historyFlowHarness(request) {
                 return item;
             }));
         },
-        api: {request: async (url, options) => { requests.push({url, options}); return request(url, options); }}
+        api: {request: async (url, options) => { requests.push({url, options}); return url.endsWith("/active-run") ? null : request(url, options); }}
     };
     const loading = app.slice(app.indexOf("async function loadChatMessages("), app.indexOf("function renderChatApprovals("));
     const history = app.slice(app.indexOf("async function refreshApprovalState("), app.indexOf("function streamEventError("));
@@ -1094,7 +1096,7 @@ test("实际会话加载在重新进入时恢复历史并保留待审批入口",
     flow.actions.resetApprovalHistory();
     await flow.actions.loadChatMessages("agent", "conversation");
     assert.equal(flow.state.approvalHistory.length, 2);
-    assert.equal(flow.requests.length, 6);
+    assert.equal(flow.requests.length, 8);
     assert.ok(flow.requests.every(({options}) => !options?.method || options.method === "GET"));
 });
 
@@ -1130,7 +1132,7 @@ test("提交后权威查询将终态放入历史而不是覆盖下一轮待审�
     assert.equal(flow.state.pendingApprovals.has("done"), false);
     assert.equal(flow.state.pendingApprovals.has("next"), true);
     assert.deepEqual(Array.from(flow.state.approvalHistory, (item) => item.approvalId).sort(), ["done", "earlier"]);
-    assert.equal(flow.requests.length, 4);
+    assert.equal(flow.requests.length, 5);
 });
 
 test("历史失败不伪装空数据并保留分页游标和错误编号供重试", async () => {

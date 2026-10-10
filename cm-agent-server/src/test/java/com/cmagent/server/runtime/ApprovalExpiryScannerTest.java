@@ -67,7 +67,7 @@ class ApprovalExpiryScannerTest {
                 UUID.randomUUID(), UUID.randomUUID(), request.agentId(), 0, SkillTrialStatus.WAITING_APPROVAL,
                 false, "initiator", NOW.minusSeconds(20), NOW.minusSeconds(20))));
         var audit = mock(AuditAppender.class);
-        var execution = mock(RunExecutionService.class);
+        var execution = RunExecutionTestDouble.mockExecution();
         var service = new ToolApprovalService(approvals, runs, mock(ConversationMessageRepository.class),
                 mock(RuntimeCheckpointRepository.class), mock(RunPersistenceService.class), execution,
                 (actor, permission) -> com.cmagent.core.security.AuthorizationDecision.deny("系统不执行工具"),
@@ -76,7 +76,7 @@ class ApprovalExpiryScannerTest {
         assertThat(skills.trials().find(request.tenantId(), request.runId()).orElseThrow().status())
                 .isEqualTo(SkillTrialStatus.FAILED);
         assertThat(service.expireFromSystem(request, NOW)).isFalse();
-        verifyNoInteractions(execution);
+        RunExecutionTestDouble.assertNoExecution(execution);
     }
 
     @Test
@@ -111,7 +111,7 @@ class ApprovalExpiryScannerTest {
         var runs = new InMemoryPlatformStore();
         var checkpoints = mock(RuntimeCheckpointRepository.class);
         var audit = mock(AuditAppender.class);
-        var execution = mock(RunExecutionService.class);
+        var execution = RunExecutionTestDouble.mockExecution();
         var service = service(repository, runs, checkpoints, audit, execution);
         for (var scope : ToolApprovalScope.values()) {
             var request = request(scope, UUID.randomUUID(), UUID.randomUUID(), NOW);
@@ -132,7 +132,7 @@ class ApprovalExpiryScannerTest {
             verify(audit).append(request.tenantId(), "system:approval-expiry", "TOOL_APPROVAL_EXPIRE", "TOOL_APPROVAL",
                     request.id().toString(), "EXPIRED", "高风险工具审批请求已过期");
         }
-        verifyNoInteractions(execution);
+        RunExecutionTestDouble.assertNoExecution(execution);
         assertThat(repository.findExpiredPending(new ApprovalExpiryPage(NOW, null, null, 100))).isEmpty();
     }
 
@@ -142,7 +142,7 @@ class ApprovalExpiryScannerTest {
         var runs = mock(RunRepository.class);
         var checkpoints = mock(RuntimeCheckpointRepository.class);
         var audit = mock(AuditAppender.class);
-        var execution = mock(RunExecutionService.class);
+        var execution = RunExecutionTestDouble.mockExecution();
         var service = service(repository, runs, checkpoints, audit, execution);
         var request = request(ToolApprovalScope.RUN, UUID.randomUUID(), UUID.randomUUID(), NOW);
         repository.save(request);
@@ -150,7 +150,8 @@ class ApprovalExpiryScannerTest {
                 ToolApprovalStatus.APPROVED, Map.of(request.items().getFirst().id(), ToolApprovalDecision.APPROVE),
                 "initiator", "测试", NOW.minusSeconds(1))).isTrue();
         assertThat(service.expireFromSystem(request, NOW)).isFalse();
-        verifyNoInteractions(runs, checkpoints, audit, execution);
+        RunExecutionTestDouble.assertNoExecution(execution);
+        verifyNoInteractions(runs, checkpoints, audit);
         for (RunStatus status : List.of(RunStatus.RUNNING, RunStatus.SUCCEEDED)) {
             var stale = request(ToolApprovalScope.RUN, UUID.randomUUID(), UUID.randomUUID(), NOW);
             repository.save(stale);
@@ -159,7 +160,8 @@ class ApprovalExpiryScannerTest {
             when(runs.findByTenantAndAgentAndId(stale.tenantId(), stale.agentId(), stale.runId())).thenReturn(Optional.of(run));
             assertThat(service.expireFromSystem(stale, NOW)).isTrue();
         }
-        verifyNoInteractions(checkpoints, execution);
+        RunExecutionTestDouble.assertNoExecution(execution);
+        verifyNoInteractions(checkpoints);
         verify(runs, never()).expireWaitingApproval(any(), any());
     }
 

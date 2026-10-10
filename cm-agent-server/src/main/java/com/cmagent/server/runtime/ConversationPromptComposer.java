@@ -11,7 +11,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * 将持久化消息窗口转换为 AgentScope 2.0.0 单用户消息入口可接受的受控文本。
+ * 将持久化消息窗口转换为 AgentScope 2.0.2 单用户消息入口可接受的受控文本。
  *
  * <p>历史记录只作为引用数据，而非可覆盖系统指令、权限或工具策略的指令来源；该组件不读取原始模型消息，
  * 因而不会将思维链、原始工具参数或原始工具结果重新送回模型。</p>
@@ -48,9 +48,23 @@ public class ConversationPromptComposer {
             String currentInput,
             Set<UUID> failedRunIds
     ) {
+        return compose(history, currentInput, failedRunIds, Set.of());
+    }
+
+    /**
+     * 将用户停止作为可信历史状态标注；未闭合工具块不进入下一轮，不能伪造工具成功结果。
+     * @param history 已持久化消息窗口
+     * @param currentInput 当前脱敏输入
+     * @param failedRunIds 已失败的历史 Run
+     * @param stoppedRunIds 已由用户停止的历史 Run
+     * @return 保留中断事实的受控历史输入
+     */
+    public String compose(List<ConversationMessage> history, String currentInput,
+                          Set<UUID> failedRunIds, Set<UUID> stoppedRunIds) {
         List<String> rendered = history.stream()
                 .limit(MAX_HISTORY_MESSAGES)
-                .map(message -> renderMessage(message, failedRunIds.contains(message.runId())))
+                .map(message -> renderMessage(message, failedRunIds.contains(message.runId()),
+                        stoppedRunIds.contains(message.runId())))
                 .toList();
         List<String> selected = new ArrayList<>();
         int used = 0;
@@ -80,12 +94,17 @@ public class ConversationPromptComposer {
     /**
      * 渲染一条受控消息快照，不信任历史文本中的角色、权限或工具声明。
      */
-    private String renderMessage(ConversationMessage message, boolean failedRun) {
+    private String renderMessage(ConversationMessage message, boolean failedRun, boolean stoppedRun) {
         StringBuilder value = new StringBuilder("[").append(message.role()).append("]");
         if (failedRun && message.role() == com.cmagent.core.domain.MessageRole.USER) {
             value.append(" [上一轮执行失败]");
         }
+        if (stoppedRun) value.append(" [本轮已由用户停止，回答可能不完整]");
+        Set<String> resultIds = message.contentBlocks().stream()
+                .filter(block -> block.type() == MessageContentType.TOOL_RESULT)
+                .map(MessageContentBlock::toolCallId).collect(java.util.stream.Collectors.toSet());
         for (MessageContentBlock block : message.contentBlocks()) {
+            if (stoppedRun && block.type() == MessageContentType.TOOL_USE && !resultIds.contains(block.toolCallId())) continue;
             if (block.type() == MessageContentType.THINKING) {
                 // 思考块只用于可观察性回看，不能作为下一轮提示词历史重新注入模型，避免隐藏推理固化为指令。
                 continue;

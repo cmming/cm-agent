@@ -887,6 +887,34 @@ class AgentScopeRuntimeContractTest {
         assertThat(requestCount).hasValue(1);
     }
 
+    @Test
+    void 停止后迟到基础设施异常仍严格抛出() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        var failure = new ToolInvocationInfrastructureException("审计不可用", new IllegalStateException("测试根因"));
+        var runtime = runtime(request -> {
+            entered.countDown();
+            // 模拟下游忽略取消，退出时才暴露审计失败；不能被 CANCELLED 覆盖。
+            while (true) {
+                try { if (release.await(5, TimeUnit.SECONDS)) break; }
+                catch (InterruptedException ignored) { }
+            }
+            throw failure;
+        }, new AgentScopeRuntimeOptions(Duration.ofSeconds(5), Duration.ofSeconds(5), 1));
+        var request = request(List.of(tool()), "迟到工具超时");
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var result = executor.submit(() -> runtime.run(request));
+            try {
+                assertThat(entered.await(3, TimeUnit.SECONDS)).isTrue();
+                request.cancellation().request();
+                assertThatThrownBy(() -> result.get(100, TimeUnit.MILLISECONDS))
+                        .isInstanceOf(java.util.concurrent.TimeoutException.class);
+            } finally { release.countDown(); }
+            assertThatThrownBy(() -> result.get(3, TimeUnit.SECONDS))
+                    .isInstanceOf(java.util.concurrent.ExecutionException.class).hasCause(failure);
+        }
+    }
+
     private AgentRuntime runtime(
             ToolInvocationGateway gateway,
             AgentScopeRuntimeOptions options
@@ -898,6 +926,52 @@ class AgentScopeRuntimeContractTest {
                 Clock.fixed(Instant.parse("2026-07-16T00:00:00Z"), ZoneOffset.UTC));
     }
 
+    @Test
+    void 用户停止模型等待不重试并关闭本轮() throws Exception {
+        var runtime = runtime(request -> { throw new AssertionError("不得执行工具"); },
+                new AgentScopeRuntimeOptions(Duration.ofSeconds(5), Duration.ofSeconds(5), 1));
+        var request = request(List.of(), "触发超时");
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var result = executor.submit(() -> runtime.run(request));
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            while (requestCount.get() == 0 && System.nanoTime() < deadline) Thread.sleep(5);
+            assertThat(requestCount.get()).isEqualTo(1);
+            request.cancellation().request();
+            assertThat(result.get(2, TimeUnit.SECONDS).status()).isEqualTo(RunStatus.CANCELLED);
+            assertThat(requestCount.get()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void 用户停止等待忽略中断工具实际退出且禁止后续并行调用() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger();
+        var runtime = runtime(request -> {
+            calls.incrementAndGet();
+            entered.countDown();
+            boolean released = false;
+            while (!released) {
+                try { released = release.await(5, TimeUnit.SECONDS); }
+                catch (InterruptedException ignored) { /* 故意模拟不响应取消的外部调用，终态必须等待它退出。 */ }
+            }
+            return ToolInvocationResult.succeeded("外部调用已完成");
+        }, new AgentScopeRuntimeOptions(Duration.ofSeconds(5), Duration.ofSeconds(5), 1));
+        var request = request(List.of(tool()), "迟到工具超时");
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var result = executor.submit(() -> runtime.run(request));
+            try {
+                assertThat(entered.await(3, TimeUnit.SECONDS)).isTrue();
+                request.cancellation().request();
+                assertThatThrownBy(() -> result.get(150, TimeUnit.MILLISECONDS)).isInstanceOf(java.util.concurrent.TimeoutException.class);
+                assertThat(calls.get()).isEqualTo(1);
+            } finally { release.countDown(); }
+            assertThat(result.get(3, TimeUnit.SECONDS).status()).isEqualTo(RunStatus.CANCELLED);
+            assertThat(calls.get()).isEqualTo(1);
+            assertThat(requestCount.get()).isEqualTo(1);
+        }
+    }
+
     private AgentRuntime runtime(
             ToolInvocationGateway gateway,
             AgentScopeRuntimeOptions options,

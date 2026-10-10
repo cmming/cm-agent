@@ -16,6 +16,18 @@ import java.util.UUID;
  * 定义 Agent 运行记录的创建、终态更新、查询和游标分页契约。
  */
 public interface RunRepository {
+    /** 使用原发起人和等待态快照原子恢复 RUNNING；停止先赢得竞争时返回 false，不能重放原 Run。 */
+    default boolean resumeWaitingApproval(RunRecord snapshot) {
+        throw new UnsupportedOperationException("当前仓储不支持原子审批恢复");
+    }
+    /**
+     * 使用可信仓储快照原子登记停止；归属、主体和状态变化时返回 false，不覆盖已完成结果。
+     * 旧仓储默认明确拒绝，避免读写分离伪装成原子停止。
+     */
+    default boolean requestCancellation(RunRecord snapshot) {
+        throw new UnsupportedOperationException("当前仓储不支持停止");
+    }
+
     /**
      * 仅在可信租户、Agent、Run、发起人匹配且仍为 WAITING_APPROVAL 时原子收口为 DENIED。
      * 未命中返回 false，禁止随后删除检查点；不会覆盖已恢复的 RUNNING 或终态。
@@ -38,7 +50,7 @@ public interface RunRepository {
     /**
      * 将当前租户内处于非终态的运行记录收口为终态。
      *
-     * <p>只有 RUNNING 或 WAITING_APPROVAL 记录允许完成，防止已终态记录被重复收口或改写历史；
+     * <p>只有 RUNNING、WAITING_APPROVAL 或 CANCELLING 记录允许完成，防止已终态记录被重复收口或改写历史；
      * 运行不存在、不属于该租户或已终态时的行为由实现定义并有测试覆盖。</p>
      *
      * @param tenantId 当前租户标识

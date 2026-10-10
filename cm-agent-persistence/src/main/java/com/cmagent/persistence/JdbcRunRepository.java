@@ -20,6 +20,30 @@ import java.util.UUID;
 /** 使用 JDBC 持久化 Agent 运行的状态、输入、输出和时间信息。 */
 public class JdbcRunRepository implements RunRepository {
     @Override
+    public boolean resumeWaitingApproval(RunRecord snapshot) {
+        if (snapshot.status() != RunStatus.WAITING_APPROVAL) return false;
+        // 审批决定和状态恢复共享上层短事务，归属条件不能由客户端提交的主体替代。
+        return jdbcClient.sql("""
+                UPDATE runs SET status = 'RUNNING'
+                WHERE tenant_id = :tenantId AND agent_id = :agentId AND id = :runId
+                  AND principal_id = :principalId AND status = 'WAITING_APPROVAL'
+                """).param("tenantId", snapshot.tenantId().toString()).param("agentId", snapshot.agentId().toString())
+                .param("runId", snapshot.id().toString()).param("principalId", snapshot.principalId()).update() == 1;
+    }
+    @Override
+    public boolean requestCancellation(RunRecord snapshot) {
+        if (snapshot.status() != RunStatus.RUNNING && snapshot.status() != RunStatus.WAITING_APPROVAL) return false;
+        // 使用仓储快照完整归属和原状态竞争，完成先提交时不能覆盖其结果。
+        return jdbcClient.sql("""
+                UPDATE runs SET status = 'CANCELLING'
+                WHERE tenant_id = :tenantId AND agent_id = :agentId AND id = :runId
+                  AND principal_id = :principalId AND status = :status
+                """)
+                .param("tenantId", snapshot.tenantId().toString()).param("agentId", snapshot.agentId().toString())
+                .param("runId", snapshot.id().toString()).param("principalId", snapshot.principalId())
+                .param("status", snapshot.status().name()).update() == 1;
+    }
+    @Override
     public boolean expireWaitingApproval(RunRecord snapshot, Instant finishedAt) {
         // 必须只命中等待态，避免读写期间恢复为 RUNNING 后仍被扫描终结。
         return jdbcClient.sql("""
@@ -99,7 +123,7 @@ public class JdbcRunRepository implements RunRepository {
 
     @Override
     /**
-     * 将仍处于 {@code RUNNING} 的运行原子更新为最终状态。
+     * 按读取到的活动状态进行条件终态更新；停止中的运行不能被迟到成功覆盖。
      *
      * @param tenantId 当前租户标识
      * @param runId 待完成的运行标识
@@ -131,7 +155,7 @@ public class JdbcRunRepository implements RunRepository {
                             error_message = :errorMessage,
                             finished_at = :finishedAt
                         WHERE tenant_id = :tenantId AND id = :runId
-                          AND status IN ('RUNNING', 'WAITING_APPROVAL')
+                          AND status = :expectedStatus
                         """)
                 .param("status", completed.status().name())
                 .param("output", nullIfBlank(completed.output()))
@@ -139,6 +163,7 @@ public class JdbcRunRepository implements RunRepository {
                 .param("finishedAt", Timestamp.from(completed.finishedAt()))
                 .param("tenantId", tenantId.toString())
                 .param("runId", runId.toString())
+                .param("expectedStatus", existing.status().name())
                 .update();
         if (updated != 1) {
             throw new NoSuchElementException("Run 不存在");

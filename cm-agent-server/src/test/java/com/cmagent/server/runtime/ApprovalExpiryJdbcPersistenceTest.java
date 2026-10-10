@@ -93,7 +93,7 @@ class ApprovalExpiryJdbcPersistenceTest {
         checkpoints = new JdbcRuntimeCheckpointRepository(jdbc);
         audits = new JdbcAuditEventRepository(jdbc, tx);
         trials = new JdbcSkillTrialRepository(jdbc, tx);
-        runtime = mock(RunExecutionService.class);
+        runtime = RunExecutionTestDouble.mockExecution();
         messages = mock(ConversationMessageRepository.class);
         tenant = UUID.randomUUID();
         agent = UUID.randomUUID();
@@ -136,7 +136,8 @@ class ApprovalExpiryJdbcPersistenceTest {
         assertThat(service.expireFromSystem(request, CUTOFF)).isFalse();
         assertThat(audits.listByTenant(tenant, 20)).hasSize(scope == ToolApprovalScope.RUN ? 3 : 2)
                 .allSatisfy(event -> assertThat(event.principalId()).isEqualTo(SYSTEM));
-        verifyNoInteractions(runtime, messages);
+        RunExecutionTestDouble.assertNoExecution(runtime);
+        verifyNoInteractions(messages);
     }
 
     @ParameterizedTest
@@ -150,7 +151,8 @@ class ApprovalExpiryJdbcPersistenceTest {
         assertThat(outcomes).containsExactlyInAnyOrder(true, false);
         assertClosed(request);
         assertThat(audits.listByTenant(tenant, 20)).hasSize(scope == ToolApprovalScope.RUN ? 3 : 2);
-        verifyNoInteractions(runtime, messages);
+        RunExecutionTestDouble.assertNoExecution(runtime);
+        verifyNoInteractions(messages);
     }
 
     @ParameterizedTest
@@ -172,7 +174,8 @@ class ApprovalExpiryJdbcPersistenceTest {
             assertClosed(request);
             assertThat(audits.listByTenant(tenant, 20)).hasSize(scope == ToolApprovalScope.RUN ? 3 : 2);
         }
-        verifyNoInteractions(runtime, messages);
+        RunExecutionTestDouble.assertNoExecution(runtime);
+        verifyNoInteractions(messages);
     }
 
     @ParameterizedTest
@@ -195,7 +198,8 @@ class ApprovalExpiryJdbcPersistenceTest {
         assertThat(candidates).extracting(ToolApprovalRequest::id).containsExactly(request.id());
         assertThat(freshService.expireFromSystem(candidates.getFirst(), CUTOFF)).isTrue();
         assertClosed(request);
-        verifyNoInteractions(runtime, messages);
+        RunExecutionTestDouble.assertNoExecution(runtime);
+        verifyNoInteractions(messages);
     }
 
     @Test
@@ -247,7 +251,8 @@ class ApprovalExpiryJdbcPersistenceTest {
         }
         assertThat(audits.listByTenant(tenant, 20)).hasSize(4)
                 .allSatisfy(event -> assertThat(event.eventType()).isEqualTo("TOOL_APPROVAL_EXPIRE"));
-        verifyNoInteractions(runtime, messages);
+        RunExecutionTestDouble.assertNoExecution(runtime);
+        verifyNoInteractions(messages);
     }
 
     @ParameterizedTest
@@ -260,7 +265,8 @@ class ApprovalExpiryJdbcPersistenceTest {
         assertThat(run(staleCandidate).status()).isEqualTo(RunStatus.WAITING_APPROVAL);
         assertThat(hasCheckpoint(staleCandidate)).isTrue();
         assertThat(audits.listByTenant(tenant, 20)).isEmpty();
-        verifyNoInteractions(runtime, messages);
+        RunExecutionTestDouble.assertNoExecution(runtime);
+        verifyNoInteractions(messages);
     }
 
     @Test
@@ -304,7 +310,8 @@ class ApprovalExpiryJdbcPersistenceTest {
         assertThat(hasCheckpoint(request)).isTrue();
         assertThat(trials.find(tenant, request.runId()).orElseThrow().status()).isEqualTo(SkillTrialStatus.WAITING_APPROVAL);
         assertThat(audits.listByTenant(tenant, 20)).isEmpty();
-        verifyNoInteractions(runtime, messages);
+        RunExecutionTestDouble.assertNoExecution(runtime);
+        verifyNoInteractions(messages);
     }
 
     @Test
@@ -334,6 +341,60 @@ class ApprovalExpiryJdbcPersistenceTest {
     private ToolApprovalService service(AuditAppender appender) {
         return new ToolApprovalService(approvals, runs, messages, checkpoints, mock(RunPersistenceService.class), runtime,
                 mock(PermissionEvaluator.class), appender, new SensitiveDataRedactor(), new AgentScopeRuntimeProperties(), tx, trials);
+    }
+
+    @Test
+    void 停止审批CAS和终态保护及会话查询在双库保持一致() {
+        var request = fixture(ToolApprovalScope.CONVERSATION, RunStatus.WAITING_APPROVAL, CUTOFF.plusSeconds(60), UUID.randomUUID());
+        var waiting = runs.findByTenantAndAgentAndId(tenant, agent, request.runId()).orElseThrow();
+        var messageStore = new JdbcConversationMessageRepository(jdbc, new ObjectMapper(), tx);
+        messageStore.append(tenant, new ConversationMessageDraft(UUID.randomUUID(), tenant, request.conversationId(),
+                MessageRole.USER, REQUESTER, List.of(MessageContentBlock.text("停止测试")), request.runId(), CUTOFF));
+        assertThat(messageStore.activeRunCandidates(tenant, request.conversationId())).contains(request.runId());
+        assertThat(messageStore.listByRun(UUID.randomUUID(), request.conversationId(), request.runId())).isEmpty();
+        assertThat(messageStore.listByRun(tenant, UUID.randomUUID(), request.runId())).isEmpty();
+        assertThat(runs.requestCancellation(waiting)).isTrue();
+        assertThat(runs.requestCancellation(waiting)).isFalse();
+        assertThat(approvals.cancelPending(request, REQUESTER, "发起人", CUTOFF)).isTrue();
+        assertThat(approvals.cancelPending(request, REQUESTER, "发起人", CUTOFF)).isFalse();
+        assertThat(approvals.decide(tenant, agent, request.conversationId(), request.id(), request.version(),
+                ToolApprovalStatus.APPROVED, Map.of(request.items().getFirst().id(), ToolApprovalDecision.APPROVE),
+                REQUESTER, "发起人", CUTOFF)).isFalse();
+        assertThatThrownBy(() -> runs.complete(tenant, request.runId(), RunStatus.SUCCEEDED, "迟到回答", "", CUTOFF))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(runs.complete(tenant, request.runId(), RunStatus.CANCELLED, "部分正文", "", CUTOFF).status())
+                .isEqualTo(RunStatus.CANCELLED);
+        assertThat(messageStore.activeRunCandidates(tenant, request.conversationId())).isEmpty();
+        assertThatThrownBy(() -> runs.complete(tenant, request.runId(), RunStatus.FAILED, "", "不能覆盖", CUTOFF))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 停止短事务失败回滚运行审批检查点() {
+        var request = fixture(ToolApprovalScope.CONVERSATION, RunStatus.WAITING_APPROVAL, CUTOFF.plusSeconds(60), UUID.randomUUID());
+        var waiting = runs.findByTenantAndAgentAndId(tenant, agent, request.runId()).orElseThrow();
+        assertThatThrownBy(() -> tx.execute(status -> {
+            assertThat(runs.requestCancellation(waiting)).isTrue();
+            assertThat(approvals.cancelPending(request, REQUESTER, "发起人", CUTOFF)).isTrue();
+            checkpoints.deleteSession(tenant, tenant + ":" + REQUESTER, request.runId().toString());
+            throw new AuditPersistenceException("受控失败", new IllegalStateException("模拟审计故障"));
+        })).isInstanceOf(AuditPersistenceException.class);
+        assertThat(runs.findByTenantAndAgentAndId(tenant, agent, request.runId()).orElseThrow().status()).isEqualTo(RunStatus.WAITING_APPROVAL);
+        assertThat(approvals.find(tenant, agent, request.conversationId(), request.id()).orElseThrow().status()).isEqualTo(ToolApprovalStatus.PENDING);
+        assertThat(checkpoints.exists(tenant, tenant + ":" + REQUESTER, request.runId().toString())).isTrue();
+    }
+
+    @Test
+    void 审批恢复原子回到运行中且停止后不能再次恢复() {
+        var request = fixture(ToolApprovalScope.CONVERSATION, RunStatus.WAITING_APPROVAL, CUTOFF.plusSeconds(60), UUID.randomUUID());
+        var waiting = runs.findByTenantAndAgentAndId(tenant, agent, request.runId()).orElseThrow();
+        assertThat(runs.resumeWaitingApproval(waiting)).isTrue();
+        assertThat(runs.resumeWaitingApproval(waiting)).isFalse();
+        var running = runs.findByTenantAndAgentAndId(tenant, agent, request.runId()).orElseThrow();
+        assertThat(running.status()).isEqualTo(RunStatus.RUNNING);
+        assertThat(running.id()).isEqualTo(waiting.id());
+        assertThat(runs.requestCancellation(running)).isTrue();
+        assertThat(runs.resumeWaitingApproval(waiting)).isFalse();
     }
 
     /** 两个 JVM 只共享一次性测试库；随机密钥和数据库凭据不放入命令行或诊断输出。 */

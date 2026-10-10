@@ -10,6 +10,12 @@ public enum RunStatus {
     /** AgentScope 已暂停并等待人工审批；该状态仍是非终态，不允许出现完成时间。 */
     WAITING_APPROVAL,
 
+    /** 用户停止已登记，执行器与在途调用尚未全部退出；不能启动同会话下一轮。 */
+    CANCELLING,
+
+    /** 用户停止已收口，保留脱敏部分回答；原 Run 不允许恢复或再次完成。 */
+    CANCELLED,
+
     /** 正常完成，输出摘要已脱敏。 */
     SUCCEEDED,
 
@@ -22,9 +28,9 @@ public enum RunStatus {
     /**
      * 判断状态是否仍可能继续推进。
      *
-     * @return RUNNING 或 WAITING_APPROVAL 时返回 {@code true}
+     * @return RUNNING、WAITING_APPROVAL 或 CANCELLING 时返回 {@code true}
      */
     public boolean isActive() {
-        return this == RUNNING || this == WAITING_APPROVAL;
+        return this == RUNNING || this == WAITING_APPROVAL || this == CANCELLING;
     }
 }

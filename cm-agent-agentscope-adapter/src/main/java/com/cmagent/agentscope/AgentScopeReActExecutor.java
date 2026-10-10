@@ -337,6 +337,8 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         List<AgentScopeToolBridge> bridges = new ArrayList<>();
         // 同一次运行的所有工具必须共享门控，才能在任一工具超时、取消或基础设施失败后统一熔断。
         AgentScopeRunGate runGate = new AgentScopeRunGate(options.toolTimeout());
+        var cancellation = spec.request().cancellation();
+        runGate.bindCancellation(cancellation);
         ReActAgent agent = null;
         RuntimeContext context = null;
         AgentScopeSkillSession skillSession = null;
@@ -347,6 +349,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                 spec.runId(), spec.tenantId(), spec.agentId(), spec.principalId(),
                 spec.request().tools().size(), options.modelTimeout(), options.toolTimeout());
         try {
+            if (cancellation.isRequested()) return cancelledResult(bridges);
             Toolkit toolkit = new Toolkit();
             // ObjectMapper 仅服务于本次运行，Schema 在桥接器构造时即完成校验，避免模型启动后才失败。
             ObjectMapper objectMapper = new ObjectMapper();
@@ -409,7 +412,10 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                     ? new UserMessage(spec.userInput())
                     : resumeMessage(agent, context, decisions, objectMapper, spec.request().tools());
             agent.streamEvents(inputMessage, context)
+                    // shared Future 的订阅取消不能反向取消信号；停止即取消模型流，无需等待下一段文本。
+                    .takeUntilOther(reactor.core.publisher.Mono.fromFuture(cancellation.signal(), true))
                     .doOnNext(event -> {
+                        if (cancellation.isRequested()) throw new com.cmagent.core.runtime.RunCancellation.StoppedException();
                         if (event instanceof RequireUserConfirmEvent required) {
                             approvalEvent.set(required);
                         }
@@ -468,6 +474,10 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                     // Core 的运行时契约是同步的，因此在这里等待整个 AgentScope 事件流完成。
                     .blockLast();
 
+            if (cancellation.isRequested()) {
+                interruptOnce(runGate, agent, context, lifecycle);
+                return cancelledResult(bridges);
+            }
             throwIfRunAborted(runGate, agent, context, lifecycle);
             List<ToolCallRecord> records = collectRecords(bridges);
             // 正常路径在结果映射前记录一次事件流收尾，便于把工具记录数量与最终消息存在性关联排查。
@@ -486,6 +496,11 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             } catch (RuntimeException infrastructureFailure) {
                 primaryFailure = infrastructureFailure;
                 throw infrastructureFailure;
+            }
+            if (cancellation.isRequested()) {
+                if (agent != null && context != null) interruptOnce(runGate, agent, context, lifecycle);
+                primaryFailure = null;
+                return cancelledResult(bridges);
             }
             List<ToolCallRecord> records = collectRecords(bridges);
             boolean timedOut = runGate.isToolTimedOut() || isTimeoutFailure(exception);
@@ -527,15 +542,27 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             }
             throw exception;
         } finally {
+            // 响应式订阅结束不代表外部网关已退出；先等待真实调用释放，再删除检查点或交付终态。
+            if (cancellation.isRequested()) cancellation.awaitQuiescence();
             RuntimeException finalizationFailure = null;
+            if (cancellation.isRequested()) {
+                // 停止可能先结束订阅，严格治理失败随后才从不响应中断的网关返回；等待后重新检查，不能伪报正常停止。
+                try {
+                    runGate.throwIfInfrastructureFailure();
+                    runGate.throwIfSkillFailure();
+                } catch (RuntimeException failure) {
+                    finalizationFailure = failure;
+                }
+            }
             if (skillSession != null) {
                 try {
                     skillSession.close();
                 } catch (RuntimeException cleanupFailure) {
-                    finalizationFailure = cleanupFailure;
+                    if (finalizationFailure == null) finalizationFailure = cleanupFailure;
+                    else if (finalizationFailure != cleanupFailure) finalizationFailure.addSuppressed(cleanupFailure);
                 }
             }
-            if (context != null && !preserveCheckpoint) {
+            if (context != null && (!preserveCheckpoint || cancellation.isRequested())) {
                 // 只有 ASK 暂停需要保留状态；成功、拒绝、超时、Provider 故障和未知异常均删除状态槽，
                 // 防止终态 Run 留下可被误恢复的 ToolUseBlock。
                 try {
@@ -569,6 +596,11 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                 primaryFailure.addSuppressed(finalizationFailure);
             }
         }
+    }
+
+    /** 用户停止保留已完成工具事实；正文由服务端的脱敏增量快照补齐。 */
+    private AgentScopeExecutionResult cancelledResult(List<AgentScopeToolBridge> bridges) {
+        return new AgentScopeExecutionResult(RunStatus.CANCELLED, "", collectRecords(bridges), "", null, null);
     }
 
     /**

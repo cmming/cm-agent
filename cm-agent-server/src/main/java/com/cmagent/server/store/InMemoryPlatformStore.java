@@ -35,6 +35,18 @@ import java.util.concurrent.atomic.AtomicReference;
  * 本地和测试使用的内存存储实现，不作为生产持久化方案。
  */
 public class InMemoryPlatformStore implements AuditEventRepository, RunRepository, ToolCallRepository {
+    @Override
+    public boolean resumeWaitingApproval(RunRecord snapshot) {
+        return snapshot.status() == RunStatus.WAITING_APPROVAL
+                && runs.replace(snapshot.id(), snapshot, snapshot.resumeAfterApproval());
+    }
+    @Override
+    public boolean requestCancellation(RunRecord snapshot) {
+        RunRecord current = runs.get(snapshot.id());
+        return snapshot.equals(current) && current.status().isActive()
+                && current.status() != RunStatus.CANCELLING
+                && runs.replace(snapshot.id(), current, current.requestCancellation());
+    }
 
     @Override
     public boolean expireWaitingApproval(RunRecord snapshot, java.time.Instant finishedAt) {
