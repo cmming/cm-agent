@@ -4,6 +4,8 @@
 
 `cm-agent-agentscope-adapter` 是 CM Agent 领域运行契约与 AgentScope Java 2.0.2 之间的适配层。它把 Core 提供的 `AgentRunRequest` 转换为真实的 `ReActAgent` 单轮执行流程，再把模型输出、工具调用记录和失败状态转换回 `AgentRunResult`。
 
+跨模块的 Harness 设计、治理边界、当前接入/部署状态和验收来源统一见 [Harness 模块说明](../docs/harness-module.md)。本文保留Adapter的API与嵌入式调用细节。
+
 这个模块的核心价值不是简单调用模型，而是在使用 AgentScope 推理与工具循环的同时，保留 CM Agent 的企业治理边界：
 
 - 租户、Agent、主体和 Run 上下文始终来自已经校验的领域请求。
@@ -60,6 +62,8 @@ flowchart LR
 - Reactor：由 AgentScope 提供，用于模型事件流和异步工具结果。
 
 三个 AgentScope 依赖在本模块 POM 中声明为 `optional`。嵌入式使用者需要在最终运行应用中显式提供所需的 AgentScope Core 与 Provider 扩展；`cm-agent-server` 已承担这项运行时装配职责。
+
+T2–T6阶段验收已完成，包含受控审批/Skill、只读上下文、真实Provider、浏览器与排空旧包回退；最新范围及历史来源见 [Harness 模块说明](../docs/harness-module.md)。实际生产部署仍须单独满足身份、原密钥/密文恢复、全部实例排空及正式入口条件，不能用阶段测试代替生产准入。
 
 ## 4. 核心类型
 

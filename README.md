@@ -2,6 +2,8 @@
 
 CM Agent 是基于 AgentScope Java 的企业级智能体开源底座。第一阶段完成 Java SDK、Spring Boot Starter、独立服务端、轻量控制台、工具治理、多租户和 RBAC 基线；阶段2完成生产持久化与安全收口；阶段3已接入 AgentScope Java 2.0.2 真实运行时。
 
+真实运行时支持 `react` 与受控 `harness`，默认保持 `react`。两种策略使用同一 CM Agent 工具治理、HIGH 审批恢复、显式停止、固定 Skill/沙箱/文件产物和可选只读参考快照；长期记忆及跨实例自动接管不在当前合同内。模块职责、接入方式、当前状态与阶段验收统一见 [Harness 模块说明](docs/harness-module.md)；原阶段文档保留为历史证据，部署切换步骤见 [运维说明](docs/operations.md)。
+
 ## 快速开始
 
 ### 控制台技能升级
