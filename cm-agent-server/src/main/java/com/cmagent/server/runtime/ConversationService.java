@@ -263,12 +263,13 @@ public class ConversationService {
                 assistantMessage);
         } catch (RuntimeException failure) {
             // 包含 Agent 停用等 Runtime 入场前失败；只关闭仍活动的本轮，保留原异常和严格审计失败语义。
-            executionService.controls().withRun(runId, () -> {
-                runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId)
-                        .filter(row -> row.status().isActive())
-                        .ifPresent(row -> runPersistenceService.completeFailure(principal, row));
-                return null;
-            });
+            try {
+                // ASK 的 Runtime 已保存检查点；审批创建或通知失败也必须清理，不能只更新 Run 终态。
+                approvalService.closeFailedRun(principal, agentId, runId);
+            } catch (RuntimeException cleanupFailure) {
+                if (cleanupFailure != failure) cleanupFailure.addSuppressed(failure);
+                throw cleanupFailure;
+            }
             throw failure;
         } finally {
             executionService.controls().release(runId, execution);

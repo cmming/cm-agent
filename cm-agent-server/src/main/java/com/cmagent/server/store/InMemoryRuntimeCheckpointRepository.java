@@ -14,6 +14,9 @@ import java.util.stream.Collectors;
 public final class InMemoryRuntimeCheckpointRepository implements RuntimeCheckpointRepository {
     private final Map<Key, RuntimeCheckpoint> checkpoints = new ConcurrentHashMap<>();
 
+    /** 系统排空探测只返回有无状态；过期或孤立条目也必须先由既有清理流程收口。 */
+    public boolean hasAnyCheckpoints() { return !checkpoints.isEmpty(); }
+
     @Override
     public RuntimeCheckpoint save(RuntimeCheckpoint checkpoint) {
         checkpoints.put(new Key(checkpoint.tenantId(), checkpoint.userId(), checkpoint.sessionId(), checkpoint.stateKey()),

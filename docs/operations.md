@@ -2,6 +2,92 @@
 
 本文档说明阶段3服务的健康检查、真实 AgentScope Runtime、审计严格语义、Run 查询、Flyway 和敏感日志边界。备份恢复、容量治理和自动归档属于阶段4，当前不由应用自动完成。
 
+## 只读工作区参考资料
+
+只读资料由部署管理员按tenant/Agent配置，默认关闭；配置及私有目录要求见[配置说明](configuration.md)。实际输入、审批冻结、错误和严格清理本地合同及Rocky两库/Linux安全目录合同已通过，见[T5账本](superpowers/progress/2026-10-12-harness-t5-ledger.md)；真实Provider、浏览器和临时双库排空回退已完成T6，范围与限制见[T6账本](superpowers/progress/2026-10-12-harness-t6-ledger.md)。
+
+首次Run读取并固定资料，模型只见JSON文本与相对引用；更新源文件不替换旧Run。正常ASK保留原加密快照与守卫键并刷新审批TTL；恢复只用原版本，映射撤销、缺失/过期/损坏拒绝。`WORKSPACE_CONTEXT_PREPARE`成功仅表示冻结成功，不表示模型已消费数据；拒绝/失败记录`WORKSPACE_CONTEXT_FAILURE`，详情仅含错误码与原Run编号。
+
+Run终态/失败/停止的资料状态必须在成功结果或文件发布前清理，清理/审计/状态读取故障按严格失败收口，不降级成无资料的新运行。只有正常等待审批保留资料；停止在ASK返回后赢得锁也会在取消终态之前清理。不要选择性手工删`workspace_context_v1`或`workspace_context_guard_v1`后恢复原Run；全状态槽由原治理生命周期处理。
+
+排障从接口的`code`/`errorId`或SSE对应字段检索后台同一Run：非法路径/ACL/文本、预算、资料不可用、映射撤销、原快照不可用分别有独立类别。资料正文、请求体和主机路径不进入日志；快照诊断文本也隐藏正文。保持宿主状态密钥和TTL，内存仓储重建不能代替进程重启证明。资料已经送入模型或形成正常回答后不能撤回。
+
+Linux使用安全目录句柄；Windows依赖所有者私有ACL、最终路径和时间/大小复核，不具备同等原子目录保护。服务账号及部署管理员为可信文件系统写入者；父目录、挂载来源和本地卷也须受控。协作读取预算不等于操作系统阻塞I/O的硬终止；Run未退出时不能强写成功/取消或自动重放。
+
+启用/移除映射或回退二进制前执行受控排空，避免混合版本接管原资料状态；当前没有热更新/资料上传API、原生文件工具、Shell、记忆或压缩。T6验收不代替实际部署数据集、生产备份恢复及所有实例的排空核查。
+
+## ReAct 与受控 Harness 的部署切换
+
+默认保持 `cm-agent.agentscope.execution-mode=react`。受控 Harness 使用同版 2.0.2 和同一 CM Agent 状态历史；T2–T6已完成各自范围内验收，仍不自动赋予具体部署的生产准入。正式目标、入口、全部实例、可恢复备份和排空状态必须单独核实。
+
+1. 在变更窗口备份数据库并应用 V21，先部署本轮二进制且保持 `react`；停用所有未实现模式门禁的旧二进制，不能混用旧进程承诺跨实例隔离。
+2. 停止接收新的 Run/TEST 和自动任务，使用正常运行/审批/停止流程收口非终态 Run、TEST 与全部检查点。过期或孤立检查点同样阻塞，不通过删除业务记录或跳过检查强行切换。
+3. 停止各服务实例，统一将外部配置设为目标模式并启动。启动以系统模式行锁重新检查排空；被拒绝时保留原模式，先解决阻塞状态再重试。相同模式重启不要求排空，可恢复原审批状态。
+4. 在验证环境核对实际工具全集、审批和停止，再恢复流量。若数据集模式已改变而旧实例仍接收请求，它在凭据解析前返回受控 `DENIED`；凭 `runId` 检索 `RUNTIME_MODE_CONFLICT`，停止该实例并核对部署配置。
+5. 本轮二进制从 Harness 回切 ReAct 使用同样的排空流程，不自动重放已执行工具。回滚到 V21 之前的旧二进制须另行验证 Flyway 兼容性与数据库恢复预案；不能把改回 `react` 当作旧二进制回滚已经完成。
+
+私有工作区每次运行/恢复创建并在生命周期结束清理，目录权限限所有者；模型只能通过受治理桥接访问工具和 Skill，不读取宿主 `AGENTS.md`、`MEMORY.md`、`tools.json` 或共享 skills。崩溃后遗留目录需在停机核实归属后按运维流程处理，应用不全局扫描清理。数据库模式记录不保存凭据、正文、路径或历史，不开放租户写入接口。
+
+仓库的普通 `package` 产物没有可执行主清单；准备 `java -jar` 部署时，先安装同一版本的模块依赖，再在 Server 同一次生命周期执行 `package spring-boot:repackage`：
+
+~~~sh
+mvn -B -DskipTests install
+mvn -B -pl cm-agent-server -DskipTests -Dmaven.jar.forceCreation=true package spring-boot:repackage
+~~~
+
+安装和打包不代表测试通过；新旧包必须分别记录 Git 基线、覆盖源码哈希、可执行 JAR 摘要及嵌入依赖。旧包无 V21 模式门禁时先停止全部新旧实例，再按经过验收的数据库/空检查点条件启动；不删除 V20/V21 或强行恢复旧格式 ASK。备份完成后核对恢复预案，未知工具副作用由运维核查。具体可重现回退版本与已验证数据库见 [T6账本](superpowers/progress/2026-10-12-harness-t6-ledger.md)。
+
+T6 已在临时 PostgreSQL16/MySQL8.4 上实际启动新包 ReAct → Harness → ReAct，再启动 Git 基线 `6752bf8` 的旧包，新 Run 成功且 V21 历史保留。仅支持已经排空、无检查点、停掉所有其他实例的已验证旧版本；备份生成及摘要已核对，没有模拟生产备份恢复、强杀或多实例接管。真实协议覆盖 DashScope 原生及其兼容接口，中文控制台在 Harness 下验证。T6期间Rocky时钟落后约一周，测试页曾临时对齐服务端，随后恢复本机时间复验仍正常；2026-10-12已实际校准主机与RTC，不把测试页时钟对齐方式用于生产。
+
+### 时钟与排空的上线复核
+
+审批、检查点、JWT和文件期限依赖服务端时间。先在目标主机核查 `chronyc activity`、`chronyc sources -v`、`chronyc tracking` 和 `timedatectl`；NTP服务active不等于已同步。核查参考时间新鲜、存在选中源、当前校正量受控，再用 `chronyc waitsync 6 0.1 0 5` 等待误差小于100毫秒。RMS偏差可能保留历史跳变，不能替代当前校正量和新样本判断。
+
+时间源offline时，按既有网络/时间源配置恢复；本次通过 `chronyc refresh`、`chronyc online`、`chronyc burst 4/4` 取得新样本后执行 `chronyc makestep`，并以 `hwclock --systohc --utc` 同步RTC。已经同步时不重复跳时；共享主机上先核查全部应用及变更窗口。跳时后可能立即使旧审批、检查点和令牌过期，不通过延长TTL恢复旧执行。确认chronyd active/enabled，并在虚拟机恢复或网络变化后重新检查；本次没有重启虚拟机验证长期同步。
+
+在确认的权威数据集、经授权的只读事务中执行系统级聚合，先确认V21与相关表存在，再核对：
+
+```sql
+SELECT COUNT(*) AS nonterminal_runs FROM runs
+WHERE status NOT IN ('SUCCEEDED','FAILED','DENIED','CANCELLED');
+SELECT COUNT(*) AS nonterminal_tests FROM skill_trials
+WHERE status NOT IN ('PASSED','NOT_TRIGGERED','FAILED');
+SELECT COUNT(*) AS all_checkpoints FROM runtime_checkpoints;
+SELECT COUNT(*) AS pending_approvals FROM tool_approval_requests WHERE status='PENDING';
+SELECT execution_mode FROM runtime_execution_modes WHERE id=1;
+```
+
+聚合用于部署门禁，不能暴露业务正文或充当租户查询接口。缺表不是零；全部检查点包含过期和孤立状态。一次只读快照也不是排空完成：关闭所有新增Run/TEST/自动任务入口，待治理生命周期收口且所有应用正常退出，启动时仍由V21行锁复核，不手工改模式表。
+
+2026-10-12首轮Rocky复核时，候选项目MySQL为V20、170条Run中8条RUNNING，候选PostgreSQL仅V1；历史见[评估账本](superpowers/progress/2026-10-12-harness-controlled-enablement-ledger.md)。随后用户明确正式数据集为Rocky MySQL `cm_agent`，私有逻辑备份实际隔离还原、全表数据匹配；副本迁移/门禁拒绝通过后，原库已正常补齐V21并保持react，全部业务数据迁移前后相同。迁移刚完成时170条Run仍有8条RUNNING，TEST22条全终态、检查点0、待审批0；无已存工具/完成记录不足以证明旧调用没有副作用。
+
+用户随后确认8条旧Run为已中断测试。先在实际还原副本验证事务回滚、重复执行与排空模式往返，再由现有Run/Audit仓储、固定ID/归属/原状态与共享短事务逐项收口为FAILED，新增8条终态审计及8条修复审计，原输入、消息、旧审计和其他Run保留。G4结束时非终态Run/TEST、全部检查点/待审批均0，原库仍react；此项操作不是通用的自动修复API，不应据此扫描任意历史Run强制终结。
+
+**Rocky生产历史阻塞**：修复前实际连接来自本机IDE的mysql profile实例且bootstrap admin=true。通过Spring Admin正常关闭项目上下文，HTTP/数据库连接释放，当时IDE JVM仍存活，未强杀。用户随后明确Rocky生产，已准备[生产装配文件](../scripts/rocky-harness/README.md)，远端/home/cm-agent-production暂存同包、production/react配置和5个旧密文副本，secrets尚空。前置检查实际拒绝七个缺失Secret，未启动生产应用。生产身份/最小权限DB账号、全部实例退出和旧主密钥/密文真实恢复仍须满足，数据库还原和文件副本不等于全系统恢复。2026-10-13用户改为本机运行，该生产路径移出本次范围，详细历史保留在[接续账本](superpowers/progress/2026-10-12-harness-drain-readiness-ledger.md)。
+
+### 本机 Windows 的 Harness 开发运行
+
+2026-10-13实际启动目标为Windows本机，沿用Rocky MySQL `cm_agent`、既有管理员及原密钥。使用JDK21、`mysql`开发profile、真实AgentScope、`harness`，关闭fake与当前不可达的可选Studio，仅监听127.0.0.1:8080。健康UP、登录页200、真实登录及现有DeepSeek无工具Run已通过；3个临时验收Agent均停用，失败记录保留。原库V21/harness，173Run与22TEST全终态，全部检查点/待审批0。另一个GLM配置返回上游HTTP429/code1113/余额不足；单模型成功不代表全部Provider可用。
+
+当前实例正在运行时先检查健康和进程，不重复启动。重启需正常关闭旧服务，另开终端持有SSH转发；本轮已验证的物理网卡源地址为192.168.0.159，地址变化后需重新核对：
+
+```powershell
+ssh -b 192.168.0.159 -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L127.0.0.1:13306:127.0.0.1:3306 rocky
+```
+
+在第二个PowerShell终端、仓库根目录检查并前台启动：
+
+```powershell
+./scripts/start-local-harness.ps1 -CheckOnly
+./scripts/start-local-harness.ps1
+```
+
+[启动脚本](../scripts/start-local-harness.ps1)固定本轮已核验候选包摘要，显式使用`F:/java21/bin/java.exe`；包位于忽略的`cm-agent-server/target/harness-local-runtime/cm-agent-server.jar`。源码变化须重新构建并核验包，不继续拿旧包证明新源码。脚本从当前进程或已有`.env`仅内存读取模型主密钥，其他旧密钥/目录由现有mysql外部配置加载，不生成或复制密钥；日志放在当前用户专属目录。`-CheckOnly`证明格式和连接前置条件，不证明全部密文恢复或模型额度。
+
+访问[本机控制台](http://127.0.0.1:8080/console/v2/login.html)，使用原有管理员账号。正常停止时先对服务终端Ctrl+C，待Java退出/数据库连接释放后再关闭SSH终端。仅供本机开发，bootstrap管理员及原开发JWT配置不用于生产开放入口。本轮未重新验收技能容器、审批、停止、产物恢复或生产身份。
+
+同库模式已经变为harness；默认源配置仍react。重新用IDE/react启动前必须按上述统一排空切换流程处理，不能直接SQL改模式或混合旧实例。Rocky生产七Secret及真实恢复条件仍未完成，暂存资产保留。
+
 ## 健康检查
 
 服务端暴露 Spring Boot Actuator 健康端点：
@@ -141,7 +227,23 @@ MySQL 的 `23000` 结合厂商编号区分约束错误。数据库原因使用�
 
 `memory` 仅限开发和测试；其运行、工具调用和审计数据会在进程重启后丢失，不得作为生产故障恢复方案。metrics、集中式追踪和自动化容量告警尚未在阶段3交付。
 
+## Harness 审批状态与停止合同
+
+Harness 每次执行及恢复使用新的私有空目录；只有 `WAITING_APPROVAL` 的加密检查点由宿主 JDBC 持有，目录关闭不删除审批状态。恢复仍使用原 `runId` 和可信 `tenantId:principalId`，重新校验工具 ID、入参哈希、当前授权与固定技能快照，长期消息历史仍由会话服务编排。对象重建时必须使用同一数据集、相同执行模式和受控状态密钥；内存仓储不能证明进程重启恢复。
+
+审批检查点不存在、已过期、密文损坏或数据库读取失败均拒绝恢复，不以空状态启动新执行。首次审批创建失败、决定通知失败及恢复前置失败会关闭活动 Run 并删除同一发起人的状态槽；状态清理或严格审计故障继续传播，原失败作为附加原因保留。JDBC 补偿采用短事务；数据库不可用时不能承诺已清理，按错误编号排查后核对权威状态，禁止自动重发可能产生副作用的调用。
+
+已接受审批保留只读历史，重复决定不能重放工具。停止恢复中的 Run 时，`CANCELLING` 等待实际在途工具退出；订阅取消不能证明外部操作已停止，已发生副作用不回滚。严格工具审计失败优先收口为失败，不能误报 `CANCELLED`。等待审批、过期与批准的竞争沿用条件更新和共享短锁；不同实例不可达句柄仍返回 `RUN_CONTROL_UNAVAILABLE`，T3 不提供自动接管或提交决定后崩溃重放。
+
+部署者需保持主机时钟同步，审批 TTL 与检查点 TTL 均依赖服务端时间。T3 的回环协议桩验证不能替代真实模型、浏览器和生产多实例验收；独立 Run/TEST 的非交互 HIGH 调用继续直接拒绝。
+
 ## 文件产物持久卷与补偿
+
+Harness 沿用 CM Agent 固定 Skill 快照、受治理读取/脚本桥接与 ManagedSkillSandbox；不使用原生 `run_skill_code`、Shell 或 Harness 文件系统交付产物。新发布版本不会替换等待审批 Run 的版本，停用、解绑、访问纪元和必需工具授权撤销仍立即阻止继续。`SANDBOX_PREPARED` 是资源预算预留，不是脚本成功或 TEST 发布依据。
+
+脚本文件在执行、关闭、二次授权与严格审计完成后仍为 `PENDING`，只有 Run 成功与发布审计完成才转为 `READY`。等待审批、停止、撤销或失败的文件不可下载，并由现有补偿删除。下载仍复核当前租户、原发起主体、TEST 归属、期限、独占租约和密文完整性；文件服务重建须使用同一持久卷与独立密钥。
+
+用户停止实际脚本时，生产治理服务仅在同一可信 Run 已为 `CANCELLING`、执行线程确实中断且关闭没有附加失败的情况下，记录严格 `SKILL_EXECUTE/CANCELLED` 并返回停止信号；执行器等待在途调用退出后才交付 `CANCELLED`。普通超时、审计/状态读取失败和任何附加清理失败仍保持失败，不能按停止请求掩盖。当前实验结果与限制见 [T4 账本](superpowers/progress/2026-10-11-harness-t4-ledger.md)。
 
 启用前创建私有持久卷并通过独立 Secret 注入文件密钥；多实例必须共享同一卷与密钥，配额和租约由 JDBC 条件更新协调。内存模式重启丢失元数据，仅用于 local/test，不能证明生产恢复。新迁移 V19 同时覆盖 PostgreSQL 16/MySQL 8.4；每表每字段有中文原生注释，旧迁移不修改。
 

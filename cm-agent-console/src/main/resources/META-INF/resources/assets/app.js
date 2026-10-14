@@ -2889,6 +2889,7 @@
         const streamMessage = appendChatStreamingMessage();
         let streamedOutput = "";
         let completed = false;
+        let completedRun = null;
         let nextApproval = null;
         let decisionAccepted = false;
         try {
@@ -2916,6 +2917,7 @@
                     nextApproval = event.data;
                 } else if (event.type === "completed") {
                     completed = true;
+                    completedRun = event.data?.run;
                 } else if (event.type === "error") {
                     throw streamEventError(event.data, "审批恢复失败");
                 }
@@ -2926,8 +2928,20 @@
             if (isCurrent()) {
                 await loadConversations(approval.agentId);
                 await refreshApprovalState(approval, isCurrent);
-                if (isCurrent()) state.approvalFeedback.set(approval.approvalId, {phase: "DONE",
-                    message: nextApproval ? "本次决定已处理，运行又提出了新的调用，请继续核对新审批。" : "本次审批流程已结束，执行结果请查看会话回答或运行记录。", tone: "success"});
+                if (isCurrent()) {
+                    state.approvalFeedback.set(approval.approvalId, {phase: "DONE",
+                        message: nextApproval ? "本次决定已处理，运行又提出了新的调用，请继续核对新审批。" : "本次审批流程已结束，执行结果请查看会话回答或运行记录。", tone: "success"});
+                    // 完整拒绝可能没有assistant正文且审批卡已移入历史，不能依赖正文刷新清除旧暂停提示。
+                    // 终态来自服务端SSE；刷新后的主体/会话复核防止迟到结果改写其他页面。
+                    const status = completedRun?.status;
+                    const message = nextApproval ? "运行已暂停，请处理新的高风险工具审批。"
+                        : status === "DENIED" ? "本轮已拒绝，不会执行被拒绝的调用。"
+                            : status === "CANCELLED" ? "本轮已停止，已保留输出内容。"
+                                : status === "FAILED" ? `本轮运行失败：${completedRun.errorMessage || "请查看运行记录定位原因"}（运行编号：${completedRun.runId || approval.runId}）。`
+                                    : "本次审批流程已结束，执行结果请查看会话回答或运行记录。";
+                    setStatus($("chatFormStatus"), message, nextApproval ? "neutral"
+                        : status === "SUCCEEDED" ? "success" : status === "FAILED" ? "error" : "neutral");
+                }
             }
         } catch (error) {
             if (isCurrent()) {

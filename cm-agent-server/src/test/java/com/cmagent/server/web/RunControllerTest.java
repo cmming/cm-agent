@@ -914,6 +914,41 @@ class RunControllerTest {
                 .andExpect(jsonPath("$.run.errorMessage").value("Agent 运行失败"));
     }
 
+    /** 权限配方在适配层真实事件测试；这里验证 DENIED 按既有 Run 协议持久化并安全展示。 */
+    @Test
+    void 原生拒绝结果在单轮API和持久化详情保持拒绝中文原因() throws Exception {
+        String accessToken = loginToken();
+        String agentId = createAgent(accessToken);
+        Instant now = Instant.now();
+        String reason = "高风险工具需要人工审批，请在具备审批入口的会话中运行";
+        agentRuntime.returnNext(new AgentRunResult(
+                UUID.randomUUID(), RunStatus.DENIED, "", List.of(), now, now, reason));
+
+        String response = mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"input\":\"执行高风险工具\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DENIED"))
+                .andExpect(jsonPath("$.output").value(""))
+                .andExpect(jsonPath("$.errorMessage").value(reason))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+        String runId = JsonPath.read(response, "$.runId");
+        assertThat(agentRuntime.lastRequest().conversationId()).isNull();
+        assertThat(agentRuntime.lastRequest().runId().toString()).isEqualTo(runId);
+        assertThat(response).doesNotContain("127.0.0.1", "Permission denied", "Exception");
+        mockMvc.perform(get("/api/agents/{agentId}/runs/{runId}", agentId, runId)
+                        .header("Authorization", bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.run.status").value("DENIED"))
+                .andExpect(jsonPath("$.run.errorMessage").value(reason));
+        assertThat(store.listAuditEvents(TENANT_ID)).anySatisfy(event -> {
+            assertThat(event.eventType()).isEqualTo("AGENT_RUN");
+            assertThat(event.status()).isEqualTo("DENIED");
+        });
+    }
+
     @Test
     /**
      * 验证或支持 {@code grantIsIdempotent} 所描述的测试场景。

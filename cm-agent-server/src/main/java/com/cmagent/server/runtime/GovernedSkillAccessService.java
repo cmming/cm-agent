@@ -143,6 +143,8 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
      * @param request 由可信 Run 和固定快照构造的脚本资源定位
      * @param stdin 有界的脚本标准输入，不作为命令解释
      * @return 后置授权与严格审计成功后的脱敏输出
+     * @throws com.cmagent.core.runtime.RunCancellation.StoppedException 可信用户停止导致实际执行中断且清理、取消审计成功
+     * @throws SkillAccessException 授权、预算、沙箱或严格基础设施失败；包含安全原因与关联编号
      */
     @Override
     public String execute(SkillReadRequest request, String stdin) {
@@ -174,6 +176,20 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
             }
         } catch (SkillAccessException failure) {
             try {
+                if (interruptedByTrustedStop(request, failure)) {
+                    // 容器和集合已经完成 try-with-resources 清理；用户停止导致的线程中断不是运行超时。
+                    // 取消审计仍是严格边界，失败时必须交付基础设施错误，不能伪报 CANCELLED。
+                    executionAudit(request, "CANCELLED", "技能沙箱已按停止请求结束");
+                    throw new com.cmagent.core.runtime.RunCancellation.StoppedException();
+                }
+            } catch (com.cmagent.core.runtime.RunCancellation.StoppedException stopped) {
+                throw stopped;
+            } catch (RuntimeException infrastructure) {
+                SkillAccessException controlled = infrastructureFailure(request, infrastructure);
+                logExecutionFailure(request, controlled);
+                throw controlled;
+            }
+            try {
                 executionAudit(request, "FAILED", failure.code().name() + " errorId=" + failure.errorId());
             } catch (RuntimeException auditFailure) {
                 // 失败审计本身不可用时，仍保留同一关联编号，以严格基础设施失败收口而非伪造审计成功。
@@ -188,6 +204,20 @@ public class GovernedSkillAccessService implements SkillAccessGateway {
             logExecutionFailure(request, controlled);
             throw controlled;
         }
+    }
+
+    /**
+     * 仅可信停止状态、当前线程实际中断且资源清理未附加失败时识别正常取消。
+     *
+     * <p>模型参数不能提供停止标志；必须读取同一租户、Agent、Run 和原发起主体的服务端事实。
+     * 普通截止超时、审计/持久化/清理错误以及其他技能拒绝继续保持致命失败。</p>
+     */
+    private boolean interruptedByTrustedStop(SkillReadRequest request, SkillAccessException failure) {
+        return failure.code() == ApiErrorCode.SKILL_SANDBOX_TIMEOUT
+                && Thread.currentThread().isInterrupted() && failure.getSuppressed().length == 0
+                && runs.findByTenantAndAgentAndId(request.principal().tenantId(), request.agentId(), request.runId())
+                .filter(run -> run.principalId().equals(request.principal().principalId())
+                        && run.status() == com.cmagent.core.domain.RunStatus.CANCELLING).isPresent();
     }
 
     private java.util.Map<String, String> prepareExecution(SkillReadRequest request) {

@@ -335,6 +335,87 @@ class GovernedSkillAccessServiceTest {
                 .doesNotContain("verification-only-value", "internal.example.local", "private-output", "private-input");
     }
 
+    @Test
+    void 可信停止引起线程中断且清理成功时抛出正常停止信号() {
+        var request = scriptRequest("trusted-stop");
+        var interrupted = new SkillAccessException(ApiErrorCode.SKILL_SANDBOX_TIMEOUT, "技能沙箱执行已中断", request.attemptId().toString(), true);
+        try {
+            assertThatThrownBy(() -> interruptedService(interrupted, true).execute(request, ""))
+                    .isInstanceOf(com.cmagent.core.runtime.RunCancellation.StoppedException.class);
+            verify(audit).append(tenant, principal.principalId(), "SKILL_EXECUTE", "RUN", runId.toString(), "CANCELLED",
+                    "skillId=" + skillId + " versionId=" + versionId + " toolCallId=trusted-stop 技能沙箱已按停止请求结束");
+        } finally { Thread.interrupted(); }
+    }
+
+    @Test
+    void 普通超时即便并发登记停止也不能误报正常取消() {
+        var request = scriptRequest("real-timeout");
+        var timeout = new SkillAccessException(ApiErrorCode.SKILL_SANDBOX_TIMEOUT, "技能沙箱执行超时", request.attemptId().toString(), true);
+        assertThatThrownBy(() -> interruptedService(timeout, false).execute(request, "")).isSameAs(timeout);
+    }
+
+    @Test
+    void 中断附加清理故障必须保持失败而不能作为取消() {
+        var request = scriptRequest("cleanup-failure");
+        var timeout = new SkillAccessException(ApiErrorCode.SKILL_SANDBOX_TIMEOUT, "技能沙箱执行已中断", request.attemptId().toString(), true);
+        timeout.addSuppressed(new SkillAccessException(ApiErrorCode.SKILL_SANDBOX_CLEANUP_FAILED, "清理未确认", request.attemptId().toString(), true));
+        try {
+            assertThatThrownBy(() -> interruptedService(timeout, true).execute(request, "")).isSameAs(timeout);
+        } finally { Thread.interrupted(); }
+    }
+
+    @Test
+    void 正常停止的审计故障仍给出关联严格失败(CapturedOutput output) {
+        var request = scriptRequest("stop-audit");
+        var timeout = new SkillAccessException(ApiErrorCode.SKILL_SANDBOX_TIMEOUT, "技能沙箱执行已中断", request.attemptId().toString(), true);
+        org.mockito.Mockito.doThrow(new com.cmagent.server.audit.AuditPersistenceException("合成失败", new IllegalStateException("secret=不得泄露")))
+                .when(audit).append(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("SKILL_EXECUTE"),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("CANCELLED"), org.mockito.ArgumentMatchers.any());
+        try {
+            assertThatThrownBy(() -> interruptedService(timeout, true).execute(request, ""))
+                    .isInstanceOfSatisfying(SkillAccessException.class, failure -> {
+                        assertThat(failure.code()).isEqualTo(ApiErrorCode.AUDIT_UNAVAILABLE);
+                        assertThat(failure.errorId()).isEqualTo(request.attemptId().toString());
+                    });
+            assertThat(output.getAll()).contains("errorId=" + request.attemptId(), "AUDIT_UNAVAILABLE").doesNotContain("不得泄露");
+        } finally { Thread.interrupted(); }
+    }
+
+    /** 模拟生产后端实际中断与同一 Run 的可信停止事实，不在测试结束后保留线程中断。 */
+    private GovernedSkillAccessService interruptedService(SkillAccessException failure, boolean interrupted) {
+        return interruptedService(failure, interrupted, null);
+    }
+
+    @Test
+    void 停止事实读取失败保持数据错误关联编号和安全日志(CapturedOutput output) {
+        var request = scriptRequest("stop-state-failure");
+        var timeout = new SkillAccessException(ApiErrorCode.SKILL_SANDBOX_TIMEOUT, "技能沙箱执行已中断", request.attemptId().toString(), true);
+        try {
+            var service = interruptedService(timeout, true, new org.springframework.dao.DataAccessResourceFailureException("secret=不得泄露 SQL 内部详情"));
+            assertThatThrownBy(() -> service.execute(request, ""))
+                    .isInstanceOfSatisfying(SkillAccessException.class, failure -> {
+                        assertThat(failure.code()).isEqualTo(ApiErrorCode.PERSISTENCE_UNAVAILABLE);
+                        assertThat(failure.errorId()).isEqualTo(request.attemptId().toString());
+                    });
+            assertThat(output.getAll()).contains("errorId=" + request.attemptId(), "PERSISTENCE_UNAVAILABLE")
+                    .doesNotContain("不得泄露", "SQL 内部详情");
+        } finally { Thread.interrupted(); }
+    }
+
+    private GovernedSkillAccessService interruptedService(SkillAccessException failure, boolean interrupted, RuntimeException lookupFailure) {
+        var sandbox = mock(DockerSkillSandbox.class);
+        when(sandbox.open(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap())).thenCallRealMethod();
+        var service = executionService(sandbox);
+        when(sandbox.execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> {
+                    if (lookupFailure == null) when(runs.findByTenantAndAgentAndId(tenant, agent, runId)).thenReturn(Optional.of(run.requestCancellation()));
+                    else when(runs.findByTenantAndAgentAndId(tenant, agent, runId)).thenThrow(lookupFailure);
+                    if (interrupted) Thread.currentThread().interrupt();
+                    throw failure;
+                });
+        return service;
+    }
+
     private SkillReadRequest scriptRequest(String callId) {
         return new SkillReadRequest(principal, agent, runId, callId, UUID.randomUUID(), skillId, versionId, "scripts/main.py");
     }

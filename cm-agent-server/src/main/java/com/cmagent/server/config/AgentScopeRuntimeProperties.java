@@ -8,10 +8,12 @@ import java.time.Duration;
 public class AgentScopeRuntimeProperties {
 
     private boolean enabled;
+    /** 启动时选择全数据集策略；默认 react，切换必须先通过持久化排空门禁。 */
+    private String executionMode = "react";
     private Duration modelTimeout = Duration.ofSeconds(60);
     private Duration toolTimeout = Duration.ofSeconds(30);
     private int modelMaxAttempts = 2;
-    /** 默认关闭以保持升级兼容；开启后 HIGH 工具进入 AgentScope ASK。 */
+    /** 默认关闭以保持升级兼容；开启后会话 HIGH 使用 ASK，无会话 HIGH 使用 DENY。 */
     private boolean permissionEnabled;
     /** 审批请求与可恢复检查点共享的有效期，默认十五分钟。 */
     private Duration approvalTtl = Duration.ofMinutes(15);
@@ -29,6 +31,12 @@ public class AgentScopeRuntimeProperties {
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
     }
+
+    /** @return 可信部署配置选择的执行模式，不由客户端或模型指定。 */
+    public String getExecutionMode() { return executionMode; }
+
+    /** @param executionMode 只能为 react 或 harness；在启动校验中明确拒绝其他值。 */
+    public void setExecutionMode(String executionMode) { this.executionMode = executionMode; }
 
     /**
      * @return 模型调用超时时间。
@@ -99,6 +107,7 @@ public class AgentScopeRuntimeProperties {
      * @throws IllegalStateException 配置不合法或真实运行时与 fake runtime 同时启用时抛出
      */
     public void validate(boolean fakeRuntimeEnabled) {
+        com.cmagent.agentscope.AgentScopeExecutionMode.parse(executionMode);
         if (!isPositive(modelTimeout)) {
             throw new IllegalStateException("模型超时时间必须为正数");
         }
@@ -131,6 +140,7 @@ public class AgentScopeRuntimeProperties {
      */
     public String toString() {
         return "AgentScopeRuntimeProperties[enabled=" + enabled
+                + ", executionMode=" + executionMode
                 + ", modelTimeout=" + modelTimeout
                 + ", toolTimeout=" + toolTimeout
                 + ", modelMaxAttempts=" + modelMaxAttempts

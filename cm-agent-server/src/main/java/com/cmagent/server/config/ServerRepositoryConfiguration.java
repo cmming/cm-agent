@@ -52,6 +52,22 @@ import java.util.UUID;
 @EnableConfigurationProperties(CmAgentPersistenceProperties.class)
 /** 按持久化模式选择 memory 或 JDBC Repository 实现。 */
 public class ServerRepositoryConfiguration {
+    /** 本地/测试模式的部署门禁与三个内存存储共享实例，不能以空替代绕过真实阻塞。 */
+    @Bean
+    @ConditionalOnMissingBean(com.cmagent.core.repository.RuntimeExecutionModeRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    com.cmagent.core.repository.RuntimeExecutionModeRepository memoryRuntimeExecutionModeRepository(
+            InMemoryPlatformStore runs, InMemorySkillStore trials, RuntimeCheckpointRepository checkpoints,
+            RunRepository runRepository, SkillTrialRepository trialRepository) {
+        return new com.cmagent.server.store.InMemoryRuntimeExecutionModeRepository(
+                () -> {
+                    // 替换任一底层仓储后不能把默认空存储当作排空证据；兼容同模式启动，切换需宿主提供门禁 SPI。
+                    if (runRepository != runs || trialRepository != trials.trials()
+                            || !(checkpoints instanceof InMemoryRuntimeCheckpointRepository memory))
+                        throw new IllegalStateException("自定义仓储必须提供执行模式排空门禁");
+                    return runs.hasNonTerminalRuns() || trials.hasNonTerminalTrials() || memory.hasAnyCheckpoints();
+                });
+    }
     private static final Logger log = LoggerFactory.getLogger(ServerRepositoryConfiguration.class);
     private static final String MEMORY_MODE_LOG = "当前使用 memory 持久化，重启后数据全部丢失，禁止用于生产";
 
@@ -289,7 +305,7 @@ public class ServerRepositoryConfiguration {
     @Bean
     @ConditionalOnMissingBean(RuntimeCheckpointRepository.class)
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
-    public RuntimeCheckpointRepository memoryRuntimeCheckpointRepository() {
+    public InMemoryRuntimeCheckpointRepository memoryRuntimeCheckpointRepository() {
         return new InMemoryRuntimeCheckpointRepository();
     }
 

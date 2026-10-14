@@ -24,6 +24,12 @@
             <artifactId>agentscope-core</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- Harness 与 Core 同版；嵌入式宿主自行提供该可选执行路径的运行依赖。 -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-harness</artifactId>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-model-openai</artifactId>

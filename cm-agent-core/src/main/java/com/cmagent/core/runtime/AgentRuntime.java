@@ -31,6 +31,9 @@ public interface AgentRuntime {
         return false;
     }
 
+    /** @return 是否明确消费可信参考快照；旧运行时默认不支持，不能启用后静默忽略资料 */
+    default boolean supportsWorkspaceContext() { return false; }
+
     /**
      * 执行一次 Agent 运行并返回结构化结果。
      *

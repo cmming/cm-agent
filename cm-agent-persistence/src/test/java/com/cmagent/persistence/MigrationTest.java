@@ -54,6 +54,7 @@ class MigrationTest {
             "tool_approval_requests",
             "tool_approval_items",
             "runtime_checkpoints",
+            "runtime_execution_modes",
             "skill_definitions",
             "skill_versions",
             "skill_resources",
@@ -126,7 +127,7 @@ class MigrationTest {
                 .query(String.class).single()).isEqualTo(boundaryDescription);
         updateLegacyDescription(jdbc, existingDescription);
         int checkpointStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
-        assertThat(checkpointStage).isEqualTo(1);
+        assertThat(checkpointStage).isEqualTo(2);
 
         assertThat(firstStage).isEqualTo(12);
         assertThat(secondStage).isEqualTo(4);
@@ -143,6 +144,73 @@ class MigrationTest {
                 .contains("90000000-0000-0000-0000-000000000005");
 
         verifySkillReleaseMigration(JdbcClient.create(dataSource));
+        verifyExecutionModeContract(dataSource, jdbc);
+    }
+
+    /** 两种数据库均验证系统模式、排空拒绝、同模式重启和行锁下的并发切换。 */
+    private static void verifyExecutionModeContract(DriverManagerDataSource dataSource, JdbcClient jdbc) {
+        var transactions = new org.springframework.transaction.support.TransactionTemplate(
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(dataSource));
+        var modes = new JdbcRuntimeExecutionModeRepository(jdbc, transactions);
+        var restarted = new JdbcRuntimeExecutionModeRepository(jdbc, transactions);
+        assertThat(modes.currentMode()).isEqualTo("react");
+        modes.activate("react"); // 同模式重启必须允许恢复尚未完成的历史运行。
+        assertThatThrownBy(() -> modes.activate("unknown")).isInstanceOf(IllegalArgumentException.class);
+        for (String status : List.of("RUNNING", "WAITING_APPROVAL", "CANCELLING", "UNKNOWN")) {
+            jdbc.sql("UPDATE runs SET status=:status WHERE id='90000000-0000-0000-0000-000000000004'")
+                    .param("status", status).update();
+            assertThatThrownBy(() -> modes.activate("harness")).isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("必须排空");
+            assertThat(modes.currentMode()).isEqualTo("react");
+        }
+        jdbc.sql("UPDATE runs SET status='SUCCEEDED' WHERE id='90000000-0000-0000-0000-000000000004'").update();
+        jdbc.sql("""
+                INSERT INTO skill_trials (run_id,tenant_id,skill_id,version_id,agent_id,mapping_revision,
+                    status,qualifies_release,created_by,created_at,updated_at)
+                VALUES ('90000000-0000-0000-0000-000000000004','90000000-0000-0000-0000-000000000001',
+                    '90000000-0000-0000-0000-000000000005','90000000-0000-0000-0000-000000000006',
+                    '90000000-0000-0000-0000-000000000003',1,'WAITING_APPROVAL',false,'tester',:now,:now)
+                """).param("now", Timestamp.from(java.time.Instant.now())).update();
+        // 即使关联 Run 已终态，孤立的非终态 TEST 仍须阻塞，不能依赖联表遗漏它。
+        assertThatThrownBy(() -> modes.activate("harness")).isInstanceOf(IllegalStateException.class);
+        jdbc.sql("UPDATE skill_trials SET status='PASSED' WHERE run_id='90000000-0000-0000-0000-000000000004'").update();
+        var checkpoints = new JdbcRuntimeCheckpointRepository(jdbc);
+        var now = java.time.Instant.parse("2020-01-01T00:00:00Z");
+        var checkpoint = new com.cmagent.core.domain.RuntimeCheckpoint(UUID.randomUUID(),
+                UUID.fromString("90000000-0000-0000-0000-000000000001"), "tester", "orphan-session",
+                "state", "fixture", false, "合成密文", now, now, now);
+        checkpoints.save(checkpoint);
+        // 过期和不关联活跃 Run 的检查点也不能被模式切换静默删除。
+        assertThatThrownBy(() -> modes.activate("harness")).isInstanceOf(IllegalStateException.class);
+        checkpoints.deleteSession(checkpoint.tenantId(), checkpoint.userId(), checkpoint.sessionId());
+        modes.activate("harness");
+        assertThat(restarted.currentMode()).isEqualTo("harness");
+        assertThat(jdbc.sql("UPDATE runs SET status='WAITING_APPROVAL' WHERE id='90000000-0000-0000-0000-000000000004'")
+                .update()).isEqualTo(1);
+        restarted.activate("harness");
+        assertThatThrownBy(() -> modes.activate("react")).isInstanceOf(IllegalStateException.class);
+        jdbc.sql("UPDATE runs SET status='SUCCEEDED' WHERE id='90000000-0000-0000-0000-000000000004'").update();
+        modes.activate("react");
+
+        // 模拟另一个实例持有模式行锁并提交阻塞状态：等待者必须锁后重新读排空状态。
+        try (var pool = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            var attempting = new java.util.concurrent.CountDownLatch(1);
+            var future = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.Future<?>>();
+            transactions.executeWithoutResult(tx -> {
+                jdbc.sql("SELECT execution_mode FROM runtime_execution_modes WHERE id=1 FOR UPDATE").query(String.class).single();
+                future.set(pool.submit(() -> { attempting.countDown(); restarted.activate("harness"); }));
+                try {
+                    assertThat(attempting.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                } catch (InterruptedException failure) { Thread.currentThread().interrupt(); throw new AssertionError(failure); }
+                assertThatThrownBy(() -> future.get().get(200, java.util.concurrent.TimeUnit.MILLISECONDS))
+                        .isInstanceOf(java.util.concurrent.TimeoutException.class);
+                checkpoints.save(checkpoint);
+            });
+            assertThatThrownBy(() -> future.get().get(10, java.util.concurrent.TimeUnit.SECONDS))
+                    .isInstanceOf(java.util.concurrent.ExecutionException.class).hasCauseInstanceOf(IllegalStateException.class);
+            assertThat(modes.currentMode()).isEqualTo("react");
+            checkpoints.deleteSession(checkpoint.tenantId(), checkpoint.userId(), checkpoint.sessionId());
+        }
     }
 
     private static void updateLegacyDescription(JdbcClient jdbc, String description) {
@@ -322,7 +390,7 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(20);
+        assertThat(migrationsExecuted).isEqualTo(21);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);

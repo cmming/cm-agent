@@ -391,8 +391,7 @@ public class ToolApprovalService {
                     .map(item -> new RuntimeApprovalDecisions.Item(
                             item.toolCallId(), item.toolId(), item.inputHash(), decisions.get(item.id())))
                     .toList();
-            try {
-                runtimeResult = runExecutionService.runPreparedAndFinalize(
+            runtimeResult = runExecutionService.runPreparedAndFinalize(
                         principal, agentId, waitingRun, "", conversationId, new RuntimeApprovalDecisions(runtimeDecisions),
                         deltaConsumer, progressConsumer, finish -> inTransaction(() -> {
                             AgentRuntimeResult result = finish.get();
@@ -407,23 +406,6 @@ public class ToolApprovalService {
                             }
                             return result;
                         }));
-            } catch (RuntimeException failure) {
-                // Agent/模型停用等前置失败可能发生在 Runtime 自身的收口边界之前，审批既已接受，
-                // 此时必须清除状态槽并关闭仍活动的 Run，不能留下可误重放的待调用工具。
-                try {
-                    runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, waitingRun.id())
-                            .filter(run -> run.status().isActive())
-                            .ifPresent(run -> runPersistenceService.completeFailure(principal, run));
-                    deleteCheckpoint(principal, waitingRun);
-                    auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_RESUME",
-                            "TOOL_APPROVAL", approvalId.toString(), "FAILED", "审批已接受但运行恢复失败");
-                } catch (RuntimeException cleanupFailure) {
-                    // 审计或持久化失败仍向统一边界传播，原恢复原因作为 suppressed 保留。
-                    if (cleanupFailure != failure) cleanupFailure.addSuppressed(failure);
-                    throw cleanupFailure;
-                }
-                throw failure;
-            }
         }
 
         ConversationMessage assistant = null;
@@ -436,6 +418,18 @@ public class ToolApprovalService {
                     .filter(message -> message.role() == MessageRole.ASSISTANT).reduce((first, last) -> last).orElse(null);
         }
         return new ApprovalResumeOutcome(view(principal, decided), runtimeResult.run(), assistant, nextApproval);
+        } catch (RuntimeException failure) {
+            // 决定已提交后，通知和前置校验也可能失败；统一清理，不能留下可误重放的 ToolUseBlock。
+            try {
+                closeFailedRun(principal, agentId, current.runId());
+                auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_RESUME",
+                        "TOOL_APPROVAL", approvalId.toString(), "FAILED", "审批已接受但运行恢复失败");
+            } catch (RuntimeException cleanupFailure) {
+                // 严格审计或持久化失败优先传播，同时保留触发补偿的原始原因。
+                if (cleanupFailure != failure) cleanupFailure.addSuppressed(failure);
+                throw cleanupFailure;
+            }
+            throw failure;
         } finally {
             runExecutionService.controls().release(current.runId(), acceptedExecution);
         }
@@ -484,6 +478,7 @@ public class ToolApprovalService {
         if (!accepted) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "审批状态已变化，请刷新后重试");
         }
+        try {
         ToolApprovalRequest decided = requireForRun(principal, agentId, runId, approvalId);
         RunRecord waitingRun = runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Run 不存在"));
@@ -508,11 +503,26 @@ public class ToolApprovalService {
             try {
                 nextApproval = createForRun(principal, agentId, runId, runtimeResult.pendingApproval());
             } catch (RuntimeException approvalFailure) {
-                failRunAfterApprovalCreationFailure(principal, agentId, runId);
                 throw new ApprovalCreationFailure(approvalFailure);
             }
         }
         return new RunApprovalResumeOutcome(view(principal, decided), runtimeResult.run(), nextApproval);
+        } catch (RuntimeException failure) {
+            // TEST 与会话采用同一失败状态合同；Agent 停用等前置失败不会进入适配器的 finally。
+            try {
+                if (failure instanceof ApprovalCreationFailure) {
+                    failRunAfterApprovalCreationFailure(principal, agentId, runId);
+                } else {
+                    closeFailedRun(principal, agentId, runId);
+                    auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_RESUME",
+                            "TOOL_APPROVAL", approvalId.toString(), "FAILED", "审批已接受但运行恢复失败");
+                }
+            } catch (RuntimeException cleanupFailure) {
+                if (cleanupFailure != failure) cleanupFailure.addSuppressed(failure);
+                throw cleanupFailure;
+            }
+            throw failure;
+        }
     }
 
     /** 在建立 SSE 前完成权限之外的资源、状态、版本、过期和决定完整性校验。 */
@@ -648,6 +658,23 @@ public class ToolApprovalService {
                 });
     }
 
+    /**
+     * 已失败执行的补偿与停止/过期共用短锁；JDBC 中 Run 和检查点清理共用短事务。
+     * 即使 Runtime 已先写入终态也要删除 ASK 状态，不因终态过滤跳过清理；仓储归属是唯一可信来源。
+     */
+    void closeFailedRun(PrincipalRef principal, UUID agentId, UUID runId) {
+        runExecutionService.controls().withRun(runId, () -> inTransaction(() -> {
+            RunRecord current = runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "运行不存在"));
+            if (!current.principalId().equals(principal.principalId())) {
+                throw new IllegalArgumentException("失败运行不属于当前发起主体");
+            }
+            if (current.status().isActive()) runPersistenceService.completeFailure(principal, current);
+            deleteCheckpoint(principal, current);
+            return true;
+        }));
+    }
+
     /** Run 进入终态后删除同一可信主体和 runId 对应的 AgentScope 状态槽。 */
     private void deleteCheckpoint(PrincipalRef principal, RunRecord run) {
         checkpointRepository.deleteSession(
@@ -754,13 +781,11 @@ public class ToolApprovalService {
      * <p>该补偿不能回滚已经持久化的等待状态；关闭而非重试可确保 HIGH 工具不会在缺少可审计审批事实时恢复。</p>
      */
     public void failRunAfterApprovalCreationFailure(PrincipalRef principal, UUID agentId, UUID runId) {
-        RunRecord active = runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId)
-                .filter(run -> run.status().isActive()).orElse(null);
-        if (active == null) {
+        RunRecord current = runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId).orElse(null);
+        if (current == null) {
             return;
         }
-        runPersistenceService.completeFailure(principal, active);
-        deleteCheckpoint(principal, active);
+        closeFailedRun(principal, agentId, runId);
         auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_CREATE_FAILED",
                 "RUN", runId.toString(), "FAILED", "审批创建失败，已关闭等待恢复的运行");
     }

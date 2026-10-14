@@ -94,7 +94,8 @@ public class AgentScopeRuntimeConfiguration {
             ObjectProvider<ModelCredentialProvider> credentialProvider,
             ToolInvocationGateway gateway,
             AgentStateStore stateStore,
-            SkillAccessGateway skillGateway
+            SkillAccessGateway skillGateway,
+            com.cmagent.core.repository.RuntimeExecutionModeRepository modes
     ) {
         properties.validate(false);
         ModelCredentialProvider provider = Objects.requireNonNull(
@@ -103,7 +104,16 @@ public class AgentScopeRuntimeConfiguration {
         AgentScopeRuntimeOptions options = new AgentScopeRuntimeOptions(
                 properties.getModelTimeout(), properties.getToolTimeout(), properties.getModelMaxAttempts(),
                 properties.isPermissionEnabled());
+        var mode = com.cmagent.agentscope.AgentScopeExecutionMode.parse(properties.getExecutionMode());
+        modes.activate(mode.configValue());
+        // Run 编排先登记 RUNNING，再进入凭据解析；在途记录因此阻塞切换。旧实例在数据集模式改变后
+        // 不得用缓存继续调用模型/工具，失败在凭据读取前返回受控拒绝。读取故障继续抛出，不假装匹配。
+        ModelCredentialProvider guardedProvider = (tenant, model) -> {
+            if (!mode.configValue().equals(modes.currentMode()))
+                throw new com.cmagent.core.runtime.RuntimeExecutionModeConflictException();
+            return provider.resolve(tenant, model);
+        };
         return AgentScopeRuntimeAdapter.create(
-                provider, gateway, options, Clock.systemUTC(), stateStore, skillGateway);
+                guardedProvider, gateway, options, Clock.systemUTC(), stateStore, skillGateway, mode);
     }
 }

@@ -2,7 +2,7 @@
 
 ## 1. 模块定位
 
-`cm-agent-agentscope-adapter` 是 CM Agent 领域运行契约与 AgentScope Java 2.0.2 之间的适配层。它把 Core 提供的 `AgentRunRequest` 转换为真实的 `ReActAgent` 单轮执行流程，再把模型输出、工具调用记录和失败状态转换回 `AgentRunResult`。
+`cm-agent-agentscope-adapter` 是 CM Agent 领域运行契约与 AgentScope Java 2.0.2 之间的适配层。它把 Core 提供的 `AgentRunRequest` 转换为真实的 ReAct 或受控 Harness 执行流程，再把模型输出、工具调用记录和失败状态转换回 `AgentRunResult`。旧工厂重载始终默认 ReAct。
 
 跨模块的 Harness 设计、治理边界、当前接入/部署状态和验收来源统一见 [Harness 模块说明](../docs/harness-module.md)。本文保留Adapter的API与嵌入式调用细节。
 
@@ -24,7 +24,7 @@ flowchart LR
     Service["RunExecutionService<br/>租户资源校验、运行持久化、输出脱敏"]
     Runtime["AgentScopeRuntimeAdapter<br/>Core 与 AgentScope 边界"]
     Credential["ModelCredentialProvider<br/>按 tenantId + modelConfigId 解析凭据"]
-    Executor["AgentScopeReActExecutor<br/>创建并执行 ReActAgent"]
+    Executor["ReAct / Harness 执行器<br/>受控推理与工具循环"]
     Model["AgentScope Model<br/>OpenAI Compatible / DashScope"]
     Bridge["AgentScopeToolBridge<br/>AgentTool 适配"]
     Gateway["ToolInvocationGateway<br/>重新授权、审计、受控执行"]
@@ -56,14 +56,21 @@ flowchart LR
 
 - `cm-agent-core`：稳定的领域对象与运行时接口。
 - `agentscope-core:2.0.2`：`ReActAgent`、`RuntimeContext`、Toolkit、事件和模型执行配置。
+- `agentscope-harness:2.0.2`：受控包装与事件入口，不开放原生宿主工具、长期历史或动态 Skill。
 - `agentscope-extensions-model-openai:2.0.2`：OpenAI Compatible 模型实现。
 - `agentscope-extensions-model-dashscope:2.0.2`：DashScope 原生模型实现。
 - `jackson-databind`：工具输入 Schema 解析和调用参数序列化。
 - Reactor：由 AgentScope 提供，用于模型事件流和异步工具结果。
 
-三个 AgentScope 依赖在本模块 POM 中声明为 `optional`。嵌入式使用者需要在最终运行应用中显式提供所需的 AgentScope Core 与 Provider 扩展；`cm-agent-server` 已承担这项运行时装配职责。
+四个 AgentScope 依赖在本模块 POM 中声明为 `optional`。嵌入式使用者需要在最终运行应用中显式提供所需的 AgentScope Core、Provider 扩展及所选 Harness 策略依赖；`cm-agent-server` 已承担这项运行时装配职责。
 
-T2–T6阶段验收已完成，包含受控审批/Skill、只读上下文、真实Provider、浏览器与排空旧包回退；最新范围及历史来源见 [Harness 模块说明](../docs/harness-module.md)。实际生产部署仍须单独满足身份、原密钥/密文恢复、全部实例排空及正式入口条件，不能用阶段测试代替生产准入。
+### 3.1 执行模式与隔离
+
+七参数 `AgentScopeRuntimeAdapter.create(..., stateStore, skillGateway, AgentScopeExecutionMode.HARNESS)` 显式选择 Harness；全部旧重载默认 ReAct。两种策略共享治理循环、审批检查点、固定 Skill 桥接和停止信号；取消能力通过策略显式声明，旧 Lambda 默认不声明取消支持。
+
+Harness 每次运行/恢复创建独占的私有空目录和生产隔离对象。文件系统仅合成 `AGENTS.md` 不存在，消息总线仅提供空 `inboxDrain`，异步登记仅提供空 `findStale`；其他能力调用记录持续失败，即使框架捕获也不能交付成功。关闭只删除自有目录，不跟随符号链接。构建后只保留 CM Agent 本次业务工具、固定 Skill 读取/脚本桥接并核对实例身份，移除默认残留 `wait_async_results`。
+
+Server 使用 `cm-agent.agentscope.execution-mode=react|harness`，默认 `react`；未知值启动失败。嵌入式宿主自行提供模式切换排空门禁；Server 的 JDBC 部署使用 V21 持久化全数据集模式，并在每次凭据解析前核对，不做副作用后自动重跑。T2–T6阶段验收已完成，包含受控审批/Skill、只读上下文、真实Provider、浏览器与排空旧包回退；最新范围及历史来源见 [Harness 模块说明](../docs/harness-module.md)。实际生产部署仍须单独满足身份、原密钥/密文恢复、全部实例排空及正式入口条件，不能用阶段测试代替生产准入。
 
 ## 4. 核心类型
 
@@ -91,7 +98,7 @@ T2–T6阶段验收已完成，包含受控审批/Skill、只读上下文、真�
 
 ### 4.3 `AgentScopeExecutor`
 
-[`AgentScopeExecutor`](src/main/java/com/cmagent/agentscope/AgentScopeExecutor.java) 是包内执行策略接口，用于隔离 `AgentScopeRuntimeAdapter` 与真实 ReAct 实现。
+[`AgentScopeExecutor`](src/main/java/com/cmagent/agentscope/AgentScopeExecutor.java) 是包内执行策略接口，用于隔离 `AgentScopeRuntimeAdapter` 与 ReAct/Harness 实现。
 
 - 三参数 `execute` 是唯一抽象方法，便于测试使用 Lambda 或 Fake Executor。
 - 四参数 `execute` 增加文本增量消费者；默认实现回退到非流式路径。
@@ -133,6 +140,10 @@ OpenCode Go 兼容规则：`OPENAI_COMPATIBLE` 的基础地址主机精确为 `o
 | `modelMaxAttempts` | `2` | AgentScope 模型最大尝试次数，允许范围为 1 到 5 |
 
 工具执行的 `maxAttempts` 在执行器中固定为 `1`。工具可能产生外部副作用，适配器不会让 AgentScope 隐式重试；如果某类工具允许重试，应在受治理网关或具体执行器中基于幂等策略显式实现。
+
+`permissionEnabled` 默认 `false`，保留兼容放行策略；设为 `true` 后，持久化会话中的 HIGH 工具使用显式 ASK，无会话 Run/TEST 的 HIGH 工具使用显式 DENY。AgentScope 2.0.2 的 `DONT_ASK` 只影响默认决策，不能覆盖显式 ASK。审批能力只取当前可信运行请求；LOW/MEDIUM 和关闭此开关的工具仍经过 `ToolInvocationGateway` 二次授权。
+
+原生 DENY 不会进入工具桥接器，执行器按框架事件和可信工具定义补充未授权的 `ToolCallRecord`，不虚构耗时或回显参数。即使框架后续生成最终回答，Run 仍返回 `DENIED` 和固定中文原因，并删除检查点；拒绝日志使用 `errorId=runId` 与 `errorCode=FORBIDDEN` 关联。该合同由正式ReAct/Harness策略共用；早期[隔离实验](../experiments/harness-compatibility-2.0.2/README.md)保留为历史证据，生产隔离使用正式对象，不能采用测试替身。
 
 ### 4.6 `AgentScopeReActExecutor`
 
@@ -290,6 +301,14 @@ sequenceDiagram
 
 适配器支持文本增量回调，但不实现 HTTP。Server 的 `/api/agents/{agentId}/runs/stream` 使用 SSE 将增量发送给浏览器；浏览器断开只停止发送，不代表 AgentScope 运行被取消，后端仍会完成运行、持久化和审计收口。
 
+## 只读工作区参考快照
+
+`AgentRunRequest.workspaceContext`为可选的可信`WorkspaceContextSnapshot`，身份必须匹配tenant、Agent、原Run与原主体，正文是有界UTF8资料。旧7–11参数构造器默认不携带；record组件新增后，使用record pattern的SDK调用方需调整匹配。内置ReAct/Harness明确声明`supportsWorkspaceContext()`，旧Runtime/策略默认false，Server显式启用而能力缺失时拒绝启动。
+
+快照由宿主负责权限、冻结、加密恢复与清理，adapter从不读取其中的宿主路径。资料只作为首次用户消息里的`CM_WORKSPACE_REFERENCE_V1` JSON数据，系统只加可信的数据使用规则；恢复沿用已保存消息，不再次追加。它不能授予工具/Skill/文件权限；原HIGH审批、非交互拒绝与治理门禁不变。资料注入的角色与权限合同不等同模型质量保证。
+
+Server管理员配置及本地/远端证据见[配置说明](../docs/configuration.md)和[T5账本](../docs/superpowers/progress/2026-10-12-harness-t5-ledger.md)。资料不进入Harness原生工作目录或固定Python沙箱，也不作为普通日志正文。Rocky两库/Linux合同及T6真实Provider、浏览器和排空回退验收已完成；实际部署仍需单独满足生产准入，最新边界见[模块说明](../docs/harness-module.md)。
+
 ## 7. 受治理 Skill 读取
 
 运行携带 Skill 快照时，`AgentScopeSkillSession` 为本次 Run 创建独立只读 `SkillBox`。目录提示只包含技能名称、固定版本和允许路径；`SKILL.md` 与资源正文不会预先拼入系统提示。
@@ -301,6 +320,10 @@ Skill 不改变 `ToolInvocationGateway` 的业务工具授权语义，也不为�
 部署环境显式开放沙箱时，独立注册 `run_skill_script`，只接受当前目录的技能 ID、已登记 `.py` 路径和 stdin。
 该工具使用 `SkillAccessGateway.execute` 与本轮共享门控；原生 `run_skill_code` 始终关闭。
 旧的网关实现默认不开放执行，直接嵌入调用方须自行实现授权、严格审计、沙箱隔离、超时与清理。
+
+ReAct 与 Harness 继续复用同一固定版本、读取预算、防重及撤销入口。Server 的实际 Python、审批恢复、候选 TEST、加密文件及下载归属合同见 [T4 账本](../docs/superpowers/progress/2026-10-11-harness-t4-ledger.md)。文件通过 CM Agent 的 `PENDING/READY` 与受鉴权下载交付，不进入 Harness 原生文件系统；沙箱准备记录不能冒充成功读取或试运行通过。
+
+Server 对实际脚本停止的分类依赖可信 `CANCELLING` 状态、线程真实中断与成功资源清理，正常停止返回 `RunCancellation.StoppedException`；取消审计或状态读取故障、附加清理失败仍是致命失败。嵌入式网关须自行维护同等边界；不能仅因收到停止请求就抹去执行错误。
 Server 通过 Docker 执行固定版本资源，准备读取记录不代表脚本执行成功，终态以执行审计与 Run 状态为准。
 
 ## 8. 工具结果与运行终态
@@ -421,13 +444,14 @@ mvn -pl cm-agent-agentscope-adapter -am test
 当前不提供：
 
 - 多轮会话持久化。
-- AgentScope State Store、Memory 或跨 Run 上下文复用。
-- HITL、手动取消或通用任务恢复。
+- 长期 Memory、跨 Run 的 AgentScope 会话状态复用或通用任务恢复。
 - AgentScope Meta Tool、Task List、内置文件/Shell 工具。
 - 根据工具 endpoint 自动执行 MCP、A2A 或 HTTP 请求。
 - 对外 HTTP、SSE、认证、持久化或审计实现。
 
 超时或中断只能停止本地执行链继续接受结果，不能证明外部工具副作用已经回滚。具有副作用的工具必须使用 `runId`、`toolCallId` 或业务幂等键完成去重和补偿设计。
+
+受控 HIGH 审批恢复和显式停止已由 Server T3 合同接入：宿主持有加密短期 AgentStateStore，只有正常 ASK 保留原 Run 状态；恢复必须核对原主体和原槽，不重新拼接会话历史。适配器提供取消能力，实际工具退出后才完成停止，通用任务恢复和跨实例自动接管仍不提供。真实协议、控制台及旧包回退证据见 [T6 账本](../docs/superpowers/progress/2026-10-12-harness-t6-ledger.md)。
 
 ## 13. 扩展注意事项
 
@@ -489,3 +513,7 @@ AgentScope 2.0.2 的取消信号可能来自超时、订阅释放或其他执行
 ### 为什么适配器不直接读取数据库中的模型 API Key？
 
 数据库与加密属于 Server 基础设施职责。适配器只依赖 `ModelCredentialProvider`，既能保持无 JDBC/Spring 依赖，也允许生产部署替换为外部 Secret Manager，而不改变 AgentScope 执行逻辑。
+
+### Harness 恢复是否读取原工作区或重新拼接历史？
+
+恢复使用新私有空目录，但检查点从宿主持有的同一 `AgentStateStore` 读取；`userId` 固定为可信 `tenantId:principalId`、`sessionId` 固定为 `runId`。恢复不再拼接会话历史或新增用户消息。AgentScope 2.0.2 默认状态加载会捕获读取异常并回退空状态，适配器因此在审批恢复前直接校验原槽，保留状态读取故障并阻止新执行。成功、拒绝、停止及失败删除状态，ASK 只有资源关闭也成功才保留状态。宿主仍须负责审批事实创建/通知失败时的事务补偿；Server 的 T3 编排已补齐该边界。

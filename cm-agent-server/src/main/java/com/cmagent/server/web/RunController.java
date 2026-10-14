@@ -182,7 +182,13 @@ public class RunController {
     ) {
         ApiErrorCode code;
         String message;
-        if (failure instanceof SkillAccessException skillFailure) {
+        if (failure instanceof com.cmagent.core.runtime.WorkspaceContextException workspaceFailure) {
+            // 工作区治理已经记录同一Run的安全诊断，SSE只转发编号与原因，避免重复堆栈。
+            if (workspaceFailure.claimDiagnostic()) diagnosticLogger.error(new ErrorDiagnosticLogger.DiagnosticContext(
+                    workspaceFailure.errorId(), "RUN_STREAM", workspaceFailure.code().name(), principal.tenantId().toString(),
+                    principal.principalId(), agentId.toString(), workspaceFailure.errorId(), "-", "-", "AGENT"), failure);
+            return new RunStreamError(workspaceFailure.code(), workspaceFailure.getMessage(), workspaceFailure.errorId());
+        } else if (failure instanceof SkillAccessException skillFailure) {
             code = skillFailure.code();
             message = skillFailure.safeMessage();
             errorId = skillFailure.errorId();

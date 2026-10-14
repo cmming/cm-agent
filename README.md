@@ -152,6 +152,8 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-ag
 
 真实 Runtime 支持 AgentScope 2.0.2 的 OpenAI Compatible 与 DashScope Provider。启用时必须同时关闭 fake runtime；模型 API Key 由模型配置管理接口加密写入数据库，运行时按 `tenantId + modelConfigId` 读取：
 
+执行模式默认 `cm-agent.agentscope.execution-mode=react`。新增的受控 `harness` 策略复用工具治理、固定 Skill 和检查点，框架宿主文件、Shell、后台工具、动态 Skill 等能力关闭；AgentScope 构件保持 2.0.2。JDBC 新增 V21 全数据集模式记录，切换须先排空所有非终态 Run、TEST 和检查点，并停用未实现门禁的旧二进制。T2 交付及后续生产验收边界见[实施账本](docs/superpowers/progress/2026-10-10-harness-t2-ledger.md)，配置与切换流程见[配置说明](docs/configuration.md)和[运维说明](docs/operations.md)。
+
 ```yaml
 cm-agent:
   fake-runtime-enabled: false

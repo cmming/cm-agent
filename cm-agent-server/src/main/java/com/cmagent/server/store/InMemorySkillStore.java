@@ -92,6 +92,14 @@ public final class InMemorySkillStore implements SkillUnitOfWork {
     /** @return 技能试运行仓储视图 */
     public SkillTrialRepository trials() { return trials; }
 
+    /** 仅用于系统排空检查；孤立的运行中/等待审批 TEST 也不能被模式切换遗忘。 */
+    public boolean hasNonTerminalTrials() {
+        return read(state -> state.trials.values().stream().anyMatch(trial -> switch (trial.status()) {
+            case PASSED, NOT_TRIGGERED, FAILED -> false;
+            default -> true;
+        }));
+    }
+
     /**
      * 以可重入锁保护暂存副本，并仅在最外层成功返回时发布。
      *

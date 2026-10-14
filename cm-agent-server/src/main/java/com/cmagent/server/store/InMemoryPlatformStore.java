@@ -75,6 +75,14 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
     private final List<ToolGrant> grants = Collections.synchronizedList(new ArrayList<>());
     private final List<AuditEvent> auditEvents = Collections.synchronizedList(new ArrayList<>());
     private final ConcurrentHashMap<UUID, RunRecord> runs = new ConcurrentHashMap<>();
+
+    /** 只供系统部署排空门禁使用，不返回跨租户资源；未知状态同样阻塞策略切换。 */
+    public boolean hasNonTerminalRuns() {
+        return runs.values().stream().anyMatch(run -> switch (run.status()) {
+            case SUCCEEDED, FAILED, DENIED, CANCELLED -> false;
+            default -> true;
+        });
+    }
     private final List<RunToolCall> toolCalls = Collections.synchronizedList(new ArrayList<>());
     private final ConcurrentHashMap<String, HttpToolConfig> httpToolConfigs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, McpToolPublication> mcpToolPublications = new ConcurrentHashMap<>();

@@ -38,9 +38,10 @@ import java.util.function.Consumer;
  * 服务端安全及持久化实现解耦。</p>
  */
 public class AgentScopeRuntimeAdapter implements AgentRuntime {
+    @Override public boolean supportsWorkspaceContext() { return executor.supportsWorkspaceContext(); }
     @Override
     public boolean supportsCancellation() {
-        return executor instanceof AgentScopeReActExecutor;
+        return executor.supportsCancellation();
     }
     private static final Logger log = LoggerFactory.getLogger(AgentScopeRuntimeAdapter.class);
 
@@ -130,10 +131,35 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
             AgentStateStore stateStore,
             SkillAccessGateway skillGateway
     ) {
+        return create(credentialProvider, toolGateway, options, clock, stateStore, skillGateway,
+                AgentScopeExecutionMode.REACT);
+    }
+
+    /**
+     * 按宿主部署策略创建运行时；旧重载始终选择 ReAct，不接受模型输入决定执行模式。
+     *
+     * <p>Harness 仅包装当前治理循环，不拥有长期历史；调用方负责排空切换与提供同一持久化 Store。
+     * 本适配层不依赖 Spring/JDBC，嵌入式宿主须自行提供所选框架依赖和部署门禁。</p>
+     * @param credentialProvider 当前租户的受控凭据提供者
+     * @param toolGateway 每次实际工具调用的治理入口
+     * @param options 模型/工具超时、重试与权限策略
+     * @param clock 运行结果的时间来源
+     * @param stateStore 宿主持有的审批检查点，不随工作区清理而删除
+     * @param skillGateway 固定 Skill 快照的治理入口
+     * @param mode 已由可信宿主确定的模式，不能为 null
+     * @return 具有所选策略及真实取消能力的运行时
+     */
+    public static AgentScopeRuntimeAdapter create(
+            ModelCredentialProvider credentialProvider, ToolInvocationGateway toolGateway,
+            AgentScopeRuntimeOptions options, Clock clock, AgentStateStore stateStore,
+            SkillAccessGateway skillGateway, AgentScopeExecutionMode mode) {
+        Objects.requireNonNull(mode, "mode 不能为空");
         return new AgentScopeRuntimeAdapter(
                 credentialProvider,
                 toolGateway,
-                new AgentScopeReActExecutor(options, new AgentScopeModelFactory(), stateStore, skillGateway),
+                mode == AgentScopeExecutionMode.REACT
+                        ? new AgentScopeReActExecutor(options, new AgentScopeModelFactory(), stateStore, skillGateway)
+                        : new AgentScopeHarnessExecutor(options, stateStore, skillGateway),
                 clock);
     }
 
@@ -145,6 +171,14 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
      */
     public AgentScopeRunSpec toRunSpec(AgentRunRequest request) {
         return new AgentScopeRunSpec(request);
+    }
+
+    /** 旧实例模式冲突在模型及工具执行前拒绝，Run 协议仍使用 status/errorMessage/runId。 */
+    private AgentRunResult modeConflict(AgentRunRequest request, Instant startedAt) {
+        log.warn("运行执行模式冲突。errorId={}, operation=run-agent, errorCode=RUNTIME_MODE_CONFLICT, resourceType=run, resourceId={}, tenantId={}, agentId={}, principalId={}, runId={}",
+                request.runId(), request.runId(), request.tenantId(), request.agent().id(), request.principal().principalId(), request.runId());
+        return new AgentRunResult(request.runId(), RunStatus.DENIED, "", List.of(), startedAt, clock.instant(),
+                "执行模式已切换，请排空旧实例并重启服务");
     }
 
     /**
@@ -190,6 +224,8 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
                     startedAt,
                     execution.status() == RunStatus.WAITING_APPROVAL ? null : clock.instant(),
                     execution.errorMessage());
+        } catch (com.cmagent.core.runtime.RuntimeExecutionModeConflictException exception) {
+            return modeConflict(request, startedAt);
         } catch (ModelCredentialUnavailableException exception) {
             // 凭据解析失败被映射为受控失败终态，此 catch 是该失败唯一可观察的应用日志位置；
             // 只记录租户与模型配置标识及异常类型：失败原因 cause 可能携带配置路径或密钥来源等
@@ -214,7 +250,7 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
      * 供会话服务在运行结束后持久化。文本增量仍在 AgentScope 事件线程中同步交付；上层必须在发送 SSE
      * 前完成脱敏，且不得把工具原始参数或原始结果传给该消费者。</p>
      *
-     * @param request 当前领域运行请求；其中的 {@code conversationId} 会决定 AgentScope sessionId
+     * @param request 当前领域运行请求；{@code runId} 决定状态槽，{@code conversationId} 仅决定交互审批入口
      * @param outputDeltaConsumer 接收带 replyId、blockId 的安全文本增量
      * @return 原运行结果与可选最终 assistant 快照
      */
@@ -258,6 +294,8 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
                     startedAt, execution.status() == RunStatus.WAITING_APPROVAL ? null : clock.instant(),
                     execution.errorMessage());
             return new AgentRuntimeResult(run, execution.assistantMessage(), execution.pendingApproval());
+        } catch (com.cmagent.core.runtime.RuntimeExecutionModeConflictException exception) {
+            return new AgentRuntimeResult(modeConflict(request, startedAt), null);
         } catch (ModelCredentialUnavailableException exception) {
             // 同 run()：结构化运行路径的凭据失败也不会再向上传播，必须在此处留下 WARN。
             log.warn("模型凭据不可用。runId={}, tenantId={}, modelConfigId={}, exceptionType={}",
@@ -280,7 +318,12 @@ public class AgentScopeRuntimeAdapter implements AgentRuntime {
         Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
         Objects.requireNonNull(progressConsumer, "progressConsumer 不能为空");
         Instant startedAt = clock.instant();
-        ModelCredential credential = credentialProvider.resolve(request.tenantId(), request.modelConfig().id());
+        ModelCredential credential;
+        try {
+            credential = credentialProvider.resolve(request.tenantId(), request.modelConfig().id());
+        } catch (com.cmagent.core.runtime.RuntimeExecutionModeConflictException failure) {
+            return new AgentRuntimeResult(modeConflict(request, startedAt), null);
+        }
         AgentScopeExecutionResult execution = executor.resumeStructured(
                 toRunSpec(request), credential, toolGateway, decisions, outputDeltaConsumer, progressConsumer);
         AgentRunResult run = new AgentRunResult(

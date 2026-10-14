@@ -144,6 +144,26 @@ public class ApiExceptionHandler {
         return response(status, failure.code(), failure.safeMessage(), failure.errorId());
     }
 
+    /** 只读资料错误沿用同一Run编号；未知宿主路径/堆栈已经在治理边界脱敏。 */
+    @ExceptionHandler(com.cmagent.core.runtime.WorkspaceContextException.class)
+    public ResponseEntity<ApiErrorResponse> workspaceFailure(com.cmagent.core.runtime.WorkspaceContextException failure, HttpServletRequest request) {
+        if (failure.claimDiagnostic()) {
+            Object supplied = request.getAttribute(ErrorDiagnosticLogger.DiagnosticContext.class.getName());
+            var context = supplied instanceof ErrorDiagnosticLogger.DiagnosticContext trusted
+                    ? new ErrorDiagnosticLogger.DiagnosticContext(failure.errorId(), trusted.boundary(), failure.code().name(), trusted.tenantId(),
+                            trusted.principalId(), trusted.agentId(), trusted.runId(), trusted.toolId(), trusted.toolCallId(), trusted.source())
+                    : ErrorDiagnosticLogger.DiagnosticContext.api(failure.errorId(), failure.code().name(), request.getRequestURI());
+            diagnosticLogger.error(context, failure);
+        }
+        HttpStatus status = switch (failure.code()) {
+            case WORKSPACE_CONTEXT_LIMIT_EXCEEDED -> HttpStatus.PAYLOAD_TOO_LARGE;
+            case WORKSPACE_CONTEXT_REVOKED -> HttpStatus.GONE;
+            case WORKSPACE_CONTEXT_SNAPSHOT_UNAVAILABLE -> HttpStatus.CONFLICT;
+            default -> HttpStatus.SERVICE_UNAVAILABLE;
+        };
+        return response(status, failure.code(), failure.getMessage(), failure.errorId());
+    }
+
     /** 技能 multipart 缺失或超过容器限制时仍返回 JSON 和稳定技能错误码。 */
     @ExceptionHandler({
             MissingServletRequestPartException.class,

@@ -61,10 +61,14 @@ class RepositoryAgentStateStoreTest {
         RepositoryAgentStateStore store = store(repository, cipher(), Duration.ofMinutes(15));
 
         assertThat(store.get(null, "run-1", "agent_state", TestState.class)).isEmpty();
+        assertThat(store.getList(null, "run-1", "memory_messages", TestState.class)).isEmpty();
         assertThat(repository.listSessionIds(TENANT_ID, USER_ID)).isEmpty();
         assertThatThrownBy(() -> store.save(null, "run-1", "agent_state", new TestState("不应保存")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("AgentScope userId 不能为空");
+        assertThatThrownBy(() -> store.save(null, "run-1", "items", List.of(new TestState("不应保存"))))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> store.delete(null, "run-1")).isInstanceOf(IllegalArgumentException.class);
     }
 
     private static RepositoryAgentStateStore store(

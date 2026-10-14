@@ -1,0 +1,45 @@
+# 外部生产配置示例；Secret 内容不进入仓库、镜像、启动参数或日志。
+# 只加载 production，禁止叠加 local/test/mysql/postgres。
+spring.config.import=configtree:/run/cm-agent-secrets/
+server.address=127.0.0.1
+server.port=18086
+server.shutdown=graceful
+spring.lifecycle.timeout-per-shutdown-phase=30s
+management.endpoints.web.exposure.include=health
+management.endpoint.health.show-details=never
+spring.application.admin.enabled=false
+
+# application-production.yml 所需 external-* 值由同名 Secret 文件提供。
+cm-agent.config.jdbc-driver-class-name=com.mysql.cj.jdbc.Driver
+cm-agent.config.persistence-mode=jdbc
+cm-agent.config.bootstrap-admin-enabled=false
+cm-agent.config.public-api-docs-enabled=false
+cm-agent.config.fake-runtime-enabled=false
+cm-agent.config.agentscope-enabled=true
+cm-agent.security.bootstrap-admin-enabled=false
+cm-agent.security.allow-dev-jwt-fallback=false
+cm-agent.fake-runtime-enabled=false
+cm-agent.agentscope.enabled=true
+cm-agent.agentscope.execution-mode=react
+cm-agent.agentscope.permission-enabled=true
+cm-agent.agentscope.studio.enabled=false
+cm-agent.http-tools.allow-http=false
+
+# 原密钥与旧密文必须成套恢复；这里不生成或覆盖既有主密钥。
+cm-agent.skills.enabled=true
+cm-agent.skills.sandbox.enabled=true
+cm-agent.skills.sandbox.backend=docker
+cm-agent.skills.sandbox.image=python:3.12-alpine
+cm-agent.skills.sandbox.connection.mode=LOCAL
+cm-agent.skills.sandbox.connection.port=0
+cm-agent.skills.sandbox.timeout=15s
+cm-agent.skills.sandbox.max-input-bytes=32768
+cm-agent.skills.sandbox.max-output-bytes=32768
+cm-agent.skills.sandbox.max-concurrent=2
+cm-agent.skills.sandbox.artifacts.enabled=true
+cm-agent.skills.sandbox.artifacts.storage=filesystem
+cm-agent.skills.sandbox.artifacts.root-directory=/srv/cm-agent-artifacts
+cm-agent.workspace-context.enabled=false
+
+# Flyway 启动信息可能输出数据库地址，生产仅记录其警告/错误。
+logging.level.org.flywaydb=WARN

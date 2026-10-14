@@ -24,6 +24,7 @@ import java.util.UUID;
  * @param skills 本次运行已固定版本的技能集合
  * @param skillDependencies 按技能标识分组的固定依赖解析
  * @param cancellation 本运行独享的停止信号，由可信服务端创建，不接受客户端覆盖
+ * @param workspaceContext 可选的可信只读参考快照；旧调用默认不携带，不授予文件或工具权限
  */
 public record AgentRunRequest(
         UUID runId,
@@ -36,8 +37,16 @@ public record AgentRunRequest(
         UUID conversationId,
         List<SkillVersionView> skills,
         Map<UUID, List<SkillDependencyResolution>> skillDependencies,
-        com.cmagent.core.runtime.RunCancellation cancellation
+        com.cmagent.core.runtime.RunCancellation cancellation,
+        WorkspaceContextSnapshot workspaceContext
 ) {
+    /** 保留原十一参数调用；宿主未显式准备资料时不增加输入或状态。 */
+    public AgentRunRequest(UUID runId, UUID tenantId, AgentDefinition agent, ModelConfig modelConfig,
+            PrincipalRef principal, String input, List<ToolDefinition> tools, UUID conversationId,
+            List<SkillVersionView> skills, Map<UUID, List<SkillDependencyResolution>> dependencies,
+            com.cmagent.core.runtime.RunCancellation cancellation) {
+        this(runId, tenantId, agent, modelConfig, principal, input, tools, conversationId, skills, dependencies, cancellation, null);
+    }
     /** 保留原十参数构造方式，嵌入式调用默认拥有独立且未请求停止的信号。 */
     public AgentRunRequest(UUID runId, UUID tenantId, AgentDefinition agent, ModelConfig modelConfig,
                            PrincipalRef principal, String input, List<ToolDefinition> tools, UUID conversationId,
@@ -84,6 +93,11 @@ public record AgentRunRequest(
         Objects.requireNonNull(modelConfig, "modelConfig 不能为空");
         Objects.requireNonNull(principal, "principal 不能为空");
         Objects.requireNonNull(input, "input 不能为空");
+        if (workspaceContext != null && (!tenantId.equals(workspaceContext.tenantId())
+                || !agent.id().equals(workspaceContext.agentId()) || !runId.equals(workspaceContext.runId())
+                || !principal.principalId().equals(workspaceContext.principalId()))) {
+            throw new IllegalArgumentException("参考快照不属于当前可信运行主体或 Agent");
+        }
         tools = List.copyOf(Objects.requireNonNull(tools, "tools 不能为空"));
         skills = List.copyOf(Objects.requireNonNull(skills, "skills 不能为空"));
         skillDependencies = freezeDependencies(skillDependencies);

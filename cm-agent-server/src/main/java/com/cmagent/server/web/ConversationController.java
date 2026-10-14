@@ -457,7 +457,13 @@ public class ConversationController {
     ) {
         ApiErrorCode code;
         String message;
-        if (failure instanceof SkillAccessException skillFailure) {
+        if (failure instanceof com.cmagent.core.runtime.WorkspaceContextException workspaceFailure) {
+            // 资料治理已经记录同一Run诊断；已提交的SSE只转发安全原因，避免重复记录堆栈。
+            if (workspaceFailure.claimDiagnostic()) diagnosticLogger.error(new ErrorDiagnosticLogger.DiagnosticContext(
+                    workspaceFailure.errorId(), "CONVERSATION_STREAM", workspaceFailure.code().name(), principal.tenantId().toString(),
+                    principal.principalId(), agentId.toString(), workspaceFailure.errorId(), "-", "-", "CONVERSATION:" + conversationId), failure);
+            return new ConversationStreamError(workspaceFailure.code(), workspaceFailure.getMessage(), workspaceFailure.errorId(), conversationId);
+        } else if (failure instanceof SkillAccessException skillFailure) {
             code = skillFailure.code();
             message = skillFailure.safeMessage();
             errorId = skillFailure.errorId();

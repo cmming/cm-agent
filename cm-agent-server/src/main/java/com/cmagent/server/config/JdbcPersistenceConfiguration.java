@@ -147,6 +147,14 @@ public class JdbcPersistenceConfiguration {
         return new TransactionTemplate(cmAgentTransactionManager);
     }
 
+    /** 部署模式记录和排空检查使用同一数据源短事务；迁移先于此 Bean 初始化。 */
+    @Bean
+    com.cmagent.core.repository.RuntimeExecutionModeRepository jdbcRuntimeExecutionModeRepository(
+            JdbcClient cmAgentJdbcClient, TransactionTemplate cmAgentTransactionTemplate) {
+        return new com.cmagent.persistence.JdbcRuntimeExecutionModeRepository(
+                cmAgentJdbcClient, cmAgentTransactionTemplate);
+    }
+
     /**
      * 创建与审计 Repository 共用事务管理器的技能工作单元。
      *

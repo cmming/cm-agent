@@ -55,6 +55,13 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 class AgentScopeRuntimeContractTest {
 
+    /** 同一事件合同由子类选择 Harness 重跑，避免用另一份断言掩盖策略行为差异。 */
+    protected AgentScopeExecutionMode executionMode() { return AgentScopeExecutionMode.REACT; }
+
+    private static com.cmagent.core.runtime.SkillAccessGateway rejectingSkills() {
+        return (request, loader) -> { throw new AssertionError("此工具合同不应读取技能"); };
+    }
+
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID AGENT_ID = UUID.fromString("00000000-0000-0000-0000-000000000201");
     private static final UUID MODEL_ID = UUID.fromString("00000000-0000-0000-0000-000000000401");
@@ -203,6 +210,57 @@ class AgentScopeRuntimeContractTest {
         AgentRunRequest base = request(List.of(high));
         return new AgentRunRequest(base.runId(), base.tenantId(), base.agent(), base.modelConfig(), base.principal(),
                 base.input(), base.tools(), UUID.randomUUID());
+    }
+
+    /** 框架规则拒绝不会进入桥接器，仍必须返回拒绝终态并删除检查点。 */
+    @Test
+    void 无会话高风险工具直接拒绝且没有审批检查点和实际调用() {
+        var calls = new AtomicInteger();
+        var store = new io.agentscope.core.state.InMemoryAgentStateStore();
+        var runtime = AgentScopeRuntimeAdapter.create(
+                (tenantId, modelConfigId) -> new ModelCredential(INVALID_TEST_CREDENTIAL),
+                invocation -> {
+                    calls.incrementAndGet();
+                    return ToolInvocationResult.succeeded("不应执行");
+                },
+                new AgentScopeRuntimeOptions(Duration.ofSeconds(2), Duration.ofSeconds(1), 1, true),
+                Clock.systemUTC(), store, rejectingSkills(), executionMode());
+        var high = new ToolDefinition(TOOL_ID, TENANT_ID, "echo", "高风险测试工具", ToolType.LOCAL,
+                tool().inputSchema(), ToolRiskLevel.HIGH, true, "", "tester", "tester");
+
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(AgentScopeReActExecutor.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            var result = runtime.runStructured(request(List.of(high)), ignored -> {}, ignored -> {});
+
+            assertThat(result.run().status()).isEqualTo(RunStatus.DENIED);
+            assertThat(result.pendingApproval()).isNull();
+            assertThat(result.run().errorMessage()).contains("审批", "会话")
+                    .doesNotContain(INVALID_TEST_CREDENTIAL, "127.0.0.1", "Permission denied", "Exception");
+            assertThat(result.run().toolCalls()).singleElement().satisfies(record -> {
+                assertThat(record.toolId()).isEqualTo(TOOL_ID);
+                assertThat(record.status()).isEqualTo(RunStatus.DENIED);
+                assertThat(record.authorized()).isFalse();
+                assertThat(record.inputSummary()).isEmpty();
+                assertThat(record.outputSummary()).isEmpty();
+            });
+            assertThat(calls).hasValue(0);
+            assertThat(store.exists(TENANT_ID + ":principal", RUN_ID.toString())).isFalse();
+            assertThat(appender.list).filteredOn(event -> event.getLevel() == ch.qos.logback.classic.Level.WARN)
+                    .singleElement().satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(ch.qos.logback.classic.Level.WARN);
+                assertThat(event.getFormattedMessage()).contains("errorId=" + result.run().runId(),
+                        "errorCode=FORBIDDEN", "operation=invoke-tool", "tenantId=" + TENANT_ID,
+                        "toolId=" + TOOL_ID, "toolCallId=tool-call-1")
+                        .doesNotContain(INVALID_TEST_CREDENTIAL, "127.0.0.1", "hello", "你好");
+                assertThat(event.getThrowableProxy()).isNull();
+            });
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 
     /**
@@ -923,7 +981,8 @@ class AgentScopeRuntimeContractTest {
                 (tenantId, modelConfigId) -> new ModelCredential(INVALID_TEST_CREDENTIAL),
                 gateway,
                 options,
-                Clock.fixed(Instant.parse("2026-07-16T00:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(Instant.parse("2026-07-16T00:00:00Z"), ZoneOffset.UTC),
+                new io.agentscope.core.state.InMemoryAgentStateStore(), rejectingSkills(), executionMode());
     }
 
     @Test
@@ -977,10 +1036,42 @@ class AgentScopeRuntimeContractTest {
             AgentScopeRuntimeOptions options,
             AgentScopeReActExecutor.AgentLifecycle lifecycle
     ) {
+        return runtime(gateway, options, lifecycle, new io.agentscope.core.state.InMemoryAgentStateStore());
+    }
+
+    @Test
+    void ASK后关闭失败不得保留可恢复检查点() {
+        var store = new io.agentscope.core.state.InMemoryAgentStateStore();
+        var failure = new IllegalStateException("合成关闭失败");
+        var lifecycle = new AgentScopeReActExecutor.AgentLifecycle() {
+            @Override public void interrupt(ReActAgent agent, RuntimeContext context) { agent.interrupt(context); }
+            @Override public void close(ReActAgent agent) { throw failure; }
+        };
+        var runtime = runtime(invocation -> { throw new AssertionError("ASK 前不应执行工具"); },
+                new AgentScopeRuntimeOptions(Duration.ofSeconds(2), Duration.ofSeconds(1), 1, true), lifecycle, store);
+        var request = approvalRequest();
+        assertThatThrownBy(() -> runtime.runStructured(request, ignored -> {}, ignored -> {})).isSameAs(failure);
+        assertThat(store.exists(request.tenantId() + ":" + request.principal().principalId(), request.runId().toString())).isFalse();
+    }
+
+    private AgentRuntime runtime(
+            ToolInvocationGateway gateway, AgentScopeRuntimeOptions options,
+            AgentScopeReActExecutor.AgentLifecycle lifecycle, io.agentscope.core.state.AgentStateStore store) {
+        var active = lifecycle;
+        if (executionMode() == AgentScopeExecutionMode.HARNESS) {
+            // 生产 Harness 构造/事件/清理仍真实执行；观察器只注入中断与关闭故障以检查优先级。
+            active = new AgentScopeHarnessExecutor.HarnessLifecycle() {
+                @Override public void onCreated(ReActAgent agent, RuntimeContext context) { lifecycle.onCreated(agent, context); }
+                @Override public void interrupt(ReActAgent agent, RuntimeContext context) { lifecycle.interrupt(agent, context); }
+                @Override public void close(ReActAgent agent) {
+                    try { lifecycle.close(agent); } finally { super.close(agent); }
+                }
+            };
+        }
         return new AgentScopeRuntimeAdapter(
                 (tenantId, modelConfigId) -> new ModelCredential(INVALID_TEST_CREDENTIAL),
                 gateway,
-                new AgentScopeReActExecutor(options, new AgentScopeModelFactory(), lifecycle),
+                new AgentScopeReActExecutor(options, new AgentScopeModelFactory(), store, active, rejectingSkills()),
                 Clock.fixed(Instant.parse("2026-07-16T00:00:00Z"), ZoneOffset.UTC));
     }
 

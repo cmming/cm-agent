@@ -65,6 +65,11 @@ public class RunExecutionService {
     private final SensitiveDataRedactor redactor;
     private final ErrorDiagnosticLogger diagnosticLogger;
     private final SkillRuntimeService skillRuntimeService;
+    /** Spring启动时固定资料治理服务；旧手工装配保留不携带资料的调用方式。 */
+    private WorkspaceContextService workspaceContexts;
+
+    @Autowired
+    void configureWorkspaceContexts(WorkspaceContextService service) { this.workspaceContexts = Objects.requireNonNull(service); }
 
     @Autowired
     /**
@@ -321,33 +326,55 @@ public class RunExecutionService {
 
         AgentRuntimeResult runtimeEnvelope;
         try {
-            // 将完整运行上下文交给 Runtime；Runtime 内部可能继续发起受治理的工具调用。
-            var skills = approvalDecisions == null
-                    ? skillRuntimeService.prepare(principal, runningRun, selection)
-                    : skillRuntimeService.restore(principal, runningRun);
-            skillRuntimeService.verifyRequiredDependencies(skills, context.authorizedTools());
-            AgentRunRequest runtimeRequest = new AgentRunRequest(
-                    runningRun.id(), principal.tenantId(), context.agent(), context.modelConfig(), principal,
-                    runtimeInput, context.authorizedTools(), conversationId, skills.versions(),
-                    skills.dependencyResolutions(), controls.find(runningRun.id()) == null
-                            ? new com.cmagent.core.runtime.RunCancellation()
-                            : controls.find(runningRun.id()).cancellation()
-            );
-            Consumer<AgentTextDelta> safeDelta = delta -> {
-                String text = redactor.redact(delta.delta());
-                var execution = controls.find(runningRun.id());
-                if (execution != null) {
-                    if (execution.cancellation().isRequested()) return;
-                    execution.append(text);
+            boolean workspaceAttempted = workspaceContexts != null && (approvalDecisions != null || workspaceContexts.applies(runningRun));
+            AgentRuntimeResult workspaceResult = null;
+            RuntimeException primaryWorkspaceFailure = null;
+            try {
+                var workspace = workspaceContexts == null ? null : workspaceContexts.prepare(principal, runningRun, approvalDecisions != null);
+                // 将完整运行上下文交给 Runtime；Runtime 内部可能继续发起受治理的工具调用。
+                var skills = approvalDecisions == null
+                        ? skillRuntimeService.prepare(principal, runningRun, selection)
+                        : skillRuntimeService.restore(principal, runningRun);
+                skillRuntimeService.verifyRequiredDependencies(skills, context.authorizedTools());
+                AgentRunRequest runtimeRequest = new AgentRunRequest(
+                        runningRun.id(), principal.tenantId(), context.agent(), context.modelConfig(), principal,
+                        runtimeInput, context.authorizedTools(), conversationId, skills.versions(),
+                        skills.dependencyResolutions(), controls.find(runningRun.id()) == null
+                                ? new com.cmagent.core.runtime.RunCancellation()
+                                : controls.find(runningRun.id()).cancellation(), workspace
+                );
+                Consumer<AgentTextDelta> safeDelta = delta -> {
+                    String text = redactor.redact(delta.delta());
+                    var execution = controls.find(runningRun.id());
+                    if (execution != null) {
+                        if (execution.cancellation().isRequested()) return;
+                        execution.append(text);
+                    }
+                    deltaConsumer.accept(new AgentTextDelta(delta.replyId(), delta.blockId(), text));
+                };
+                Consumer<AgentProgressEvent> safeProgress = progress -> {
+                    if (!runtimeRequest.cancellation().isRequested()) progressConsumer.accept(redactProgress(progress));
+                };
+                workspaceResult = approvalDecisions == null
+                        ? runtime.runStructured(runtimeRequest, safeDelta, safeProgress)
+                        : runtime.resumeStructured(runtimeRequest, approvalDecisions, safeDelta, safeProgress);
+                if (workspace != null && workspaceResult.run().status() == com.cmagent.core.domain.RunStatus.WAITING_APPROVAL)
+                    workspaceContexts.retain(runningRun, workspace);
+            } catch (RuntimeException failure) {
+                primaryWorkspaceFailure = failure;
+                throw failure;
+            } finally {
+                // 在进入最终Run/文件发布短事务之前清理资料状态，清理失败必须阻止成功；ASK正常交付才保留。
+                if (workspaceAttempted && (primaryWorkspaceFailure != null || workspaceResult == null
+                        || workspaceResult.run().status() != com.cmagent.core.domain.RunStatus.WAITING_APPROVAL)) {
+                    try { workspaceContexts.cleanup(principal, runningRun); }
+                    catch (RuntimeException cleanup) {
+                        if (primaryWorkspaceFailure != null && cleanup != primaryWorkspaceFailure) cleanup.addSuppressed(primaryWorkspaceFailure);
+                        throw cleanup;
+                    }
                 }
-                deltaConsumer.accept(new AgentTextDelta(delta.replyId(), delta.blockId(), text));
-            };
-            Consumer<AgentProgressEvent> safeProgress = progress -> {
-                if (!runtimeRequest.cancellation().isRequested()) progressConsumer.accept(redactProgress(progress));
-            };
-            runtimeEnvelope = approvalDecisions == null
-                    ? runtime.runStructured(runtimeRequest, safeDelta, safeProgress)
-                    : runtime.resumeStructured(runtimeRequest, approvalDecisions, safeDelta, safeProgress);
+            }
+            runtimeEnvelope = workspaceResult;
         } catch (AuditPersistenceException auditFailure) {
             // 审计持久化失败时尽力关闭运行记录，并保留原异常交给上层严格处理。
             bestEffortFailureClosure(principal, runningRun);
@@ -356,6 +383,11 @@ public class RunExecutionService {
             // 业务数据持久化失败同样尝试关闭运行记录，避免掩盖原始数据库异常。
             bestEffortFailureClosure(principal, runningRun);
             throw dataFailure;
+        } catch (com.cmagent.core.runtime.WorkspaceContextException workspaceFailure) {
+            // 资料边界已记录安全诊断，保持稳定错误码/编号；不降级成无资料的新执行。
+            try { persistenceService.completeFailure(principal, runningRun); }
+            catch (RuntimeException closure) { closure.addSuppressed(workspaceFailure); throw closure; }
+            throw workspaceFailure;
         } catch (SkillAccessException skillFailure) {
             // 技能异常已经具备稳定错误码和错误编号；只收口 Run，不能包装成泛化运行错误后丢失语义。
             try {
@@ -405,6 +437,8 @@ public class RunExecutionService {
         AgentRunResult runtimeResult = runtimeEnvelope.run();
         var execution = controls.find(runningRun.id());
         if (execution != null && execution.cancellation().isRequested()) {
+            // 停止可能在Runtime返回ASK后赢得短锁；必须在取消终态/文件收口之前删除仍保留的资料状态。
+            if (workspaceContexts != null) workspaceContexts.cleanup(principal, runningRun);
             String partial = redactor.redact(execution.output());
             runtimeResult = new AgentRunResult(runningRun.id(), com.cmagent.core.domain.RunStatus.CANCELLED,
                     partial, runtimeResult.toolCalls(), runningRun.startedAt(), java.time.Instant.now(), "");

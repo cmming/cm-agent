@@ -206,4 +206,34 @@ class ToolApprovalServiceTest {
         return new RuntimePendingApproval("reply", List.of(new RuntimePendingApproval.RuntimePendingToolCall(
                 callId, UUID.randomUUID(), "high_tool", ToolRiskLevel.HIGH, "摘要", "a".repeat(64))));
     }
+
+    @Test
+    void 独立运行决定接受后前置失败也收口Run并清除检查点() {
+        UUID runId = UUID.randomUUID();
+        var approval = service.createForRun(principal, agent, runId, pending("first"));
+        var waiting = RunRecord.create(runId, tenant, agent, "initiator", RunKind.TEST, "输入", Instant.now()).waitForApproval();
+        when(runs.findByTenantAndAgentAndId(tenant, agent, runId)).thenReturn(java.util.Optional.of(waiting));
+        when(execution.resumePrepared(any(), any(), any(), isNull(), any(), any(), any()))
+                .thenThrow(new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Agent 已禁用"));
+        assertThatThrownBy(() -> service.decideAndResumeRun(principal, agent, runId, approval.approvalId(), 0,
+                List.of(new ToolApprovalService.ItemDecision(approval.items().getFirst().itemId(), ToolApprovalDecision.APPROVE)),
+                ignored -> {}, ignored -> {})).isInstanceOf(ResponseStatusException.class);
+        verify(persistence).completeFailure(principal, waiting);
+        verify(checkpoints).deleteSession(tenant, tenant + ":initiator", runId.toString());
+    }
+
+    @Test
+    void 状态清理失败保留通知原因为suppressed且严格失败优先() {
+        var approval = create();
+        var waiting = RunRecord.create(approval.runId(), tenant, agent, "initiator", "输入", Instant.now()).waitForApproval();
+        when(runs.findByTenantAndAgentAndId(tenant, agent, approval.runId())).thenReturn(java.util.Optional.of(waiting));
+        when(runs.resumeWaitingApproval(waiting)).thenReturn(true);
+        var cleanup = new org.springframework.dao.DataAccessResourceFailureException("状态仓储不可用");
+        doThrow(cleanup).when(checkpoints).deleteSession(tenant, tenant + ":initiator", approval.runId().toString());
+        assertThatThrownBy(() -> service.decideAndResume(principal, agent, conversation, approval.approvalId(), 0,
+                List.of(new ToolApprovalService.ItemDecision(approval.items().getFirst().itemId(), ToolApprovalDecision.APPROVE)),
+                ignored -> { throw new IllegalStateException("通知失败"); }, ignored -> {}, ignored -> {}))
+                .isSameAs(cleanup).satisfies(failure -> assertThat(failure.getSuppressed()).singleElement()
+                        .extracting(Throwable::getMessage).isEqualTo("通知失败"));
+    }
 }

@@ -1,5 +1,81 @@
 # 发布说明
 
+## 未发布：Harness 相关改动整体提交
+
+- 2026-10-14按用户要求纳入受控Harness实现、V21、只读上下文、对应测试、实验源码、部署脚本及阶段工作包；AgentScope保持2.0.2、默认react，未推送或部署生产。
+- 各阶段条目保留形成时的状态，包括当时“未提交”、V20/旧Run及待验收记录；最新采用范围见[模块说明](harness-module.md)和[接续账本](superpowers/progress/2026-10-12-harness-drain-readiness-ledger.md)，不把历史快照当作当前排空证明。
+
+## 未发布：Windows 本机 Harness 运行
+
+- 用户改为本机运行；Windows JDK21/mysql开发profile、真实Harness及回环8080启动，数据库经独立SSH转发连接Rocky MySQL。沿用既有管理员和密钥，关闭不可达的可选Studio；Java/POM/YAML/迁移及默认react未修改。
+- 健康、登录及现有DeepSeek无工具真实Run通过；前两次失败及审计保留，3个临时Agent停用。原库经正常V21启动门禁切为harness，173Run/22TEST全终态、检查点/待审批0；一项GLM配置上游余额不足，未证明全部模型或技能容器可用。
+- 新增scripts/start-local-harness.ps1前台复现与CheckOnly，更新同路径R1工作包及运维说明。当前本机运行不等于Rocky生产部署完成；原生产任务移出当前范围、七Secret及真实恢复历史阻塞保留，未提交/推送。详见[接续账本R1](superpowers/progress/2026-10-12-harness-drain-readiness-ledger.md)。
+
+## 未发布：Rocky 生产装配准备
+
+- 用户选择Rocky生产目标；新增scripts/rocky-harness非敏感配置、前置检查、启动脚本及说明。仅production、显式MySQL驱动、真实AgentScope，默认react，禁用bootstrap/dev fallback/fake/Studio，首次回环18086，不自动开放流量。
+- 同一已验收候选包与5个旧CMA1密文已暂存/home私有目录，避开空间紧张的根分区；密文备份23096字节、两端摘要一致，尚未认证解密或验证独立密钥恢复。非rootJDK21/只读包/Docker组访问实测通过，Maven入口显式改为java，不依赖root缓存初始化。
+- 前置检查缺七个生产Secret时拒绝，实际负例及排空SQL通过；未创建生产容器、应用账号、JWT或主密钥，未切换模式。不是生产启动或正式发布完成；源码仍未提交/推送，真实Secret供给与恢复/入口验收见[接续账本](superpowers/progress/2026-10-12-harness-drain-readiness-ledger.md)。
+
+## 未发布：已确认中断测试 Run 的受控收口
+
+- 用户确认Rocky MySQL中8条历史RUNNING为中断测试；新增V21私有备份并实际副本验证审计阶段故障回滚、重复NOOP及排空后的模式往返。
+- 使用现有Run/Audit仓储、精确ID/归属/原状态、模式/Run行锁与同一短事务，原库8条收口为FAILED，新增8条终态及8条修复审计；不重放模型/工具，原始输入输出消息、旧审计、其他Run与业务表不变。数据库已全部排空，模式仍react。
+- 原库第一次操作因本机IDE的10个连接被拒绝而零写入；通过Spring Admin正常关闭上下文、释放入口和数据库连接后完成修复。IDE JVM未完全退出，未强杀或自动重启，未按mysql/bootstrap配置冒充生产部署；Harness启用仍等待应用目标及配置。无Java生产代码、依赖、YAML或迁移脚本修改，未提交、未推送，见[接续账本](superpowers/progress/2026-10-12-harness-drain-readiness-ledger.md)。
+
+## 未发布：Rocky MySQL 备份还原与 V21 迁移接续
+
+- 用户明确正式数据集为Rocky MySQL `cm_agent`；私有V20逻辑备份已实际隔离还原，全表数据匹配。副本验证V21迁移及8条非终态阻止Harness切换，模式react保留。
+- 原库使用既有Flyway正常补齐V21，全部业务表数据迁移前后相同；170条Run/22条TEST保留，8条历史RUNNING未强制终结。未修改迁移脚本、Java生产代码、依赖、YAML或默认react。
+- 数据库还原证明不包含密文产物卷与独立密钥；旧Run安全收口、全部部署实例及正式配置仍待确认，未启动应用或启用Harness。未提交、未推送，证据和继续条件见[接续账本](superpowers/progress/2026-10-12-harness-drain-readiness-ledger.md)。
+
+## 未发布：时钟校准与 Harness 受控启用评估
+
+- 2026-10-12恢复Rocky原chronyd离线时间源，取得新鲜NTP样本后校准系统与UTC RTC；系统显示已同步，waitsync校正量约1毫秒，chronyd active/enabled。没有变更时间源配置、重启虚拟机或停止无关容器。
+- 补充运维时间校准和只读排空核查步骤，同步T6已完成事实。当前候选MySQL仍有8条RUNNING且迁移V20，PostgreSQL仅V1；正式目标、入口、全部实例和生产备份恢复尚未核实，因此暂不启用Harness。
+- 无代码、依赖、接口、迁移或默认react改动，无业务记录修复或生产部署；未提交、未推送。当前结果和继续条件见[评估账本](superpowers/progress/2026-10-12-harness-controlled-enablement-ledger.md)。
+
+## 未发布：T6 真实验收与旧包回退
+
+- 关闭T5剩余Rocky验收，新增显式启用的真实Provider与实际二进制合同，不改变业务运行默认值。ReAct/Harness、DashScope原生及其OpenAI兼容接口8项真实协议合同通过；双策略/装配72项、控制台JS46项、双库迁移/模式3项与实际旧包回退2项通过。
+- Harness中文控制台验证续聊、消息与审批SSE、HIGH审批恢复、实际停止、两协议Skill TEST与DOCX下载。TEST不修改正式发布或绑定；HTTP测试目标被Rocky解析为本地地址，安全策略按HTTP_TARGET_REJECTED拒绝。
+- 新旧包显式repackage后在临时PostgreSQL16/MySQL8.4执行策略往返与Git基线6752bf8旧包回退，运行历史及V21保留。修正README中不支持审批/取消的过时说明，补充端点与打包/排空边界。
+- 修复完整拒绝审批后表单残留“运行已暂停”的提示，按服务端终态显示拒绝/停止/失败/成功或新审批等待，保留主体/会话复核与一次写入门控；v2会话页使用app.js资源版本2.0.32，5项新回归与实体包浏览器复测通过。
+- 默认仍react，AgentScope2.0.2、MCP与数据库结构未改变。未提交、未推送、未部署生产；证明范围及Rocky时钟偏差见[T6账本](superpowers/progress/2026-10-12-harness-t6-ledger.md)。
+
+## 未发布：T5 只读工作区上下文
+
+- 新增默认关闭的`cm-agent.workspace-context`，以管理员tenant/Agent映射读取显式私有文本，限制路径、编码、数量与字节；首次Run冻结并加密至现有检查点，审批恢复不重读源文件。
+- 新增SDK可选参考快照和默认关闭的能力声明，保留旧构造器；两种策略把资料作为用户消息JSON数据，不授予工具权限或开放原生文件系统。HTTP/SSE有安全中文原因、稳定错误码与原Run编号。
+- ASK保留原快照，终态/失败/停止在成功与文件发布前清理，严格失败不回退重跑；新增本地Windows、实际Harness/协议、身份/预算/注入/错误合同，两库/Linux验收已完成。
+- 全模块打包、本地合同与Rocky双库/Linux安全目录验收通过；两库各29项、0失败/错误、Windows专属1项跳过。不替代真实Provider/浏览器/回退。依赖、迁移和默认react不变；未提交、未推送、未部署。当前证据见[T5账本](superpowers/progress/2026-10-12-harness-t5-ledger.md)。
+
+## 未发布：T4 Harness 技能沙箱与产物合同
+
+- 修复用户停止在途脚本时被误判为致命沙箱超时：只有同一可信 Run 已进入 `CANCELLING`、线程实际中断且关闭未附加失败时记录严格取消审计，待资源退出后交付 `CANCELLED`；普通超时、审计/状态读取及清理故障继续失败。
+- 新增实际 Spring Harness、回环模型、固定 Python Docker、JDBC、AES-GCM 文件与 Web 下载集成合同，覆盖固定版本审批恢复、撤销、依赖授权、预算、防重、候选 TEST、成功发布、下载归属、密文损坏和停止清理。实测结果见 [T4 账本](superpowers/progress/2026-10-11-harness-t4-ledger.md)。
+- 无新增接口、配置键、依赖或迁移；AgentScope 保持 2.0.2、默认 react，Skill/沙箱/文件开关仍由部署者显式启用。本轮不替代真实 Provider、浏览器、强杀进程或生产多实例验收，未提交、未推送、未部署。
+
+## 未发布：T3 Harness 审批恢复、状态与停止合同
+
+- 首次 ASK 的审批创建失败、决定通知失败和独立运行恢复前置失败进入统一补偿；关闭活动 Run 并清理同一发起主体的加密检查点，JDBC 使用共享运行短锁及短事务，严格清理失败保留原原因为 suppressed。
+- 审批恢复先直接读取原检查点，避免 AgentScope 2.0.2 读取异常回退空状态掩盖数据库或密文损坏；ASK 后资源关闭失败也删除状态。默认槽只读探测返回空，匿名写入与删除继续拒绝。
+- 以生产 Harness、回环模型协议桩、真实治理网关和加密 Store 验证多轮/重复/部分批准/撤权、对象重建、过期竞态与停止实际工具退出；JDBC 同时验证 PostgreSQL 16 和 MySQL 8.4。命令、结果与边界见 [T3 账本](superpowers/progress/2026-10-10-harness-t3-ledger.md)。
+- HTTP/SSE、数据库结构、依赖和默认 react 不变；独立 Run/TEST 的非交互 HIGH 拒绝合同保持。单实例停止句柄、提交决定后崩溃无自动重放、真实外部 Provider/浏览器验收等限制仍需遵循现有运维说明。本轮未提交或部署。
+
+## 未发布：T2 受控 Harness 执行策略与模式装配
+
+- 新增生产隔离对象及 Harness 执行器，复用 ReAct 治理循环、审批/停止/固定 Skill 契约；私有工作区、拒绝型宿主能力与最终工具白名单关闭默认 `wait_async_results` 和原生宿主能力。
+- 新增 `cm-agent.agentscope.execution-mode`，默认 `react`；可显式选择 `harness`，未知值启动失败，自定义 Runtime 仍优先。Adapter 的 Harness 依赖为 optional，Server 显式装配，全部 AgentScope 保持 2.0.2。
+- 新增 PostgreSQL/MySQL V21 系统模式表及中文原生注释；模式改变须排空非终态 Run、TEST 和所有检查点，短事务行锁串行切换。相同模式重启可恢复审批，旧模式实例在凭据解析前拒绝，不自动重跑工具。
+- 不改现有 HTTP/SSE、前端和 MCP 版本。旧二进制须全部停用；本轮代码交付不替代 T3–T6 的真实模型及完整生产验收。当前命令和证据见[交付账本](superpowers/progress/2026-10-10-harness-t2-ledger.md)。
+
+## 未发布：无审批入口的高风险工具拒绝修复
+
+- 开启 `cm-agent.agentscope.permission-enabled` 时，有持久化会话的 HIGH 工具继续按次审批；无会话 Run/TEST 的 HIGH 调用显式拒绝，避免 `DONT_ASK` 下显式 ASK 仍暂停且无人恢复。
+- 原生拒绝发生在工具桥接器之前，适配器补充未授权工具记录并把 Run 映射为 `DENIED`；返回固定中文原因，清理检查点，拒绝日志关联 Run 编号，不记录原始参数或凭据。
+- 该轮准入修复保持 AgentScope 2.0.2，生产当时仍使用 ReAct；Harness 最终白名单、空消息查询和私有工作区在独立实验验证。该轮没有新增配置键或数据库迁移，默认 `permission-enabled=false` 保持兼容；后续生产策略接入见上方 T2 条目。该轮证据见[实施账本](superpowers/progress/2026-10-10-harness-entry-hardening-ledger.md)。
+
 ## 未发布：会话聊天页面均衡优化
 
 - v2 聊天采用独立消息滚动区与紧凑输入区，手机通过“会话与 Agent”展开历史列表；支持已加载标题过滤、时间分组、完整标题查看、正文与代码复制。

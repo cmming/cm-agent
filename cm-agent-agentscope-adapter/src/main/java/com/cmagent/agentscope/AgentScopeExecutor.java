@@ -13,11 +13,16 @@ import java.util.function.Consumer;
  * 隔离领域运行适配与具体 AgentScope 执行方式的包内策略接口。
  *
  * <p>{@link AgentScopeRuntimeAdapter} 只依赖此接口，因此单元测试可以使用不访问模型 Provider 的执行器；
- * 生产装配则使用 {@link AgentScopeReActExecutor}。三参数方法保持为唯一抽象方法，兼容现有 Lambda 和
+ * 生产装配按部署模式使用 ReAct 或受控 Harness 策略。三参数方法保持为唯一抽象方法，兼容现有 Lambda 和
  * 不支持增量事件的自定义实现。</p>
  */
 @FunctionalInterface
 interface AgentScopeExecutor {
+    /** @return 是否把校验后的参考快照作为数据输入模型，旧自定义策略默认不支持 */
+    default boolean supportsWorkspaceContext() { return false; }
+
+    /** 是否消费停止信号并等待在途调用退出；旧 Lambda/自定义实现默认不声明此能力。 */
+    default boolean supportsCancellation() { return false; }
 
     /**
      * 使用受控凭据和工具治理入口同步执行一次 AgentScope 运行。

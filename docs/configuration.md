@@ -1,5 +1,35 @@
 # 配置说明
 
+## 显式只读工作区参考资料
+
+DashScope 原生 `baseUrl` 使用 `https://dashscope.aliyuncs.com`；AgentScope 2.0.2 原生客户端自行追加 `/api/v1/services/...`，不要重复填写 `/api/v1`。OpenAI 兼容协议使用 `https://dashscope.aliyuncs.com/compatible-mode/v1`。本项目 T6 两策略真实协议验收覆盖上述两个接口，不代表所有兼容网关均已验证。
+
+`cm-agent.workspace-context.enabled` 默认 `false`。管理员可将私有参考资料绑定到明确的 tenant/Agent；该映射使资料可供该租户中获准运行此Agent的主体使用，不授予业务工具权限。Controller/模型不能提交宿主路径。启用后实际Runtime须声明支持；内置ReAct与Harness支持，旧自定义Runtime默认拒绝启用。
+
+```yaml
+cm-agent:
+  workspace-context:
+    enabled: false # 完成验收并配置私有资料后由部署者显式开启
+    root-directory: /srv/cm-agent-reference
+    max-files: 4
+    max-file-bytes: 16384
+    max-total-bytes: 32768
+    read-timeout: 2s
+    bindings:
+      - tenant-id: 00000000-0000-0000-0000-000000000001
+        agent-id: 00000000-0000-0000-0000-000000000002
+        directory: tenant-1/agent-1
+        files: [guide.md, reference.json]
+```
+
+示例ID必须替换为实际可信租户和Agent。根必须位于应用仓库、用户主目录及其祖先之外，并是所有者私有的本地可读目录；Windows可使用独立盘符私有目录，先配置仅所有者ALLOW的ACL。服务只读取，不自动创建资料根或修改已有权限。父目录也应防止不可信替换；同一服务账号和部署管理员为可信文件系统写入者。禁止用用户目录/应用仓库的挂载别名或网络共享作为来源，资料不得包含凭据。
+
+文件逐项声明，不扫描目录，仅接受UTF8 `.md/.txt/.json/.csv`。默认4文件/16KiB单文件/32KiB累计，硬上限8/32KiB/64KiB；读取预算配置范围10ms–5s，默认2s，为协作检查预算，不保证操作系统阻塞I/O可强制终止。禁止路径逃逸、符号链接、目录联接/重解析及别名；Unix硬链接拒绝，Windows仍依赖私有ACL和可信管理员。
+
+首次Run固定资料及SHA-256版本，审批恢复使用原加密快照；源文件更新仅影响新Run。映射关闭/移除/变化会拒绝旧快照恢复；缺失、过期或损坏不能重新读取最新资料代替。资料正文在原`runtime_checkpoints`使用宿主AES-GCM密钥保存，不新增表；`workspace_context_v1`和守卫键共用审批TTL并随整个状态槽终态/过期清理。管理员不能选择性删除状态键后继续原Run。
+
+资料作为模型用户消息中的JSON参考数据，系统只追加数据使用规则；没有原生文件工具、UI上传、任意路径、Shell或自动权限授权。按目标模型上下文窗口收紧字节预算，当前不自动压缩或调用真实tokenizer。本地与Rocky两库/Linux合同已通过，真实Provider、浏览器和回退由T6验收，见 [T5账本](superpowers/progress/2026-10-12-harness-t5-ledger.md)。
+
 本文档说明服务端的 profile、真实 AgentScope Runtime、技能脚本沙箱、持久化、安全和敏感信息配置。`local`/`test` 可显式使用 fake runtime；生产 profile 必须关闭 fake runtime、启用 AgentScope Runtime，并使用外部签发、受控验证的 JWT。
 
 ## Profile 选择
@@ -32,6 +62,7 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 | `CM_AGENT_PROFILE` | 空 | profile 兼容选择器；仅在未通过 Spring 配置选择时使用 |
 | `cm-agent.fake-runtime-enabled` | `false` | fake runtime 开关；仅 `local`/`test` 可按需设为 `true`，strict profile 必须为 `false` |
 | `cm-agent.agentscope.enabled` | `false` | AgentScope 真实 Runtime 开关；生产 profile 必须为 `true`，并与 fake runtime 互斥 |
+| `cm-agent.agentscope.execution-mode` | `react` | 全数据集执行策略，仅支持 `react`、`harness`；默认 ReAct，未知值启动失败，切换须排空 |
 | `cm-agent.agentscope.model-timeout` | `60s` | 单次模型阶段超时时间，必须为正数 |
 | `cm-agent.agentscope.tool-timeout` | `30s` | AgentScope 工具执行超时时间，必须为正数 |
 | `cm-agent.agentscope.model-max-attempts` | `2` | 模型最大尝试次数，范围为 1 到 5 |
@@ -57,6 +88,14 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 | `cm-agent.model-catalog-discovery.timeout` | `5s` | 单次目录请求的连接与读取超时，必须为正数 |
 | `cm-agent.model-catalog-discovery.max-response-bytes` | `131072` | 目录响应体上限，超过后返回受控失败 |
 | `cm-agent.model-catalog-discovery.max-models` | `200` | 单次返回给控制台的模型名称上限 |
+
+## 执行模式与切换
+
+通过受控外部 YAML 设置 `cm-agent.agentscope.execution-mode: harness` 或使用完整 Spring 属性覆盖。此模式不是 Agent/API 请求参数；现有配置文件和默认值保持 `react`。Core、Harness、Provider 和 Studio 等 AgentScope 构件统一使用 2.0.2，MCP Server 2.0.0 与示例客户端 0.17.0 保持原版本。
+
+默认运行时启动时激活选定模式。JDBC 的 V21 `runtime_execution_modes` 是系统部署元数据，仅保存一个数据集的模式与更新时间；短事务行锁串行化切换，非终态 Run、非终态 TEST 和全部检查点（包括过期或孤立记录）均阻塞切换，不自动删除。相同模式重启不阻塞已有审批恢复。每次运行及恢复在凭据读取前核对持久化模式；旧模式实例返回 `DENIED` 和“执行模式已切换，请排空旧实例并重启服务”，后台使用 `errorId=runId`、`RUNTIME_MODE_CONFLICT` 关联。数据库读取失败继续按执行失败处理，不默认认为匹配。
+
+自定义 `AgentRuntime` 仍优先于默认装配。替换 memory 仓储的宿主若要切换默认运行时模式，须提供与实际 Run、TEST、检查点相连的 `RuntimeExecutionModeRepository`，不能用默认空存储证明排空；memory 模式只用于本地/测试。模式切换步骤及旧二进制限制见[运维说明](operations.md)。受控Harness的T2–T6阶段验收已完成；实际生产部署仍须单独满足身份、原密钥/密文恢复、全部实例排空及正式入口条件，最新状态见[模块说明](harness-module.md)。
 
 ## Skill 配置与权限
 
@@ -321,7 +360,11 @@ AgentScope 2.0.0 在绑定可信 `RuntimeContext` 前可能探测无用户标识
 
 真实运行同时提供兼容的单轮 Run API 和持久化会话 API。会话接口位于 `/api/agents/{agentId}/conversations`；续聊时固定读取最近 40 条、最多 60,000 字符的完整消息历史，不做自动摘要。该限制当前不是外部配置项，避免不同实例产生不一致的上下文边界。会话流式接口发送最终回答文本增量、受控执行进度及审批事件，不发送工具原始参数或工具原始输出。
 
-`permission-enabled` 默认 `false`，用于保持已有工具放行策略的兼容升级；只有明确设为 `true` 时，HIGH 工具才按每次具体调用进入 `WAITING_APPROVAL`。`approval-ttl` 默认 `15m`，必须大于 0 且不超过 24 小时。审批请求保存脱敏摘要及原工具 ID、调用 ID、输入哈希，AgentScope 状态通过 AES/GCM 加密写入 `runtime_checkpoints`，终态或过期处理后删除。第一版只允许原运行发起人且同时拥有 `agent:run`、`agent:approve` 的主体决定，不支持独立审批人、长期预授权规则或无人值守暂停。模式固定在线 DEFAULT、无会话 DONT_ASK，没有 `permission.*` 嵌套配置。
+`permission-enabled` 默认 `false`，用于保持已有工具放行策略的兼容升级。明确设为 `true` 时，内置ReAct/Harness仅依据可信持久化会话启用HIGH工具的ASK，每次具体调用进入 `WAITING_APPROVAL`；无会话的单轮Run及内置TEST对HIGH调用显式拒绝，返回 `DENIED`、固定中文原因和未授权工具记录，不调用业务网关、不创建待审批请求，终态删除检查点。已有运行级审批恢复服务不改变内置策略的这一判定。LOW/MEDIUM仍须经过治理网关二次授权。
+
+AgentScope 2.0.2 的显式 ASK 规则优先于 `DONT_ASK` 的默认决策，因此无会话必须配置显式 DENY，不能只依靠模式切换。模式固定为会话 `DEFAULT`、无会话 `DONT_ASK`；是否具备会话由服务端可信请求决定，没有 `permission.*` 嵌套配置。框架规则拒绝在桥接器执行前发生，适配器补充拒绝记录；诊断日志以 `errorId=runId` 关联、使用 `FORBIDDEN` 原因码，不记录原始模型参数或凭据。Run 结果继续使用既有 `status/errorMessage/runId` 契约，不新增 HTTP 错误字段或状态映射。
+
+`approval-ttl` 默认 `15m`，必须大于 0 且不超过 24 小时。审批请求保存脱敏摘要及原工具 ID、调用 ID、输入哈希，AgentScope 状态通过 AES/GCM 加密写入 `runtime_checkpoints`，终态或过期处理后删除。仅允许原运行发起人且同时拥有 `agent:run`、`agent:approve` 的主体决定，不支持独立审批人、长期预授权规则或无人值守暂停。正式模块已提供ReAct和受控Harness两种策略，默认仍为react，AgentScope依赖保持2.0.2；策略选择见上方“执行模式与切换”。
 
 ## 审批主动过期扫描
 

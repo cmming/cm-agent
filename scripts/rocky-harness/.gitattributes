@@ -1,0 +1,2 @@
+# Windows检出时保留Linux部署脚本的LF换行。
+*.sh text eol=lf

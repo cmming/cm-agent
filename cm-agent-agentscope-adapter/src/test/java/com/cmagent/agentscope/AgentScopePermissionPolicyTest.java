@@ -46,7 +46,9 @@ class AgentScopePermissionPolicyTest {
                 List.of(tool("high_tool", ToolRiskLevel.HIGH)), true, false);
 
         assertThat(context.getMode()).isEqualTo(PermissionMode.DONT_ASK);
-        assertThat(context.getAskRules()).containsKey("high_tool");
+        assertThat(context.getAskRules()).isEmpty();
+        assertThat(context.getDenyRules().get("high_tool")).singleElement()
+                .extracting(rule -> rule.behavior()).isEqualTo(PermissionBehavior.DENY);
     }
 
     @Test
