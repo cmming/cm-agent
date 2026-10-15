@@ -24,6 +24,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -43,6 +44,48 @@ class AgentControllerTest {
     private JwtService jwtService;
     @Autowired
     private InMemoryPlatformStore store;
+
+    @Test
+    void 修改模型配置后列表与详情使用当前名称且不回写Agent() throws Exception {
+        String token = token("agent:read", "agent:write", "model:write");
+        String body = mockMvc.perform(post("/api/agents")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"名称同步回归","systemPrompt":"帮助用户","modelConfigId":"%s"}
+                                """.formatted(DEFAULT_MODEL_CONFIG_ID)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        UUID agentId = UUID.fromString(JsonPath.read(body, "$.id"));
+        var original = store.findAgent(TENANT_ID, agentId).orElseThrow();
+
+        mockMvc.perform(put("/api/model-configs/{id}", DEFAULT_MODEL_CONFIG_ID)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"providerType":"OPENAI_COMPATIBLE","displayName":"更新后的配置",
+                                 "baseUrl":"https://models.example.test/v1","modelName":"current-model","enabled":true}
+                                """))
+                .andExpect(status().isOk());
+
+        // 只拥有 Agent 读取权限的主体也应获得正确名称，无需额外开放模型配置或凭据读取权限。
+        String reader = token("agent:read");
+        mockMvc.perform(get("/api/agents").header("Authorization", "Bearer " + reader))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == '%s')].modelName".formatted(agentId))
+                        .value(org.hamcrest.Matchers.contains("current-model")));
+        mockMvc.perform(get("/api/agents/{id}", agentId).header("Authorization", "Bearer " + reader))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.modelName").value("current-model"))
+                .andExpect(jsonPath("$.modelProviderId").value(DEFAULT_MODEL_CONFIG_ID.toString()))
+                .andExpect(jsonPath("$.systemPrompt").value(original.systemPrompt()));
+        assertThat(store.findAgent(TENANT_ID, agentId)).contains(original);
+
+        String otherTenant = jwtService.createToken(UUID.randomUUID(), "other-reader", "其他租户", List.of("agent:read"));
+        mockMvc.perform(get("/api/agents").header("Authorization", "Bearer " + otherTenant))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        mockMvc.perform(get("/api/agents/{id}", agentId).header("Authorization", "Bearer " + otherTenant))
+                .andExpect(status().isNotFound());
+    }
 
     @Test
     void 从模型配置创建更新并删除Agent() throws Exception {

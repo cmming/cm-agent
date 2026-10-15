@@ -2,12 +2,12 @@ package com.cmagent.server.web;
 
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.AgentDefinition;
-import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.cmagent.core.security.AuthorizationDecision;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.security.JwtService;
 import com.cmagent.server.service.AgentDefinitionCommandService;
+import com.cmagent.server.service.AgentDefinitionQueryService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -33,25 +33,26 @@ import java.util.UUID;
 @RequestMapping("/api/agents")
 /** Agent 管理接口；所有数据访问都限定在当前认证主体的租户范围内。 */
 public class AgentController {
-    private final AgentDefinitionRepository agentRepository;
+    /** 组合当前租户 Agent 与模型元数据的查询服务。 */
+    private final AgentDefinitionQueryService queryService;
     private final PermissionEvaluator permissionEvaluator;
     private final AuditAppender auditAppender;
     private final AgentDefinitionCommandService commandService;
     /**
      * 创建 {@code AgentController} 实例并保存其运行所需依赖。
      *
-     * @param agentRepository 负责访问相关领域数据的仓储。
+     * @param queryService 按可信租户解析当前绑定模型名称的查询服务。
      * @param permissionEvaluator 执行主体权限判断的组件。
      * @param auditAppender 负责追加安全审计事件的组件。
      * @param commandService Agent 写操作服务，负责模型配置校验、持久化和审计。
      */
     public AgentController(
-            AgentDefinitionRepository agentRepository,
+            AgentDefinitionQueryService queryService,
             PermissionEvaluator permissionEvaluator,
             AuditAppender auditAppender,
             AgentDefinitionCommandService commandService
     ) {
-        this.agentRepository = agentRepository;
+        this.queryService = queryService;
         this.permissionEvaluator = permissionEvaluator;
         this.auditAppender = auditAppender;
         this.commandService = commandService;
@@ -66,7 +67,7 @@ public class AgentController {
     public List<AgentDefinition> list(Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:read", "AGENT", "list");
-        return agentRepository.listByTenant(principal.tenantId());
+        return queryService.list(principal.tenantId());
     }
 
     @GetMapping("/{id}")
@@ -79,7 +80,7 @@ public class AgentController {
     public AgentDefinition get(@PathVariable("id") UUID id, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:read", "AGENT", id.toString());
-        return agentRepository.findByTenantAndId(principal.tenantId(), id)
+        return queryService.get(principal.tenantId(), id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agent 不存在"));
     }
 

@@ -472,7 +472,10 @@ public class RunExecutionService {
                 .findByTenantAndId(principal.tenantId(), agent.modelProviderId())
                 .filter(ModelConfig::enabled)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "模型配置不可用"));
-        return new ResolvedRunContext(agent, modelConfig, authorizedTools(principal, agent));
+        // Server 的 Agent 通过配置 ID 绑定模型；旧 modelName 是创建时的副本，不能覆盖更新后的配置。
+        // 仅替换本次运行定义，不回写数据库，也不改变嵌入式适配器显式指定模型名称的合同。
+        return new ResolvedRunContext(agent.withModelName(modelConfig.modelName()), modelConfig,
+                authorizedTools(principal, agent));
     }
 
     /**

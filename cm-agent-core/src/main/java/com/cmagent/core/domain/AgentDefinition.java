@@ -37,6 +37,17 @@ public record AgentDefinition(
 ) {
 
     /**
+     * 生成使用指定模型名称的不可变副本，不修改持久化记录或其他 Agent 配置。
+     *
+     * @param resolvedModelName 调用方从可信模型配置解析出的当前模型名称
+     * @return 仅模型名称被替换的新定义
+     */
+    public AgentDefinition withModelName(String resolvedModelName) {
+        return new AgentDefinition(id, tenantId, name, description, systemPrompt, modelProviderId,
+                resolvedModelName, temperature, maxIterations, enabled, toolIds, createdBy, updatedBy);
+    }
+
+    /**
      * 校验并规范化 Agent 定义的标识、模型绑定和基础配置。
      *
      * @param id 目标资源标识

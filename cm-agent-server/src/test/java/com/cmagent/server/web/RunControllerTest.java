@@ -397,6 +397,25 @@ class RunControllerTest {
     }
 
     @Test
+    void 修改模型名称后下一次运行使用当前配置而不使用创建时副本() throws Exception {
+        String accessToken = loginToken();
+        String agentId = createAgent(accessToken);
+        var original = store.findAgent(TENANT_ID, UUID.fromString(agentId)).orElseThrow();
+        var config = store.findModelConfig(TENANT_ID, original.modelProviderId()).orElseThrow();
+        store.saveModelConfig(new ModelConfig(config.id(), config.tenantId(), config.providerType(),
+                config.displayName(), config.baseUrl(), "current-runtime-model", true));
+
+        mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
+                        .header("Authorization", bearer(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"input\":\"名称同步验证\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("SUCCEEDED"));
+
+        assertThat(agentRuntime.lastRequest().agent()).isEqualTo(original.withModelName("current-runtime-model"));
+        assertThat(agentRuntime.lastRequest().modelConfig().modelName()).isEqualTo("current-runtime-model");
+        assertThat(store.findAgent(TENANT_ID, original.id())).contains(original);
+    }
+
+    @Test
     /**
      * 验证或支持 {@code crossTenantModelConfigIsRejectedBeforeRuntimeInvocation} 所描述的测试场景。
      */
