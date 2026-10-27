@@ -53,6 +53,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+@org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
 class AgentScopeRuntimeContractTest {
 
     /** 同一事件合同由子类选择 Harness 重跑，避免用另一份断言掩盖策略行为差异。 */
@@ -933,15 +934,18 @@ class AgentScopeRuntimeContractTest {
     }
 
     @Test
-    void mapsRealProviderHttpFailureToFixedChineseMessage() {
+    void 模型HTTP失败保留安全响应和日志关联编号(org.springframework.boot.test.system.CapturedOutput output) {
         AgentRunResult result = runtime(ignored -> ToolInvocationResult.succeeded("ok"), defaultOptions())
                 .run(request(List.of(), "触发模型失败"));
 
         assertThat(result.status()).isEqualTo(RunStatus.FAILED);
         assertThat(result.output()).isEmpty();
         assertThat(result.errorMessage())
-                .isEqualTo("Agent 运行失败")
-                .doesNotContain("本地模型服务失败");
+                .contains("HTTP 500", "本地模型服务失败");
+        assertThat(result.getErrorId()).isEqualTo(RUN_ID.toString());
+        assertThat(output.getAll()).contains("errorId=" + result.getErrorId(), "errorCode=" + result.getErrorCode(), "HTTP 500")
+                .doesNotContain(INVALID_TEST_CREDENTIAL, "private-model.invalid", "untrusted-response-debug");
+        assertThat(result.errorMessage()).doesNotContain(INVALID_TEST_CREDENTIAL, "private-model.invalid", "untrusted-response-debug");
         assertThat(requestCount).hasValue(1);
     }
 
@@ -1213,7 +1217,8 @@ class AgentScopeRuntimeContractTest {
     }
 
     private static void respondWithProviderFailure(HttpExchange exchange) throws IOException {
-        byte[] body = "{\"error\":{\"message\":\"本地模型服务失败\"}}"
+        byte[] body = ("{\"error\":{\"message\":\"本地模型服务失败 apiKey=" + INVALID_TEST_CREDENTIAL
+                + " https://private-model.invalid/v1\"},\"debug\":\"untrusted-response-debug\"}")
                 .getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
         exchange.sendResponseHeaders(500, body.length);

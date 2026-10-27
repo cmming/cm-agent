@@ -4,6 +4,10 @@
 .chat-icon-button img { width: 18px; height: 18px; }
 .chat-stop-button { border-color: #a54a43; }
 .chat-stopped-note { color: #765047; font-size: 12px; margin: 8px 0 0; }
+.chat-run-failure { align-self: stretch; min-width: 0; padding: 12px 16px; border: 1px solid #b9574b; border-radius: 12px; color: #8b3028; background: #fff7f5; }
+.chat-run-failure p { margin: 0; overflow-wrap: anywhere; line-height: 1.65; }
+.chat-run-failure button { margin-top: 8px; }
+.chat-run-failure button[hidden] { display: none; }
 @media (max-width: 600px) {
     .chat-composer-footer { flex-wrap: wrap; gap: 8px; }
     .chat-run-actions { margin-left: auto; }

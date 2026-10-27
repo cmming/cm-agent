@@ -291,6 +291,41 @@ class RunControllerTest {
     }
 
     @Test
+    void 问答同步与流式失败保留安全接口响应且历史查询返回相同错误编号() throws Exception {
+        String token = loginToken();
+        String agentId = createAgent(token);
+        for (boolean stream : new boolean[]{false, true}) {
+            String created = mockMvc.perform(post("/api/agents/{agentId}/conversations", agentId)
+                            .header("Authorization", bearer(token)))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            String conversationId = JsonPath.read(created, "$.id");
+            Instant now = Instant.now();
+            agentRuntime.returnNext(new AgentRunResult(UUID.randomUUID(), RunStatus.FAILED, "", List.of(), now, now,
+                    "模型接口请求失败（HTTP 429）：额度不足（上游错误码：insufficient_quota） apiKey=test-upstream-secret https://internal.invalid/v1"));
+            String response = mockMvc.perform(post("/api/agents/{agentId}/conversations/{conversationId}/messages" + (stream ? "/stream" : ""), agentId, conversationId)
+                            .header("Authorization", bearer(token)).contentType(MediaType.APPLICATION_JSON)
+                            .accept(stream ? MediaType.TEXT_EVENT_STREAM : MediaType.APPLICATION_JSON)
+                            .content("{\"input\":\"验证接口错误返回\"}"))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+            String payload = stream ? response.lines().filter(line -> line.startsWith("data:") && line.contains("\"run\":"))
+                    .map(line -> line.substring(5)).findFirst().orElseThrow() : response;
+            String runId = JsonPath.read(payload, "$.run.runId");
+            assertThat((String) JsonPath.read(payload, "$.run.errorId")).isEqualTo(runId);
+            assertThat((String) JsonPath.read(payload, "$.run.errorCode")).isEqualTo("RUNTIME_EXECUTION_FAILED");
+            assertThat((String) JsonPath.read(payload, "$.run.status")).isEqualTo("FAILED");
+            assertThat((Object) JsonPath.read(payload, "$.assistantMessage")).isNull();
+            assertThat(payload).contains("HTTP 429", "额度不足", "insufficient_quota")
+                    .doesNotContain("test-upstream-secret", "internal.invalid", "java.lang");
+            String safeMessage = JsonPath.read(payload, "$.run.errorMessage");
+            mockMvc.perform(get("/api/agents/{agentId}/conversations/{conversationId}/runs/{runId}", agentId, conversationId, runId)
+                            .header("Authorization", bearer(token)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.errorId").value(runId))
+                    .andExpect(jsonPath("$.errorCode").value("RUNTIME_EXECUTION_FAILED"))
+                    .andExpect(jsonPath("$.errorMessage").value(safeMessage));
+        }
+    }
+
+    @Test
     /**
      * 验证会话流式协议提供消息关联键，并在 completed 事件中返回持久化消息终态。
      */

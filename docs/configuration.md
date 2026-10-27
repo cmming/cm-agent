@@ -1,5 +1,11 @@
 # 配置说明
 
+## 模型接口失败诊断
+
+模型接口失败时，问答同步响应、SSE completed 与历史 Run 查询通过 `errorMessage` 返回实际上游 HTTP 状态和结构化错误说明的脱敏摘要。失败还返回 `errorCode=RUNTIME_EXECUTION_FAILED`、`errorId=runId`，可用该编号检索运行诊断日志；没有结构化错误说明时明确提示未提供，不暴露原始异常或完整响应。
+
+Server 默认设置 `logging.level.io.agentscope.core.model.transport.JdkHttpTransport=ERROR`，因为 AgentScope 2.0.2 在该 logger 的 WARN 中直接打印 URL 和原始错误响应；原生 DashScope Provider 的日志也可能输出 SSE 原文与原始异常，因此 `logging.level.io.agentscope.extensions.model.dashscope` 设为 `"OFF"`。由适配器记录安全的错误原因及 tenant/Agent/Run 关联信息。生产不要重新打开这些会输出原文的日志来排查模型问题；优先使用前端显示的 errorId。升级后需重启 Server，再刷新控制台；旧失败记录只有当时保存的说明，无法恢复上游原文。
+
 ## 显式只读工作区参考资料
 
 DashScope 原生 `baseUrl` 使用 `https://dashscope.aliyuncs.com`；AgentScope 2.0.2 原生客户端自行追加 `/api/v1/services/...`，不要重复填写 `/api/v1`。OpenAI 兼容协议使用 `https://dashscope.aliyuncs.com/compatible-mode/v1`。本项目 T6 两策略真实协议验收覆盖上述两个接口，不代表所有兼容网关均已验证。

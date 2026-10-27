@@ -24,7 +24,9 @@ function harness(events, refresh = async () => {}) {
         loadConversations:async()=>{}, refreshApprovalState:()=>refresh(state),
         streamEventError:data=>new Error(data.message),
         api:{stream:async(url,options,accept)=>{requests.push({url,options});await events(accept);}}};
-    vm.runInNewContext(`${source};globalThis.submit=submitApprovalDecision;`,context);
+    const outcome = app.slice(app.indexOf("function showChatRunOutcome("), app.indexOf("function createChatRunFailure("));
+    context.$ = id => id === "chatMessageList" ? null : ({id,focus(){}});
+    vm.runInNewContext(`${outcome}\n${source};globalThis.submit=submitApprovalDecision;`,context);
     return {state,statuses,requests,submit:()=>context.submit(approval,{})};
 }
 
@@ -49,7 +51,7 @@ test("新审批仍提示等待而不会按上一终态解锁为成功",async()=>
 });
 
 test("已停止失败和成功按服务端终态显示且失败保留安全原因和运行编号",async()=>{
-    for(const [status,pattern,tone] of [["CANCELLED",/已停止/,"neutral"],["FAILED",/上游模型超时.*run/,"error"],["SUCCEEDED",/已结束/,"success"]]){
+    for(const [status,pattern,tone] of [["CANCELLED",/已停止/,"neutral"],["FAILED",/上游模型超时.*run/,"error"],["SUCCEEDED",/回答已完成/,"success"]]){
         const flow=harness(async accept=>accept({type:"completed",data:{run:{runId:"run",status,errorMessage:"上游模型超时"}}}));
         await flow.submit();
         assert.match(flow.statuses.at(-1)?.message||"",pattern);

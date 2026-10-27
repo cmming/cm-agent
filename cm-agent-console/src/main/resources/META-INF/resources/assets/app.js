@@ -2930,17 +2930,14 @@
                 await refreshApprovalState(approval, isCurrent);
                 if (isCurrent()) {
                     state.approvalFeedback.set(approval.approvalId, {phase: "DONE",
-                        message: nextApproval ? "本次决定已处理，运行又提出了新的调用，请继续核对新审批。" : "本次审批流程已结束，执行结果请查看会话回答或运行记录。", tone: "success"});
+                        message: nextApproval ? "本次决定已处理，运行又提出了新的调用，请继续核对新审批。"
+                            : completedRun?.status === "FAILED" ? core.chatRunOutcome(completedRun).message
+                                : "本次审批流程已结束，执行结果请查看会话回答或运行记录。",
+                        tone: nextApproval ? "neutral" : core.chatRunOutcome(completedRun).tone});
                     // 完整拒绝可能没有assistant正文且审批卡已移入历史，不能依赖正文刷新清除旧暂停提示。
                     // 终态来自服务端SSE；刷新后的主体/会话复核防止迟到结果改写其他页面。
-                    const status = completedRun?.status;
-                    const message = nextApproval ? "运行已暂停，请处理新的高风险工具审批。"
-                        : status === "DENIED" ? "本轮已拒绝，不会执行被拒绝的调用。"
-                            : status === "CANCELLED" ? "本轮已停止，已保留输出内容。"
-                                : status === "FAILED" ? `本轮运行失败：${completedRun.errorMessage || "请查看运行记录定位原因"}（运行编号：${completedRun.runId || approval.runId}）。`
-                                    : "本次审批流程已结束，执行结果请查看会话回答或运行记录。";
-                    setStatus($("chatFormStatus"), message, nextApproval ? "neutral"
-                        : status === "SUCCEEDED" ? "success" : status === "FAILED" ? "error" : "neutral");
+                    if (nextApproval) setStatus($("chatFormStatus"), "运行已暂停，请处理新的高风险工具审批。", "neutral");
+                    else showChatRunOutcome({...completedRun, runId: completedRun?.runId || approval.runId});
                 }
             }
         } catch (error) {
@@ -3149,9 +3146,64 @@
             renderChatWelcome("当前会话还没有消息，输入问题开始聊天。", false);
             return;
         }
-        messages.forEach((message) => container.append(createChatMessage(message)));
+        const lastByRun = new Map(messages.filter(message => message.runId).map(message => [message.runId, message]));
+        messages.forEach((message) => {
+            container.append(createChatMessage(message));
+            // 失败可能完全没有 assistant 消息；提示属于运行反馈，不伪造回答或写入模型上下文。
+            if (message === lastByRun.get(message.runId) && state.chatRunStatuses[message.runId] === "FAILED") {
+                container.append(createChatRunFailure(message.runId));
+            }
+        });
         if (reading) chatUx.restoreReading(reading);
         else scrollChatToBottom();
+    }
+
+    function showChatRunOutcome(run) {
+        const outcome = core.chatRunOutcome(run);
+        setStatus($("chatFormStatus"), outcome.message, outcome.tone);
+        if (run?.status === "FAILED") {
+            const runId = run.runId || run.id;
+            const container = $("chatMessageList");
+            if (container && runId && ![...container.querySelectorAll(".chat-run-failure")].some(note => note.dataset.runId === runId)) {
+                container.append(createChatRunFailure(runId));
+            }
+            container?.querySelectorAll(".chat-run-failure").forEach(note => {
+                if (note.dataset.runId !== runId) return;
+                note.querySelector("p").textContent = outcome.message;
+                note.querySelector("button").hidden = true;
+            });
+        }
+    }
+
+    function createChatRunFailure(runId) {
+        const note = element("section", {className: "chat-run-failure"});
+        note.dataset.runId = runId;
+        note.setAttribute("aria-label", "本轮运行失败");
+        const message = element("p", {text: core.chatRunOutcome({runId, status: "FAILED"}).message});
+        message.setAttribute("role", "status");
+        const details = element("button", {className: "button ghost compact", type: "button", text: "查看失败原因"});
+        const agentId = state.selectedAgentId, conversationId = state.selectedConversationId, session = sessionEpoch.capture();
+        const isCurrent = () => sessionEpoch.isCurrent(session) && state.selectedAgentId === agentId
+            && state.selectedConversationId === conversationId && note.isConnected;
+        // 历史消息只有状态；按需 GET 原运行避免为每条历史失败批量请求，也绝不重放消息或工具。
+        details.addEventListener("click", async () => {
+            details.disabled = true;
+            try {
+                const run = await api.request(`/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}`);
+                if (!isCurrent()) return;
+                message.textContent = core.chatRunOutcome({...run, id: runId}).message;
+                details.hidden = true;
+            } catch (error) {
+                if (isCurrent()) {
+                    message.textContent = `本轮运行失败（运行编号：${runId}）。失败详情暂时无法读取：${error.message}`;
+                    details.textContent = "重新读取原因";
+                }
+            } finally {
+                if (isCurrent()) details.disabled = false;
+            }
+        });
+        note.append(message, details);
+        return note;
     }
 
     function renderChatWelcome(message, replace = true) {
@@ -3506,11 +3558,11 @@
                 if (!isCurrent()) return;
                 if (!result && !approvalRequired) throw new Error("运行未返回最终结果，请刷新会话确认状态。");
                 await loadConversations(agentId);
+                if (!isCurrent()) return;
                 await loadChatMessages(agentId, conversationId);
-                setStatus($("chatFormStatus"), approvalRequired
-                    ? "运行已暂停，请处理下方高风险工具审批。"
-                    : result?.run?.status === "CANCELLED" ? "本轮已停止，已保留输出内容。"
-                        : "回答已完成。", approvalRequired ? "neutral" : "success");
+                if (!isCurrent()) return;
+                if (approvalRequired) setStatus($("chatFormStatus"), "运行已暂停，请处理下方高风险工具审批。", "neutral");
+                else showChatRunOutcome(result?.run);
             });
         } catch (error) {
             if (!operationCurrent()) return;
@@ -3549,8 +3601,7 @@
                     const loaded = await loadChatMessages(agentId, conversationId);
                     if (loaded && sessionEpoch.isCurrent(session) && state.selectedAgentId === agentId
                             && state.selectedConversationId === conversationId && !state.activeChatRun) {
-                        setStatus($("chatFormStatus"), row.status === "CANCELLED"
-                            ? "本轮已停止，已保留输出内容。" : "本轮已结束。", "success");
+                        showChatRunOutcome(row);
                     }
                 }
             } catch (error) {

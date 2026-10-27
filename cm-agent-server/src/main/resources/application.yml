@@ -1,3 +1,10 @@
+logging:
+  level:
+    # AgentScope 2.0.2 在 WARN 中直接写 URL 和原始错误响应；保留 ERROR 安全告警，运行失败由适配器输出脱敏关联日志。
+    io.agentscope.core.model.transport.JdkHttpTransport: ERROR
+    # 原生 Provider 也会在 ERROR/WARN 打印异常堆栈及 SSE 原文；统一使用外层适配器的安全诊断。
+    io.agentscope.extensions.model.dashscope: "OFF"
+
 server:
   port: ${cm-agent.config.server-port:8080}
 

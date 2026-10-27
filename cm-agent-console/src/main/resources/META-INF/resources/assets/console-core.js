@@ -697,6 +697,22 @@
         }).format(date);
     }
 
+    // completed 只表示协议结束；只有 SUCCEEDED 才能提示成功。原因沿用服务端安全字段，不能推测底层异常。
+    function chatRunOutcome(run) {
+        const runId = run?.runId || run?.id;
+        const details = [run?.errorCode || run?.code ? `错误码：${run.errorCode || run.code}` : "",
+            run?.errorId ? `错误编号：${run.errorId}` : "", runId ? `运行编号：${runId}` : ""].filter(Boolean);
+        switch (run?.status) {
+            case "FAILED":
+                return {tone: "error", message: `本轮运行失败：${String(run.errorMessage || "").trim() || "未生成完整回答"}。${details.length ? `（${details.join("，")}）` : ""} 请核对运行记录，或联系管理员排查后重新发送。`};
+            case "SUCCEEDED": return {tone: "success", message: "回答已完成。"};
+            case "CANCELLED": return {tone: "neutral", message: "本轮已停止，已保留输出内容。"};
+            case "DENIED": return {tone: "neutral", message: "本轮已拒绝，不会执行被拒绝的调用。"};
+            case "WAITING_APPROVAL": return {tone: "neutral", message: "运行已暂停，请处理高风险工具审批。"};
+            default: return {tone: "neutral", message: "尚未确认本轮最终状态，请刷新会话核对。"};
+        }
+    }
+
     function statusMeta(status) {
         const values = {
             SUCCEEDED: {label: "成功", tone: "success"},
@@ -752,6 +768,7 @@
         createSubmitStateGuard,
         formatDateTime,
         statusMeta,
+        chatRunOutcome,
         formatSkillLoadState
     };
 });

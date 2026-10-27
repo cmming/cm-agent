@@ -915,7 +915,8 @@ function approvalFlowHarness({stream, refresh} = {}) {
             emit({type: "completed", data: {}});
         }}
     };
-    vm.runInNewContext(`${app.slice(begin, end)}; globalThis.actions = {submitApprovalDecision, refreshApprovalFromCard};`, context);
+    const outcome = app.slice(app.indexOf("function showChatRunOutcome("), app.indexOf("function createChatRunFailure("));
+    vm.runInNewContext(`${outcome}\n${app.slice(begin, end)}; globalThis.actions = {submitApprovalDecision, refreshApprovalFromCard};`, context);
     return {approval, state, requests, phases, actions: context.actions,
         queryCount: () => queries, changeSession: () => { session += 1; }};
 }

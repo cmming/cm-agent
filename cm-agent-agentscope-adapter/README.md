@@ -335,7 +335,7 @@ Server 通过 Docker 执行固定版本资源，准备读取记录不代表脚�
 | 任一工具被授权策略拒绝 | `DENIED` | `DENIED` | 使用受控拒绝原因 |
 | 事件流结束但没有最终消息 | 保留已完成记录 | `FAILED` | “Agent 运行失败” |
 | 模型或工具超时 | 保留超时前记录 | `FAILED` | “Agent 运行超时” |
-| 已知模型 Provider 或 HTTP 传输故障 | 保留已完成记录 | `FAILED` | “Agent 运行失败” |
+| 已知模型 Provider 或 HTTP 传输故障 | 保留已完成记录 | `FAILED` | HTTP 状态和上游结构化错误说明的脱敏摘要；无安全摘要时明确提示未提供说明 |
 | 模型凭据不可用 | 无工具调用 | `FAILED` | “模型凭据不可用” |
 | 工具审计、持久化等基础设施失败 | 不伪造普通失败记录 | 向上抛出 | 由 Server 严格失败边界处理 |
 | 未知编程错误 | 视发生阶段而定 | 不在适配器内伪装成已知错误 | 向上抛出并由 Server 记录诊断 |
@@ -481,6 +481,14 @@ mvn -pl cm-agent-agentscope-adapter -am test
 - 风险策略与审计
 - 超时、幂等和敏感数据处理
 
+### 模型接口错误返回
+
+模型 HTTP 失败从上游响应的 `error.message/code/type` 或顶层 `message/code` 提取摘要，脱敏后限制为 512 个 Unicode 字符；完整响应、其他字段、异常消息、内部地址、宿主路径与堆栈不返回。非 JSON、HTML、无响应或超过 32768 字符的响应使用安全兜底。只具有状态码的 Provider 仍返回实际 HTTP 状态，不猜测响应内容。
+
+例如模型网关返回 HTTP 429 和 `{"error":{"message":"额度不足","code":"insufficient_quota"}}`，`run.errorMessage` 会保存为“模型接口请求失败（HTTP 429）：额度不足（上游错误码：insufficient_quota）”。同步结果、SSE completed 和历史 Run 详情返回同一说明；失败结果增加派生的 `errorCode=RUNTIME_EXECUTION_FAILED` 与 `errorId=runId`，不新增数据库列。停止、拒绝和成功不会伪造失败编号。历史已保存的泛化说明无法恢复上游原文。
+
+AgentScope 2.0.2 的 `JdkHttpTransport` 会在 WARN 记录完整错误响应与 URL。Server 默认将该 logger 设为 ERROR，保留其安全告警；DashScope 原生 Provider 的 WARN/ERROR 也会包含 SSE 原文或异常堆栈，默认将 `io.agentscope.extensions.model.dashscope` 设为 OFF。模型失败由适配器在转换边界记录一次脱敏关联日志。嵌入式宿主需自行配置相同 logger 级别，不要开启会打印原始请求/响应的第三方调试日志。
+
 ### 修改失败映射
 
 修改异常、超时、取消或关闭逻辑时，应同时覆盖：
@@ -488,7 +496,7 @@ mvn -pl cm-agent-agentscope-adapter -am test
 - Run 与 ToolCall 状态是否一致。
 - 基础设施失败是否仍保持严格传播。
 - 拒绝是否优先于普通成功或 Provider 失败。
-- 固定对外错误是否仍然脱敏。
+- 对外错误摘要是否仍然脱敏、限长，并且与日志使用相同错误编号。
 - 中断和关闭失败是否保留正确的主异常与 suppressed exception。
 - 迟到工具结果是否仍被拒绝记录。
 

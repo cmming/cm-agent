@@ -1,0 +1,13 @@
+<configuration>
+    <!-- 与 Server 生产默认一致：第三方传输 WARN 含原始 URL/响应，错误诊断由适配器安全日志覆盖。 -->
+    <logger name="io.agentscope.core.model.transport.JdkHttpTransport" level="ERROR"/>
+    <logger name="io.agentscope.extensions.model.dashscope" level="OFF"/>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

@@ -42,4 +42,14 @@ public record AgentRunResult(
     public AgentRunResult {
         toolCalls = List.copyOf(toolCalls);
     }
+
+    /** 返回失败运行的稳定错误码；成功、停止和拒绝等其他状态没有运行错误码。 */
+    public String getErrorCode() {
+        return status == RunStatus.FAILED ? "RUNTIME_EXECUTION_FAILED" : null;
+    }
+
+    /** 失败诊断沿用服务端生成的 Run 标识，使立即响应、历史查询和诊断日志使用同一编号。 */
+    public String getErrorId() {
+        return status == RunStatus.FAILED ? runId.toString() : null;
+    }
 }

@@ -143,4 +143,14 @@ public record RunRecord(
         return new RunRecord(id, tenantId, agentId, principalId, kind, RunStatus.RUNNING,
                 input, output, errorMessage, startedAt, null);
     }
+
+    /** 与即时运行结果保持一致的失败错误码；由状态派生，无需扩展历史数据库结构。 */
+    public String getErrorCode() {
+        return status == RunStatus.FAILED ? "RUNTIME_EXECUTION_FAILED" : null;
+    }
+
+    /** 历史失败沿用已有 Run 标识，便于前端查询按钮与后台诊断日志关联；非失败时为空。 */
+    public String getErrorId() {
+        return status == RunStatus.FAILED ? id.toString() : null;
+    }
 }

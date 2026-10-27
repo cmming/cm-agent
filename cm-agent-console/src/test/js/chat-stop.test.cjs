@@ -16,13 +16,15 @@ function harness(request) {
     const timers = new Map();
     const statuses = [];
     let id = 0, session = 0, loads = 0;
-    const context = {state, chatRunTimer: null, window: {
+    const context = {state, core, chatRunTimer: null, window: {
         setTimeout(fn) { timers.set(++id, fn); return id; }, clearTimeout(id) { timers.delete(id); }
     }, sessionEpoch: {capture: () => session, isCurrent: value => value === session},
         api: {request: async (url, options) => { requests.push({url, options}); return request(url, options); }},
         updateChatSendAvailability() {}, $: () => ({}), setStatus: (_, message) => statuses.push(message),
-        loadChatMessages: async () => { loads++; state.activeChatRun = null; state.chatLoading = false; }};
-    vm.runInNewContext(`${source};globalThis.actions={setActiveChatRun,stopChatRun};`, context);
+        loadChatMessages: async () => { loads++; state.activeChatRun = null; state.chatLoading = false; return true; }};
+    context.$ = id => id === "chatMessageList" ? null : ({});
+    const outcome = app.slice(app.indexOf("function showChatRunOutcome("), app.indexOf("function createChatRunFailure("));
+    vm.runInNewContext(`${outcome}\n${source};globalThis.actions={setActiveChatRun,stopChatRun};`, context);
     context.actions.setActiveChatRun({id: "run", status: "RUNNING"});
     return {state, requests, statuses, timers, actions: context.actions, loads: () => loads,
         logout: () => { session++; }};
@@ -85,4 +87,12 @@ test("等待审批停止成功刷新消息审批历史而不恢复原Run", async
 test("停止状态中文展示不把用户停止标成运行失败", () => {
     assert.equal(core.statusMeta("CANCELLING").label, "停止中");
     assert.equal(core.statusMeta("CANCELLED").label, "已停止");
+});
+
+test("轮询确认失败后显示服务端原因而不是成功收口", async () => {
+    const flow = harness(async () => ({id:"run",status:"FAILED",errorMessage:"模型超时"}));
+    await [...flow.timers.values()][0]();
+    assert.match(flow.statuses.at(-1), /本轮运行失败.*模型超时.*运行编号：run/);
+    assert.doesNotMatch(flow.statuses.at(-1), /回答已完成|本轮已结束/);
+    assert.equal(flow.requests.length, 1);
 });

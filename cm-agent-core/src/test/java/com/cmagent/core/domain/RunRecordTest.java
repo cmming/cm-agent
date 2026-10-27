@@ -14,6 +14,21 @@ import org.junit.jupiter.api.Test;
 
 class RunRecordTest {
 
+    @Test
+    void 失败即时结果和历史记录派生相同诊断编号且非失败不伪造编号() {
+        UUID runId = UUID.randomUUID();
+        Instant now = Instant.now();
+        var result = new AgentRunResult(runId, RunStatus.FAILED, "", List.of(), now, now, "模型接口失败");
+        var record = RunRecord.create(runId, UUID.randomUUID(), UUID.randomUUID(), "tester", "", now)
+                .complete(RunStatus.FAILED, "", "模型接口失败", now);
+        assertThat(result.getErrorId()).isEqualTo(record.getErrorId()).isEqualTo(runId.toString());
+        assertThat(result.getErrorCode()).isEqualTo(record.getErrorCode()).isEqualTo("RUNTIME_EXECUTION_FAILED");
+        for (RunStatus status : List.of(RunStatus.SUCCEEDED, RunStatus.CANCELLED, RunStatus.DENIED)) {
+            assertThat(new AgentRunResult(runId, status, "", List.of(), now, now, "").getErrorId()).isNull();
+            assertThat(new AgentRunResult(runId, status, "", List.of(), now, now, "").getErrorCode()).isNull();
+        }
+    }
+
     private static final UUID ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
     private static final UUID AGENT_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");

@@ -7,6 +7,7 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "../../main/resources/META-INF/resources");
 const now = new Date();
 const conversations = [
+    {id:"failed",title:"运行失败且无回答 · 错误反馈验收",updatedAt:now.toISOString()},
     {id:"long",title:"Java 项目说明与生成文件 · 长回答阅读验收",updatedAt:now.toISOString()},
     {id:"approval",title:"高风险操作等待审批 · 只读权限验收",updatedAt:now.toISOString()},
     {id:"history-error",title:"审批历史读取失败 · 错误编号验收",updatedAt:new Date(now-86400000).toISOString()},
@@ -22,6 +23,8 @@ const messages = new Map(conversations.map(item => [item.id, item.id === "empty"
         {type:"THINKING",text:"这是模拟执行摘要，不属于复制正文。"},
         {type:"TEXT",text:item.id === "long" ? longText : "这是界面验收模拟回答，不调用模型或工具。"}]}]]));
 const active = new Map();
+const failures = new Map([["failed-run", {id:"failed-run",status:"FAILED",errorMessage:"Agent 运行失败"}]]);
+messages.set("failed", [messages.get("failed")[0]]);
 const requests = [];
 let serial = 0;
 const approval = {approvalId:"readonly",agentId:"demo",conversationId:"approval",runId:"approval-run",version:1,status:"PENDING",canDecide:false,
@@ -49,7 +52,7 @@ const server = http.createServer(async (request, response) => {
         if (tail === "/approvals/history") return id === "history-error"
             ? json(response, {code:"PERSISTENCE_UNAVAILABLE",message:"审批历史暂时不可用，请重试。",errorId:"ui-history-failure"},503)
             : json(response, {items:[],nextCursor:null});
-        if (tail === "/messages") return json(response, {items:messages.get(id)||[],runStatuses:{[id+"-run"]:"SUCCEEDED"}});
+        if (tail === "/messages") return json(response, {items:messages.get(id)||[],runStatuses:Object.fromEntries((messages.get(id)||[]).map(message=>[message.runId,failures.has(message.runId)?"FAILED":"SUCCEEDED"]))});
         if (tail === "/messages/stream") {
             if (id === "unknown") return json(response, {code:"UPSTREAM_UNAVAILABLE",message:"发送结果暂时无法确认。",errorId:"ui-send-unknown"},503);
             let body=""; for await(const chunk of request) body+=chunk;
@@ -62,6 +65,12 @@ const server = http.createServer(async (request, response) => {
             response.writeHead(200,{"Content-Type":"text/event-stream; charset=utf-8","Cache-Control":"no-store"});
             const event=(type,data)=>response.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
             event("started",{runId});
+            if (input === "模拟失败") {
+                const run={runId,status:"FAILED",output:"",toolCalls:[],errorMessage:"Agent 运行失败"};
+                failures.set(runId,{...run,id:runId});active.delete(id);
+                event("completed",{conversationId:id,userMessageId:runId+"-user",assistantMessageId:null,run,assistantMessage:null});
+                response.end();return;
+            }
             let text="", index=0;
             const timer=setInterval(()=>{
                 const delta=`第 ${++index} 段模拟输出：允许继续阅读历史，界面不会重放写请求。\n\n`;
@@ -71,7 +80,7 @@ const server = http.createServer(async (request, response) => {
             response.on("close",()=>{clearInterval(timer);active.delete(id);});
             return;
         }
-        if(tail.startsWith("/runs/")) return json(response, active.get(id)||{id:tail.split("/").at(-1),status:"SUCCEEDED"});
+        if(tail.startsWith("/runs/")) return json(response, failures.get(tail.split("/").at(-1))||active.get(id)||{id:tail.split("/").at(-1),status:"SUCCEEDED"});
     }
     if (url.pathname.endsWith("/artifacts")) return json(response, {status:url.pathname.includes("long-run") ? "AVAILABLE" : "EMPTY",files:url.pathname.includes("long-run") ?
         [{id:"demo-file",status:"READY",filename:"项目说明.docx",mediaType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",sizeBytes:4780,expiresAt:new Date(now.getTime()+86400000).toISOString()}] : []});

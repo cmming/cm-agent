@@ -570,10 +570,11 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             }
             if (isProviderFailure(exception)) {
                 primaryFailure = null;
-                // 只记录异常类型与可关联键；Provider 响应体、内部 URL 等细节不进入日志。
-                log.warn("AgentScope 运行遭遇模型 Provider 失败。runId={}, tenantId={}, exceptionType={}",
-                        spec.runId(), spec.tenantId(), exception.getClass().getName());
-                return AgentScopeExecutionResult.failed(FAILURE_MESSAGE, records);
+                // 在唯一转换边界记录与前端一致的 Run 编号；仅记录白名单错误字段的安全摘要，不能打印原异常或完整响应。
+                String summary = ModelFailureSummary.describe(exception, credential.apiKey());
+                log.error("模型接口调用失败。errorId={}, operation=MODEL_REQUEST, errorCode=RUNTIME_EXECUTION_FAILED, tenantId={}, principalId={}, resourceType=AGENT, resourceId={}, runId={}, reason={}",
+                        spec.runId(), spec.tenantId(), spec.request().principal().principalId(), spec.agentId(), spec.runId(), summary);
+                return AgentScopeExecutionResult.failed(summary, records);
             }
             throw exception;
         } finally {
@@ -1052,7 +1053,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
     /**
      * 判断异常链是否来自模型 Provider 或其 HTTP 传输层。
      *
-     * <p>已知 Provider 故障会转换为固定对外消息，避免响应体、内部 URL 或依赖异常细节越过适配边界；
+     * <p>已知 Provider 故障会转换为 HTTP 状态与白名单错误字段的脱敏摘要，避免完整响应体、内部 URL 或依赖异常细节越过适配边界；
      * 未知编程错误保持抛出，由上层统一诊断。</p>
      *
      * @param failure 当前捕获的异常
