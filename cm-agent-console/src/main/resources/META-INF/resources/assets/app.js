@@ -628,7 +628,13 @@
             const deleteButton = element("button", {className: "button danger", type: "button", text: "删除"});
             deleteButton.addEventListener("click", () => deleteAgent(agent, deleteButton));
             actions.append(editButton, deleteButton);
-            container.replaceChildren(heading, dl, toolsSection, skillsSection, actions);
+            if (isMultiPage && currentPage === "agentsPage") {
+                // 动作进入标题区域，同时保持视觉顺序与键盘顺序一致；旧版仍沿用原有位置。
+                heading.append(actions);
+                container.replaceChildren(heading, dl, toolsSection, skillsSection);
+            } else {
+                container.replaceChildren(heading, dl, toolsSection, skillsSection, actions);
+            }
             return;
         }
         container.replaceChildren(heading, dl, toolsSection, skillsSection);
@@ -1065,7 +1071,14 @@
         const deleteButton = element("button", {className: "button danger", type: "button", text: "删除"});
         deleteButton.addEventListener("click", () => deleteModelConfig(config, deleteButton));
         actions.append(editButton, deleteButton);
-        container.replaceChildren(heading, details, actions);
+        if (isMultiPage && currentPage === "modelConfigsPage") {
+            // 标题、状态与操作保持同一阅读及键盘顺序，旧版继续使用原有详情布局。
+            titleGroup.append(enabledBadge);
+            heading.append(actions);
+            container.replaceChildren(heading, details);
+        } else {
+            container.replaceChildren(heading, details, actions);
+        }
     }
 
     function editModelConfig(config) {
@@ -4311,6 +4324,17 @@
 
         const target = new URL(link.href, window.location.href);
         if (target.origin !== window.location.origin) return;
+        // 同页锚点只定位现有节点，不能按跨页导航重建表单并丢失尚未保存的输入；
+        // 显式滚动也兼容仅更新 hash 而不自动定位的嵌入式浏览器。
+        if (target.pathname === window.location.pathname
+                && target.search === window.location.search && target.hash) {
+            const anchor = document.getElementById(target.hash.slice(1));
+            if (anchor) {
+                event.preventDefault();
+                anchor.scrollIntoView({block: "start"});
+            }
+            return;
+        }
         if (target.pathname === "/console/v1/") {
             event.preventDefault();
             logout("已切换到旧版控制台。", "/console/v1/");

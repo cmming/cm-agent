@@ -4,6 +4,45 @@ const fs = require("node:fs");
 const path = require("node:path");
 const core = require("../../main/resources/META-INF/resources/assets/console-core.js");
 
+test("同页表单锚点只定位原节点且跨页入口仍走页面加载", () => {
+    const vm = require("node:vm");
+    const app = fs.readFileSync(path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"), "utf8");
+    const start = app.indexOf("    function handleMultiPageLink(event)");
+    const end = app.indexOf("    function handleMultiPageHistory()", start);
+    const loaded = [];
+    let scrolled = 0;
+    const form = {draft: "尚未保存", scrollIntoView: () => { scrolled++; }};
+    const context = {
+        URL, isMultiPage: true,
+        document: {getElementById: (id) => id === "modelConfigForm" ? form : null},
+        window: {location: new URL("http://localhost:8080/console/v2/model-configs.html")},
+        pageIdForPath: () => "page",
+        loadMultiPage: (target) => { loaded.push(target); return Promise.resolve(); },
+        reportPageNavigationError: () => {},
+        logout: () => {}
+    };
+    vm.createContext(context);
+    vm.runInContext(app.slice(start, end) + "\nthis.handleLink = handleMultiPageLink;", context);
+    function click(href) {
+        let prevented = false;
+        context.handleLink({
+            button: 0,
+            target: {closest: () => ({href, hasAttribute: () => false})},
+            preventDefault: () => { prevented = true; }
+        });
+        return prevented;
+    }
+    assert.equal(click("http://localhost:8080/console/v2/model-configs.html#modelConfigForm"), true);
+    assert.deepEqual(loaded, []);
+    assert.equal(scrolled, 1);
+    assert.equal(form.draft, "尚未保存");
+    assert.equal(click("http://localhost:8080/console/v2/model-configs.html#missing"), false);
+    assert.equal(click("http://localhost:8080/console/v2/agents.html"), true);
+    assert.deepEqual(loaded, ["/console/v2/agents.html"]);
+    assert.equal(click("https://example.com/console/v2/model-configs.html#modelConfigForm"), false);
+    assert.equal(loaded.length, 1);
+});
+
 test("v2 使用 Cookie 恢复刷新且只在当前页面内存保留令牌", () => {
     const resources = path.join(__dirname, "../../main/resources/META-INF/resources");
     const app = fs.readFileSync(path.join(resources, "assets/app.js"), "utf8");

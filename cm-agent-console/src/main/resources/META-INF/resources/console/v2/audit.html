@@ -6,22 +6,23 @@
     <meta name="referrer" content="same-origin">
     <title>审计日志 | CM Agent 控制台 v2</title>
     <link rel="stylesheet" href="/assets/styles.css?v=2.0.17">
-    <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.3.1">
+    <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.3.4">
     <link rel="stylesheet" href="/console/v2/assets/sandbox-endpoints.css?v=1.0.0">
     <link rel="stylesheet" href="/console/v2/assets/skill-artifacts.css?v=1.0.0">
+    <link rel="stylesheet" href="/console/v2/assets/workbench.css?v=1.0.0">
 </head>
 <body data-console-version="v2" data-page="auditPage">
 <div class="console-layout">
     <aside class="sidebar">
         <div class="sidebar-brand"><div class="brand-mark small" aria-hidden="true">CM</div><div><strong>CM Agent</strong><span>管理控制台</span></div><span class="version-badge">V2</span></div>
         <nav id="sidebarNav" aria-label="控制台导航">
-            <a class="nav-item" href="/console/v2/overview.html"><span aria-hidden="true">▦</span>能力总览</a>
-            <a class="nav-item" href="/console/v2/model-configs.html"><span aria-hidden="true">◉</span>模型配置</a>
-            <a class="nav-item" href="/console/v2/agents.html"><span aria-hidden="true">◇</span>Agent 管理</a>
-            <a class="nav-item" href="/console/v2/tools.html"><span aria-hidden="true">⬡</span>工具治理</a><a class="nav-item" href="/console/v2/skills.html"><span aria-hidden="true">✦</span>技能管理</a>
-            <a class="nav-item" href="/console/v2/chat.html"><span aria-hidden="true">◌</span>会话聊天</a>
-            <a class="nav-item" href="/console/v2/runs.html"><span aria-hidden="true">▷</span>运行记录</a>
-            <a class="nav-item active" href="/console/v2/audit.html" aria-current="page"><span aria-hidden="true">≡</span>审计日志</a>
+            <a class="nav-item" href="/console/v2/overview.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#overview"></use></svg>能力总览</a>
+            <a class="nav-item" href="/console/v2/model-configs.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#model-configs"></use></svg>模型配置</a>
+            <a class="nav-item" href="/console/v2/agents.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#agents"></use></svg>Agent 管理</a>
+            <a class="nav-item" href="/console/v2/tools.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#tools"></use></svg>工具治理</a><a class="nav-item" href="/console/v2/skills.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#skills"></use></svg>技能管理</a>
+            <a class="nav-item" href="/console/v2/chat.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#chat"></use></svg>会话聊天</a>
+            <a class="nav-item" href="/console/v2/runs.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#runs"></use></svg>运行记录</a>
+            <a class="nav-item active" href="/console/v2/audit.html" aria-current="page"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#audit"></use></svg>审计日志</a>
         </nav>
         <div class="sidebar-links"><span>版本与系统</span><a href="/console/v1/">旧版 v1 <b aria-hidden="true">↗</b></a><a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI <b aria-hidden="true">↗</b></a><a href="/actuator/health" target="_blank" rel="noreferrer">健康检查 <b aria-hidden="true">↗</b></a></div>
     </aside>
@@ -30,7 +31,7 @@
         <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
         <section id="auditPage" class="page-view">
             <div class="page-intro"><div><p class="eyebrow">安全与合规</p><h1>审计日志</h1><p>追踪当前租户的安全事件和关键资源操作。</p></div></div>
-            <article class="panel"><div class="panel-heading"><div><p class="eyebrow">安全</p><h2>审计事件</h2></div><button id="refreshAuditBtn" class="button ghost" type="button">刷新</button></div><div class="table-scroll"><table class="data-table"><thead><tr><th>事件</th><th>资源</th><th>状态</th><th>主体</th><th>消息</th><th>时间</th></tr></thead><tbody id="auditList"></tbody></table></div><p id="auditEmpty" class="empty-state">暂无审计事件。</p><div class="load-more"><button id="loadMoreAuditBtn" class="button ghost" type="button" hidden>加载更多</button><span id="auditEndStatus"></span></div></article>
+            <article class="panel"><div class="panel-heading"><div><p class="eyebrow">安全</p><h2>审计事件</h2></div><button id="refreshAuditBtn" class="button ghost" type="button">刷新</button></div><p class="table-scroll-hint">左右滑动查看完整审计字段，也可聚焦表格后使用方向键。</p><div class="table-scroll" role="region" aria-label="审计事件列表，可横向滚动" tabindex="0"><table class="data-table"><thead><tr><th>事件</th><th>资源</th><th>状态</th><th>主体</th><th>消息</th><th>时间</th></tr></thead><tbody id="auditList"></tbody></table></div><p id="auditEmpty" class="empty-state">暂无审计事件。</p><div class="load-more"><button id="loadMoreAuditBtn" class="button ghost" type="button" hidden>加载更多</button><span id="auditEndStatus"></span></div></article>
         </section>
     </main>
 </div>

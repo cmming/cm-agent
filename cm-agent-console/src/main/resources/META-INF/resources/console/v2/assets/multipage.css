@@ -1117,3 +1117,165 @@ body[data-console-version="v2"] .chat-page ::selection { background: #c9ddfb; co
         animation: none;
     }
 }
+
+/* Agent 工作区沿用共享资源与表单行为；所有细化仅作用于当前页面。 */
+body[data-console-version="v2"] #agentsPage {
+    --agent-space: 24px;
+    --agent-muted: #59697f;
+}
+body[data-console-version="v2"] #agentsPage ::selection { background: #dce9ff; color: var(--text); }
+body[data-console-version="v2"] #agentsPage .eyebrow { display: none; }
+body[data-console-version="v2"] #agentsPage .page-intro { align-items: center; margin-bottom: 20px; padding-bottom: 0; }
+body[data-console-version="v2"] #agentsPage .page-intro > div > p { color: var(--agent-muted); line-height: 1.7; }
+body[data-console-version="v2"] #agentsPage .page-intro .button.primary { align-self: center; box-shadow: none; }
+body[data-console-version="v2"] #agentsPage .management-grid { grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); gap: 20px; }
+body[data-console-version="v2"] #agentsPage .panel { min-width: 0; border-radius: 12px; box-shadow: none; }
+body[data-console-version="v2"] #agentsPage .panel-heading { align-items: center; gap: 12px; margin-bottom: 18px; }
+body[data-console-version="v2"] #agentsPage .panel-heading h2 { margin: 0; overflow-wrap: anywhere; }
+body[data-console-version="v2"] #agentsPage .management-grid > .panel:first-child { padding: 16px; }
+body[data-console-version="v2"] #agentsPage .management-grid > .panel:first-child .panel-heading { margin-bottom: 14px; }
+body[data-console-version="v2"] #agentsPage #agentList { gap: 6px; padding-right: 0; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+/* Grid 子项的自动最小宽度会被长模型名撑开；显式归零避免列表出现横向滚动。 */
+body[data-console-version="v2"] #agentsPage .resource-item { min-width: 0; padding: 13px 12px; color: var(--text); border-color: transparent; background: transparent; box-shadow: none; }
+body[data-console-version="v2"] #agentsPage .resource-item strong { white-space: normal; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; font-weight: 650; }
+body[data-console-version="v2"] #agentsPage .resource-item > span { white-space: normal; overflow-wrap: anywhere; color: var(--agent-muted); line-height: 1.6; margin-top: 5px; }
+body[data-console-version="v2"] #agentsPage .resource-item:hover { background: var(--surface-soft); border-color: var(--border); }
+body[data-console-version="v2"] #agentsPage .resource-item.active { background: #eef4ff; border-color: #a9c4ef; }
+body[data-console-version="v2"] #agentsPage .resource-item.active strong { color: var(--accent-strong); }
+body[data-console-version="v2"] #agentsPage .resource-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+body[data-console-version="v2"] #agentsPage .detail-panel,
+body[data-console-version="v2"] #agentsPage .form-panel { padding: var(--agent-space); }
+body[data-console-version="v2"] #agentsPage #agentDetail { display: flex; flex-direction: column; min-width: 0; }
+body[data-console-version="v2"] #agentsPage #agentDetail > .panel-heading h2 { font-size: 21px; letter-spacing: -.02em; line-height: 1.4; }
+body[data-console-version="v2"] #agentsPage .detail-panel dl { grid-template-columns: 104px minmax(0, 1fr); }
+body[data-console-version="v2"] #agentsPage .detail-panel dt,
+body[data-console-version="v2"] #agentsPage .detail-panel dd { padding: 11px 0; border-color: #edf0f5; line-height: 1.65; }
+body[data-console-version="v2"] #agentsPage .detail-panel dt { color: var(--agent-muted); }
+body[data-console-version="v2"] #agentsPage .detail-panel dd { font-variant-numeric: tabular-nums; }
+/* 详情约定最后一组为 System Prompt，独立成行保留换行并避免长指令挤压标签。 */
+body[data-console-version="v2"] #agentsPage .detail-panel dt:nth-last-child(2) { grid-column: 1 / -1; padding-bottom: 6px; border-bottom: 0; }
+body[data-console-version="v2"] #agentsPage .detail-panel dd:last-child { grid-column: 1 / -1; padding: 14px 16px; margin-bottom: 4px; border: 0; border-radius: 8px; background: var(--surface-soft); white-space: pre-wrap; line-height: 1.8; }
+body[data-console-version="v2"] #agentsPage .detail-section { margin-top: 24px; padding-top: 20px; }
+body[data-console-version="v2"] #agentsPage .detail-section h3 { margin-bottom: 14px; font-size: 14px; }
+body[data-console-version="v2"] #agentsPage .tool-card { min-width: 0; padding: 16px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+body[data-console-version="v2"] #agentsPage .tool-card:last-of-type { border-bottom: 0; padding-bottom: 0; }
+body[data-console-version="v2"] #agentsPage .tool-card:first-of-type { padding-top: 0; }
+body[data-console-version="v2"] #agentsPage .tool-card > strong { font-size: 14px; }
+body[data-console-version="v2"] #agentsPage .field-help { color: var(--agent-muted); font-size: 12px; line-height: 1.7; }
+body[data-console-version="v2"] #agentsPage .tool-actions { align-items: center; gap: 8px; }
+body[data-console-version="v2"] #agentsPage .tool-actions > select { flex: 1 1 190px; min-width: 0; width: auto; max-width: 100%; min-height: 38px; font-size: 13px; }
+body[data-console-version="v2"] #agentsPage .tool-actions > .button { flex: 0 0 auto; min-height: 38px; }
+body[data-console-version="v2"] #agentsPage .tool-actions > .field-help { flex-basis: 100%; margin: 0; }
+body[data-console-version="v2"] #agentsPage #agentDetail > .panel-heading { flex-wrap: wrap; }
+body[data-console-version="v2"] #agentsPage #agentDetail > .panel-heading > .tool-actions { flex-shrink: 0; margin: 0; }
+body[data-console-version="v2"] #agentsPage .empty-state { padding: 18px 14px; border-style: solid; border-color: #e5eaf1; background: var(--surface-soft); color: var(--agent-muted); font-size: 13px; line-height: 1.7; }
+body[data-console-version="v2"] #agentsPage .management-form-grid { gap: 20px 18px; }
+body[data-console-version="v2"] #agentsPage .management-field > label { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+body[data-console-version="v2"] #agentsPage input:not([type="checkbox"]),
+body[data-console-version="v2"] #agentsPage select,
+body[data-console-version="v2"] #agentsPage textarea { color: var(--text); caret-color: var(--accent); border-radius: 8px; }
+body[data-console-version="v2"] #agentsPage #systemPrompt { min-height: 180px; line-height: 1.8; resize: vertical; }
+body[data-console-version="v2"] #agentsPage .checkbox-row { margin: 0; font-size: 13px; }
+body[data-console-version="v2"] #agentsPage .form-actions { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 18px; border-top: 1px solid var(--border); }
+body[data-console-version="v2"] #agentsPage .form-status:empty { display: none; }
+@media (min-width: 901px) and (max-width: 1200px) {
+    body[data-console-version="v2"] #agentsPage .management-grid { grid-template-columns: 240px minmax(0, 1fr); gap: 16px; }
+    body[data-console-version="v2"] #agentsPage .management-form-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+    body[data-console-version="v2"] #agentsPage .management-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    body[data-console-version="v2"] #agentsPage #agentList { max-height: 260px; overflow: auto; }
+}
+@media (max-width: 600px) {
+    body[data-console-version="v2"] #agentsPage { --agent-space: 18px; }
+    body[data-console-version="v2"] #agentsPage .page-intro { align-items: stretch; gap: 16px; }
+    body[data-console-version="v2"] #agentsPage .page-intro .button.primary { width: 100%; }
+    body[data-console-version="v2"] #agentsPage .detail-panel dl { grid-template-columns: 80px minmax(0, 1fr); }
+    body[data-console-version="v2"] #agentsPage .detail-panel dd { margin-bottom: 0; }
+    body[data-console-version="v2"] #agentsPage .tool-actions > select { flex-basis: 100%; width: 100%; }
+    body[data-console-version="v2"] #agentsPage .tool-actions > .button { min-height: 42px; }
+    body[data-console-version="v2"] #agentsPage .management-form-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 模型页的资源与连接表单仅在当前页面细化，保持其他工作区原有布局。 */
+body[data-console-version="v2"] #modelConfigsPage { --model-space: 24px; --model-muted: #59697f; }
+body[data-console-version="v2"] #modelConfigsPage ::selection { background: #dce9ff; color: var(--text); }
+body[data-console-version="v2"] #modelConfigsPage .eyebrow { display: none; }
+body[data-console-version="v2"] #modelConfigsPage .page-intro { align-items: center; margin-bottom: 20px; padding-bottom: 0; }
+body[data-console-version="v2"] #modelConfigsPage .page-intro > div > p { color: var(--model-muted); line-height: 1.7; }
+body[data-console-version="v2"] #modelConfigsPage .page-intro .button.primary { align-self: center; box-shadow: none; }
+body[data-console-version="v2"] #modelConfigsPage .management-grid { grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); gap: 20px; }
+body[data-console-version="v2"] #modelConfigsPage .panel { min-width: 0; border-radius: 12px; box-shadow: none; }
+body[data-console-version="v2"] #modelConfigsPage .panel-heading { align-items: center; gap: 16px; margin-bottom: 18px; }
+body[data-console-version="v2"] #modelConfigsPage .panel-heading h2 { margin: 0; overflow-wrap: anywhere; }
+body[data-console-version="v2"] #modelConfigsPage .management-grid > .panel:first-child { padding: 16px; }
+body[data-console-version="v2"] #modelConfigsPage .management-grid > .panel:first-child .panel-heading { margin-bottom: 14px; }
+body[data-console-version="v2"] #modelConfigsPage #modelConfigList { gap: 6px; padding-right: 0; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+/* 长 Provider 和模型名不能决定 Grid 子项的最小宽度，否则列表会横向滚动。 */
+body[data-console-version="v2"] #modelConfigsPage .resource-item { min-width: 0; padding: 13px 12px; color: var(--text); border-color: transparent; background: transparent; box-shadow: none; }
+body[data-console-version="v2"] #modelConfigsPage .resource-item strong { white-space: normal; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; font-weight: 650; }
+body[data-console-version="v2"] #modelConfigsPage .resource-item > span { white-space: normal; overflow-wrap: anywhere; color: var(--model-muted); line-height: 1.7; margin-top: 5px; }
+body[data-console-version="v2"] #modelConfigsPage .resource-item:hover { background: var(--surface-soft); border-color: var(--border); }
+body[data-console-version="v2"] #modelConfigsPage .resource-item.active { background: #eef4ff; border-color: #a9c4ef; }
+body[data-console-version="v2"] #modelConfigsPage .resource-item.active strong { color: var(--accent-strong); }
+body[data-console-version="v2"] #modelConfigsPage .resource-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+body[data-console-version="v2"] #modelConfigsPage .detail-panel,
+body[data-console-version="v2"] #modelConfigsPage .form-panel { padding: var(--model-space); }
+body[data-console-version="v2"] #modelConfigsPage #modelConfigDetail > .panel-heading { flex-wrap: wrap; }
+body[data-console-version="v2"] #modelConfigsPage #modelConfigDetail > .panel-heading > div:first-child { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0; }
+body[data-console-version="v2"] #modelConfigsPage #modelConfigDetail h2 { font-size: 21px; line-height: 1.4; letter-spacing: -.02em; }
+body[data-console-version="v2"] #modelConfigsPage #modelConfigDetail .tool-actions { flex-shrink: 0; margin: 0; }
+body[data-console-version="v2"] #modelConfigsPage .detail-panel dl { grid-template-columns: 104px minmax(0, 1fr); }
+body[data-console-version="v2"] #modelConfigsPage .detail-panel dt,
+body[data-console-version="v2"] #modelConfigsPage .detail-panel dd { padding: 11px 0; border-color: #edf0f5; line-height: 1.7; }
+body[data-console-version="v2"] #modelConfigsPage .detail-panel dt { color: var(--model-muted); }
+body[data-console-version="v2"] #modelConfigsPage .detail-panel dd { min-width: 0; font-variant-numeric: tabular-nums; }
+body[data-console-version="v2"] #modelConfigsPage .form-panel { scroll-margin-top: 80px; }
+body[data-console-version="v2"] #modelConfigsPage #modelConfigForm { gap: 20px 18px; scroll-margin-top: 100px; }
+body[data-console-version="v2"] #modelConfigsPage .management-field > label { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+body[data-console-version="v2"] #modelConfigsPage input:not([type="checkbox"]),
+body[data-console-version="v2"] #modelConfigsPage select { color: var(--text); caret-color: var(--accent); border-radius: 8px; }
+body[data-console-version="v2"] #modelConfigsPage input::placeholder { color: var(--model-muted); }
+body[data-console-version="v2"] #modelConfigsPage .field-help { margin: 8px 0 0; color: var(--model-muted); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+body[data-console-version="v2"] #modelConfigsPage .field-help-warning { color: #80540d; }
+/* 模型输入与发现动作共享一行，状态说明仍在正常阅读顺序中独占下一行。 */
+body[data-console-version="v2"] #modelConfigsPage .model-config-model-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; }
+body[data-console-version="v2"] #modelConfigsPage .model-config-model-field > label,
+body[data-console-version="v2"] #modelConfigsPage .model-config-model-field > .field-help { grid-column: 1 / -1; }
+body[data-console-version="v2"] #modelConfigsPage .model-config-model-field > .tool-actions { margin: 0; }
+body[data-console-version="v2"] #modelConfigsPage .model-config-model-field .button { height: 100%; }
+body[data-console-version="v2"] #modelConfigsPage .checkbox-label { margin: 0; padding: 0; border: 0; background: transparent; font-size: 13px; }
+body[data-console-version="v2"] #modelConfigsPage #modelConfigForm > .tool-actions { margin: 0; padding-top: 18px; border-top: 1px solid var(--border); gap: 10px; }
+body[data-console-version="v2"] #modelConfigsPage .tool-actions .button { min-height: 38px; }
+body[data-console-version="v2"] #modelConfigsPage .form-status:empty { display: none; }
+body[data-console-version="v2"] #modelConfigsPage .empty-state { padding: 18px 14px; border-style: solid; border-color: #e5eaf1; background: var(--surface-soft); color: var(--model-muted); font-size: 13px; line-height: 1.7; }
+/* 宽屏模型页并列详情和表单，减少纵向往返；其余宽度继续沿用原有阅读顺序。 */
+@media (min-width: 1680px) {
+    body[data-console-version="v2"] #agentsPage,
+    body[data-console-version="v2"] #modelConfigsPage { width: min(100%, 1600px); }
+    body[data-console-version="v2"] #agentsPage .management-grid,
+    body[data-console-version="v2"] #modelConfigsPage .management-grid { grid-template-columns: 320px minmax(0, 1fr); gap: 24px; }
+    body[data-console-version="v2"] #modelConfigsPage .management-detail-stack { grid-template-columns: minmax(340px, .85fr) minmax(0, 1.15fr); gap: 24px; }
+    body[data-console-version="v2"] #modelConfigsPage .management-detail-stack > .panel { align-self: start; }
+    body[data-console-version="v2"] #modelConfigsPage .detail-panel dl { grid-template-columns: 76px minmax(0, 1fr); }
+}
+@media (min-width: 901px) and (max-width: 1200px) {
+    body[data-console-version="v2"] #modelConfigsPage .management-grid { grid-template-columns: 240px minmax(0, 1fr); gap: 16px; }
+    body[data-console-version="v2"] #modelConfigsPage .management-form-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+    body[data-console-version="v2"] #modelConfigsPage .management-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    body[data-console-version="v2"] #modelConfigsPage #modelConfigList { max-height: 260px; overflow: auto; }
+}
+@media (max-width: 600px) {
+    body[data-console-version="v2"] #modelConfigsPage { --model-space: 18px; }
+    body[data-console-version="v2"] #modelConfigsPage .page-intro { align-items: stretch; gap: 16px; }
+    body[data-console-version="v2"] #modelConfigsPage .page-intro .button.primary { width: 100%; }
+    body[data-console-version="v2"] #modelConfigsPage .detail-panel dl { grid-template-columns: 76px minmax(0, 1fr); }
+    body[data-console-version="v2"] #modelConfigsPage .detail-panel dd { margin-bottom: 0; }
+    body[data-console-version="v2"] #modelConfigsPage .model-config-model-field { grid-template-columns: minmax(0, 1fr); }
+    body[data-console-version="v2"] #modelConfigsPage .model-config-model-field > .tool-actions { margin-top: 10px; }
+    body[data-console-version="v2"] #modelConfigsPage .model-config-model-field .button { width: 100%; min-height: 42px; }
+    body[data-console-version="v2"] #modelConfigsPage .tool-actions { flex-wrap: wrap; }
+    body[data-console-version="v2"] #modelConfigsPage .tool-actions .button { min-height: 42px; }
+}

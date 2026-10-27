@@ -1,0 +1,250 @@
+/* v2 全页统一收敛层：九个入口共同加载，跨页只替换 body 时仍保持样式完整。 */
+body[data-console-version="v2"] {
+    --muted: #59697f;
+    --workbench-gap: 20px;
+    --workbench-padding: 24px;
+    background: var(--bg);
+}
+body[data-console-version="v2"] ::selection { background: #dce9ff; color: var(--text); }
+body[data-console-version="v2"] :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+body[data-console-version="v2"] input,
+body[data-console-version="v2"] textarea { caret-color: var(--accent); }
+body[data-console-version="v2"] input::placeholder,
+body[data-console-version="v2"] textarea::placeholder { color: var(--muted); opacity: 1; }
+body[data-console-version="v2"] .eyebrow { display: none; }
+body[data-console-version="v2"] .sidebar { background: #182a42; }
+body[data-console-version="v2"] .nav-item { gap: 10px; min-height: 40px; }
+body[data-console-version="v2"] .nav-item.active { background: var(--accent); }
+body[data-console-version="v2"] .nav-icon { width: 18px; height: 18px; flex: 0 0 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+body[data-console-version="v2"] .workspace-crumb { color: var(--muted); letter-spacing: 0; }
+body[data-console-version="v2"] .workspace-crumb b { color: var(--text); }
+body[data-console-version="v2"] .page-view:not(.chat-page) { padding: 30px 32px 40px; }
+body[data-console-version="v2"] .page-intro { align-items: center; margin-bottom: 20px; padding-bottom: 0; }
+body[data-console-version="v2"] .page-intro > div { min-width: 0; }
+body[data-console-version="v2"] .page-intro > div > p:last-child { color: var(--muted); line-height: 1.7; }
+body[data-console-version="v2"] .page-intro .button.primary { align-self: center; box-shadow: none; }
+body[data-console-version="v2"] .panel { min-width: 0; padding: var(--workbench-padding); border-radius: 12px; box-shadow: none; }
+body[data-console-version="v2"] .panel-heading { gap: 12px; align-items: center; margin-bottom: 18px; }
+body[data-console-version="v2"] .panel-heading > div { min-width: 0; }
+body[data-console-version="v2"] .panel-heading h2 { margin: 0; font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+body[data-console-version="v2"] .button { box-shadow: none; transition: background-color .16s ease, border-color .16s ease; }
+body[data-console-version="v2"] .button:hover { transform: none; box-shadow: none; }
+body[data-console-version="v2"] .button:disabled { cursor: not-allowed; }
+body[data-console-version="v2"] .field-help { color: var(--muted); line-height: 1.7; overflow-wrap: anywhere; }
+body[data-console-version="v2"] .field-help-warning { color: #80540d; }
+body[data-console-version="v2"] .empty-state { background: var(--surface-soft); border-style: solid; border-color: #e5eaf1; padding: 20px 16px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+body[data-console-version="v2"] .resource-list { min-width: 0; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+body[data-console-version="v2"] .resource-item { min-width: 0; box-shadow: none; transition: background-color .16s ease, border-color .16s ease; }
+body[data-console-version="v2"] .resource-item:hover { transform: none; box-shadow: none; }
+body[data-console-version="v2"] .resource-item strong,
+body[data-console-version="v2"] .resource-item > span { min-width: 0; }
+body[data-console-version="v2"] .tool-actions { gap: 8px; }
+body[data-console-version="v2"] .tool-actions .button { min-height: 38px; }
+body[data-console-version="v2"] .load-more { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; }
+body[data-console-version="v2"] .table-scroll,
+body[data-console-version="v2"] .chat-conversation-list,
+body[data-console-version="v2"] .chat-message-list,
+body[data-console-version="v2"] .runs-output-panel { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+
+/* 总览以一条紧凑事实栏和活动/操作分区承载真实数据。 */
+body[data-console-version="v2"] #overviewPage .stats-grid { gap: 0; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 12px; background: #fff; overflow: hidden; }
+body[data-console-version="v2"] #overviewPage .stat-card { min-height: 0; padding: 20px 24px; border: 0; border-radius: 0; box-shadow: none; transform: none; }
+body[data-console-version="v2"] #overviewPage .stat-card:not(:last-child) { border-right: 1px solid var(--border); }
+body[data-console-version="v2"] #overviewPage .stat-card::before { display: none; }
+body[data-console-version="v2"] #overviewPage .stat-card > span { color: var(--muted); font-size: 12px; letter-spacing: 0; }
+body[data-console-version="v2"] #overviewPage .stat-card > strong { margin: 6px 0; font-size: 27px; line-height: 1.3; font-variant-numeric: tabular-nums; }
+body[data-console-version="v2"] #overviewPage .overview-grid { gap: var(--workbench-gap); align-items: start; }
+body[data-console-version="v2"] #overviewPage .overview-grid > .panel:first-child { min-height: 0; }
+body[data-console-version="v2"] #overviewPage .overview-run { padding: 16px 0; gap: 12px; font-size: 13px; }
+body[data-console-version="v2"] #overviewPage .overview-run > strong { min-width: 0; overflow-wrap: anywhere; }
+body[data-console-version="v2"] #overviewPage .quick-action { min-height: 58px; padding: 12px 0; border: 0; border-bottom: 1px solid #edf0f5; border-radius: 0; background: transparent; box-shadow: none; transform: none; }
+body[data-console-version="v2"] #overviewPage .quick-action.primary { padding: 14px; margin-bottom: 6px; border: 1px solid #c4d6f1; border-radius: 9px; background: #f2f6ff; }
+body[data-console-version="v2"] #overviewPage .quick-action:last-child { border-bottom: 0; }
+body[data-console-version="v2"] #overviewPage .quick-action:hover { background: var(--surface-soft); }
+body[data-console-version="v2"] #overviewPage .quick-action-icon { width: 30px; height: 30px; border-radius: 8px; background: #edf2f8; }
+
+/* 工具页保留单一当前任务，长地址和操作组不再撑开列表。 */
+body[data-console-version="v2"] #toolsPage .management-grid { grid-template-columns: 300px minmax(0, 1fr); gap: var(--workbench-gap); }
+body[data-console-version="v2"] #toolsPage .management-grid > .panel:first-child { padding: 16px; }
+body[data-console-version="v2"] #toolsPage .tool-card { min-width: 0; padding: 12px 0; border: 0; border-bottom: 1px solid #e5eaf1; border-radius: 0; background: transparent; box-shadow: none; }
+body[data-console-version="v2"] #toolsPage .tool-card:first-child { padding-top: 0; }
+body[data-console-version="v2"] #toolsPage .tool-card:last-child { padding-bottom: 0; border-bottom: 0; }
+body[data-console-version="v2"] #toolsPage .resource-item { padding: 12px; border-color: transparent; background: transparent; }
+body[data-console-version="v2"] #toolsPage .resource-item strong,
+body[data-console-version="v2"] #toolsPage .resource-item > span { white-space: normal; overflow-wrap: anywhere; line-height: 1.6; }
+body[data-console-version="v2"] #toolsPage .resource-item strong { font-size: 14px; }
+body[data-console-version="v2"] #toolsPage .resource-item.active { border-color: #a9c4ef; background: #eef4ff; box-shadow: none; }
+body[data-console-version="v2"] #toolsPage .resource-item:hover { border-color: var(--border); background: var(--surface-soft); }
+body[data-console-version="v2"] #toolsPage .tool-card .tool-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px; }
+body[data-console-version="v2"] #toolsPage .tool-card .tool-actions .button { width: auto; min-height: 36px; flex: 1 1 104px; padding: 6px 8px; }
+body[data-console-version="v2"] #toolsPage .detail-panel dl { grid-template-columns: 104px minmax(0, 1fr); gap: 0 14px; }
+body[data-console-version="v2"] #toolsPage .detail-panel dt,
+body[data-console-version="v2"] #toolsPage .detail-panel dd { padding: 10px 0; border-bottom: 1px solid #edf0f5; line-height: 1.7; }
+body[data-console-version="v2"] #toolsPage .detail-panel dt { color: var(--muted); }
+body[data-console-version="v2"] #toolsPage .detail-panel .panel-heading h2 { font-size: 21px; }
+body[data-console-version="v2"] #toolsPage .detail-panel .tool-actions { margin-top: 20px; }
+body[data-console-version="v2"] #toolsPage .http-config-guide { background: #f3f7fd; border-color: var(--border); flex-wrap: wrap; }
+body[data-console-version="v2"] #toolsPage .http-form-field { padding: 16px 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; }
+body[data-console-version="v2"] #toolsPage .form-row > div { min-width: 0; }
+body[data-console-version="v2"] #toolsPage textarea { resize: vertical; line-height: 1.7; }
+body[data-console-version="v2"] #toolsPage .parameter-card { min-width: 0; }
+
+/* 技能列表和端点列表共享资源层级，发布及审批区域保留各自语义。 */
+body[data-console-version="v2"] #skillsPage .skills-management-grid,
+body[data-console-version="v2"] #skillsPage .sandbox-management-grid { grid-template-columns: 300px minmax(0, 1fr); gap: var(--workbench-gap); }
+body[data-console-version="v2"] #skillsPage .skills-page-note { border: 0; padding: 0; background: transparent; color: var(--muted); max-width: 320px; }
+body[data-console-version="v2"] #skillsPage .skill-list-panel { padding: 16px; }
+body[data-console-version="v2"] #skillsPage .skill-resource-item { padding: 13px 12px; border-color: transparent; background: transparent; gap: 6px; }
+body[data-console-version="v2"] #skillsPage .skill-resource-item:hover { border-color: var(--border); background: var(--surface-soft); }
+body[data-console-version="v2"] #skillsPage .skill-resource-item.active { border-color: #a9c4ef; background: #eef4ff; box-shadow: none; }
+/* 标题必须显式使用 Flex，避免共享 span 规则将状态徽标挤到被裁切的下一行。 */
+body[data-console-version="v2"] #skillsPage .skill-resource-heading { display: flex; white-space: normal; overflow: visible; }
+body[data-console-version="v2"] #skillsPage .skill-resource-heading strong { flex: 1 1 auto; white-space: normal; font-size: 14px; overflow-wrap: anywhere; }
+body[data-console-version="v2"] #skillsPage .skill-resource-description { display: block; max-height: 3.2em; overflow: hidden; white-space: normal; line-height: 1.6; color: var(--muted); }
+body[data-console-version="v2"] #skillsPage .skill-state-badge { font-size: 11px; }
+body[data-console-version="v2"] #skillsPage .skill-detail-header h2 { font-size: 21px; line-height: 1.4; overflow-wrap: anywhere; }
+body[data-console-version="v2"] #skillsPage .sandbox-tabs { gap: 18px; padding: 0; margin-bottom: 20px; border-color: var(--border); }
+body[data-console-version="v2"] #skillsPage .sandbox-tabs .button { min-height: 42px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 0 2px; color: var(--muted); }
+body[data-console-version="v2"] #skillsPage .sandbox-tabs .button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent-strong); background: transparent; }
+body[data-console-version="v2"] #sandboxEndpointDetail .sandbox-field { margin-bottom: 18px; }
+body[data-console-version="v2"] #sandboxEndpointList .resource-item { white-space: normal; overflow-wrap: anywhere; }
+body[data-console-version="v2"] #sandboxEndpointList .resource-item > span { white-space: normal; }
+body[data-console-version="v2"] #sandboxEndpointDetail > h2 { font-size: 21px; }
+body[data-console-version="v2"] #skillsPage .skill-import-panel { margin-top: 16px; }
+
+/* 运行页使用紧凑引导，将输入与输出放回视觉中心。 */
+body[data-console-version="v2"] #runsPage.runs-page { gap: 20px; }
+body[data-console-version="v2"] #runsPage .page-intro { margin-bottom: 0; }
+body[data-console-version="v2"] #runsPage .runs-hero { padding: 16px 20px; border: 1px solid var(--border); border-radius: 10px; background: #fff; color: var(--text); gap: 20px; }
+body[data-console-version="v2"] #runsPage .runs-hero h2 { margin: 0 0 5px; font-size: 16px; line-height: 1.5; letter-spacing: 0; }
+body[data-console-version="v2"] #runsPage .runs-hero > div > p:last-child { color: var(--muted); font-size: 13px; line-height: 1.7; }
+body[data-console-version="v2"] #runsPage .runs-live-indicator { border: 0; padding: 0; background: transparent; color: var(--success); box-shadow: none; white-space: nowrap; }
+body[data-console-version="v2"] #runsPage .live-pulse { background: var(--success); box-shadow: none; animation: none; }
+body[data-console-version="v2"] #runsPage .run-toolbar { padding: 20px; border-color: var(--border); box-shadow: none; grid-template-columns: 280px minmax(0, 1fr); gap: 24px; }
+body[data-console-version="v2"] #runsPage .run-agent-picker { border: 0; border-right: 1px solid var(--border); border-radius: 0; padding: 0 24px 0 0; background: transparent; min-width: 0; }
+body[data-console-version="v2"] #runsPage .run-composer-heading { flex-wrap: wrap; }
+body[data-console-version="v2"] #runsPage .run-input-shell { background: var(--surface-soft); border-radius: 9px; }
+body[data-console-version="v2"] #runsPage .runs-grid { grid-template-columns: 320px minmax(0, 1fr); gap: 20px; }
+body[data-console-version="v2"] #runsPage .runs-history-panel { padding: 16px; }
+body[data-console-version="v2"] #runsPage .resource-item { background: transparent; border-color: transparent; padding: 13px 12px; }
+body[data-console-version="v2"] #runsPage .resource-item.active { border-color: #a9c4ef; background: #eef4ff; box-shadow: none; }
+body[data-console-version="v2"] #runsPage .resource-item:hover { background: var(--surface-soft); border-color: var(--border); }
+body[data-console-version="v2"] #runsPage .resource-item.active::after { display: none; }
+body[data-console-version="v2"] #runsPage .resource-item > span { white-space: normal; overflow-wrap: anywhere; line-height: 1.6; }
+
+/* 会话保持视口内连续操作，正文和代码按原有消息容器滚动。 */
+body[data-console-version="v2"] .chat-page .chat-session-panel { padding: 16px; }
+body[data-console-version="v2"] .chat-page .chat-main-panel { padding: 0; background: #fff; }
+body[data-console-version="v2"] .chat-page .chat-main-heading { padding: 16px 20px; border-bottom: 1px solid #edf0f5; }
+body[data-console-version="v2"] .chat-page .chat-message-bubble { background: var(--surface-soft); }
+body[data-console-version="v2"] .chat-page .chat-message-user .chat-message-bubble { background: #edf4ff; color: var(--text); }
+body[data-console-version="v2"] .chat-page .chat-message-user .markdown-output { color: var(--text); }
+body[data-console-version="v2"] .chat-page .chat-composer { padding: 14px 18px; background: #fff; }
+body[data-console-version="v2"] .chat-page .chat-conversation-item strong { font-size: 13px; }
+body[data-console-version="v2"] .chat-page .chat-approval-history-region { background: #f8fafc; border-top: 1px solid #edf0f5; }
+body[data-console-version="v2"] .chat-page .chat-reading-region { min-width: 0; }
+
+/* 审计保留完整表格与独立滚动，不将列内容压成不可读的窄条。 */
+body[data-console-version="v2"] #auditPage .table-scroll { padding: 0; border-radius: 9px; max-height: min(70dvh, 720px); overflow: auto; }
+body[data-console-version="v2"] #auditPage .table-scroll-hint { display: none; }
+body[data-console-version="v2"] #auditPage .data-table { min-width: 940px; table-layout: fixed; }
+body[data-console-version="v2"] #auditPage .data-table th,
+body[data-console-version="v2"] #auditPage .data-table td { padding: 14px 12px; font-size: 12px; line-height: 1.7; vertical-align: top; overflow-wrap: anywhere; }
+body[data-console-version="v2"] #auditPage .data-table th { color: var(--muted); font-weight: 600; }
+body[data-console-version="v2"] #auditPage .data-table th:nth-child(1) { width: 17%; }
+body[data-console-version="v2"] #auditPage .data-table th:nth-child(2) { width: 23%; }
+body[data-console-version="v2"] #auditPage .data-table th:nth-child(3) { width: 8%; }
+body[data-console-version="v2"] #auditPage .data-table th:nth-child(4) { width: 10%; }
+body[data-console-version="v2"] #auditPage .data-table th:nth-child(5) { width: 24%; }
+body[data-console-version="v2"] #auditPage .data-table th:nth-child(6) { width: 18%; }
+body[data-console-version="v2"] #auditPage .data-table td:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+body[data-console-version="v2"] #auditPage .data-table tbody tr:hover { background: #f7f9fc; }
+
+/* 登录页使用同一套表面、输入和字体，保留原登录与会话安全合同。 */
+body[data-console-version="v2"][data-page="login"] { background: #f3f6fa; }
+body[data-console-version="v2"] .login-view { max-width: 1280px; margin: 0 auto; min-height: 100dvh; grid-template-columns: minmax(0, 1.1fr) minmax(360px, .9fr); gap: 72px; padding: 56px; background: transparent; }
+body[data-console-version="v2"] .login-intro h2 { max-width: 620px; font-size: clamp(30px, 3vw, 46px); line-height: 1.25; letter-spacing: -.03em; }
+body[data-console-version="v2"] .login-intro > p:last-child { color: var(--muted); font-size: 16px; line-height: 1.8; }
+body[data-console-version="v2"] .login-card { width: min(100%, 440px); padding: 36px; border: 1px solid var(--border); border-radius: 12px; background: #fff; box-shadow: 0 12px 32px rgba(23,34,56,.05); backdrop-filter: none; }
+body[data-console-version="v2"] .login-card h1 { margin: 24px 0 8px; font-size: 27px; line-height: 1.3; letter-spacing: -.025em; }
+body[data-console-version="v2"] .login-card .muted { font-size: 13px; line-height: 1.7; }
+body[data-console-version="v2"] .login-card .brand-mark { margin: 0; width: 42px; height: 42px; border-radius: 10px; }
+body[data-console-version="v2"] .login-card label { font-size: 13px; font-weight: 600; }
+body[data-console-version="v2"] .login-card input { min-height: 44px; }
+body[data-console-version="v2"] .login-card .button.primary { min-height: 44px; margin-top: 24px; }
+body[data-console-version="v2"] .login-card .legacy-link { font-size: 12px; }
+
+@media (min-width: 1680px) {
+    body[data-console-version="v2"] .page-view { width: min(100%, 1600px); }
+    body[data-console-version="v2"] .chat-page { max-width: 1600px; grid-template-columns: 320px minmax(0, 1fr); }
+    body[data-console-version="v2"] #toolsPage .management-grid,
+    body[data-console-version="v2"] #skillsPage .skills-management-grid,
+    body[data-console-version="v2"] #skillsPage .sandbox-management-grid { grid-template-columns: 320px minmax(0, 1fr); gap: 24px; }
+    body[data-console-version="v2"] #runsPage .runs-grid { grid-template-columns: 360px minmax(0, 1fr); gap: 24px; }
+}
+@media (min-width: 901px) and (max-width: 1200px) {
+    body[data-console-version="v2"] #toolsPage .management-grid,
+    body[data-console-version="v2"] #skillsPage .skills-management-grid,
+    body[data-console-version="v2"] #skillsPage .sandbox-management-grid { grid-template-columns: 240px minmax(0, 1fr); }
+    body[data-console-version="v2"] #runsPage .run-toolbar { grid-template-columns: 240px minmax(0, 1fr); gap: 18px; }
+    body[data-console-version="v2"] #runsPage .run-agent-picker { padding-right: 18px; }
+    body[data-console-version="v2"] #runsPage .runs-grid { grid-template-columns: 260px minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+    body[data-console-version="v2"] .page-view:not(.chat-page) { padding: 22px 18px 32px; }
+    body[data-console-version="v2"] .panel { --workbench-padding: 20px; }
+    body[data-console-version="v2"] #toolsPage .management-grid,
+    body[data-console-version="v2"] #skillsPage .skills-management-grid,
+    body[data-console-version="v2"] #skillsPage .sandbox-management-grid,
+    body[data-console-version="v2"] #runsPage .run-toolbar,
+    body[data-console-version="v2"] #runsPage .runs-grid { grid-template-columns: minmax(0, 1fr); }
+    body[data-console-version="v2"] #toolsPage .management-grid > *:not(:first-child) { grid-column: 1; }
+    body[data-console-version="v2"] #toolsPage #toolList { max-height: 380px; overflow: auto; }
+    body[data-console-version="v2"] #skillsPage #skillList { max-height: 330px; overflow: auto; }
+    body[data-console-version="v2"] #runsPage .run-agent-picker { padding: 0 0 18px; border-right: 0; border-bottom: 1px solid var(--border); }
+    body[data-console-version="v2"] #runsPage .runs-hero { align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+    body[data-console-version="v2"] #runsPage #runList { max-height: 300px; overflow: auto; }
+    body[data-console-version="v2"] #runsPage .runs-history-panel { min-height: 0; }
+    body[data-console-version="v2"] #runsPage .runs-output-panel { min-height: 320px; }
+    body[data-console-version="v2"] #auditPage .table-scroll { overflow: auto; }
+    body[data-console-version="v2"] #auditPage .table-scroll-hint { display: block; margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+    body[data-console-version="v2"] .login-view { gap: 32px; padding: 36px 24px; grid-template-columns: minmax(0, 1fr); max-width: 640px; }
+    body[data-console-version="v2"] .login-intro h2 { font-size: 30px; }
+    body[data-console-version="v2"] .login-card { width: 100%; justify-self: stretch; }
+}
+@media (max-width: 600px) {
+    body[data-console-version="v2"] .page-view:not(.chat-page) { padding: 20px 14px 28px; }
+    body[data-console-version="v2"] .page-intro { align-items: stretch; gap: 16px; }
+    body[data-console-version="v2"] .page-intro .button.primary { width: 100%; align-self: stretch; }
+    body[data-console-version="v2"] .panel { --workbench-padding: 18px; }
+    body[data-console-version="v2"] .panel-heading { flex-wrap: wrap; }
+    body[data-console-version="v2"] .tool-actions .button { min-height: 42px; }
+    body[data-console-version="v2"] #overviewPage .stats-grid { grid-template-columns: minmax(0, 1fr); }
+    body[data-console-version="v2"] #overviewPage .stat-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 16px; padding: 16px 18px; border-right: 0; }
+    body[data-console-version="v2"] #overviewPage .stat-card:not(:last-child) { border-right: 0; border-bottom: 1px solid var(--border); }
+    body[data-console-version="v2"] #overviewPage .stat-card > strong { grid-column: 2; grid-row: 1 / 3; margin: 0; font-size: 25px; }
+    body[data-console-version="v2"] #overviewPage .stat-card > a,
+    body[data-console-version="v2"] #overviewPage .stat-card > small { grid-column: 1; }
+    body[data-console-version="v2"] #toolsPage .detail-panel dl { grid-template-columns: 80px minmax(0, 1fr); }
+    body[data-console-version="v2"] #toolsPage .http-config-guide { padding: 12px; }
+    body[data-console-version="v2"] #skillsPage .page-intro { flex-direction: column; gap: 8px; }
+    body[data-console-version="v2"] #skillsPage .skills-page-note { max-width: none; }
+    body[data-console-version="v2"] #skillsPage .skill-resource-heading { flex-wrap: wrap; }
+    body[data-console-version="v2"] #runsPage .run-toolbar { padding: 18px; }
+    body[data-console-version="v2"] #runsPage .run-input-shell { grid-template-columns: minmax(0, 1fr); }
+    body[data-console-version="v2"] #runsPage .run-input-shell .button { min-height: 42px; }
+    body[data-console-version="v2"] #runsPage .runs-hero { padding: 16px; }
+    body[data-console-version="v2"] #runsPage .run-composer-heading span { font-size: 11px; }
+    body[data-console-version="v2"] .chat-page .chat-session-panel { padding: 14px; }
+    body[data-console-version="v2"] .chat-page .chat-main-heading { padding: 12px; }
+    body[data-console-version="v2"] .chat-page .chat-composer { padding: 10px 12px; }
+    body[data-console-version="v2"] .login-view { padding: 28px 18px; gap: 24px; align-content: center; }
+    body[data-console-version="v2"] .login-intro h2 { font-size: 27px; margin-top: 0; }
+    body[data-console-version="v2"] .login-intro > p:last-child { font-size: 13px; margin-bottom: 0; }
+    body[data-console-version="v2"] .login-card { padding: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    body[data-console-version="v2"] .resource-item,
+    body[data-console-version="v2"] .button,
+    body[data-console-version="v2"] .quick-action { transition: none; }
+}

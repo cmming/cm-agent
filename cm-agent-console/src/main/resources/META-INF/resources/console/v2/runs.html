@@ -6,22 +6,23 @@
     <meta name="referrer" content="same-origin">
     <title>运行记录 | CM Agent 控制台 v2</title>
     <link rel="stylesheet" href="/assets/styles.css?v=2.0.17">
-    <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.3.1">
+    <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.3.4">
     <link rel="stylesheet" href="/console/v2/assets/sandbox-endpoints.css?v=1.0.0">
     <link rel="stylesheet" href="/console/v2/assets/skill-artifacts.css?v=1.0.0">
+    <link rel="stylesheet" href="/console/v2/assets/workbench.css?v=1.0.0">
 </head>
 <body data-console-version="v2" data-page="runsPage">
 <div class="console-layout">
     <aside class="sidebar">
         <div class="sidebar-brand"><div class="brand-mark small" aria-hidden="true">CM</div><div><strong>CM Agent</strong><span>管理控制台</span></div><span class="version-badge">V2</span></div>
         <nav id="sidebarNav" aria-label="控制台导航">
-            <a class="nav-item" href="/console/v2/overview.html"><span aria-hidden="true">▦</span>能力总览</a>
-            <a class="nav-item" href="/console/v2/model-configs.html"><span aria-hidden="true">◉</span>模型配置</a>
-            <a class="nav-item" href="/console/v2/agents.html"><span aria-hidden="true">◇</span>Agent 管理</a>
-            <a class="nav-item" href="/console/v2/tools.html"><span aria-hidden="true">⬡</span>工具治理</a><a class="nav-item" href="/console/v2/skills.html"><span aria-hidden="true">✦</span>技能管理</a>
-            <a class="nav-item" href="/console/v2/chat.html"><span aria-hidden="true">◌</span>会话聊天</a>
-            <a class="nav-item active" href="/console/v2/runs.html" aria-current="page"><span aria-hidden="true">▷</span>运行记录</a>
-            <a class="nav-item" href="/console/v2/audit.html"><span aria-hidden="true">≡</span>审计日志</a>
+            <a class="nav-item" href="/console/v2/overview.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#overview"></use></svg>能力总览</a>
+            <a class="nav-item" href="/console/v2/model-configs.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#model-configs"></use></svg>模型配置</a>
+            <a class="nav-item" href="/console/v2/agents.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#agents"></use></svg>Agent 管理</a>
+            <a class="nav-item" href="/console/v2/tools.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#tools"></use></svg>工具治理</a><a class="nav-item" href="/console/v2/skills.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#skills"></use></svg>技能管理</a>
+            <a class="nav-item" href="/console/v2/chat.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#chat"></use></svg>会话聊天</a>
+            <a class="nav-item active" href="/console/v2/runs.html" aria-current="page"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#runs"></use></svg>运行记录</a>
+            <a class="nav-item" href="/console/v2/audit.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#audit"></use></svg>审计日志</a>
         </nav>
         <div class="sidebar-links"><span>版本与系统</span><a href="/console/v1/">旧版 v1 <b aria-hidden="true">↗</b></a><a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI <b aria-hidden="true">↗</b></a><a href="/actuator/health" target="_blank" rel="noreferrer">健康检查 <b aria-hidden="true">↗</b></a></div>
     </aside>

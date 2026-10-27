@@ -6,22 +6,23 @@
     <meta name="referrer" content="same-origin">
     <title>模型配置 | CM Agent 控制台 v2</title>
     <link rel="stylesheet" href="/assets/styles.css?v=2.0.17">
-    <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.3.1">
+    <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.3.4">
     <link rel="stylesheet" href="/console/v2/assets/sandbox-endpoints.css?v=1.0.0">
     <link rel="stylesheet" href="/console/v2/assets/skill-artifacts.css?v=1.0.0">
+    <link rel="stylesheet" href="/console/v2/assets/workbench.css?v=1.0.0">
 </head>
 <body data-console-version="v2" data-page="modelConfigsPage">
 <div class="console-layout">
     <aside class="sidebar">
         <div class="sidebar-brand"><div class="brand-mark small" aria-hidden="true">CM</div><div><strong>CM Agent</strong><span>管理控制台</span></div><span class="version-badge">V2</span></div>
         <nav id="sidebarNav" aria-label="控制台导航">
-            <a class="nav-item" href="/console/v2/overview.html"><span aria-hidden="true">▦</span>能力总览</a>
-            <a class="nav-item active" href="/console/v2/model-configs.html" aria-current="page"><span aria-hidden="true">◉</span>模型配置</a>
-            <a class="nav-item" href="/console/v2/agents.html"><span aria-hidden="true">◇</span>Agent 管理</a>
-            <a class="nav-item" href="/console/v2/tools.html"><span aria-hidden="true">⬡</span>工具治理</a><a class="nav-item" href="/console/v2/skills.html"><span aria-hidden="true">✦</span>技能管理</a>
-            <a class="nav-item" href="/console/v2/chat.html"><span aria-hidden="true">◌</span>会话聊天</a>
-            <a class="nav-item" href="/console/v2/runs.html"><span aria-hidden="true">▷</span>运行记录</a>
-            <a class="nav-item" href="/console/v2/audit.html"><span aria-hidden="true">≡</span>审计日志</a>
+            <a class="nav-item" href="/console/v2/overview.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#overview"></use></svg>能力总览</a>
+            <a class="nav-item active" href="/console/v2/model-configs.html" aria-current="page"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#model-configs"></use></svg>模型配置</a>
+            <a class="nav-item" href="/console/v2/agents.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#agents"></use></svg>Agent 管理</a>
+            <a class="nav-item" href="/console/v2/tools.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#tools"></use></svg>工具治理</a><a class="nav-item" href="/console/v2/skills.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#skills"></use></svg>技能管理</a>
+            <a class="nav-item" href="/console/v2/chat.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#chat"></use></svg>会话聊天</a>
+            <a class="nav-item" href="/console/v2/runs.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#runs"></use></svg>运行记录</a>
+            <a class="nav-item" href="/console/v2/audit.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#audit"></use></svg>审计日志</a>
         </nav>
         <div class="sidebar-links"><span>版本与系统</span><a href="/console/v1/">旧版 v1 <b aria-hidden="true">↗</b></a><a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI <b aria-hidden="true">↗</b></a><a href="/actuator/health" target="_blank" rel="noreferrer">健康检查 <b aria-hidden="true">↗</b></a></div>
     </aside>
@@ -29,9 +30,9 @@
         <header class="workspace-header"><p class="workspace-crumb">当前工作区 <span aria-hidden="true">/</span> <b>模型配置</b></p><div class="user-actions"><span class="online-dot" aria-label="系统运行正常"></span><span class="system-status">系统运行正常</span><span class="user-avatar" aria-hidden="true">管</span><span id="currentUser" class="sr-only">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
         <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
         <section id="modelConfigsPage" class="page-view">
-            <div class="page-intro"><div><p class="eyebrow">模型与凭据</p><h1>模型配置</h1><p>管理 Provider、服务地址、默认模型名称及加密保存的 API Key。</p></div><a class="button primary" href="#modelConfigForm">新建模型配置</a></div>
+            <div class="page-intro"><div><h1>模型配置</h1><p>管理 Provider、服务地址、默认模型名称及加密保存的 API Key。</p></div><a class="button primary" href="#modelConfigForm">新建模型配置</a></div>
             <div class="management-grid">
-                <article class="panel"><div class="panel-heading"><div><p class="eyebrow">资源</p><h2>模型配置列表</h2></div><button id="refreshModelConfigsBtn" class="button ghost" type="button">刷新</button></div><div id="modelConfigList" class="resource-list"><p class="empty-state">正在加载模型配置。</p></div></article>
+                <article class="panel"><div class="panel-heading"><div><h2>模型配置列表</h2></div><button id="refreshModelConfigsBtn" class="button ghost" type="button">刷新</button></div><div id="modelConfigList" class="resource-list"><p class="empty-state">正在加载模型配置。</p></div></article>
                 <div class="management-detail-stack">
                 <article id="modelConfigDetail" class="panel detail-panel"><p class="empty-state">选择模型配置查看详情。</p></article>
                 <article class="panel form-panel">
@@ -41,10 +42,10 @@
                         <input id="modelConfigDisplayName" name="displayName" maxlength="160" required>
                         </div><div class="management-field"><label for="modelConfigProviderType">Provider 类型</label>
                         <select id="modelConfigProviderType" name="providerType" required><option value="OPENAI_COMPATIBLE">OpenAI Compatible</option><option value="DASHSCOPE_NATIVE">DashScope Native</option></select>
-                        </div><div class="management-field"><label for="modelConfigBaseUrl">服务基础地址</label>
+                        </div><div class="management-field management-field-full"><label for="modelConfigBaseUrl">服务基础地址</label>
                         <input id="modelConfigBaseUrl" name="baseUrl" type="url" maxlength="500" placeholder="https://dashscope.aliyuncs.com/api/v1" required>
                         <p class="field-help">只允许 HTTP(S) 绝对地址；不要在地址中嵌入用户名、密码、Token 或 API Key。</p>
-                        </div><div class="management-field"><label for="modelConfigModelName">默认模型名称</label>
+                        </div><div class="management-field management-field-full model-config-model-field"><label for="modelConfigModelName">默认模型名称</label>
                         <input id="modelConfigModelName" name="modelName" maxlength="160" list="modelCatalogOptions" placeholder="qwen-plus" required>
                         <datalist id="modelCatalogOptions"></datalist>
                         <div class="tool-actions"><button id="discoverModelNamesBtn" class="button ghost" type="button" disabled>获取模型列表</button></div>
@@ -52,8 +53,8 @@
                         </div><div class="management-field management-field-full"><label for="modelConfigApiKey">API Key</label>
                         <input id="modelConfigApiKey" name="apiKey" type="password" maxlength="2048" autocomplete="new-password" required>
                         <p id="modelConfigApiKeyHelp" class="field-help">创建时必填。平台仅加密保存，不会在详情、列表或编辑表单中回显。</p>
-                        </div><label class="checkbox-label" for="modelConfigEnabled"><input id="modelConfigEnabled" name="enabled" type="checkbox" checked> 启用模型配置</label>
                         <p class="field-help field-help-warning">编辑时留空会保留当前 API Key；填写新值会立即轮换数据库中的加密密文。</p>
+                        </div><label class="checkbox-label" for="modelConfigEnabled"><input id="modelConfigEnabled" name="enabled" type="checkbox" checked> 启用模型配置</label>
                         <div class="tool-actions"><button id="saveModelConfigBtn" class="button primary" type="submit">创建模型配置</button><button id="cancelModelConfigEditBtn" class="button ghost" type="button" hidden>取消编辑</button></div>
                         <p id="modelConfigFormStatus" class="form-status" aria-live="polite"></p>
                     </form>
