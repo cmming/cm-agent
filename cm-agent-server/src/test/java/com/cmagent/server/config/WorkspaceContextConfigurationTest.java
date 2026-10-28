@@ -31,6 +31,25 @@ class WorkspaceContextConfigurationTest {
         policy.setBindings(java.util.List.of(binding, binding));
         assertThatThrownBy(policy::validate).isInstanceOf(IllegalStateException.class);
     }
+    @Test void 登记清单允许同租户旧映射共享但拒绝跨租户重叠与重复ID() {
+        var policy = new WorkspaceContextProperties(); var tenant = java.util.UUID.randomUUID(); var agent = java.util.UUID.randomUUID(); var id = java.util.UUID.randomUUID();
+        var entry = new WorkspaceContextProperties.Entry(id,"资料目录",tenant,java.util.List.of(agent),"reference",java.util.List.of("guide.md"),true);
+        policy.setCatalog(java.util.List.of(entry)); policy.validate();
+        policy.setBindings(java.util.List.of(entry.binding(agent))); policy.validate();
+        policy.setCatalog(java.util.List.of(entry,entry));
+        assertThatThrownBy(policy::validate).isInstanceOf(IllegalStateException.class);
+        policy.setCatalog(java.util.List.of(new WorkspaceContextProperties.Entry(java.util.UUID.randomUUID(),"跨租户",java.util.UUID.randomUUID(),java.util.List.of(agent),"reference/child",java.util.List.of("guide.md"),true)));
+        assertThatThrownBy(policy::validate).isInstanceOf(IllegalStateException.class);
+    }
+    @Test void 登记项拒绝路径别名文件重复及超长名称() {
+        var policy = new WorkspaceContextProperties(); var tenant = java.util.UUID.randomUUID(); var agent = java.util.UUID.randomUUID();
+        for (String directory : java.util.List.of("../escape","a/./b","a//b","a/../b","C:/private")) {
+            policy.setCatalog(java.util.List.of(new WorkspaceContextProperties.Entry(java.util.UUID.randomUUID(),"资料",tenant,java.util.List.of(agent),directory,java.util.List.of("guide.md"),true)));
+            assertThatThrownBy(policy::validate).isInstanceOf(IllegalStateException.class);
+        }
+        policy.setCatalog(java.util.List.of(new WorkspaceContextProperties.Entry(java.util.UUID.randomUUID(),"中".repeat(121),tenant,java.util.List.of(agent),"reference",java.util.List.of("guide.md"),true)));
+        assertThatThrownBy(policy::validate).isInstanceOf(IllegalStateException.class);
+    }
     private ApplicationContextRunner runner(AgentRuntime runtime) {
         return new ApplicationContextRunner().withUserConfiguration(WorkspaceContextConfiguration.class).withBean(AgentRuntime.class, () -> runtime);
     }

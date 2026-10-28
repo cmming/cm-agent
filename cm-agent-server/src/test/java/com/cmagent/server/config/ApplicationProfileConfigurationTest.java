@@ -87,6 +87,9 @@ class ApplicationProfileConfigurationTest {
             .withBean(SkillAccessGateway.class, () -> mock(SkillAccessGateway.class))
             .withBean(ModelConfigRepository.class, () -> mock(ModelConfigRepository.class))
             .withBean(RuntimeCheckpointRepository.class, () -> mock(RuntimeCheckpointRepository.class))
+            // 本上下文只验证生产 profile 装配，不连接数据库；部署模式门禁由独立仓储合同覆盖。
+            .withBean(com.cmagent.core.repository.RuntimeExecutionModeRepository.class,
+                    () -> mock(com.cmagent.core.repository.RuntimeExecutionModeRepository.class))
             .withInitializer(new ConfigDataApplicationContextInitializer());
 
     @Test

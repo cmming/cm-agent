@@ -225,3 +225,15 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 技能沙箱可通过独立 `cm-agent.skills.sandbox.artifacts` 配置收集固定 Python 生成的文件：脚本写入 `CM_AGENT_ARTIFACT_DIR` 指定的 `/workspace/output`，容器退出前传输，服务端持久卷独立 AES/GCM 加密，JDBC V19 保存归属与配额。Run 成功持久化且严格审计成功后，创建者可在 v2 技能 TEST、运行详情和聊天回复下载；等待审批、失败与跨主体不交付。默认关闭，生产必须显式提供私有持久卷、独立密钥和 JDBC；详见[文件配置](docs/configuration.md#技能沙箱文件产物)与[运维说明](docs/operations.md#文件产物持久卷与补偿)。固定 Python 验收技能位于 `cm-agent-server/src/test/resources/skill-artifacts`；原 Anthropic docx.zip 的 Node.js 动态脚本仍不受支持。
 控制台会在选择技能时恢复本人当前版本最近的 TEST 结果；刷新或跨页返回后重新选择技能即可继续查看/下载，不自动重放执行。仅有读取权限的用户也可读取本人结果，试运行和发布仍需原写权限。产物组件最多并行下载两个文件，额外点击会提示等待。
+
+### 会话工作区参考目录
+
+控制台 v2 支持在首条消息前选择管理员登记的只读参考目录。目录绑定会话、正文按 Run 加密冻结；审批恢复继续使用原正文，换目录请新建会话。默认关闭，旧无请求体创建及 input-only 运行调用保持兼容。配置和 API 示例见 [配置说明](docs/configuration.md#工作区目录选择)，部署、撤销与排空回退见 [运维说明](docs/operations.md#工作区目录选择运维)。这项能力不提供用户电脑目录选择、任意宿主路径、写文件或 Shell。
+
+Windows服务器登记资料现在允许可信所有者、`SYSTEM`和本机内置`Administrators`的显式/继承权限，按固定SID识别，不必为了通过检查删除正常系统管理权限。其他主体的允许项仍拒绝，检查覆盖根及实际选中的目录/文件；不自动修改ACL，也不放宽本机上传密文、Skill产物或Harness临时目录。升级后需带上Server新增的JNA5.17.0依赖并重启服务，配置键不变。详见[Windows登记资料权限](docs/configuration.md#windows登记参考资料权限)及[部署与回退](docs/operations.md#windows登记资料acl部署与回退)。这项兼容不代表R1原生窗口、Provider和全部发布门禁已完成。
+
+### 本机文件夹导入的分阶段边界
+
+R1 已完成 T9 存储基线及 T10 受控导入 API：支持能力查询、明确确认后的 manifest/逐文件上传、READY 完成、结果核对和撤销，默认关闭。创建响应丢失可按同一次确认的 `requestId` 查询，不盲目重复创建。IMPORTED 派生会话/Run 的读取按原主体隔离，列表在游标分页前过滤；原三态保持原权限。
+
+本阶段仍没有操作系统文件夹窗口、浏览器预览/勾选流程或 IMPORTED 运行绑定，READY 的 `bindable` 仍为 `false`，不能把 API 验收当作原生窗口或真实模型验收。部署和协议见 [导入存储配置](docs/configuration.md#本机只读导入存储基线t9)、[T10导入API](docs/configuration.md#本机只读导入apit10) 及 [导入维护](docs/operations.md#本机只读导入存储维护t9)。

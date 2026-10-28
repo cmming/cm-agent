@@ -57,6 +57,28 @@ class WorkspaceContextServiceTest {
         assertThat(service.prepare(owner, run, false)).isNull();
         assertThat(rows.hasAnyCheckpoints()).isFalse();
     }
+    @Test @org.junit.jupiter.api.condition.EnabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS)
+    void Windows权限基础设施故障响应和日志保持同号脱敏(CapturedOutput output) {
+        var reader = new WorkspaceContextFiles(List.of(root.resolveSibling("禁止根")), new WindowsWorkspaceAclPolicy((p,d) -> {
+            throw new java.io.IOException("secret=不得泄露 " + root + " http://internal.invalid");
+        }));
+        var failed = new WorkspaceContextService(policy, rows, cipher, mapper, audit, clock, Duration.ofMinutes(15), reader);
+        code(() -> failed.prepare(owner, run, false), ApiErrorCode.WORKSPACE_CONTEXT_UNAVAILABLE);
+        assertThat(output.getAll()).contains("errorId=" + run.id(), "WORKSPACE_CONTEXT_UNAVAILABLE")
+                .doesNotContain("不得泄露", root.toString(), "http://internal.invalid");
+    }
+    @Test @org.junit.jupiter.api.condition.EnabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS)
+    void Windows原生组件失败显示具体受控原因及稳定分类(CapturedOutput output) {
+        var reader = new WorkspaceContextFiles(List.of(root.resolveSibling("禁止根")), new WindowsWorkspaceAclPolicy((p,d) -> {
+            throw new WindowsWorkspaceAclPolicy.Unavailable(WindowsWorkspaceAclPolicy.Reason.NATIVE_UNAVAILABLE);
+        }));
+        var failed = new WorkspaceContextService(policy, rows, cipher, mapper, audit, clock, Duration.ofMinutes(15), reader);
+        assertThatThrownBy(() -> failed.prepare(owner, run, false)).isInstanceOfSatisfying(WorkspaceContextException.class,e->{
+            assertThat(e.code()).isEqualTo(ApiErrorCode.WORKSPACE_CONTEXT_UNAVAILABLE);
+            assertThat(e.getMessage()).contains("JNA运行时依赖");assertThat(e.errorId()).isEqualTo(run.id().toString());
+        });
+        assertThat(output.getAll()).contains("errorId="+run.id(),"reason=NATIVE_UNAVAILABLE").doesNotContain(root.toString());
+    }
     @Test void 首次加密冻结且重建后不读取改写或删除的源文件() throws Exception {
         var snapshot = service.prepare(owner, run, false);
         assertThat(row(WorkspaceContextService.KEY).encryptedPayload()).doesNotContain("CANARY", root.toString());
@@ -167,7 +189,7 @@ class WorkspaceContextServiceTest {
     @Test void 撤销拒绝审计不可用时保持严格审计失败及原原因(CapturedOutput output) {
         service.prepare(owner, run, false); policy.setEnabled(false);
         doThrow(new AuditPersistenceException("合成失败", new IllegalStateException("secret=不得泄露")))
-                .when(audit).append(any(), any(), eq("WORKSPACE_CONTEXT_FAILURE"), any(), any(), any(), any());
+                .when(audit).appendControlled(any(), any(), eq("WORKSPACE_CONTEXT_FAILURE"), any(), any(), any(), any());
         assertThatThrownBy(() -> service.prepare(owner, run, true)).isInstanceOfSatisfying(WorkspaceContextException.class, failure -> {
             assertThat(failure.code()).isEqualTo(ApiErrorCode.AUDIT_UNAVAILABLE);
             assertThat(failure.getSuppressed()).singleElement().isInstanceOf(WorkspaceContextException.class);
@@ -196,6 +218,7 @@ class WorkspaceContextServiceTest {
         var posix = Files.getFileAttributeView(path, PosixFileAttributeView.class);
         if (posix != null) posix.setPermissions(PosixFilePermissions.fromString("rwx------"));
         else Files.getFileAttributeView(path, AclFileAttributeView.class).setAcl(List.of(AclEntry.newBuilder()
-                .setType(AclEntryType.ALLOW).setPrincipal(Files.getOwner(path)).setPermissions(EnumSet.allOf(AclEntryPermission.class)).build()));
+                .setType(AclEntryType.ALLOW).setPrincipal(Files.getOwner(path)).setPermissions(EnumSet.allOf(AclEntryPermission.class))
+                .setFlags(AclEntryFlag.DIRECTORY_INHERIT, AclEntryFlag.FILE_INHERIT).build()));
     }
 }

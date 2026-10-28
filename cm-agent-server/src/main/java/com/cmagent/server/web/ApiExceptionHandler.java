@@ -34,6 +34,16 @@ import java.time.Instant;
 @RestControllerAdvice
 /** 将常见业务异常转换为稳定、脱敏的 JSON 错误响应。 */
 public class ApiExceptionHandler {
+    /** 业务短事务已退出后才写拒绝审计，避免随回滚丢失或独立事务等待外层锁。 */
+    @ExceptionHandler(com.cmagent.server.runtime.DeferredWorkspaceFailure.class)
+    public ResponseEntity<ApiErrorResponse> deferredWorkspaceFailure(com.cmagent.server.runtime.DeferredWorkspaceFailure failure,HttpServletRequest request){
+        return workspaceFailure(failure.finish(),request);
+    }
+    /** 新导入路由的绑定失败也需要严格审计；旧直接构造测试不伪造认证主体。 */
+    private com.cmagent.server.audit.AuditAppender importAudit;
+    @Autowired void configureImportAudit(com.cmagent.server.audit.AuditAppender audit){this.importAudit=audit;}
+    /** 参数失败采用WARN且只含可信身份及请求编号，不打印绑定对象或原始参数。 */
+    private static final org.slf4j.Logger importLog=org.slf4j.LoggerFactory.getLogger(WorkspaceImportController.class);
     private final SensitiveDataRedactor redactor;
     private final ErrorDiagnosticLogger diagnosticLogger;
     /**
@@ -75,6 +85,20 @@ public class ApiExceptionHandler {
      * @param ignored 仅用于满足回调签名、不参与业务判断的参数。
      */
     public ResponseEntity<ApiErrorResponse> validationFailure(Exception ignored, HttpServletRequest request) {
+        if(request.getRequestURI().matches("/api/agents/[^/]+/workspace-imports(?:/.*)?")){
+            String errorId=RequestCorrelationFilter.errorIdOf(request);
+            var authentication=org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            var session=authentication!=null && authentication.getPrincipal() instanceof com.cmagent.server.security.JwtService.JwtSession value?value:null;
+            if(session!=null && importAudit!=null)try{
+                importAudit.appendControlled(session.tenantId(),session.principalId(),"WORKSPACE_IMPORT_VALIDATE","WORKSPACE_IMPORT","unresolved","DENIED","code=WORKSPACE_IMPORT_INVALID errorId="+errorId);
+            }catch(AuditPersistenceException failure){
+                var safe=new IllegalStateException("导入参数拒绝审计不可用");safe.setStackTrace(failure.getStackTrace());
+                importLog.error("errorId={} operation=WORKSPACE_IMPORT_VALIDATE errorCode=AUDIT_UNAVAILABLE tenantId={} resourceType=WORKSPACE_IMPORT resourceId=unresolved",errorId,session.tenantId(),safe);
+                return response(HttpStatus.SERVICE_UNAVAILABLE,ApiErrorCode.AUDIT_UNAVAILABLE,"审计服务暂不可用，请凭错误编号联系管理员",errorId);
+            }
+            importLog.warn("errorId={} operation=WORKSPACE_IMPORT_VALIDATE errorCode=WORKSPACE_IMPORT_INVALID tenantId={} resourceType=WORKSPACE_IMPORT resourceId=unresolved",errorId,session==null?"unresolved":session.tenantId());
+            return response(HttpStatus.BAD_REQUEST,ApiErrorCode.WORKSPACE_IMPORT_INVALID,"导入参数格式不合法，请核对标识和版本",errorId);
+        }
         return response(HttpStatus.BAD_REQUEST,
                 approvalDecisionRequest(request) ? ApiErrorCode.TOOL_APPROVAL_INVALID_DECISION : ApiErrorCode.VALIDATION_FAILED,
                 "请求参数不合法", request);
@@ -147,6 +171,13 @@ public class ApiExceptionHandler {
     /** 只读资料错误沿用同一Run编号；未知宿主路径/堆栈已经在治理边界脱敏。 */
     @ExceptionHandler(com.cmagent.core.runtime.WorkspaceContextException.class)
     public ResponseEntity<ApiErrorResponse> workspaceFailure(com.cmagent.core.runtime.WorkspaceContextException failure, HttpServletRequest request) {
+        if(failure.code()==ApiErrorCode.WORKSPACE_RESOURCE_NOT_FOUND){
+            // 与该旧路由真正缺失时使用同一code/message，不能让新owner拒绝暴露私有会话或Run是否存在。
+            if(request.getRequestURI().endsWith("/approvals/history"))return response(HttpStatus.NOT_FOUND,ApiErrorCode.CONVERSATION_NOT_FOUND,"会话或 Agent 不存在",failure.errorId());
+            if(approvalRequest(request))return response(HttpStatus.NOT_FOUND,ApiErrorCode.TOOL_APPROVAL_NOT_FOUND,"审批请求不存在",failure.errorId());
+            if(request.getRequestURI().contains("/conversations"))return response(HttpStatus.NOT_FOUND,ApiErrorCode.CONVERSATION_NOT_FOUND,"会话或 Agent 不存在",failure.errorId());
+            return response(HttpStatus.NOT_FOUND,ApiErrorCode.RUNTIME_ERROR,"请求资源不存在",failure.errorId());
+        }
         if (failure.claimDiagnostic()) {
             Object supplied = request.getAttribute(ErrorDiagnosticLogger.DiagnosticContext.class.getName());
             var context = supplied instanceof ErrorDiagnosticLogger.DiagnosticContext trusted
@@ -156,6 +187,19 @@ public class ApiExceptionHandler {
             diagnosticLogger.error(context, failure);
         }
         HttpStatus status = switch (failure.code()) {
+            case INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
+            case WORKSPACE_IMPORT_INVALID -> HttpStatus.BAD_REQUEST;
+            case WORKSPACE_IMPORT_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case WORKSPACE_IMPORT_CONFLICT, WORKSPACE_IMPORT_DISABLED -> HttpStatus.CONFLICT;
+            case WORKSPACE_IMPORT_EXPIRED -> HttpStatus.GONE;
+            case WORKSPACE_IMPORT_TOO_LARGE -> HttpStatus.PAYLOAD_TOO_LARGE;
+            case WORKSPACE_IMPORT_CONTENT_INVALID -> HttpStatus.UNPROCESSABLE_ENTITY;
+            case WORKSPACE_IMPORT_LIMIT_EXCEEDED -> HttpStatus.TOO_MANY_REQUESTS;
+            case WORKSPACE_IMPORT_UNAVAILABLE, WORKSPACE_IMPORT_UPLOAD_TIMEOUT -> HttpStatus.SERVICE_UNAVAILABLE;
+            case FORBIDDEN -> HttpStatus.FORBIDDEN;
+            case WORKSPACE_SELECTION_INVALID -> HttpStatus.BAD_REQUEST;
+            case WORKSPACE_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case WORKSPACE_SELECTION_CONFLICT, WORKSPACE_UNAVAILABLE -> HttpStatus.CONFLICT;
             case WORKSPACE_CONTEXT_LIMIT_EXCEEDED -> HttpStatus.PAYLOAD_TOO_LARGE;
             case WORKSPACE_CONTEXT_REVOKED -> HttpStatus.GONE;
             case WORKSPACE_CONTEXT_SNAPSHOT_UNAVAILABLE -> HttpStatus.CONFLICT;

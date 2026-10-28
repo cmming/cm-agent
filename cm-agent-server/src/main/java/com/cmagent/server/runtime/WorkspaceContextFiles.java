@@ -18,22 +18,25 @@ import java.util.*;
 final class WorkspaceContextFiles {
     /** 应用与用户目录属于禁止来源，构造后固定，不接受客户端覆盖。 */
     private final List<Path> protectedRoots;
+    /** 仅Windows登记资料使用；原生DLL在首次读取安全描述符时才加载。 */
+    private final WindowsWorkspaceAclPolicy windows;
 
     WorkspaceContextFiles() { this(List.of(applicationRoot(), Path.of(System.getProperty("user.home")).toAbsolutePath().normalize())); }
     /** 测试可指定合成保护目录；生产固定使用真实应用与用户目录。 */
-    WorkspaceContextFiles(List<Path> protectedRoots) { this.protectedRoots = List.copyOf(protectedRoots); }
+    WorkspaceContextFiles(List<Path> protectedRoots) {
+        this(protectedRoots, new WindowsWorkspaceAclPolicy(new WindowsSecurityDescriptorReader()));
+    }
+    /** 注入只读描述符适配用于故障/资源边界测试，不改变生产权限策略。 */
+    WorkspaceContextFiles(List<Path> protectedRoots, WindowsWorkspaceAclPolicy windows) {
+        this.protectedRoots = List.copyOf(protectedRoots); this.windows = windows;
+    }
 
     List<WorkspaceContextResource> read(WorkspaceContextProperties policy, WorkspaceContextProperties.Binding binding) throws IOException {
-        Path root = Path.of(policy.getRootDirectory()).toAbsolutePath().normalize();
-        if (root.toString().startsWith("\\\\") || protectedRoots.stream().anyMatch(path -> root.startsWith(path) || path.startsWith(root)))
-            throw new Invalid("资料根属于禁止来源");
-        checkDirectories(root);
-        var rootIdentity = attributes(root);
-        requirePrivate(root);
-        if (!same(rootIdentity, attributes(root))) throw new Invalid("资料根无法稳定校验身份");
-        String type = Files.getFileStore(root).type().toLowerCase(Locale.ROOT);
-        if (Set.of("nfs", "nfs4", "cifs", "smbfs", "fuse.sshfs").contains(type)) throw new Invalid("资料根不支持网络文件系统");
         long deadline = System.nanoTime() + policy.getReadTimeout().toNanos();
+        Path root = checkedRoot(policy);
+        var rootIdentity = attributes(root);
+        var access = access(root, deadline);
+        if (!same(rootIdentity, attributes(root))) throw new Invalid("资料根无法稳定校验身份");
         List<WorkspaceContextResource> result = new ArrayList<>();
         int total = 0;
         for (String relative : binding.files()) {
@@ -47,6 +50,10 @@ final class WorkspaceContextFiles {
             var before = attributes(file);
             if (!before.isRegularFile() || before.isSymbolicLink()) throw new Invalid("资料不是普通文本文件");
             if (!file.toRealPath().equals(file.toAbsolutePath().normalize())) throw new Invalid("资料路径不允许重解析或别名");
+            if (access != null) {
+                Path selected = root;
+                for (String component : components) { selected = selected.resolve(component); access.verify(selected); }
+            }
             try {
                 if (((Number) Files.getAttribute(file, "unix:nlink", LinkOption.NOFOLLOW_LINKS)).longValue() != 1)
                     throw new Invalid("资料不允许硬链接");
@@ -76,7 +83,52 @@ final class WorkspaceContextFiles {
                 throw new Invalid("资料包含二进制控制字符");
             result.add(new WorkspaceContextResource(relative, content, bytes.length, WorkspaceContextResource.digest(content)));
         }
+        if (access != null) access.finish();
         return List.copyOf(result);
+    }
+
+    /**
+     * Windows审批恢复/ASK前只复核仍存在的原路径ACL，绝不重新读正文或替换原快照。
+     * 源文件删除仍允许使用原快照，但根必须存在，且仍存活的选中祖先必须可信。
+     * POSIX保留原恢复语义，不因Windows兼容调整增加文件存在性要求。
+     */
+    void verifyAccess(WorkspaceContextProperties policy, WorkspaceContextProperties.Binding binding) throws IOException {
+        if (!System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win")) return;
+        long deadline = System.nanoTime() + policy.getReadTimeout().toNanos();
+        Path root = checkedRoot(policy);var access = access(root, deadline);
+        if (access == null) throw new IOException("Windows资料权限视图不可用");
+        for (String relative : binding.files()) {
+            var components = new ArrayList<String>(List.of(binding.directory().split("/")));
+            components.addAll(List.of(relative.split("/")));Path selected = root;
+            for (int i = 0; i < components.size(); i++) {
+                selected = selected.resolve(components.get(i));
+                try {
+                    var value = attributes(selected);
+                    if (value.isSymbolicLink() || !selected.toRealPath().equals(selected.toAbsolutePath().normalize())) throw new Invalid("资料路径不允许重解析或别名");
+                    if (i < components.size() - 1 && !value.isDirectory() || i == components.size() - 1 && !value.isRegularFile())
+                        throw new Invalid("原资料路径类型已改变");
+                    access.verify(selected);
+                } catch (NoSuchFileException missing) {
+                    // 缺失对象没有可读取ACL；保留R0删除源文件后使用原快照的合同，不读取任何替代文件。
+                    break;
+                }
+            }
+        }
+        access.finish();
+    }
+    private Path checkedRoot(WorkspaceContextProperties policy) throws IOException {
+        Path root = Path.of(policy.getRootDirectory()).toAbsolutePath().normalize();
+        if (root.toString().startsWith("\\\\") || protectedRoots.stream().anyMatch(path -> root.startsWith(path) || path.startsWith(root)))
+            throw new Invalid("资料根属于禁止来源");
+        checkDirectories(root);
+        String type = Files.getFileStore(root).type().toLowerCase(Locale.ROOT);
+        if (Set.of("nfs", "nfs4", "cifs", "smbfs", "fuse.sshfs").contains(type)) throw new Invalid("资料根不支持网络文件系统");
+        return root;
+    }
+    private WindowsWorkspaceAclPolicy.Access access(Path root, long deadline) throws IOException {
+        if (Files.getFileAttributeView(root, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS) != null) { requirePrivate(root); return null; }
+        if (!System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win")) throw new Invalid("资料根权限视图不受支持");
+        return windows.open(root, deadline);
     }
 
     private byte[] readSecure(SecureDirectoryStream<Path> directory, List<String> components, int index,
@@ -93,7 +145,7 @@ final class WorkspaceContextFiles {
     }
 
     private byte[] readChecked(Path file, WorkspaceContextProperties policy, long deadline) throws IOException {
-        // Windows无SecureDirectoryStream：私有根ACL是写入信任边界，前后目录身份核对拒绝普通管理员更新竞态。
+        // Windows无SecureDirectoryStream：受信ACL限制写入者，前后目录身份与ACL复核检测部署者更新竞态。
         var parents = new LinkedHashMap<Path, BasicFileAttributes>();
         for (Path parent = file.getParent(); parent != null; parent = parent.getParent()) parents.put(parent, attributes(parent));
         byte[] bytes;
@@ -131,19 +183,14 @@ final class WorkspaceContextFiles {
             if (!current.toRealPath().equals(current.toAbsolutePath().normalize())) throw new Invalid("资料目录不允许重解析或路径别名");
         }
     }
-    /** 不改变已有资料权限；仅接受所有者私有根，部署者须先配置ACL/权限。 */
+    /** POSIX仍接受所有者私有根，不因Windows可信系统身份兼容而放宽。 */
     private static void requirePrivate(Path root) throws IOException {
         var posix = Files.getFileAttributeView(root, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
         if (posix != null) {
             if (posix.readAttributes().permissions().stream().anyMatch(permission -> permission.name().startsWith("GROUP_") || permission.name().startsWith("OTHERS_")))
                 throw new Invalid("资料根必须为所有者私有目录");
-        } else {
-            var acl = Files.getFileAttributeView(root, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
-            if (acl == null || acl.getAcl().stream().anyMatch(entry -> entry.type() == AclEntryType.ALLOW && !entry.principal().equals(aclOwner(root))))
-                throw new Invalid("资料根必须采用所有者私有ACL");
-        }
+        } else throw new Invalid("资料根POSIX权限视图不可用");
     }
-    private static UserPrincipal aclOwner(Path root) { try { return Files.getOwner(root, LinkOption.NOFOLLOW_LINKS); } catch (IOException failure) { throw new IllegalStateException("资料根归属不可用"); } }
     private static Path applicationRoot() {
         Path start = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
         for (Path path = start; path != null; path = path.getParent()) if (Files.exists(path.resolve(".git"), LinkOption.NOFOLLOW_LINKS)) return path;

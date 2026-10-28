@@ -35,6 +35,48 @@ import java.util.concurrent.atomic.AtomicReference;
  * 本地和测试使用的内存存储实现，不作为生产持久化方案。
  */
 public class InMemoryPlatformStore implements AuditEventRepository, RunRepository, ToolCallRepository {
+    @Override public boolean supportsWorkspaceProtocol(){return true;}
+    /** 与Run首次保存同一监视器写入的不可变来源见证；终态/选择清理不删除。 */
+    private final java.util.Map<UUID,Integer> workspaceProtocols=new java.util.HashMap<>();
+    @Override public synchronized RunRecord saveWithWorkspaceProtocol(UUID tenant,RunRecord run,int protocol){
+        if(protocol!=0 && protocol!=3)throw new IllegalArgumentException("工作区运行协议不合法");
+        var saved=save(tenant,run);if(protocol==3)workspaceProtocols.put(run.id(),3);return saved;
+    }
+    @Override public synchronized int workspaceProtocol(UUID tenant,UUID agent,UUID run){
+        findByTenantAndAgentAndId(tenant,agent,run).orElseThrow(()->new java.util.NoSuchElementException("运行不存在"));
+        var protocol=workspaceProtocols.get(run);if(protocol==null)throw new IllegalStateException("运行来源见证缺失");return protocol;
+    }
+    @Override public synchronized boolean visibleConversationFromWorkspace(com.cmagent.core.domain.Conversation conversation,String principal){
+        if(workspaceConversations==null)throw new UnsupportedOperationException("当前内存仓储未装配导入会话来源见证");
+        return runs.values().stream().filter(r->r.tenantId().equals(conversation.tenantId()) && r.agentId().equals(conversation.agentId())
+                        && workspaceProtocol(r.tenantId(),r.agentId(),r.id())==3)
+                .filter(r->workspaceConversations.findByRun(r.tenantId(),r.id()).map(c->c.id().equals(conversation.id())).orElse(false))
+                .allMatch(r->principal.equals(r.principalId()) && principal.equals(conversation.createdBy()));
+    }
+    /** 可信来源元数据，与会话仓储一起在分页截断前执行owner过滤。 */
+    private final com.cmagent.core.repository.WorkspaceSelectionRepository workspaceSelections;
+    /** 只用于按Run读取真实关联会话，不接受客户端提供关联。 */
+    private final com.cmagent.core.repository.ConversationRepository workspaceConversations;
+    /** 兼容旧手工装配；新可见分页必须显式装配依赖。 */
+    public InMemoryPlatformStore() { workspaceSelections = null; workspaceConversations = null; }
+    /**
+     * @param selections 可信来源
+     * @param conversations 会话仓储
+     */
+    public InMemoryPlatformStore(com.cmagent.core.repository.WorkspaceSelectionRepository selections, com.cmagent.core.repository.ConversationRepository conversations) {
+        workspaceSelections = Objects.requireNonNull(selections); workspaceConversations = Objects.requireNonNull(conversations);
+    }
+    @Override public synchronized List<RunRecord> listVisible(UUID tenantId, UUID agentId, String principalId, RunPageRequest pageRequest) {
+        if (workspaceSelections == null) throw new UnsupportedOperationException("当前内存仓储未装配导入可见分页");
+        return runs.values().stream().filter(r -> tenantId.equals(r.tenantId()) && agentId.equals(r.agentId()) && r.kind() == com.cmagent.core.domain.RunKind.NORMAL)
+                .filter(r -> workspaceProtocol(r.tenantId(),r.agentId(),r.id())!=3 || principalId.equals(r.principalId()))
+                .filter(r -> {
+                    var conversation=workspaceConversations.findByRun(tenantId,r.id()).orElse(null);
+                    return workspaceSelections.visibleRun(r,conversation,principalId)
+                            && (conversation==null || visibleConversationFromWorkspace(conversation,principalId));
+                })
+                .filter(r -> RunRepository.isStrictlyBeforeCursor(r, pageRequest)).sorted(RunRepository.keysetOrder()).limit(pageRequest.limit()).toList();
+    }
     @Override
     public boolean resumeWaitingApproval(RunRecord snapshot) {
         return snapshot.status() == RunStatus.WAITING_APPROVAL
@@ -804,7 +846,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
      * @param tenantId 当前租户标识，用于限定数据访问和隔离范围。
      * @param run 当前处理的运行记录。
      */
-    public RunRecord save(UUID tenantId, RunRecord run) {
+    public synchronized RunRecord save(UUID tenantId, RunRecord run) {
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(run, "run 不能为空");
         if (!tenantId.equals(run.tenantId())) {
@@ -813,6 +855,7 @@ public class InMemoryPlatformStore implements AuditEventRepository, RunRepositor
         if (runs.putIfAbsent(run.id(), run) != null) {
             throw new IllegalStateException("Run 已存在");
         }
+        workspaceProtocols.put(run.id(),0);
         return run;
     }
 

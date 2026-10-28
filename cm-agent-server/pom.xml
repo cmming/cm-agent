@@ -14,6 +14,12 @@
     <name>CM Agent Server</name>
 
     <dependencies>
+        <!-- Windows登记资料按原生SID识别SYSTEM/内置管理员；仅Server使用，非Windows不加载Advapi32。 -->
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>5.17.0</version>
+        </dependency>
         <!-- 密码SSH使用内存认证与Unix socket通道，避免密码进入CLI环境或临时文件；私钥分支仍使用OpenSSH。 -->
         <dependency>
             <groupId>com.github.mwiede</groupId>

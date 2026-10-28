@@ -95,11 +95,15 @@ public class ConversationController {
     /**
      * 创建指定 Agent 的空会话，需要 {@code agent:run} 权限。
      */
-    public Conversation create(@PathVariable("agentId") UUID agentId, Authentication authentication) {
+    public Conversation create(@PathVariable("agentId") UUID agentId,
+            @RequestBody(required = false) CreateConversationRequest request, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:run", "AGENT", agentId.toString());
-        return conversationService.create(principal, agentId);
+        return conversationService.create(principal, agentId, request == null ? null : request.workspaceSelection());
     }
+
+    /** @param workspaceSelection 可省略，省略保持旧 Agent 映射 */
+    public record CreateConversationRequest(com.cmagent.core.domain.WorkspaceSelection workspaceSelection) {}
 
     @GetMapping
     /**
@@ -457,7 +461,10 @@ public class ConversationController {
     ) {
         ApiErrorCode code;
         String message;
+        if(failure instanceof com.cmagent.server.runtime.DeferredWorkspaceFailure deferred)failure=deferred.finish();
         if (failure instanceof com.cmagent.core.runtime.WorkspaceContextException workspaceFailure) {
+            if(workspaceFailure.code()==ApiErrorCode.WORKSPACE_RESOURCE_NOT_FOUND)
+                return new ConversationStreamError(ApiErrorCode.CONVERSATION_NOT_FOUND,"会话或 Agent 不存在",workspaceFailure.errorId(),conversationId);
             // 资料治理已经记录同一Run诊断；已提交的SSE只转发安全原因，避免重复记录堆栈。
             if (workspaceFailure.claimDiagnostic()) diagnosticLogger.error(new ErrorDiagnosticLogger.DiagnosticContext(
                     workspaceFailure.errorId(), "CONVERSATION_STREAM", workspaceFailure.code().name(), principal.tenantId().toString(),

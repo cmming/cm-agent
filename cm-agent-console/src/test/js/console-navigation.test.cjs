@@ -17,6 +17,8 @@ function navigationHarness() {
     const state = {};
     const invalidate = {invalidate() {}, invalidateAll() {}};
     const context = {
+        workspaceChoice: {reset() { events.push("reset-workspace"); }},
+        nativeWorkspaceImport: {reset() { events.push("reset-local-files"); }},
         artifactManager: {dispose() { events.push("dispose-artifacts"); }},
         chatUx: {reset() { events.push("reset-chat"); }},
         state, pageNavigationRevision: 0, currentPage: "overviewPage", sessionEpoch: invalidate,
@@ -45,12 +47,13 @@ function navigationHarness() {
 test("技能页离开后释放双组件，重复进入为新 DOM 创建新实例", async () => {
     const flow = navigationHarness();
     await flow.navigate("/console/v2/skills.html");
+    assert.ok(flow.events.indexOf("reset-local-files") < flow.events.indexOf("replace-body"));
     const firstSkill = flow.state.skillsPage, firstSandbox = flow.state.sandboxPage;
     flow.events.length = 0;
     await flow.navigate("/console/v2/tools.html");
     assert.equal(firstSkill.disposed, true);
     assert.equal(firstSandbox.disposed, true);
-    assert.deepEqual(flow.events, ["dispose-artifacts", "dispose-skillsPage", "dispose-sandboxPage", "reset-chat", "replace-body"]);
+    assert.deepEqual(flow.events, ["reset-workspace", "reset-local-files", "dispose-artifacts", "dispose-skillsPage", "dispose-sandboxPage", "reset-chat", "replace-body"]);
     assert.equal(flow.state.chatBusy, false);
     assert.equal(flow.state.skillsPage, null);
     await flow.navigate("/console/v2/skills.html");

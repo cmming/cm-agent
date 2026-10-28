@@ -508,3 +508,114 @@ cm-agent:
 
 正式/会话 Run 列表为 `GET /api/agents/{agentId}/runs/{runId}/artifacts`；TEST 为 `GET /api/skills/{skillId}/trials/{runId}/artifacts`；统一下载为 `GET /api/skill-artifacts/{artifactId}/content`。需当前认证、Run owner 和 `agent:read`；TEST 额外需要 `skill:read` 与原 TEST owner，会话复核原会话 owner。等待审批或失败不下载。响应仅附件下载，禁缓存，无 URL 令牌、预览、Range 和共享。
 TEST恢复入口为 GET /api/skills/{skillId}/trials/latest?versionId={versionId}，仅返回当前主体当前版本最近记录，无记录204；需要 skill:read 和 agent:read，不自动执行或替用户发布。控制台最多并行下载两个文件，服务端每实例最多四项完整解密下载，单文件仍受4MiB硬限额。下载租约5分钟，补偿扫描每批100项；同一文件被占用时返回可重试503。
+
+## 工作区目录选择
+
+`cm-agent.workspace-context` 默认关闭；现有 `root-directory`、`bindings`、文件类型和预算继续生效。新增 `catalog` 最多登记 128 项，每项使用不复用的 UUID `id`，`name` 最多 120 个字符，`tenant-id` 唯一归属租户，`agent-ids` 显式列出获准 Agent。名称和根内相对位置只向通过读/运行权限校验的主体展示；服务端不扫描磁盘树，不接受 HTTP/模型指定 tenant、宿主路径或文件清单。
+
+```yaml
+cm-agent:
+  workspace-context:
+    enabled: true
+    root-directory: /srv/cm-agent-reference
+    max-files: 4
+    max-file-bytes: 16384
+    max-total-bytes: 32768
+    read-timeout: 2s
+    catalog:
+      - id: 11111111-1111-4111-8111-111111111111
+        name: 产品只读参考
+        tenant-id: 00000000-0000-0000-0000-000000000001
+        agent-ids:
+          - 22222222-2222-4222-8222-222222222222
+        directory: product-reference
+        files: [guide.md, policy.txt]
+        enabled: true
+```
+
+示例 UUID 必须替换成实际租户/Agent；路径位于 Server 可见的私有本地目录，不能位于应用仓库、用户主目录及其祖先，不能使用网络文件系统、链接或路径别名。仅逐项读取 `.md/.txt/.json/.csv`，不会自动读取整个目录。跨租户同物理目录、父子重叠与重复登记被拒绝；同租户原 `bindings` 可显式共享相同目录，不放宽文件与权限检查。
+
+选择合同：`DEFAULT` 沿用旧 Agent 映射；`SELECTED` 必须带登记 `workspaceId`；`NONE` 明确不加入任何工作区资料，不能带 ID。原会话无绑定记录视为 DEFAULT。创建会话可省略请求体，也可传 `{"workspaceSelection":{"mode":"SELECTED","workspaceId":"11111111-1111-4111-8111-111111111111"}}`。独立同步及 SSE 单轮 Run 接口在原 `input` 外接受相同可选字段；会话消息只使用后端绑定，不支持每条消息覆盖选择。
+
+| 接口 | 权限与行为 |
+|---|---|
+| `GET /api/agents/{agentId}/workspaces` | `agent:read` 和 `agent:run`；返回 enabled/readOnly、登记项及预算，关闭时 items 为空 |
+| `GET /api/agents/{agentId}/conversations/{conversationId}/workspace` | `agent:read`；返回 selection/displayName/directory/version/editable/available |
+| `PUT /api/agents/{agentId}/conversations/{conversationId}/workspace` | `agent:run`，仅空会话创建者；请求包含 workspaceSelection 与 expectedVersion |
+| `GET /api/agents/{agentId}/conversations/{conversationId}/runs/{runId}/workspace` | `agent:read`，验证会话与 Run 关联后返回固定选择 |
+| 原 Run 详情 | 增加 workspaceSelection 安全视图；不包含正文、宿主绝对路径或密钥 |
+
+未知/跨租户/跨 Agent 目录统一 404，非创建者改绑 403，已发消息、版本冲突或撤销 409。参数错误 400，依赖或严格审计失败 503；正文读取继续沿用既有 WORKSPACE_CONTEXT 错误映射。错误包含中文原因、稳定 code 和与日志一致的 errorId；SSE 建连后使用 error 事件。写请求不自动重试，不确定结果时先 GET 核对。
+
+新增 V22 的 `conversation_workspace_bindings` 与 `run_workspace_selections` 仅保存元数据；正文仍使用原加密检查点，表和字段均有中文原生数据库注释。服务需部署 schema 后运行；旧无选择记录不补猜目录。绑定变更与首发 Run/消息创建使用同一会话控制锁、JDBC 行锁和短事务，模型与文件读取在事务外。
+
+## Windows登记参考资料权限
+
+本节适用于`cm-agent.workspace-context.bindings`的DEFAULT资料与`catalog`的SELECTED资料，不新增配置键或任意可信账户白名单。Windows通过只读Win32 API取得原生安全描述符和SID；Server依赖`net.java.dev.jna:jna:5.17.0`，不需要额外的`jna-platform`、PowerShell、helper或JVM内部反射开关。非Windows不加载Advapi32/Kernel32，POSIX权限策略保持原样。
+
+| 主体 | Windows判定 |
+|---|---|
+| 受信登记根的所有者 | 作为本轮固定基线，不接受请求指定的所有者 |
+| LocalSystem | 固定SID `S-1-5-18`，允许显式或继承的权限项 |
+| 本机内置Administrators | 固定SID `S-1-5-32-544`，允许显式或继承的权限项；同名域组不自动可信 |
+| Everyone、Users、Authenticated Users及其他主体 | ALLOW仍保守拒绝，包括只读允许项；本轮仅增加两个系统身份兼容 |
+
+不按中文/英文显示名、大小写或名称后缀判断身份。Windows系统管理权限不等于CM Agent的JWT/RBAC管理员权限，不会因此获得其他tenant或上传者的资料。原生适配只读权限信息，不设置ACL、不修改所有者、不绕过OS的实际读取拒绝。
+
+检查范围是登记根、根内明确选中文件的中间目录及文件本身，不扫描整个目录，也不要求盘符根具有同样的私有ACL。子对象沿用固定根信任集合，其任意所有者不会被自动加入；子文件对普通用户开放也会拒绝。NULL/缺失/空DACL、未知ACE类型、不可识别的安全结构失败关闭，不依赖DENY抵消未知ALLOW来放行。仍保留原路径、目录联接/链接、网络卷、UTF-8、类型和4文件/16KiB/32KiB默认预算。
+
+快照恢复和ASK保留前会重新检查Windows仍存在的原选中路径ACL，返回模型前也再次复核；不缓存跨Run授权结果。普通主体新获允许权限时，原审批恢复被拒绝。源文件删除仍可使用原冻结正文：仅缺失的叶子或中间对象不读取ACL，根及仍存活的选中祖先仍须可信；不会读取替代文件或重建正文。权限前后指纹复核降低变更竞争，不能宣称消除所有宿主文件系统竞态。
+
+原生描述符最多128KiB、最多4096项ACE，逐次调用前后及循环检查现有`read-timeout`。Win32调用同步执行，不能强制抢占已进入内核的单次调用；超时后结果不交付，无后台自动重试。受控ACL拒绝沿用`WORKSPACE_CONTEXT_INVALID`及固定中文原因，读取/原生库/解析/释放基础设施失败沿用`WORKSPACE_CONTEXT_UNAVAILABLE`，前后端使用同一`errorId`，不向响应或日志输出路径、正文、完整ACL或账户列表。
+
+本节不改变`workspace-context.imports`、Skill产物密文及Harness隔离目录的独立权限规则，不要求用户把上传存储根登记为catalog。升级后的正常系统权限兼容只针对登记参考资料，不能将其他存储混放或统一放宽。
+
+## 本机只读导入存储基线（T9）
+
+本节存储约束自T9生效；T10已接入受控导入API和派生资源owner隔离，原生系统窗口及IMPORTED会话/Run执行接线仍待后续实施。`cm-agent.workspace-context.imports.enabled` 默认 `false`，开启导入API还要求顶层 `workspace-context.enabled=true`。当前即使资料达到READY，运行入口仍拒绝IMPORTED，不能据此宣布完整本机目录功能已经可用。
+
+输入存储独立于服务器登记根和 Skill 产物。配置位于 `cm-agent.workspace-context.imports`；以下是运维准备示例，只使用环境占位符，不能把真实密钥写入仓库：
+
+```yaml
+cm-agent:
+  workspace-context:
+    imports:
+      enabled: false
+      root-directory: ${CM_AGENT_WORKSPACE_IMPORT_ROOT}
+      encryption-key: ${CM_AGENT_WORKSPACE_IMPORT_KEY}
+      max-imports-per-owner: 8
+      max-imports-per-tenant: 64
+      max-bytes-per-owner: 262144
+      max-bytes-per-tenant: 2097152
+      draft-ttl: 1h
+      ready-ttl: 30d
+      cleanup-interval: 5m
+```
+
+只有准备持久卷时才加入示例中的 `root-directory`/`encryption-key`，两者须同时有效；未配置卷不会自动创建目录或生成密钥。密钥为独立的 Base64 AES-256 随机密钥，不能复用模型凭据、JWT 或 Skill 产物密钥。对象以可信 tenant/import/file UUID 寻址，展示名和相对文件名不参与寻址；AAD 绑定来源、原主体、Agent 和 manifest，元数据表不保存正文。卷由服务账户独占，Linux 使用0700目录/0600文件，Windows 使用服务账户独占ACL。禁止应用目录、静态目录、用户主目录自身及其祖先、路径别名及 NFS/CIFS 等网络卷；不能与登记资料根重叠。多实例部署只能在验证文件锁与持久性语义的共同本地持久卷环境使用，本阶段不提供远程对象存储适配。
+
+文件类型仍为 `.md/.txt/.json/.csv`，继承原 `max-files/max-file-bytes/max-total-bytes` 的4文件、16KiB单文件、32KiB总量默认值和8文件、32KiB/64KiB硬界。只允许有效非空UTF-8文本，实际长度和SHA-256由服务端复核，不截断超额内容。DRAFT一小时内有效、READY自完成起固定最长30天；主体跨Agent累计计费，撤销/过期仍占配额，直到真实密文删除确认。仓储租约为1秒至5分钟，读取引用可共享，上传/GC独占，每批次最多64个共享读取租约。
+
+V23在保留V22三态记录的基础上增加导入批次、文件清单及租约表，扩展绑定来源约束；T10新增V24请求关联和主体精确比较，历史V22/V23不修改。IMPORTED的workspaceId显式代表importId，directory必须为空，不能伪装为旧DEFAULT。T10以受控API承接HTTP预算和owner隔离，T11仍需完成运行冻结/恢复接线；不得绕过API直接暴露存储SPI。
+
+## 本机只读导入API（T10）
+
+所有接口位于 `/api/agents/{agentId}/workspace-imports`，需要认证JWT中的 `agent:read` 与 `agent:run`，tenant/principal只取验证后的JwtSession。批次及其派生资源仅原主体可见，普通同租户管理员不自动获得资料。其他tenant/owner/Agent与不存在统一404；派生会话、消息、Run、审批/技能历史和停止入口也受保护，列表在游标及LIMIT前过滤。原DEFAULT/SELECTED/NONE仍沿用原权限。
+
+| 方法与后缀 | 输入及结果 |
+|---|---|
+| `GET /capabilities` | 无文件信息；返回开关、来源/类型、文件/字节/配额/期限、本地枚举预算、HTTP预算和runtimeAvailable |
+| `POST /` | application/json；displayName、随机UUID requestId、confirmed=true及files；每项relativePath/sizeBytes/sha256；返回201 DRAFT、服务端importId/fileId及version |
+| `GET /by-request/{requestId}` | 仅原tenant/owner/Agent找回同一次创建结果；无结果404，不产生创建或上传副作用 |
+| `POST /{importId}/files/{fileId}?expectedVersion=...` | application/octet-stream原始正文；顺序上传，版本匹配，已确认文件不能覆盖 |
+| `POST /{importId}/complete` | application/json的expectedVersion；复核全部真实密文后READY；可核对已落盘但接收确认未知的对象，不接收新正文 |
+| `GET /{importId}` | 原主体核对安全状态、版本、清单/进度和期限，不返回正文 |
+| `DELETE /{importId}?expectedVersion=...` | 原主体先逻辑撤销；之后按租约回收，关闭上传后仍允许查询/撤销 |
+
+`requestId`由客户端为每次明确确认生成全新的随机UUID，与错误响应的errorId含义不同。服务端仍生成所有importId/fileId；requestId不能指定对象键或覆盖文件。同一确认重复POST返回409，网络结果未知先GET by-request或已知批次，不能自动重试写请求。仅选择文件夹或预览时不得发送manifest、文件名或正文；浏览器交互由T12实现，本阶段没有原生选择入口。
+
+manifest最多16KiB，complete正文最多1KiB；拒绝未知字段、重复JSON键、尾随JSON及非整数长度，不接受客户端tenant/owner或绝对路径。文件按声明长度加一实际读取并核对哈希/UTF-8/类型和当前预算；超过上限明确失败，不静默截断。使用原始正文，未启用multipart临时文件。每实例最多4项导入操作，正文读取最多4个无队列工作线程，总等待5秒；底层流不响应中断时真实读取槽仍占用，后续请求429，不无限建线程。
+
+DRAFT或撤销批次不可绑定，过期410；参数400、未知/不可见404、状态/版本/关闭409、HTTP正文超限413、内容/预算422、配额/并发429、正文超时或存储503、未知内部错误500。审计不可用为AUDIT_UNAVAILABLE/503；响应中文原因和errorId能检索同号脱敏日志。HTTP中的私有派生资源拒绝复用旧路由通用404 code/message，不额外泄露其存在；后台使用WORKSPACE_RESOURCE_NOT_FOUND记录治理分类。
+
+T10的READY只表示导入持久化完成：`ready=true`时`bindable=false`，capabilities的`runtimeAvailable=false`，运行接线仍待T11。关闭上传不会移除已有卷/密钥或放宽归属校验；GET和DELETE仍需原主体及入口权限。V24对owner精确比较，避免MySQL默认大小写比较或尾随空格把不同主体的请求关联合并。自定义ConversationRepository/RunRepository必须实现新listVisible合同，未实现时明确拒绝，不能截断后过滤或降级为共享列表。

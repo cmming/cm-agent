@@ -48,6 +48,11 @@ import java.util.UUID;
 @RequestMapping("/api/agents/{agentId}/runs")
 /** Agent 运行接口，负责校验主体权限并委托运行服务执行单轮任务。 */
 public class RunController {
+    /** 历史详情使用固定的选择名称，不能拿当前 catalog 覆盖。 */
+    private com.cmagent.server.runtime.WorkspaceSelectionService workspaceSelections;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureWorkspaceSelections(com.cmagent.server.runtime.WorkspaceSelectionService service) { this.workspaceSelections = service; }
+
     private final RunExecutionService executionService;
     private final RunPersistenceService persistenceService;
     private final PermissionEvaluator permissionEvaluator;
@@ -101,7 +106,7 @@ public class RunController {
     ) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:run", "AGENT", agentId.toString());
-        return executionService.run(principal, agentId, request.input());
+        return executionService.run(principal, agentId, request.input(), request.workspaceSelection(), ignored -> {});
     }
 
     /**
@@ -130,7 +135,7 @@ public class RunController {
         String errorId = RequestCorrelationFilter.errorIdOf(servletRequest);
         // 使用无限超时：模型执行本身受 AgentScope 超时配置限制，不能由较短的 MVC 默认超时提前截断输出。
         SseEmitter emitter = new SseEmitter(0L);
-        streamExecutor.execute(() -> executeStream(emitter, principal, agentId, request.input(), errorId));
+        streamExecutor.execute(() -> executeStream(emitter, principal, agentId, request.input(), request.workspaceSelection(), errorId));
         return emitter;
     }
 
@@ -141,6 +146,7 @@ public class RunController {
      * @param principal 已完成认证和授权的可信主体
      * @param agentId 目标 Agent 标识
      * @param input 已通过请求校验的用户输入
+     * @param selection 可信目录选择参数，不允许提供宿主路径
      * @param errorId 前端可见且可用于检索日志的关联编号
      */
     private void executeStream(
@@ -148,12 +154,13 @@ public class RunController {
             PrincipalRef principal,
             UUID agentId,
             String input,
+            com.cmagent.core.domain.WorkspaceSelection selection,
             String errorId
     ) {
         try {
             send(emitter, "started", new RunStreamStarted("运行已启动"));
             AgentRunResult result = executionService.run(
-                    principal, agentId, input, delta -> send(emitter, "delta", new RunStreamDelta(delta)));
+                    principal, agentId, input, selection, delta -> send(emitter, "delta", new RunStreamDelta(delta)));
             send(emitter, "completed", result);
         } catch (RuntimeException failure) {
             send(emitter, "error", streamError(principal, agentId, errorId, failure));
@@ -180,6 +187,7 @@ public class RunController {
             String errorId,
             RuntimeException failure
     ) {
+        if(failure instanceof com.cmagent.server.runtime.DeferredWorkspaceFailure deferred)failure=deferred.finish();
         ApiErrorCode code;
         String message;
         if (failure instanceof com.cmagent.core.runtime.WorkspaceContextException workspaceFailure) {
@@ -260,12 +268,12 @@ public class RunController {
                 position == null ? null : position.startedAt(),
                 position == null ? null : position.id()
         );
-        List<RunRecord> items = persistenceService.list(principal.tenantId(), agentId, pageRequest);
+        List<RunRecord> items = persistenceService.list(principal, agentId, pageRequest);
         String nextCursor = null;
         if (items.size() == limit && !items.isEmpty()) {
             RunRecord last = items.getLast();
             boolean hasNext = !persistenceService.list(
-                    principal.tenantId(), agentId, new RunPageRequest(1, last.startedAt(), last.id())
+                    principal, agentId, new RunPageRequest(1, last.startedAt(), last.id())
             ).isEmpty();
             if (hasNext) {
                 nextCursor = encodeCursor(last);
@@ -292,9 +300,9 @@ public class RunController {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:read", "AGENT", agentId.toString());
         RunPersistenceService.RunDetail detail = persistenceService.findDetail(
-                principal.tenantId(), agentId, runId
+                principal, agentId, runId
         );
-        return new RunDetailResponse(detail.run(), detail.toolCalls());
+        return new RunDetailResponse(detail.run(), detail.toolCalls(), workspaceSelections == null ? null : workspaceSelections.describeRun(principal.tenantId(), agentId, runId));
     }
 
     /**
@@ -318,7 +326,7 @@ public class RunController {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:read", "AGENT", agentId.toString());
         // 先通过运行详情的租户与 Agent 边界校验，再查询读取记录，避免 runId 枚举泄露。
-        persistenceService.findDetail(principal.tenantId(), agentId, runId);
+        persistenceService.findDetail(principal, agentId, runId);
         return skillLoadQueries.list(principal.tenantId(), runId, new ApiPageRequest(page, size));
     }
 
@@ -386,9 +394,12 @@ public class RunController {
     }
 
     /**
-     * 封装 {@code RunRequest} 在当前流程中使用的不可变数据。
+     * 单轮运行输入，旧 input-only 调用保持兼容。
+     * @param input 用户输入
+     * @param workspaceSelection 可省略的逻辑目录选择
      */
-    public record RunRequest(@NotBlank String input) {
+    public record RunRequest(@NotBlank String input, com.cmagent.core.domain.WorkspaceSelection workspaceSelection) {
+        public RunRequest(String input) { this(input, null); }
     }
 
     /**
@@ -433,14 +444,20 @@ public class RunController {
     }
 
     /**
-     * 封装 {@code RunDetailResponse} 在当前流程中使用的不可变数据。
+     * 运行详情，不包含资料正文或宿主绝对路径。
+     * @param run 运行记录
+     * @param toolCalls 关联工具调用
+     * @param workspaceSelection 本轮固定的目录选择安全视图
      */
-    public record RunDetailResponse(RunRecord run, List<RunToolCall> toolCalls) {
+    public record RunDetailResponse(RunRecord run, List<RunToolCall> toolCalls,
+            com.cmagent.server.runtime.WorkspaceSelectionService.View workspaceSelection) {
+        public RunDetailResponse(RunRecord run, List<RunToolCall> toolCalls) { this(run, toolCalls, null); }
         /**
          * 校验并构造 {@code RunDetailResponse} 实例。
          *
          * @param run 当前运行记录。
          * @param toolCalls 当前运行关联的工具调用记录。
+         * @param workspaceSelection 本轮选择安全视图
          */
         public RunDetailResponse {
             toolCalls = List.copyOf(toolCalls);

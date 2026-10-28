@@ -291,6 +291,8 @@ class RunControllerJdbcPersistenceTest {
         String agentId = createAgent(token);
         AtomicInteger runAuditCalls = new AtomicInteger();
         doAnswer(invocation -> {
+            // 本例只注入 Run 生命周期审计失败；目录固定是独立严格审计，另有专门故障合同覆盖。
+            if ("WORKSPACE_RUN_SELECT".equals(invocation.getArgument(2))) return null;
             if (runAuditCalls.incrementAndGet() > 1) {
                 throw new AuditPersistenceException("审计写入失败", new IllegalStateException("database unavailable"));
             }
@@ -328,6 +330,8 @@ class RunControllerJdbcPersistenceTest {
         String agentId = createAgent(token);
         AtomicInteger runAuditCalls = new AtomicInteger();
         doAnswer(invocation -> {
+            // 本例只注入 Run 生命周期审计失败；目录固定是独立严格审计，另有专门故障合同覆盖。
+            if ("WORKSPACE_RUN_SELECT".equals(invocation.getArgument(2))) return null;
             if (runAuditCalls.incrementAndGet() > 1) {
                 throw new AuditPersistenceException("runtime 审计失败", new IllegalStateException("database unavailable"));
             }

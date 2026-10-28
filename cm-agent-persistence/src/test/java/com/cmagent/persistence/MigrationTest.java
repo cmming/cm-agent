@@ -54,7 +54,8 @@ class MigrationTest {
             "tool_approval_requests",
             "tool_approval_items",
             "runtime_checkpoints",
-            "runtime_execution_modes",
+            "runtime_execution_modes", "conversation_workspace_bindings", "run_workspace_selections",
+            "workspace_imports", "workspace_import_files", "workspace_import_leases",
             "skill_definitions",
             "skill_versions",
             "skill_resources",
@@ -126,15 +127,23 @@ class MigrationTest {
         assertThat(jdbc.sql("SELECT description FROM skill_versions WHERE id='90000000-0000-0000-0000-000000000006'")
                 .query(String.class).single()).isEqualTo(boundaryDescription);
         updateLegacyDescription(jdbc, existingDescription);
-        int checkpointStage = CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
-        assertThat(checkpointStage).isEqualTo(2);
+        int checkpointStage = CmAgentFlyway.configure(dataSource).target("22").load().migrate().migrationsExecuted;
+        assertThat(checkpointStage).isEqualTo(3);
+        // 从已发布 V22 无损升级，旧选择仍能读取；V23 不能通过修改旧脚本绕过真实升级。
+        verifyWorkspaceSelectionContract(dataSource, jdbc);
+        int importStage = CmAgentFlyway.configure(dataSource).target("23").load().migrate().migrationsExecuted;
+        assertThat(importStage).isEqualTo(1);
+        int requestStage = CmAgentFlyway.configure(dataSource).target("24").load().migrate().migrationsExecuted;
+        assertThat(requestStage).isEqualTo(1);
+        int witnessStage=CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
+        assertThat(witnessStage).isEqualTo(1);
 
         assertThat(firstStage).isEqualTo(12);
         assertThat(secondStage).isEqualTo(4);
         assertThat(passwordStage).isEqualTo(1);
         assertThat(JdbcClient.create(dataSource).sql("SELECT ssh_auth_type FROM skill_sandbox_endpoints WHERE id='90000000-0000-0000-0000-000000000020'")
                 .query(String.class).single()).isEqualTo("KEY");
-        assertSchemaContract(firstStage + secondStage + passwordStage + descriptionStage + checkpointStage,
+        assertSchemaContract(firstStage + secondStage + passwordStage + descriptionStage + checkpointStage + importStage + requestStage + witnessStage,
                 jdbcUrl, username, password);
         assertThat(JdbcClient.create(dataSource).sql("""
                         SELECT skills_json FROM run_skill_snapshots
@@ -145,6 +154,41 @@ class MigrationTest {
 
         verifySkillReleaseMigration(JdbcClient.create(dataSource));
         verifyExecutionModeContract(dataSource, jdbc);
+        verifyWorkspaceSelectionContract(dataSource, jdbc);
+    }
+
+    /** 双库验证选择重建、跨租户/Agent 隔离、CAS 冲突以及运行选择不可覆盖。 */
+    private static void verifyWorkspaceSelectionContract(DriverManagerDataSource dataSource, JdbcClient jdbc) {
+        var rows = new JdbcWorkspaceSelectionRepository(jdbc);
+        var tenant = UUID.randomUUID(); var agent = UUID.randomUUID(); var id = UUID.randomUUID(); var now = java.time.Instant.now();
+        var selection = new com.cmagent.core.domain.WorkspaceSelection(com.cmagent.core.domain.WorkspaceSelection.Mode.SELECTED, UUID.randomUUID());
+        var original = new com.cmagent.core.domain.WorkspaceBinding(tenant,agent,id,selection,"a".repeat(64),"甲目录","reference-a",1,"owner",now,now);
+        assertThat(rows.saveConversation(original,0)).isTrue();
+        // 重建仓储模拟无进程内缓存的新读取者，仍从数据库恢复版本和逻辑目录身份。
+        var restarted = new JdbcWorkspaceSelectionRepository(JdbcClient.create(dataSource));
+        assertThat(restarted.conversation(tenant,agent,id).orElseThrow().selection()).isEqualTo(selection);
+        assertThat(rows.conversation(UUID.randomUUID(),agent,id)).isEmpty();
+        assertThat(rows.conversation(tenant,UUID.randomUUID(),id)).isEmpty();
+        assertThat(rows.saveConversation(original,0)).isFalse();
+        var next = new com.cmagent.core.domain.WorkspaceBinding(tenant,agent,id,
+                new com.cmagent.core.domain.WorkspaceSelection(com.cmagent.core.domain.WorkspaceSelection.Mode.NONE,null),
+                "","不使用工作区","",2,"owner",now,now.plusSeconds(1));
+        var transactions = new org.springframework.transaction.support.TransactionTemplate(
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(dataSource));
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var results = pool.invokeAll(java.util.List.<java.util.concurrent.Callable<Boolean>>of(
+                    () -> transactions.execute(status -> rows.saveConversation(next,1)),
+                    () -> transactions.execute(status -> rows.saveConversation(next,1))));
+            assertThat(results.stream().filter(result -> { try { return result.get(); } catch (Exception failure) { throw new IllegalStateException(failure); } }).count()).isEqualTo(1);
+        } catch (InterruptedException failure) { Thread.currentThread().interrupt(); throw new IllegalStateException(failure); }
+        finally { pool.shutdownNow(); }
+        rows.saveRun(original);
+        assertThatThrownBy(() -> rows.saveRun(original)).isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(restarted.run(tenant,agent,id).orElseThrow().selection()).isEqualTo(selection);
+        assertThat(rows.run(UUID.randomUUID(),agent,id)).isEmpty();
+        rows.abandonConversation(original);
+        assertThat(rows.conversation(tenant,agent,id).orElseThrow().version()).isEqualTo(2);
     }
 
     /** 两种数据库均验证系统模式、排空拒绝、同模式重启和行锁下的并发切换。 */
@@ -390,7 +434,7 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(21);
+        assertThat(migrationsExecuted).isEqualTo(25);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);

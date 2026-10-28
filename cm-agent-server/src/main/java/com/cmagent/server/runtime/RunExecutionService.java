@@ -67,6 +67,10 @@ public class RunExecutionService {
     private final SkillRuntimeService skillRuntimeService;
     /** Spring启动时固定资料治理服务；旧手工装配保留不携带资料的调用方式。 */
     private WorkspaceContextService workspaceContexts;
+    /** 独立单轮也固定三态选择，避免同步和 SSE 使用不同目录规则。 */
+    private WorkspaceSelectionService workspaceSelections;
+    @Autowired
+    void configureWorkspaceSelections(WorkspaceSelectionService service) { this.workspaceSelections = service; }
 
     @Autowired
     void configureWorkspaceContexts(WorkspaceContextService service) { this.workspaceContexts = Objects.requireNonNull(service); }
@@ -147,9 +151,38 @@ public class RunExecutionService {
             String input,
             Consumer<String> outputDeltaConsumer
     ) {
+        return run(principal, agentId, input, null, outputDeltaConsumer);
+    }
+
+    /**
+     * 固定独立运行的逻辑选择，失败不进入模型；旧调用省略选择时保持 DEFAULT。
+     * @param principal 可信主体
+     * @param agentId 目标 Agent
+     * @param input 用户输入
+     * @param selection 可省略的目录选择
+     * @param outputDeltaConsumer 安全文本消费者
+     * @return 持久化运行结果
+     */
+    public AgentRunResult run(PrincipalRef principal, UUID agentId, String input,
+            com.cmagent.core.domain.WorkspaceSelection selection, Consumer<String> outputDeltaConsumer) {
+        // 手工装配旧服务只兼容 DEFAULT，不能静默忽略调用方显式选择的资料边界。
+        if (workspaceSelections == null && selection != null && selection.mode() != com.cmagent.core.domain.WorkspaceSelection.Mode.DEFAULT)
+            throw new IllegalStateException("当前服务未装配工作区选择能力");
         Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
         ResolvedRunContext context = resolve(principal, agentId);
-        RunRecord runningRun = persistenceService.start(principal, context.agent().id(), input);
+        UUID runId = UUID.randomUUID();
+        var workspace = workspaceSelections == null ? null : workspaceSelections.forRun(principal, agentId, runId, selection);
+        RunRecord runningRun = workspace!=null && workspace.selection().mode()==com.cmagent.core.domain.WorkspaceSelection.Mode.IMPORTED
+                ? persistenceService.start(principal,context.agent().id(),input,runId,com.cmagent.core.domain.RunKind.NORMAL,3)
+                : persistenceService.start(principal,context.agent().id(),input,runId);
+        try {
+            if (workspace != null) workspaceSelections.saveRun(workspace);
+        } catch (RuntimeException failure) {
+            // 新增选择持久化属于严格边界；收口失败不能被旧 best-effort 路径吞掉。
+            try { persistenceService.completeFailure(principal, runningRun); }
+            catch (RuntimeException cleanup) { cleanup.addSuppressed(failure); throw cleanup; }
+            throw failure;
+        }
         return executePrepared(principal, context, runningRun, input, null, null, null,
                 delta -> outputDeltaConsumer.accept(delta.delta()), ignored -> {
                 }).run();
@@ -326,7 +359,7 @@ public class RunExecutionService {
 
         AgentRuntimeResult runtimeEnvelope;
         try {
-            boolean workspaceAttempted = workspaceContexts != null && (approvalDecisions != null || workspaceContexts.applies(runningRun));
+            boolean workspaceAttempted = workspaceContexts != null;
             AgentRuntimeResult workspaceResult = null;
             RuntimeException primaryWorkspaceFailure = null;
             try {

@@ -8,8 +8,8 @@
     }
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     function formatError(status, body, fallbackText) {
-        // 沙箱目标拒绝与端点不存在有具体恢复动作及关联编号，保留服务端安全说明。
-        const sandboxFailure = typeof body?.code === "string" && body.code.startsWith("SKILL_SANDBOX_");
+        // 沙箱及导入受控拒绝有恢复动作和关联编号，保留服务端安全说明。
+        const sandboxFailure = typeof body?.code === "string" && (body.code.startsWith("SKILL_SANDBOX_") || body.code.startsWith("WORKSPACE_IMPORT_"));
         if (status === 403 && !sandboxFailure) {
             return "请求失败(403)：没有权限执行此操作。";
         }
@@ -734,7 +734,354 @@
         return items?.length ? `已加载 ${items.length} 条技能读取记录` : "本轮未读取技能";
     }
 
+    // 状态只保留在当前页面；请求代次与会话 epoch 同时隔离，写入失败不自动重试。
+    function createWorkspaceSelectionState({api, getEpoch, isContextCurrent = () => true, onChange = () => {}}) {
+        let revision = 0, current = {agent: "", conversation: "", epoch: null, loading: true, error: "", catalog: null, view: null};
+        const defaults = () => ({selection: {mode: "DEFAULT", workspaceId: null}, displayName: "沿用 Agent 配置", version: 0, editable: true, available: true});
+        // 来源身份必须完整保留，不能把导入或未来未知来源悄悄解释为DEFAULT。
+        const supported = selection => ["DEFAULT", "SELECTED", "NONE", "IMPORTED"].includes(selection?.mode);
+        const emit = () => onChange(current);
+        const isCurrent = (ticket, context) => ticket === revision && context.epoch === getEpoch()
+            && context.agent === current.agent && context.conversation === current.conversation && isContextCurrent(context);
+        async function load(agent, conversation = "") {
+            const ticket = ++revision, context = {agent, conversation, epoch: getEpoch()};
+            current = {...context, loading: true, error: "", catalog: null, view: null}; emit();
+            if (!agent) { current.loading = false; current.error = "请先选择 Agent"; emit(); return; }
+            const base = `/api/agents/${encodeURIComponent(agent)}`;
+            try {
+                const [catalog, view] = await Promise.all([api.request(`${base}/workspaces`), conversation
+                    ? api.request(`${base}/conversations/${encodeURIComponent(conversation)}/workspace`) : Promise.resolve(defaults())]);
+                if (!isCurrent(ticket, context)) return;
+                current = {...context, catalog, view: supported(view?.selection) ? view : {...view, editable: false, available: false},
+                    loading: false, error: supported(view?.selection) ? "" : "当前页面尚未开放此资料来源，请使用支持该来源的完整版本。"}; emit();
+            } catch (error) {
+                if (!isCurrent(ticket, context)) return;
+                current = {...context, loading: false, catalog: null, view: null, error: error.message}; emit();
+            }
+        }
+        async function save(selection, imported = null, expectedVersion = null, operationCurrent = () => true) {
+            if (!supported(selection)) throw new Error("当前页面尚未开放此资料来源，请使用服务器登记目录。");
+            if (current.loading || current.error || !current.view?.editable || current.epoch !== getEpoch())
+                throw new Error("当前目录尚不可修改，请重新读取会话或新建会话。");
+            if (expectedVersion !== null && current.view.version !== expectedVersion)
+                throw new Error("当前会话绑定已经变化，请重新读取后核对，原选择未被覆盖。");
+            if (selection.mode === "IMPORTED" && (!imported?.bindable || imported.state !== "READY" || imported.id !== selection.workspaceId))
+                throw new Error("导入资料尚未就绪，请先核对上传结果。");
+            const ticket = ++revision, context = {...current}; current = {...current, loading: true}; emit();
+            try {
+                const view = current.conversation ? await api.request(`/api/agents/${encodeURIComponent(current.agent)}/conversations/${encodeURIComponent(current.conversation)}/workspace`, {
+                    method: "PUT", body: JSON.stringify({workspaceSelection: selection, expectedVersion: current.view.version})
+                }) : {...defaults(), selection, displayName: selection.mode === "NONE" ? "不使用工作区"
+                    : selection.mode === "SELECTED" ? current.catalog.items.find(item => item.id === selection.workspaceId)?.name
+                        : selection.mode === "IMPORTED" ? imported.displayName : "沿用 Agent 配置"};
+                if (!isCurrent(ticket, context)) return false;
+                if (!operationCurrent()) {
+                    current = {...context, loading: false, error: "绑定请求可能已经发送，当前显示暂保留；请重新读取权威状态后再发送。"}; emit(); return false;
+                }
+                current = {...context, loading: false, error: "", view}; emit(); return true;
+            } catch (error) {
+                if (!isCurrent(ticket, context)) return false;
+                current = {...context, loading: false, error: `${formatWorkspaceImportFailure(error)} 请重新读取目录状态后再发送。`}; emit(); throw error;
+            }
+        }
+        return {load, save, value: () => current,
+            payload: () => ({workspaceSelection: current.view?.selection || defaults().selection}),
+            ready: () => current.epoch === getEpoch() && !current.loading && !current.error && !!current.view?.available,
+            reset: () => { ++revision; current = {loading: true, error: "", view: null, catalog: null}; emit(); }};
+    }
+
+    function formatWorkspaceImportFailure(error) {
+        const suffix = [error?.code && !String(error.message).includes(error.code) ? `错误码：${error.code}` : "",
+            error?.errorId && !String(error.message).includes(error.errorId) ? `错误编号：${error.errorId}` : ""].filter(Boolean).join("，");
+        return `${error?.message || "当前操作未完成"}${suffix ? `（${suffix}）` : ""}`;
+    }
+
+    // 只在当前页面持有File/句柄和草稿。任何文件正文、路径或manifest都必须等明确确认后才发送。
+    function createNativeWorkspaceImportState({api, getEpoch, getContext, directoryInput, getDirectoryInput = () => directoryInput, host = globalThis, onChange = () => {}, now = () => Date.now()}) {
+        let generation = 0, capabilityGeneration = 0, context = null, pendingInput = null, operationAbort = null;
+        const empty = () => ({phase: "IDLE", capabilities: null, name: "", candidates: [], excluded: [], selected: new Set(),
+            preview: "", message: "", progress: "", batch: null, requestId: "", manifest: null, attempted: 0, bindingVersion: null, canConfirm: false});
+        let current = empty();
+        const same = value => !!context && value?.agent === context.agent && (value?.conversation || "") === context.conversation && context.epoch === getEpoch();
+        const valid = (ticket, stamp) => ticket === generation && same(stamp) && same(getContext()) && (current.phase === "BINDING" || !!getContext()?.editable);
+        const emit = () => { current.canConfirm = readyToConfirm(); onChange(current); };
+        const base = () => `/api/agents/${encodeURIComponent(context.agent)}/workspace-imports`;
+        const cap = () => current.capabilities;
+        const limits = () => {
+            const value = cap();
+            const bounded = (key, hard) => Number.isSafeInteger(value?.[key]) && value[key] > 0 ? Math.min(value[key], hard) : 0;
+            return {files: bounded("maxFiles", 8), fileBytes: bounded("maxFileBytes", 32768), total: bounded("maxTotalBytes", 65536),
+                entries: bounded("maxCandidates", 1000), depth: bounded("maxDepth", 16), milliseconds: bounded("enumerationTimeoutMillis", 5000)};
+        };
+        const enabled = () => cap()?.enabled === true && cap()?.runtimeAvailable === true && Object.values(limits()).every(value => value > 0);
+        const busy = () => ["ENUMERATING", "READING", "UPLOADING", "COMPLETING", "CHECKING", "BINDING"].includes(current.phase);
+        const budget = () => {
+            const items = current.candidates.filter(item => current.selected.has(item.path));
+            const bytes = items.reduce((total, item) => total + item.size, 0), policy = limits();
+            return {items, count: items.length, bytes, allowed: items.length > 0 && items.length <= policy.files && bytes <= policy.total};
+        };
+        function readyToConfirm() {
+            return enabled() && !busy() && current.phase === "LOCAL" && budget().allowed && !!host.crypto?.subtle && !!host.crypto?.getRandomValues;
+        }
+        function clearInput() {
+            if (!pendingInput) return;
+            pendingInput.input.removeEventListener("change", pendingInput.change); pendingInput.input.removeEventListener("cancel", pendingInput.cancel);
+            pendingInput.input.value = "";
+            pendingInput.resolve(null); pendingInput = null;
+        }
+        function discard(message = "") {
+            ++generation; operationAbort?.abort(); operationAbort = null; clearInput(); const capabilities = current.capabilities;
+            current = {...empty(), capabilities, message}; emit();
+        }
+        function activate(agent, conversation = "", force = false) {
+            const next = {agent: agent || "", conversation: conversation || "", epoch: getEpoch()};
+            if (!force && same(next)) return;
+            ++generation; ++capabilityGeneration; operationAbort?.abort(); operationAbort = null; clearInput(); context = next; current = {...empty(), phase: agent ? "LOADING" : "IDLE"}; emit();
+            if (!agent || !same(getContext())) return;
+            const ticket = capabilityGeneration, stamp = {...context};
+            api.request(`${base()}/capabilities`).then(capabilities => {
+                if (ticket !== capabilityGeneration || !same(stamp) || !same(getContext())) return;
+                current.capabilities = capabilities; current.phase = "IDLE";
+                current.message = enabled() ? "先在本机选择文件夹，再勾选要上传的资料。"
+                    : capabilities?.enabled ? "导入运行尚未开放或预算无法确认，请使用服务器登记目录。" : "部署者尚未启用本机资料导入，请使用服务器登记目录。";
+                emit();
+            }, error => { if (ticket === capabilityGeneration && same(stamp) && same(getContext())) { current.phase = "ERROR"; current.message = explain(error) + " 可继续使用服务器登记目录。"; emit(); } });
+        }
+        function explain(error) {
+            return formatWorkspaceImportFailure(error);
+        }
+        function nativeError(error) {
+            if (error?.name === "AbortError") return "已取消系统文件夹选择，原工作区未变。";
+            if (error?.name === "SecurityError") return "浏览器限制了系统目录选择，请使用HTTPS并在独立窗口打开控制台。";
+            if (error?.name === "NotAllowedError") return "未获文件夹读取权限，请重新选择并允许只读访问。";
+            return error?.local ? error.message : "所选文件夹或资料暂不可读，请重新选择。原工作区未变。";
+        }
+        function local(message) { const error = new Error(message); error.local = true; return error; }
+        function excludedName(name) {
+            const value = name.toLocaleLowerCase();
+            return [".git", ".ssh", ".aws", ".codex", ".workbuddy", "node_modules"].includes(value) || value.startsWith(".env")
+                || /credential|secret|password|private[_-]key|api_key|access_token/.test(value) || /^id_(rsa|ed25519|ecdsa)/.test(value);
+        }
+        function safePath(path) {
+            return !!path && path.length <= 160 && path.normalize("NFKC") === path && !/^[\/]|[\\:]|[\p{Cc}\p{Cf}]/u.test(path)
+                && path.split("/").every(part => part && ![".", ".."].includes(part) && !/[. ]$/.test(part)
+                    && !excludedName(part) && !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(part));
+        }
+        function rootName(name) {
+            if (!name || name.length > 120 || /[\/:\\]|[\p{Cc}\p{Cf}]/u.test(name) || excludedName(name))
+                throw local("该文件夹名称或范围不适合导入，请选择一个普通资料子目录。");
+            return name;
+        }
+        function candidate(path, file, found, rejected, identities) {
+            const identity = path.normalize("NFKC").toLocaleLowerCase();
+            if (identities.has(identity)) throw local("发现重复、大小写或Unicode等价路径，请缩小目录范围后重新选择。");
+            identities.add(identity);
+            const allowedTypes = [".md", ".txt", ".json", ".csv"].filter(type => cap()?.allowedTypes?.includes(type));
+            const reason = !safePath(path) ? "路径或名称不符合只读资料边界" : !allowedTypes.some(type => path.endsWith(type)) ? "不支持的文件类型"
+                : !Number.isSafeInteger(file.size) || file.size < 1 ? "空文件或无法确认大小" : file.size > limits().fileBytes ? "超过单文件字节预算" : "";
+            if (reason) rejected.push({path, reason}); else found.push({path, size: file.size, file});
+        }
+        async function fromHandle(handle, ticket, stamp) {
+            const name = rootName(handle.name), found = [], rejected = [], identities = new Set(), policy = limits(), deadline = now() + policy.milliseconds;
+            let entries = 0;
+            async function walk(directory, prefix, depth) {
+                for await (const [name, entry] of directory.entries()) {
+                    if (!valid(ticket, stamp)) return;
+                    if (++entries > policy.entries || now() > deadline) throw local("目录枚举超过条目或时间预算，未采用部分结果；请选择更小的资料目录。");
+                    const path = prefix ? `${prefix}/${name}` : name;
+                    if (entry.kind === "directory") {
+                        if (excludedName(name)) { rejected.push({path, reason: "已排除私有或生成目录"}); continue; }
+                        if (depth >= policy.depth) throw local("目录层级超过预算，未采用部分结果；请选择更浅的资料目录。");
+                        await walk(entry, path, depth + 1);
+                    } else if (entry.kind === "file") {
+                        const file = await entry.getFile(); if (!valid(ticket, stamp)) return;
+                        candidate(path, file, found, rejected, identities);
+                    }
+                }
+            }
+            let timer;
+            try { await Promise.race([walk(handle, "", 0), new Promise((_, reject) => { timer = host.setTimeout(() => reject(local("目录枚举超时，未采用部分结果；请选择更小的资料目录。")), policy.milliseconds); })]); }
+            finally { host.clearTimeout(timer); }
+            return {name, found, rejected};
+        }
+        function fromFiles(files) {
+            const policy = limits();
+            if (!files?.length) return null;
+            // 目录input可能已由浏览器展开整棵树；应用不能假称提前剪枝，超界直接拒绝整个选择。
+            if (files.length > policy.entries) throw local("浏览器展开的目录超过条目预算，未采用部分结果；请选择更小的资料目录。");
+            const first = String(files[0].webkitRelativePath || ""), separator = first.indexOf("/");
+            if (separator < 1) throw local("未收到目录层级，不能把普通单文件框当作文件夹选择。");
+            const name = rootName(first.slice(0, separator)), found = [], rejected = [], identities = new Set(), deadline = now() + policy.milliseconds;
+            for (let index = 0; index < files.length; index++) {
+                if (now() > deadline) throw local("目录枚举超过时间预算，请选择更小的资料目录。");
+                const file = files[index], raw = String(file.webkitRelativePath || "");
+                if (!raw.startsWith(`${name}/`)) throw local("发现多个选择根，不能把不同目录合并为同一批次。");
+                const path = raw.slice(name.length + 1);
+                if (path.split("/").length > policy.depth + 1) throw local("目录层级超过预算，请选择更浅的资料目录。");
+                candidate(path, file, found, rejected, identities);
+            }
+            return {name, found, rejected};
+        }
+        function pick() {
+            if (!enabled()) return Promise.resolve(false);
+            if (!getContext()?.editable || busy()) return Promise.resolve(false);
+            const ticket = ++generation, stamp = {...context}; clearInput();
+            current = {...empty(), capabilities: cap(), phase: "PICKING", bindingVersion: getContext().bindingVersion, message: "请在系统窗口中选择资料文件夹；仅选择不会上传。"}; emit();
+            let selected; const input = getDirectoryInput();
+            // 原生调用必须在点击栈同步发生，前面不能await网络、能力读取或浏览器权限请求。
+            if (typeof host.showDirectoryPicker === "function") {
+                try { selected = host.showDirectoryPicker({mode: "read"}); }
+                catch (error) { selected = Promise.reject(error); }
+            } else if (input && "webkitdirectory" in input) {
+                selected = new Promise(resolve => {
+                    const change = () => { const files = input.files; clearHandlers(); resolve(files); };
+                    const cancel = () => { clearHandlers(); resolve(null); };
+                    const clearHandlers = () => { input.removeEventListener("change", change); input.removeEventListener("cancel", cancel); pendingInput = null; };
+                    pendingInput = {input, change, cancel, resolve}; input.value = "";
+                    input.addEventListener("change", change); input.addEventListener("cancel", cancel);
+                    input.click();
+                });
+            } else { current.phase = "ERROR"; current.message = "当前浏览器不支持文件夹选择，请更换受支持浏览器或使用服务器登记目录。"; emit(); return Promise.resolve(false); }
+            return Promise.resolve(selected).then(async value => {
+                if (!valid(ticket, stamp)) return false;
+                if (!value) { current.phase = "IDLE"; current.message = "未取得文件夹内容，可能已取消或目录为空；原工作区未变，可重新选择。"; emit(); return false; }
+                current.phase = "ENUMERATING"; current.message = "仅在本机检查文件名称、大小和层级…"; emit();
+                const result = value.kind === "directory" ? await fromHandle(value, ticket, stamp) : fromFiles(value);
+                if (!valid(ticket, stamp)) return false;
+                if (!result) { current.phase = "IDLE"; current.message = "未取得目录内容；原工作区未变。"; emit(); return false; }
+                current = {...current, phase: "LOCAL", name: result.name, candidates: result.found, excluded: result.rejected, selected: new Set(), preview: "",
+                    message: result.found.length ? "文件默认未勾选。核对后选择资料，再明确确认上传。" : "此目录没有符合当前预算的资料，请查看排除原因或选择其他目录。"};
+                if (!host.crypto?.subtle || !host.crypto?.getRandomValues) current.message += " 当前环境缺少安全摘要能力，需使用HTTPS或更换浏览器后上传。";
+                emit(); return true;
+            }).catch(error => { if (valid(ticket, stamp)) { current.phase = "ERROR"; current.candidates = []; current.selected = new Set(); current.message = nativeError(error); emit(); } return false; });
+        }
+        async function bytesOf(item, ticket, stamp) {
+            const bytes = new Uint8Array(await item.file.slice(0, limits().fileBytes + 1).arrayBuffer());
+            if (!valid(ticket, stamp)) { bytes.fill(0); return null; }
+            if (bytes.length !== item.size || bytes.length > limits().fileBytes) { bytes.fill(0); throw local("资料大小在选择后发生变化或已超限，请重新选择文件夹。"); }
+            try {
+                const text = new TextDecoder("utf-8", {fatal: true}).decode(bytes);
+                if (!text.trim() || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(text)) throw new Error();
+            } catch { bytes.fill(0); throw local("所选资料不是有效的非空UTF-8文本，请排除后重新选择。"); }
+            return bytes;
+        }
+        async function preview(path) {
+            if (busy()) return;
+            const item = current.candidates.find(value => value.path === path); if (!item) return;
+            const ticket = generation, stamp = {...context}; current.phase = "READING"; emit();
+            try { const bytes = await bytesOf(item, ticket, stamp); if (!bytes) return;
+                try { current.preview = new TextDecoder("utf-8", {fatal: true}).decode(bytes); current.phase = "LOCAL"; emit(); }
+                finally { bytes.fill(0); }
+            } catch (error) { if (valid(ticket, stamp)) { current.phase = "LOCAL"; current.preview = ""; current.message = nativeError(error); emit(); } }
+        }
+        function select(path, checked) {
+            if (busy() || current.phase !== "LOCAL" || !current.candidates.some(item => item.path === path)) return;
+            const selected = new Set(current.selected); checked ? selected.add(path) : selected.delete(path); current.selected = selected; emit();
+        }
+        function uuid() {
+            if (typeof host.crypto.randomUUID === "function") return host.crypto.randomUUID();
+            const bytes = host.crypto.getRandomValues(new Uint8Array(16)); bytes[6] = bytes[6] & 15 | 64; bytes[8] = bytes[8] & 63 | 128;
+            const hex = [...bytes].map(value => value.toString(16).padStart(2, "0")).join("");
+            return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+        }
+        function verifyBatch(batch) {
+            if (typeof batch?.id !== "string" || !batch.id || !Number.isSafeInteger(batch.version) || batch.version < 1
+                    || !Array.isArray(batch.files) || batch.files.length !== current.manifest?.files.length || new Set(batch.files.map(file => file.id)).size !== batch.files.length
+                    || batch.requestId !== current.requestId || current.manifest.files.some(item => !batch.files.some(file =>
+                        file.relativePath === item.relativePath && file.sizeBytes === item.sizeBytes && file.sha256 === item.sha256)))
+                throw local("服务器核对结果与本次确认清单不一致，不能继续；请保留原选择并联系管理员。");
+            return batch;
+        }
+        async function checkedBatch(ticket, stamp) {
+            const path = current.batch?.id ? `${base()}/${encodeURIComponent(current.batch.id)}` : `${base()}/by-request/${encodeURIComponent(current.requestId)}`;
+            const batch = await api.request(path, operationAbort ? {signal: operationAbort.signal} : undefined); if (!valid(ticket, stamp)) return null;
+            current.batch = verifyBatch(batch); return batch;
+        }
+        async function writeOnce(path, options, ticket, stamp, accepted) {
+            try { const result = await api.request(path, {...options, ...(operationAbort ? {signal: operationAbort.signal} : {})}); if (!valid(ticket, stamp)) return null; return verifyBatch(result); }
+            catch (error) {
+                if (!valid(ticket, stamp)) return null;
+                try { const result = await checkedBatch(ticket, stamp); if (result && accepted(result)) return result; }
+                catch (lookup) { if (!valid(ticket, stamp)) return null; }
+                throw error;
+            }
+        }
+        async function confirm() {
+            if (!readyToConfirm() || !getContext()?.editable) return null;
+            const ticket = ++generation, stamp = {...context, bindingVersion: current.bindingVersion}, selected = budget().items, contents = new Map();
+            const controller = typeof AbortController === "function" ? new AbortController() : null; operationAbort = controller;
+            current.phase = "READING"; current.progress = "正在核对所选资料…"; current.message = "已确认：所选文件将上传到当前CM Agent Server。"; emit();
+            try {
+                const files = [];
+                for (const item of selected) {
+                    const bytes = await bytesOf(item, ticket, stamp); if (!bytes) return null; contents.set(item.path, bytes);
+                    const digest = new Uint8Array(await host.crypto.subtle.digest("SHA-256", bytes)); if (!valid(ticket, stamp)) return null;
+                    files.push({relativePath: item.path, sizeBytes: bytes.length, sha256: [...digest].map(value => value.toString(16).padStart(2, "0")).join("")});
+                }
+                current.requestId = uuid(); current.manifest = {displayName: current.name, requestId: current.requestId, confirmed: true, files};
+                current.phase = "UPLOADING"; current.progress = `创建只读导入批次 · 0/${files.length}`; emit();
+                let batch = await writeOnce(base(), {method: "POST", body: JSON.stringify(current.manifest)}, ticket, stamp, value => value.state === "DRAFT");
+                if (!batch) return null; current.batch = batch;
+                if (batch.state !== "DRAFT") throw local("原创建结果已不可上传，请撤销或重新选择资料，不会重复创建。");
+                for (let index = 0; index < files.length; index++) {
+                    const file = batch.files.find(value => value.relativePath === files[index].relativePath); current.attempted = index + 1;
+                    batch = await writeOnce(`${base()}/${encodeURIComponent(batch.id)}/files/${encodeURIComponent(file.id)}?expectedVersion=${batch.version}`,
+                        {method: "POST", headers: {"Content-Type": "application/octet-stream"}, body: contents.get(files[index].relativePath)}, ticket, stamp,
+                        value => value.files.some(item => item.id === file.id && item.uploaded));
+                    if (!batch) return null; current.batch = batch; current.progress = `上传并核对资料 · ${index + 1}/${files.length}`; emit();
+                }
+                current.phase = "COMPLETING"; current.progress = "正在验证全部密文并完成导入…"; emit();
+                batch = await writeOnce(`${base()}/${encodeURIComponent(batch.id)}/complete`, {method: "POST", body: JSON.stringify({expectedVersion: batch.version})}, ticket, stamp, value => value.state === "READY");
+                if (!batch) return null; return completed(batch, ticket, stamp);
+            } catch (error) { if (valid(ticket, stamp)) { current.phase = current.requestId ? "UNKNOWN" : "LOCAL"; current.message = explain(error) + " 原工作区未变，请先核对服务器结果，不会自动重试写入。"; emit(); } return null; }
+            finally { for (const bytes of contents.values()) bytes.fill(0); if (operationAbort === controller) operationAbort = null; }
+        }
+        function completed(batch, ticket, stamp) {
+            current.batch = batch;
+            if (batch.state !== "READY" || !batch.bindable) throw local("导入尚未达到可绑定的READY，请核对期限、开关和服务器状态。");
+            current.phase = "READY"; current.progress = "资料已导入，正在绑定当前空会话…"; emit();
+            return {batch, context: stamp, isCurrent: () => valid(ticket, stamp)};
+        }
+        async function check(complete = false) {
+            if (!current.requestId || busy()) return null;
+            const ticket = generation, stamp = {...context, bindingVersion: current.bindingVersion}; current.phase = "CHECKING"; emit();
+            const controller = typeof AbortController === "function" ? new AbortController() : null; operationAbort = controller;
+            try {
+                let batch = await checkedBatch(ticket, stamp); if (!batch) return null;
+                if (complete && batch.state === "DRAFT" && current.attempted === current.manifest.files.length) {
+                    batch = await writeOnce(`${base()}/${encodeURIComponent(batch.id)}/complete`, {method: "POST", body: JSON.stringify({expectedVersion: batch.version})}, ticket, stamp, value => value.state === "READY");
+                    if (!batch) return null;
+                }
+                if (batch.state === "READY") return completed(batch, ticket, stamp);
+                current.phase = "UNKNOWN"; current.message = batch.state === "DRAFT"
+                    ? "服务器仍为草稿。全部文件已尝试发送时可明确完成核对；否则请撤销批次并重新选择。不会自动重传。"
+                    : "原批次已撤销或过期，请重新选择资料。原工作区未变。"; emit(); return null;
+            } catch (error) { if (valid(ticket, stamp)) { current.phase = "UNKNOWN"; current.message = explain(error) + " 请继续只读核对，不会重新创建批次。"; emit(); } return null; }
+            finally { if (operationAbort === controller) operationAbort = null; }
+        }
+        async function revoke() {
+            if (!current.requestId || busy()) return;
+            const ticket = generation, stamp = {...context}; current.phase = "CHECKING"; emit();
+            const controller = typeof AbortController === "function" ? new AbortController() : null; operationAbort = controller;
+            try {
+                let batch = await checkedBatch(ticket, stamp); if (!batch) return;
+                batch = await writeOnce(`${base()}/${encodeURIComponent(batch.id)}?expectedVersion=${batch.version}`, {method: "DELETE"}, ticket, stamp, value => ["REVOKED", "EXPIRED"].includes(value.state));
+                if (batch && valid(ticket, stamp)) discard("本次导入已撤销，原工作区未变；服务器将在引用释放后清理文件。");
+            } catch (error) { if (valid(ticket, stamp)) { current.phase = "UNKNOWN"; current.message = explain(error) + " 撤销结果未确认，请先核对。"; emit(); } }
+            finally { if (operationAbort === controller) operationAbort = null; }
+        }
+        return {activate, pick, select, preview, confirm, check, revoke, discard, budget, busy, enabled, value: () => current,
+            canPick: () => enabled() && !busy() && same(getContext()) && !!getContext()?.editable,
+            refresh: () => { if (context) activate(context.agent, context.conversation, true); },
+            markBinding: () => { if (current.phase === "READY") { current.phase = "BINDING"; emit(); } },
+            bindingFailed: message => { current.phase = "READY"; current.message = message; current.progress = ""; emit(); },
+            reset: () => { ++generation; ++capabilityGeneration; operationAbort?.abort(); operationAbort = null; clearInput(); context = null; current = empty(); emit(); }};
+    }
+
     return {
+        createWorkspaceSelectionState,
+        createNativeWorkspaceImportState,
+        formatWorkspaceImportFailure,
         formatError,
         buildApprovalDecisionPayload,
         summarizeApprovalChoices,

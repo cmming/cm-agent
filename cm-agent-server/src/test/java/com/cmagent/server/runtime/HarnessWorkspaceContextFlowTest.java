@@ -54,8 +54,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class HarnessWorkspaceContextFlowTest {
     /** 合成资料根在应用/用户目录之外，只由测试创建和清理。 */
     static final Path root = privateRoot();
+    /** 与登记根分开的合成空输入卷，覆盖开发者本机启用导入后的配置占位符，不读取真实密钥。 */
+    static final Path inputRoot = root.resolveSibling(root.getFileName() + "-imports");
     @DynamicPropertySource static void contextProperties(DynamicPropertyRegistry properties) {
         properties.add("cm-agent.workspace-context.root-directory", root::toString);
+        String key = Base64.getEncoder().encodeToString(new java.security.SecureRandom().generateSeed(32));
+        properties.add("cm-agent.workspace-context.imports.root-directory", inputRoot::toString);
+        properties.add("cm-agent.workspace-context.imports.encryption-key", () -> key);
+        properties.add("cm-agent.workspace-context.imports.enabled", () -> false);
     }
     @Autowired WorkspaceContextProperties policy;
     @Autowired WorkspaceContextService workspace;
@@ -77,6 +83,7 @@ class HarnessWorkspaceContextFlowTest {
     @Autowired ObjectProvider<JdbcClient> jdbc;
     @SpyBean RuntimeCheckpointRepository checkpoints;
     @SpyBean AuditAppender audit;
+    @SpyBean WorkspaceSelectionRepository selectionRows;
     protected PrincipalRef owner;
     protected UUID agent;
     protected UUID conversation;
@@ -89,7 +96,8 @@ class HarnessWorkspaceContextFlowTest {
     private Path document;
 
     @BeforeEach void prepare() throws Exception {
-        reset(checkpoints, audit);
+        reset(checkpoints, audit, selectionRows);
+        policy.setCatalog(List.of());
         policy.setEnabled(true); policy.setMaxFileBytes(16384); policy.setMaxTotalBytes(32768);
         owner = new PrincipalRef(UUID.randomUUID(), "workspace-owner", "资料测试主体", Set.of("agent:read", "agent:run", "agent:approve"));
         if (jdbc.getIfAvailable() != null) jdbc.getObject().sql("INSERT INTO tenants(id,code,name,enabled,created_at) VALUES(:id,:code,'资料测试租户',true,:now)")
@@ -118,10 +126,11 @@ class HarnessWorkspaceContextFlowTest {
         conversation = conversations.create(owner, agent).id();
         assertThat(runtime).isInstanceOf(AgentScopeRuntimeAdapter.class);
     }
-    @AfterEach void close() { reset(checkpoints, audit); server.stop(0); workers.shutdownNow(); }
+    @AfterEach void close() { reset(checkpoints, audit, selectionRows); server.stop(0); workers.shutdownNow(); }
     @AfterAll static void cleanupRoot() throws Exception {
         // 仅清理本类生成的随机私有根，walk不跟随链接，不扫描部署资料或其他运行。
         try (var paths = Files.walk(root)) { for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path); }
+        if (Files.exists(inputRoot)) try (var paths = Files.walk(inputRoot)) { for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path); }
     }
 
     @Test void 资料实际进入用户数据且不进入系统正文或工具权限(CapturedOutput output) throws Exception {
@@ -258,6 +267,144 @@ class HarnessWorkspaceContextFlowTest {
         Files.writeString(Path.of("target/harness-t5/overhead-comparison.txt"), "additionalRequestUtf8Bytes=" + delta
                 + "\nheuristicAdditionalTokensBytesDiv4=" + (delta + 3) / 4 + "\nbaselineRunMillis=" + baselineMillis
                 + "\ncontextRunMillis=" + contextMillis + "\ntemporaryCorpusFileBytes=0\n");
+    }
+
+    @Test void 目录选择真实改变资料且NONE不注入旧绑定() throws Exception {
+        UUID a = UUID.randomUUID(), b = UUID.randomUUID();
+        String first = owner.tenantId().toString(), second = first + "-second";
+        Files.createDirectory(root.resolve(second)); Files.writeString(root.resolve(second).resolve("guide.md"), "CM_SELECTION_SECOND_ONLY");
+        policy.setCatalog(List.of(new WorkspaceContextProperties.Entry(a,"甲目录",owner.tenantId(),List.of(agent),first,List.of("guide.md"),true),
+                new WorkspaceContextProperties.Entry(b,"乙目录",owner.tenantId(),List.of(agent),second,List.of("guide.md"),true)));
+        for (var id : List.of(a,b)) {
+            var c = conversations.create(owner,agent,new WorkspaceSelection(WorkspaceSelection.Mode.SELECTED,id));
+            finish(); var result = conversations.send(owner,agent,c.id(),"读取本目录");
+            assertThat(result.run().status()).isEqualTo(RunStatus.SUCCEEDED);
+            assertThat(requests.getLast()).contains(id.equals(a) ? "CM_CORPUS_CANARY" : "CM_SELECTION_SECOND_ONLY")
+                    .doesNotContain(id.equals(a) ? "CM_SELECTION_SECOND_ONLY" : "CM_CORPUS_CANARY");
+            mvc.perform(get("/api/agents/"+agent+"/runs/"+result.run().runId()).header("Authorization",token(owner)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.workspaceSelection.selection.workspaceId").value(id.toString()));
+        }
+        finish(); execution.run(owner,agent,"不使用",new WorkspaceSelection(WorkspaceSelection.Mode.NONE,null),ignored -> {});
+        assertThat(requests.getLast()).doesNotContain("CM_WORKSPACE_REFERENCE_V1","CM_CORPUS_CANARY","CM_SELECTION_SECOND_ONLY");
+    }
+
+    @Test void 空会话条件改绑与跨主体拒绝包含同号安全诊断(CapturedOutput output) throws Exception {
+        String workspace = base()+"/workspace";
+        var before = mapper.readTree(mvc.perform(get(workspace).header("Authorization",token(owner))).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8));
+        String update = "{\"workspaceSelection\":{\"mode\":\"NONE\"},\"expectedVersion\":"+before.path("version").asLong()+"}";
+        mvc.perform(put(workspace).header("Authorization",token(owner)).contentType("application/json").content(update))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.selection.mode").value("NONE"));
+        var conflict = mvc.perform(put(workspace).header("Authorization",token(owner)).contentType("application/json").content(update))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("WORKSPACE_SELECTION_CONFLICT"))
+                .andReturn().getResponse();
+        var error = mapper.readTree(conflict.getContentAsString(StandardCharsets.UTF_8));
+        assertThat(output.getAll()).contains("errorId="+error.path("errorId").asText());
+        assertThat(conflict.getContentAsString()).doesNotContain(root.toString(),"Exception","secret");
+        var other = new PrincipalRef(owner.tenantId(),"other-owner","其他主体",owner.permissions());
+        mvc.perform(put(workspace).header("Authorization",token(other)).contentType("application/json").content(update))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        finish(); conversations.send(owner,agent,conversation,"首条消息");
+        mvc.perform(put(workspace).header("Authorization",token(owner)).contentType("application/json")
+                .content("{\"workspaceSelection\":{\"mode\":\"DEFAULT\"},\"expectedVersion\":"+(before.path("version").asLong()+1)+"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test void 目录列表隔离及撤销不能静默退回默认() throws Exception {
+        UUID id = UUID.randomUUID();
+        policy.setCatalog(List.of(new WorkspaceContextProperties.Entry(id,"已登记目录",owner.tenantId(),List.of(agent),owner.tenantId().toString(),List.of("guide.md"),true)));
+        mvc.perform(get("/api/agents/"+agent+"/workspaces").header("Authorization",token(owner)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].id").value(id.toString()));
+        var foreign = new PrincipalRef(UUID.randomUUID(),"foreign","外租户",owner.permissions());
+        if (jdbc.getIfAvailable() != null) jdbc.getObject().sql("INSERT INTO tenants(id,code,name,enabled,created_at) VALUES(:id,:code,'外租户',true,:now)")
+                .param("id",foreign.tenantId().toString()).param("code",foreign.tenantId().toString()).param("now",Timestamp.from(Instant.now())).update();
+        mvc.perform(get("/api/agents/"+agent+"/workspaces").header("Authorization",token(foreign))).andExpect(status().isNotFound());
+        var readOnly = new PrincipalRef(owner.tenantId(),"reader","只读主体",Set.of("agent:read"));
+        mvc.perform(get("/api/agents/"+agent+"/workspaces").header("Authorization",token(readOnly))).andExpect(status().isForbidden());
+        var c = conversations.create(owner,agent,new WorkspaceSelection(WorkspaceSelection.Mode.SELECTED,id));
+        policy.setEnabled(false);
+        assertThatThrownBy(() -> conversations.send(owner,agent,c.id(),"撤销后的输入")).isInstanceOf(WorkspaceContextException.class);
+        assertThat(requests).isEmpty();
+        mvc.perform(post("/api/agents/"+agent+"/runs").header("Authorization",token(owner)).contentType("application/json")
+                .content("{\"input\":\"错误选择\",\"workspaceSelection\":{\"mode\":\"NONE\",\"workspaceId\":\""+id+"\"}}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test void 已选择目录的审批使用原正文且元数据缺失失败关闭() throws Exception {
+        UUID id = UUID.randomUUID();
+        policy.setCatalog(List.of(new WorkspaceContextProperties.Entry(id,"选定目录",owner.tenantId(),List.of(agent),owner.tenantId().toString(),List.of("guide.md"),true)));
+        conversations.updateWorkspace(owner,agent,conversation,new WorkspaceSelection(WorkspaceSelection.Mode.SELECTED,id),1);
+        var pending = waiting(); Files.writeString(document,"CM_SELECTION_CHANGED_BODY");
+        doReturn(Optional.empty()).when(selectionRows).run(owner.tenantId(),agent,pending.runId());
+        assertThatThrownBy(() -> approve(pending)).isInstanceOfSatisfying(WorkspaceContextException.class,
+                failure -> assertThat(failure.code()).isEqualTo(ApiErrorCode.WORKSPACE_CONTEXT_SNAPSHOT_UNAVAILABLE));
+        assertThat(requests).hasSize(1); assertThat(sideEffects).hasValue(0);
+    }
+
+    @Test void 固定运行选择存储失败不进入模型且不遗留活动Run(CapturedOutput output) {
+        var attempted = new java.util.concurrent.atomic.AtomicReference<UUID>();
+        doAnswer(invocation -> {
+            attempted.set(((WorkspaceBinding)invocation.getArgument(0)).resourceId());
+            throw new org.springframework.dao.DataAccessResourceFailureException("secret=合成敏感值 http://internal.invalid/private");
+        }).when(selectionRows).saveRun(any());
+        assertThatThrownBy(() -> conversations.send(owner,agent,conversation,"首发失败"))
+                .isInstanceOfSatisfying(WorkspaceContextException.class, failure -> {
+                    assertThat(failure.code()).isEqualTo(ApiErrorCode.PERSISTENCE_UNAVAILABLE);
+                    assertThat(failure.errorId()).isEqualTo(attempted.get().toString());
+                });
+        assertThat(output.getAll()).contains("errorId="+attempted.get()).doesNotContain("合成敏感值","http://internal.invalid");
+        assertThat(requests).isEmpty();
+        var run = runs.findByTenantAndAgentAndId(owner.tenantId(),agent,attempted.get());
+        if (jdbc.getIfAvailable() != null) assertThat(run).isEmpty();
+        else assertThat(run.orElseThrow().status()).isEqualTo(RunStatus.FAILED);
+    }
+
+    @Test void 固定选择失败HTTP状态错误码编号和日志一致且不泄露内部信息(CapturedOutput output) throws Exception {
+        var failures=List.<RuntimeException>of(new org.springframework.dao.DataAccessResourceFailureException("secret=合成敏感值 http://internal.invalid/private"),
+                new AuditPersistenceException("secret=合成敏感值",new IllegalStateException("http://internal.invalid/private")),
+                new IllegalStateException("secret=合成敏感值 http://internal.invalid/private"));
+        var codes=List.of("PERSISTENCE_UNAVAILABLE","AUDIT_UNAVAILABLE","INTERNAL_ERROR");
+        for(int i=0;i<failures.size();i++) {
+            doThrow(failures.get(i)).when(selectionRows).saveRun(any());
+            var response=mvc.perform(post("/api/agents/"+agent+"/runs").header("Authorization",token(owner)).contentType("application/json")
+                    .content("{\"input\":\"故障验收\",\"workspaceSelection\":{\"mode\":\"NONE\"}}"))
+                    .andExpect(status().is(i==2?500:503)).andExpect(jsonPath("$.code").value(codes.get(i))).andReturn().getResponse();
+            var error=mapper.readTree(response.getContentAsString(StandardCharsets.UTF_8));
+            assertThat(output.getAll()).contains("errorId="+error.path("errorId").asText());
+            assertThat(response.getContentAsString()).doesNotContain("合成敏感值","http://internal.invalid","Exception",root.toString());
+        }
+        assertThat(requests).isEmpty();
+        assertThat(output.getAll()).doesNotContain("合成敏感值","http://internal.invalid");
+    }
+
+    @Test void 数据库往返时间或轻微时钟偏差不阻止空会话改绑() throws Exception {
+        var old=selectionRows.conversation(owner.tenantId(),agent,conversation).orElseThrow();
+        var future=Instant.now().plusSeconds(2);
+        var rounded=new WorkspaceBinding(old.tenantId(),old.agentId(),old.resourceId(),old.selection(),old.mappingDigest(),
+                old.displayName(),old.directory(),2,old.principalId(),future,future);
+        assertThat(selectionRows.saveConversation(rounded,1)).isTrue();
+        mvc.perform(put(base()+"/workspace").header("Authorization",token(owner)).contentType("application/json")
+                .content("{\"workspaceSelection\":{\"mode\":\"NONE\"},\"expectedVersion\":2}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(3));
+    }
+
+    @Test @org.junit.jupiter.api.condition.EnabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS)
+    void Windows可信系统权限的SELECTED审批仍只使用原快照() throws Exception {
+        String sid=new WindowsSecurityDescriptorReader().read(root,System.nanoTime()+Duration.ofSeconds(2).toNanos()).ownerSid();
+        WindowsWorkspaceAclTest.setTestAcl(root,root,"D:P(A;OICI;FA;;;"+sid+")(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)");
+        UUID id=UUID.randomUUID();var reference=policy.getBindings().getFirst();
+        policy.setCatalog(List.of(new WorkspaceContextProperties.Entry(id,"系统权限资料",owner.tenantId(),List.of(agent),reference.directory(),reference.files(),true)));
+        conversation=conversations.create(owner,agent,new WorkspaceSelection(WorkspaceSelection.Mode.SELECTED,id)).id();
+        var pending=waiting();Files.writeString(document,"WINDOWS_CHANGED_不能替代原快照");finish();
+        assertThat(approve(pending).run().status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(requests.getLast()).contains("CM_CORPUS_CANARY_原始资料").doesNotContain("WINDOWS_CHANGED");assertThat(sideEffects).hasValue(1);
+    }
+    @Test @org.junit.jupiter.api.condition.EnabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS)
+    void Windows审批后普通主体获写权限必须阻止模型与工具副作用() throws Exception {
+        var pending=waiting();String sid=new WindowsSecurityDescriptorReader().read(root,System.nanoTime()+Duration.ofSeconds(2).toNanos()).ownerSid();
+        WindowsWorkspaceAclTest.setTestAcl(root,document,"D:P(A;;FA;;;"+sid+")(A;;GW;;;AU)");
+        assertThatThrownBy(() -> approve(pending)).isInstanceOfSatisfying(WorkspaceContextException.class,e->assertThat(e.code()).isEqualTo(ApiErrorCode.WORKSPACE_CONTEXT_INVALID));
+        assertThat(requests).hasSize(1);assertThat(sideEffects).hasValue(0);
     }
 
     protected ToolApprovalService.ToolApprovalView waiting() {

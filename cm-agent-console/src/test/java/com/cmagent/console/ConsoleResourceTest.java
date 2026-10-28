@@ -9,6 +9,15 @@ import java.nio.charset.StandardCharsets;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ConsoleResourceTest {
+    @Test
+    void 原生目录入口具备显式确认本地候选与独立系统通道() throws IOException {
+        String chat = resource("META-INF/resources/console/v2/chat.html");
+        assertThat(chat).contains("id=\"chatWorkspaceServer\"", "id=\"chatWorkspaceComputer\"", "id=\"chatNativeChoose\"",
+                "id=\"chatNativeDirectoryInput\"", "webkitdirectory multiple", "id=\"chatNativeCandidates\"", "默认不勾选",
+                "id=\"chatNativeStatus\" role=\"status\" aria-live=\"polite\"", "id=\"chatNativeCheck\"", "文件将离开电脑");
+        String core = resource("META-INF/resources/assets/console-core.js");
+        assertThat(core).contains("showDirectoryPicker({mode: \"read\"})", "input.click()", "operationCurrent()", "by-request/");
+    }
 
     @Test
     /**
@@ -123,9 +132,9 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.35", "/assets/console-core.js?v=2.0.17", "/assets/styles.css?v=2.0.17", "skill-artifacts.js?v=1.0.2", "skill-artifacts.css?v=1.0.0")
+                    .contains("/assets/app.js?v=2.0.38", "/assets/console-core.js?v=2.0.19", "/assets/styles.css?v=2.0.17", "skill-artifacts.js?v=1.0.2", "skill-artifacts.css?v=1.0.0")
                     .contains("/console/v2/assets/sandbox-endpoints.js?v=1.1.1", "/console/v2/assets/sandbox-endpoints.css?v=1.0.0")
-                    .contains("/console/v2/assets/workbench.css?v=1.0.0")
+                    .contains("/console/v2/assets/workbench.css?v=1.0.2")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }

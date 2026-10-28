@@ -7,7 +7,6 @@
 - v2 全入口同步共享脚本版本；部署后刷新已打开页面。仅修改控制台，无 API、数据库或配置变更；模拟浏览器与实际登录验证边界见[账本](superpowers/progress/2026-10-26-chat-failure-feedback-ledger.md)。
 - R1：后端模型 HTTP 失败不再统一替换成“Agent 运行失败”，现在返回并保存 HTTP 状态及结构化错误说明的脱敏、限长摘要，支持即时问答与“查看失败原因”读取相同内容。失败的即时结果及历史 Run 增加派生 errorCode/errorId；不新增数据库列。Server 屏蔽第三方传输 logger 中携带原始响应的 WARN，保留适配器安全诊断。此项需重启后端生效，旧记录无法恢复上游原文；R0 的“仅前端改动”边界至此调整。
 
-
 ## 未发布：Agent 模型名称跟随绑定配置
 
 - 修复模型配置修改模型名称后，Agent 列表与详情仍展示创建时旧名称的问题；读取时按当前租户和配置 ID 解析最新名称，已有 Agent 无需重新保存。
@@ -323,3 +322,34 @@
 - 新增独立文件配置、AES/GCM 私有卷存储、JDBC V19 元数据与跨实例配额/租约。调用只保留 PENDING，Run 成功持久化和严格审计后发布；失败补偿与过期清理不提前返还容量。
 - 新增正式/会话/TEST 列表和统一鉴权下载，复核创建者及权限，完整解密认证后以附件交付。v2 三个结果区域增加文件卡片，复用当前会话 fetch/Blob 保存与导航清理。
 - 首版不支持原 docx.zip 的 Node.js 动态脚本、预览、分享、Range 或 S3；真实模型检查点长度问题 X1 不在本次修复范围。实际验收及未执行项见 [工作包账本](superpowers/progress/2026-10-08-skill-artifacts-ledger.md)。本轮未提交、未部署。
+
+## 2026-10-27 工作区参考目录选择（未发布）
+
+- 增加管理员登记的只读目录 catalog、会话首发前选择及版本更新、Run 固定元数据；DEFAULT/SELECTED/NONE 区分旧调用、选定目录和明确不用资料。
+- v2 聊天增加目录摘要、筛选与选择弹层、失效提示、已发消息锁定和新会话入口；Run 详情可查看本轮选择。
+- PostgreSQL/MySQL 新增 V22 元数据迁移，正文继续沿用加密检查点，审批恢复校验原目录身份与快照；Harness/Skill 权限和宿主文件边界不变。
+- 发布门禁与实际验证见本次实施账本，未执行的真实 Provider 或重启验收不能视为通过。配置及排空回退见 configuration.md、operations.md。
+
+## 2026-10-28 本机资料导入存储基线（R1 T9，未发布）
+
+- 新增IMPORTED协议及不可变导入清单、DRAFT/READY/REVOKED/EXPIRED、memory/JDBC原子配额、上传/共享读取/GC租约和崩溃补偿清理。
+- 新增独立AES-256/GCM私有输入卷，复核相对路径、文本、长度和摘要；不接受本机绝对路径，正文不进入普通元数据表。V23无损扩展V22来源约束，新增两库同语义表和中文原生注释。
+- 本阶段未开放上传API、原生文件夹窗口或IMPORTED运行绑定；提前提交新来源会明确拒绝，不能回退DEFAULT。T10–T14及完整R1发布门禁仍待完成。实际命令与边界见[当前R1账本](superpowers/progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)。
+## 2026-10-28 本机资料导入API与所有者隔离（R1 T10，未发布）
+
+- 新增capabilities、明确确认后的manifest创建、服务端fileId原始正文上传、complete、GET及撤销；增加requestId与GET by-request核对未知创建结果，拒绝重复创建/覆盖，新增双库V24，历史V22/V23不改。
+- 原始正文有数量/字节/总等待预算和真实线程硬界，不使用multipart临时落盘；完成前复核真实密文，审计失败回滚或撤销补偿。外层事务中的拒绝在事务退出后完成严格审计与同号诊断，两库保留拒绝证据。
+- IMPORTED派生会话、Run、消息、审批和技能记录按原主体隔离，列表在游标/LIMIT前过滤；原三态保持旧权限，私有资源对外复用旧路由通用404。自定义ConversationRepository/RunRepository需实现listVisible，否则明确拒绝。
+- 默认关闭上传。T10只完成API和读取隔离，READY的bindable/runtimeAvailable仍为false；T11运行冻结/恢复、T12原生选择和T13/T14整体门禁仍待做，未提交、未部署。实际命令、跳过项及边界见[当前R1账本](superpowers/progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)。
+
+## 2026-10-28 工作区目录单选修复（R1 T12/T13局部，未发布）
+
+- 修复v2会话“可选目录”未设置真实radio分组，导致默认项和登记目录同时选中且不能互相取消的问题；显式设置同名分组，选择“不使用工作区”后保存NONE，取消不写入。
+- 共享app.js版本更新为2.0.38，九个v2入口同步；JS177项、Java21控制台资源16项及真实HTML的DOM前后对照通过。当前8080服务已提供新脚本，现场浏览器因Work设置关闭本地浏览器访问未验；不据此宣布R1整体发布通过。未提交。
+
+## 2026-10-28 Windows登记资料可信系统权限（R2，未发布）
+
+- DEFAULT/SELECTED参考资料允许所有者、固定SID的LocalSystem与本机内置Administrators；继承权限可保留，不按显示名信任同名账户。其他主体的ALLOW继续拒绝，不开放任意白名单或跳过开关。
+- 校验覆盖登记根、选中的中间目录和文件，审批恢复/ASK及交付前重新检查；保留原正文快照、路径/链接/预算、owner/RBAC和严格错误诊断。源文件删除不重建正文，仅对仍存在路径及存活祖先查权限。
+- Server新增JNA5.17.0核心依赖，用只读Win32 API取得SID并显式释放资源；不新增Shell/helper，不修改用户ACL，不影响POSIX或IMPORTED/Skill/Harness私有存储策略，无schema/配置键变更。
+- Windows真实NTFS、两策略回环合同与Rocky兼容结果分别见[工作包账本](superpowers/progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)。需包含新依赖并重启Server；不将R2通过等同R1全部原生窗口/真实Provider发布门禁完成。未提交、未部署。

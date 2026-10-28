@@ -72,6 +72,11 @@ import java.time.Instant;
 @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "jdbc")
 /** JDBC 持久化条件配置，负责装配事务、Flyway 和 JDBC 访问所需组件。 */
 public class JdbcPersistenceConfiguration {
+    /** @return 与会话短事务共用连接的工作区选择仓储 */
+    @Bean
+    com.cmagent.core.repository.WorkspaceSelectionRepository jdbcWorkspaceSelectionRepository(JdbcClient jdbcClient) {
+        return new com.cmagent.persistence.JdbcWorkspaceSelectionRepository(jdbcClient);
+    }
     private static final Logger log = LoggerFactory.getLogger(JdbcPersistenceConfiguration.class);
     private static final String DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001";
     private static final String DEFAULT_MODEL_PROVIDER_ID = "00000000-0000-0000-0000-000000000301";

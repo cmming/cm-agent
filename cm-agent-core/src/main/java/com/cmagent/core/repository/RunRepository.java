@@ -16,6 +16,8 @@ import java.util.UUID;
  * 定义 Agent 运行记录的创建、终态更新、查询和游标分页契约。
  */
 public interface RunRepository {
+    /** @return 是否实现首次原子来源见证；旧嵌入仓储不得仅声明支持却忽略协议 */
+    default boolean supportsWorkspaceProtocol(){return false;}
     /** 使用原发起人和等待态快照原子恢复 RUNNING；停止先赢得竞争时返回 false，不能重放原 Run。 */
     default boolean resumeWaitingApproval(RunRecord snapshot) {
         throw new UnsupportedOperationException("当前仓储不支持原子审批恢复");
@@ -43,6 +45,34 @@ public interface RunRepository {
      * @param run 当前运行记录
      */
     RunRecord save(UUID tenantId, RunRecord run);
+
+    /**
+     * 首次插入运行时原子固定工作区协议，后续状态转换不能改变该见证；不能由HTTP指定。
+     * @param tenantId 可信租户
+     * @param run 服务端新运行
+     * @param protocol 0为旧目录/无资料，3为IMPORTED不可降级协议
+     * @return 已保存运行；旧嵌入实现只兼容0，不能静默保存3
+     */
+    default RunRecord saveWithWorkspaceProtocol(UUID tenantId, RunRecord run, int protocol) {
+        if (protocol != 0) throw new UnsupportedOperationException("当前仓储未实现导入运行来源见证");
+        return save(tenantId, run);
+    }
+
+    /** @return 可信Run的持久协议；不存在必须抛出，不能把丢失记录当作旧协议0 */
+    default int workspaceProtocol(UUID tenantId, UUID agentId, UUID runId) {
+        findByTenantAndAgentAndId(tenantId, agentId, runId).orElseThrow(() -> new java.util.NoSuchElementException("运行不存在"));
+        return 0;
+    }
+
+    /**
+     * 在选择行丢失时仍用messages→Run来源见证保护派生会话，旧三态不增加owner限制。
+     * @param conversation 可信会话记录
+     * @param principalId 认证主体
+     * @return 所有关联IMPORTED运行及原会话创建者是否均匹配当前主体
+     */
+    default boolean visibleConversationFromWorkspace(com.cmagent.core.domain.Conversation conversation, String principalId) {
+        throw new UnsupportedOperationException("当前仓储未实现导入派生会话见证过滤");
+    }
 
     /** 将 RUNNING 运行原子转换为 WAITING_APPROVAL。 */
     RunRecord waitForApproval(UUID tenantId, UUID runId);
@@ -92,6 +122,15 @@ public interface RunRepository {
      * @return 按游标排序的当前页运行记录
      */
     List<RunRecord> listByTenantAndAgent(UUID tenantId, UUID agentId, RunPageRequest pageRequest);
+
+    /**
+     * 在游标/LIMIT之前过滤IMPORTED固定来源及其派生会话的其他owner，原三态保持原权限。
+     * principalId只能来自认证上下文；旧仓储不允许通过截断后过滤伪装支持。
+     * @return 当前主体可见的NORMAL运行页
+     */
+    default List<RunRecord> listVisible(UUID tenantId, UUID agentId, String principalId, RunPageRequest pageRequest) {
+        throw new UnsupportedOperationException("当前仓储未实现导入运行可见分页");
+    }
 
     /** 按指定运行类型分页查询；试运行只能通过显式类型入口读取。 */
     default List<RunRecord> listByTenantAndAgentAndKind(

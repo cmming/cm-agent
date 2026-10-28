@@ -50,6 +50,10 @@ import java.util.function.Supplier;
 /** 编排审批创建、原子决定、Run 恢复、会话消息和安全视图。 */
 @Service
 public class ToolApprovalService {
+    /** 服务入口独立复核IMPORTED owner，不能依赖Controller调用顺序或前端隐藏。 */
+    private WorkspaceImportAccess importAccess;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureImportAccess(WorkspaceImportAccess access) { this.importAccess = access; }
     /**
      * 撤销同一 Run 的全部待审批并删除原发起人的检查点；调用方持有共享运行锁与短事务。
      * 包含已到期但尚未扫描的请求，不能因为查询过滤过期时间而留下可处理的 PENDING。
@@ -243,6 +247,7 @@ public class ToolApprovalService {
 
     /** 列出当前会话未过期 PENDING 请求。 */
     public List<ToolApprovalView> listPending(PrincipalRef principal, UUID agentId, UUID conversationId) {
+        if (importAccess != null) importAccess.conversation(principal, agentId, conversationId);
         return approvalRepository.listPending(
                         principal.tenantId(), agentId, conversationId, clock.instant(), PENDING_LIMIT)
                 .stream().map(request -> view(principal, request)).toList();
@@ -257,6 +262,7 @@ public class ToolApprovalService {
 
     /** 列出指定 TEST Run 的待审批请求；查询边界不接受会话标识。 */
     public List<ToolApprovalView> listPendingForRun(PrincipalRef principal, UUID agentId, UUID runId) {
+        if (importAccess != null) importAccess.run(principal, agentId, runId);
         return approvalRepository.listPendingByRun(
                         principal.tenantId(), agentId, runId, clock.instant(), PENDING_LIMIT)
                 .stream().map(request -> view(principal, request)).toList();
@@ -286,6 +292,7 @@ public class ToolApprovalService {
      */
     public List<ToolApprovalView> listHistory(
             PrincipalRef principal, UUID agentId, UUID conversationId, ToolApprovalHistoryPageRequest page) {
+        if (importAccess != null) importAccess.conversation(principal, agentId, conversationId);
         return approvalRepository.listHistory(principal.tenantId(), agentId, conversationId, page)
                 .stream().map(request -> view(principal, request)).toList();
     }
@@ -550,12 +557,14 @@ public class ToolApprovalService {
 
     private ToolApprovalRequest require(
             PrincipalRef principal, UUID agentId, UUID conversationId, UUID approvalId) {
+        if (importAccess != null) importAccess.conversation(principal, agentId, conversationId);
         return approvalRepository.find(principal.tenantId(), agentId, conversationId, approvalId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "审批请求不存在"));
     }
 
     private ToolApprovalRequest requireForRun(
             PrincipalRef principal, UUID agentId, UUID runId, UUID approvalId) {
+        if (importAccess != null) importAccess.run(principal, agentId, runId);
         return approvalRepository.findByRun(principal.tenantId(), agentId, runId, approvalId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "审批请求不存在"));
     }
@@ -682,6 +691,8 @@ public class ToolApprovalService {
     }
 
     private ToolApprovalView view(PrincipalRef principal, ToolApprovalRequest request) {
+        // 来源可能在查询与视图组装间由空会话切换；返回任何审批明细前再按固定Run复核私有性。
+        if (importAccess != null) importAccess.run(principal, request.agentId(), request.runId());
         boolean canDecide = request.status() == ToolApprovalStatus.PENDING
                 && !request.isExpired(clock.instant())
                 && request.requestedBy().equals(principal.principalId())

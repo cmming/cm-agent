@@ -16,6 +16,23 @@ import java.util.UUID;
 @Component
 /** 统一写入安全审计事件；审计失败按严格策略向上抛出，不静默忽略。 */
 public class AuditAppender {
+    /**
+     * 为已有最终诊断边界的流程写严格审计；失败仅上抛，避免在此复制可能含SQL/路径的底层消息。
+     * 调用方必须用同一errorId记录一次脱敏诊断，不能吞掉本异常。
+     * @param tenantId 可信租户
+     * @param principalId 可信主体
+     * @param eventType 固定操作
+     * @param resourceType 固定资源类型
+     * @param resourceId 服务端核实的资源标识
+     * @param status 固定结果状态
+     * @param message 不含正文/名称/路径的受控元数据
+     */
+    public void appendControlled(UUID tenantId, String principalId, String eventType, String resourceType, String resourceId, String status, String message) {
+        try {
+            repository.append(new AuditEvent(UUID.randomUUID(), tenantId, principalId, eventType, resourceType, resourceId,
+                    status, redactor.redact(message), Instant.now()));
+        } catch (RuntimeException failure) { throw new AuditPersistenceException("审计写入失败", failure); }
+    }
     private static final Logger log = LoggerFactory.getLogger(AuditAppender.class);
 
     private final AuditEventRepository repository;

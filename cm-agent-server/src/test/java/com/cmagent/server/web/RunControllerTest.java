@@ -70,6 +70,26 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 class RunControllerTest {
 
+    @Test
+    void 未知导入来源统一隐藏且诊断同号不降级运行() throws Exception {
+        String accessToken = loginToken(); String agentId = createAgent(accessToken);
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(com.cmagent.server.runtime.WorkspaceImportService.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>(); appender.start(); logger.addAppender(appender);
+        try {
+            var response = mockMvc.perform(post("/api/agents/{agentId}/runs", agentId)
+                            .header("Authorization", bearer(accessToken)).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"input\":\"合成输入\",\"workspaceSelection\":{\"mode\":\"IMPORTED\",\"workspaceId\":\"" + UUID.randomUUID() + "\"}}"))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("WORKSPACE_IMPORT_NOT_FOUND"))
+                    .andExpect(jsonPath("$.message").value("资料或派生资源不存在"))
+                    .andReturn().getResponse().getContentAsString();
+            String errorId = JsonPath.read(response, "$.errorId"); assertThat(errorId).isNotBlank();
+            assertThat(appender.list).anySatisfy(event -> assertThat(event.getFormattedMessage()).contains("errorId=" + errorId, "WORKSPACE_IMPORT_NOT_FOUND"));
+            assertThat(response).doesNotContain("Exception", "stackTrace", "合成输入");
+            assertThat(agentRuntime.lastRequest()).isNull();
+            assertThat(store.listAuditEvents(TENANT_ID)).anySatisfy(event -> assertThat(event.eventType()).isEqualTo("WORKSPACE_IMPORT_BIND_CHECK"));
+        } finally { logger.detachAppender(appender); }
+    }
+
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     @Autowired

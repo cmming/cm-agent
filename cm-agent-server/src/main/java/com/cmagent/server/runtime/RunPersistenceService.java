@@ -36,6 +36,20 @@ import java.util.UUID;
 @Service
 /** 封装运行记录和工具调用记录的事务性写入，保持启动、完成状态一致。 */
 public class RunPersistenceService {
+    /** HTTP读取必须带可信主体；旧tenant-only方法仅保留给已完成授权的内部调用。 */
+    private WorkspaceImportAccess importAccess;
+    @Autowired void configureImportAccess(WorkspaceImportAccess access) { this.importAccess = access; }
+
+    /** @return 经来源owner校验后才读取工具历史的详情 */
+    public RunDetail findDetail(PrincipalRef principal, UUID agent, UUID run) {
+        if (importAccess != null) importAccess.run(principal, agent, run);
+        return findDetail(principal.tenantId(), agent, run);
+    }
+    /** @return 在仓储分页截断前过滤私有来源，不改变原三态可见范围 */
+    public List<RunRecord> list(PrincipalRef principal, UUID agent, RunPageRequest page) {
+        return importAccess == null ? list(principal.tenantId(), agent, page)
+                : runRepository.listVisible(principal.tenantId(), agent, principal.principalId(), page).stream().map(this::redactRun).toList();
+    }
     /** 登记停止和严格审计共用短事务；调用方须持有本实例运行锁且已校验主体归属。 */
     RunRecord requestCancellation(PrincipalRef principal, RunRecord snapshot) {
         java.util.function.Supplier<RunRecord> operation = () -> {
@@ -127,6 +141,21 @@ public class RunPersistenceService {
      * @return 已进入 RUNNING 状态的运行记录
      */
     public RunRecord start(PrincipalRef principal, UUID agentId, String input, UUID runId, RunKind kind) {
+        return start(principal,agentId,input,runId,kind,0);
+    }
+
+    /**
+     * 在首次Run写入时固定导入协议，避免选择元数据后写或丢失时公开运行输入。
+     * @param principal 可信主体
+     * @param agentId 已校验Agent
+     * @param input 已受控输入
+     * @param runId 服务端生成的Run标识
+     * @param kind 运行类型
+     * @param workspaceProtocol 仅服务端来源选择可决定，0旧来源、3本机导入
+     * @return 已持久化运行，见证与首次记录原子写入
+     */
+    public RunRecord start(PrincipalRef principal,UUID agentId,String input,UUID runId,RunKind kind,int workspaceProtocol) {
+        if(workspaceProtocol!=0 && workspaceProtocol!=3)throw new IllegalArgumentException("工作区运行协议不合法");
         Objects.requireNonNull(principal, "principal 不能为空");
         Objects.requireNonNull(agentId, "agentId 不能为空");
         Objects.requireNonNull(runId, "runId 不能为空");
@@ -136,14 +165,16 @@ public class RunPersistenceService {
                 kind, redactor.redact(input), Instant.now()
         );
         if (transactionTemplate == null) {
-            // Without JDBC transactions, audit first prevents a failed audit from leaving a memory row behind.
+            // memory没有跨仓储事务，先审计避免审计失败后遗留半个活动运行。
             appendAudit(principal, pending, RunStatus.RUNNING, "Agent 运行已启动");
-            RunRecord saved = runRepository.save(principal.tenantId(), pending);
+            RunRecord saved = workspaceProtocol==0 ? runRepository.save(principal.tenantId(),pending)
+                    : runRepository.saveWithWorkspaceProtocol(principal.tenantId(),pending,workspaceProtocol);
             log.info("Agent 运行已启动。runId={}, tenantId={}, agentId={}, principalId={}", saved.id(), saved.tenantId(), saved.agentId(), saved.principalId());
             return saved;
         }
         RunRecord saved = requireResult(transactionTemplate.execute(status -> {
-            RunRecord persisted = runRepository.save(principal.tenantId(), pending);
+            RunRecord persisted = workspaceProtocol==0 ? runRepository.save(principal.tenantId(),pending)
+                    : runRepository.saveWithWorkspaceProtocol(principal.tenantId(),pending,workspaceProtocol);
             appendAudit(principal, persisted, RunStatus.RUNNING, "Agent 运行已启动");
             return persisted;
         }));

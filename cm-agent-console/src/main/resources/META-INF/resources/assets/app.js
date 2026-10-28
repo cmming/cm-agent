@@ -88,6 +88,18 @@
     const localExampleLoadRevision = core.createLoadRevisionGate();
     const localExampleInstallRevision = core.createKeyedLoadRevisionGate();
     const sessionEpoch = core.createSessionEpochGate();
+    const workspaceChoice = core.createWorkspaceSelectionState({api: {request: (...args) => api.request(...args)}, getEpoch: () => sessionEpoch.capture(),
+        isContextCurrent: context => state.selectedAgentId === context.agent && (state.selectedConversationId || "") === context.conversation, onChange: renderWorkspaceChoice});
+    let nativeWorkspaceSource = "server", readyNativeImport = null, unknownNativeBinding = null;
+    const nativeWorkspaceImport = core.createNativeWorkspaceImportState({
+        api: {request: (...args) => api.request(...args)}, host: window, getEpoch: () => sessionEpoch.capture(),
+        getDirectoryInput: () => $("chatNativeDirectoryInput"), getContext: () => {
+            const choice = workspaceChoice.value();
+            return {agent: state.selectedAgentId || "", conversation: state.selectedConversationId || "", bindingVersion: choice.view?.version,
+                editable: !!choice.view?.editable && !state.chatBusy && !state.chatLoading};
+        }, onChange: renderNativeWorkspaceImport
+    });
+
     const submitStateGuard = core.createSubmitStateGuard();
     let pageNavigationRevision = 0;
     let chatRunTimer = null;
@@ -176,6 +188,7 @@
                 state.currentUser = await api.request("/api/auth/me");
                 if (!sessionEpoch.isCurrent(loginSession)) return;
                 sessionEpoch.invalidate();
+                workspaceChoice.reset(); nativeWorkspaceImport.reset();
                 const activeSession = sessionEpoch.capture();
                 $("loginPassword").value = "";
                 if (isMultiPage) {
@@ -226,6 +239,7 @@
         }
 
         sessionEpoch.invalidate();
+        workspaceChoice.reset(); nativeWorkspaceImport.reset();
         disposeSkillPages();
         submitStateGuard.invalidateAll();
         chatUx.reset();
@@ -288,6 +302,7 @@
 
     async function logout(message = "已安全退出。", redirectTarget = "") {
         sessionEpoch.invalidate();
+        workspaceChoice.reset(); nativeWorkspaceImport.reset();
         chatUx.reset();
         if (isMultiPage) state.chatBusy = false;
         disposeSkillPages();
@@ -2289,9 +2304,12 @@
             await loadConversations(agentId);
         }
         if (state.selectedConversationId) return state.selectedConversationId;
+        const session = sessionEpoch.capture();
         const created = await api.request(`/api/agents/${encodeURIComponent(agentId)}/conversations`, {
-            method: "POST"
+            method: "POST",
+            ...($("chatWorkspaceSummary") ? {body: JSON.stringify(workspaceChoice.payload())} : {})
         });
+        if (!sessionEpoch.isCurrent(session) || state.selectedAgentId !== agentId) return "";
         state.selectedConversationId = created.id;
         await loadConversations(agentId);
         return created.id;
@@ -2323,6 +2341,7 @@
             select.value = state.selectedConversationId;
         }
         renderChatConversations();
+        if ($("chatWorkspaceSummary") && !state.selectedConversationId) await workspaceChoice.load(agentId, "");
     }
 
     async function createConversation() {
@@ -2565,6 +2584,193 @@
         return [...groups];
     }
 
+    function renderWorkspaceChoice() {
+        if (!$("chatWorkspaceSummary")) return;
+        const choice = workspaceChoice.value(), view = choice.view;
+        nativeWorkspaceImport.activate(choice.agent, choice.conversation);
+        $("chatWorkspaceSummary").textContent = view?.selection?.mode === "IMPORTED"
+            ? `工作区：我的电脑 · ${view.displayName} · 已导入快照` : `工作区：${view?.displayName || "尚未确认"}`;
+        $("chatWorkspaceStatus").textContent = choice.loading ? "正在读取目录状态…" : choice.error
+            || (!view?.available ? "原目录已停用或变更，请联系管理员并新建会话。" : !view?.editable
+                ? "只读参考 · 已随会话固定，换目录请新建会话。" : choice.catalog?.enabled ? "只读参考 · 首条消息后固定" : "工作区参考未启用，可继续普通会话。");
+        $("chatWorkspaceChoose").disabled = choice.loading || !!choice.error || !view?.editable || state.chatBusy;
+        $("chatWorkspaceReload").disabled = choice.loading || state.chatBusy;
+        $("chatWorkspaceNew").hidden = !view || view.editable;
+        $("chatWorkspaceNew").disabled = state.chatBusy || state.chatLoading || Boolean(state.activeChatRun);
+        const dialog = $("chatWorkspaceDialog");
+        if (dialog?.open && (choice.agent !== dialog.dataset.agent || choice.conversation !== dialog.dataset.conversation || !choice.loading && !view?.editable)) dialog.close();
+        updateChatSendAvailability();
+    }
+
+    function renderNativeWorkspaceImport() {
+        if (!$("chatNativeStatus")) return;
+        const value = nativeWorkspaceImport.value(), choice = workspaceChoice.value(), busy = nativeWorkspaceImport.busy();
+        const focused = document.activeElement?.id;
+        $("chatWorkspaceServerPanel").hidden = nativeWorkspaceSource !== "server";
+        $("chatWorkspaceComputerPanel").hidden = nativeWorkspaceSource !== "computer";
+        $("chatWorkspaceServer").setAttribute("aria-pressed", String(nativeWorkspaceSource === "server"));
+        $("chatWorkspaceComputer").setAttribute("aria-pressed", String(nativeWorkspaceSource === "computer"));
+        $("chatWorkspaceServer").disabled = busy; $("chatWorkspaceComputer").disabled = busy;
+        $("chatNativeChoose").disabled = !nativeWorkspaceImport.canPick();
+        $("chatNativeFolder").textContent = value.name ? `本机文件夹：${value.name}` : "尚未选择本机文件夹";
+        $("chatNativeStatus").textContent = [value.message, value.progress].filter(Boolean).join(" ");
+        const budget = nativeWorkspaceImport.budget(), caps = value.capabilities;
+        const size = bytes => bytes >= 1024 ? `${(bytes / 1024).toFixed(bytes % 1024 ? 1 : 0)} KiB` : `${bytes} B`;
+        $("chatNativeBudget").textContent = caps ? `已勾选 ${budget.count}/${caps.maxFiles} 个文件 · ${size(budget.bytes)}/${size(caps.maxTotalBytes)}；单文件上限 ${size(caps.maxFileBytes)}。${budget.count && !budget.allowed ? "已超过预算，请取消部分勾选。" : ""}` : "正在预加载导入能力与预算…";
+        $("chatNativeBudget").dataset.over = String(budget.count > 0 && !budget.allowed);
+        const list = $("chatNativeCandidates"); list.replaceChildren(element("legend", {text: "本机候选资料 · 默认不勾选"}));
+        value.candidates.forEach((file, index) => {
+            const row = element("div", {className: "workspace-option"}), label = element("label");
+            const input = element("input", {id: `chatNativeFile${index}`, type: "checkbox"}); input.checked = value.selected.has(file.path); input.disabled = busy || value.phase !== "LOCAL";
+            input.addEventListener("change", () => nativeWorkspaceImport.select(file.path, input.checked));
+            const copy = element("span"); copy.append(element("strong", {text: file.path}), element("small", {text: size(file.size)}));
+            label.append(input, copy);
+            const preview = element("button", {id: `chatNativePreview${index}`, className: "button ghost compact", type: "button", text: "预览"});
+            preview.disabled = busy || value.phase !== "LOCAL"; preview.setAttribute("aria-label", `仅在本机预览 ${file.path}`);
+            preview.addEventListener("click", () => nativeWorkspaceImport.preview(file.path)); row.append(label, preview); list.append(row);
+        });
+        $("chatNativeExcluded").hidden = !value.excluded.length;
+        $("chatNativeExcludedSummary").textContent = `已排除 ${value.excluded.length} 项 · 查看原因`;
+        const excluded = $("chatNativeExcludedList"); excluded.replaceChildren();
+        value.excluded.forEach(item => excluded.append(element("li", {text: `${item.path} · ${item.reason}`})));
+        $("chatNativePreviewRegion").hidden = !value.preview; $("chatNativePreview").textContent = value.preview;
+        const progress = $("chatNativeProgress"); progress.hidden = !value.requestId; progress.max = Math.max(1, value.manifest?.files.length || 0); progress.value = value.batch?.files?.filter(file => file.uploaded).length || 0;
+        $("chatNativeCheck").hidden = !value.requestId; $("chatNativeCheck").disabled = busy;
+        $("chatNativeComplete").hidden = !value.batch || value.batch.state !== "DRAFT" || value.attempted !== value.manifest?.files.length;
+        $("chatNativeComplete").disabled = busy || !!unknownNativeBinding;
+        $("chatNativeRevoke").hidden = !value.requestId; $("chatNativeRevoke").disabled = busy || !!unknownNativeBinding;
+        const save = $("chatWorkspaceSave");
+        save.textContent = nativeWorkspaceSource === "computer" ? value.phase === "READY" ? "绑定已导入资料" : "上传所选文件并用于会话" : "保存选择";
+        save.disabled = nativeWorkspaceSource === "computer" ? busy || !!unknownNativeBinding || !(value.canConfirm || value.phase === "READY" && value.batch?.bindable)
+            : choice.loading || !!choice.error || !choice.view?.editable;
+        if (focused?.startsWith("chatNativeFile") || focused?.startsWith("chatNativePreview")) $(focused)?.focus({preventScroll: true});
+    }
+
+    function bindWorkspaceChoice() {
+        const dialog = $("chatWorkspaceDialog");
+        if (!dialog) return;
+        let draft = null;
+        const sameScope = scope => sessionEpoch.capture() === scope.epoch && state.selectedAgentId === scope.agent
+            && state.selectedConversationId === scope.conversation;
+        async function adoptConversation(id, scope, batch, operationCurrent) {
+            if (!sameScope(scope) || !operationCurrent()) return false;
+            const view = await api.request(`/api/agents/${encodeURIComponent(scope.agent)}/conversations/${encodeURIComponent(id)}/workspace`);
+            if (!sameScope(scope) || !operationCurrent() || view.selection?.mode !== "IMPORTED" || view.selection.workspaceId !== batch.id) return false;
+            const conversation = await api.request(`/api/agents/${encodeURIComponent(scope.agent)}/conversations/${encodeURIComponent(id)}`);
+            if (!sameScope(scope) || !operationCurrent() || conversation?.id !== id) return false;
+            state.selectedConversationId = id;
+            state.conversationAgentId = scope.agent;
+            state.conversations = [conversation, ...state.conversations.filter(item => item.id !== id)].slice(0, 50);
+            renderChatConversations(); dialog.close();
+            await loadChatMessages(scope.agent, id);
+            if (sessionEpoch.capture() !== scope.epoch || state.selectedAgentId !== scope.agent || state.selectedConversationId !== id) return false;
+            return true;
+        }
+        async function reconcileBinding() {
+            const pending = unknownNativeBinding; if (!pending || !sameScope(pending.context)) return false;
+            const current = () => unknownNativeBinding === pending && dialog.open && sameScope(pending.context);
+            if (pending.context.conversation) {
+                await workspaceChoice.load(pending.context.agent, pending.context.conversation);
+                if (!current()) return false;
+                const selection = workspaceChoice.value().view?.selection;
+                if (selection?.mode === "IMPORTED" && selection.workspaceId === pending.batch.id) { dialog.close(); return true; }
+                return false;
+            }
+            const page = await api.request(`/api/agents/${encodeURIComponent(pending.context.agent)}/conversations?limit=50`);
+            if (!current()) return false;
+            const matches = [];
+            for (const conversation of page?.items || []) {
+                if (pending.previousIds.has(conversation.id)) continue;
+                const view = await api.request(`/api/agents/${encodeURIComponent(pending.context.agent)}/conversations/${encodeURIComponent(conversation.id)}/workspace`);
+                if (!current()) return false;
+                if (view.selection?.mode === "IMPORTED" && view.selection.workspaceId === pending.batch.id) matches.push(conversation.id);
+            }
+            return matches.length === 1 ? adoptConversation(matches[0], pending.context, pending.batch, current) : false;
+        }
+        async function bindReady(result) {
+            if (!result?.isCurrent() || !sameScope(result.context)) return;
+            if (!workspaceChoice.value().view?.editable || state.chatBusy || state.chatLoading) { nativeWorkspaceImport.bindingFailed("当前会话已经开始或正在执行，请在新会话绑定资料；原选择未被覆盖。"); return; }
+            readyNativeImport = result;
+            const selection = {mode: "IMPORTED", workspaceId: result.batch.id}, scope = result.context;
+            nativeWorkspaceImport.markBinding();
+            unknownNativeBinding = {context: scope, batch: result.batch, previousIds: new Set(state.conversations.map(item => item.id))};
+            try {
+                if (scope.conversation) {
+                    if (await workspaceChoice.save(selection, result.batch, scope.bindingVersion, result.isCurrent) && sameScope(scope)) dialog.close();
+                } else {
+                    const created = await api.request(`/api/agents/${encodeURIComponent(scope.agent)}/conversations`, {method: "POST", body: JSON.stringify({workspaceSelection: selection})});
+                    if (!result.isCurrent() || !sameScope(scope)) return;
+                    if (!created?.id || !await adoptConversation(created.id, scope, result.batch, result.isCurrent)) throw new Error("新会话绑定尚未确认。");
+                }
+            } catch (error) {
+                if (!result.isCurrent() || !sameScope(scope)) return;
+                // 写响应未知时只做GET核对，绝不再次PUT或创建另一会话来掩盖原请求结果。
+                try { if (await reconcileBinding()) return; } catch { /* 保留原错误和只读核对入口。 */ }
+                if (result.isCurrent() && sameScope(scope)) nativeWorkspaceImport.bindingFailed(`${core.formatWorkspaceImportFailure(error)} 当前显示暂保留；绑定结果尚未确认，请点击“核对服务器状态”，不会重复创建会话。`);
+            }
+        }
+        function options() {
+            const choice = workspaceChoice.value(), list = $("chatWorkspaceOptions"), needle = $("chatWorkspaceSearch").value.toLocaleLowerCase();
+            list.replaceChildren(element("legend", {text: "可选目录"}));
+            const items = [{id: "DEFAULT", name: "沿用 Agent 配置", directory: "使用管理员原有映射", available: true},
+                {id: "NONE", name: "不使用工作区", directory: "本会话不加入参考资料", available: true}, ...(choice.catalog?.items || [])];
+            items.filter(item => item.id === "DEFAULT" || item.id === "NONE" || `${item.name} ${item.directory}`.toLocaleLowerCase().includes(needle))
+                .forEach(item => {
+                    const label = element("label", {className: "workspace-option"});
+                    const radio = element("input", {type: "radio", value: item.id});
+                    // element仅处理通用显示属性；显式设置同名分组，确保浏览器互斥取消旧选项并支持方向键切换。
+                    radio.name = "workspace";
+                    radio.checked = (draft?.workspaceId || draft?.mode) === item.id;
+                    radio.disabled = !item.available;
+                    radio.addEventListener("change", () => { draft = {mode: ["DEFAULT", "NONE"].includes(item.id) ? item.id : "SELECTED",
+                        workspaceId: ["DEFAULT", "NONE"].includes(item.id) ? null : item.id}; });
+                    const copy = element("span"); copy.append(element("strong", {text: item.name}), element("small", {text: `${item.directory} · ${item.available ? "只读" : "已停用"}`}));
+                    label.append(radio, copy); list.append(label);
+                });
+            if (!choice.catalog?.enabled) list.append(element("p", {text: "管理员尚未启用工作区参考。"}));
+            else if (!choice.catalog.items?.length) list.append(element("p", {text: "当前 Agent 没有可选的登记目录，请联系管理员。"}));
+        }
+        $("chatWorkspaceChoose").addEventListener("click", () => {
+            const choice = workspaceChoice.value(); draft = {...choice.view.selection};
+            readyNativeImport = null; unknownNativeBinding = null;
+            nativeWorkspaceImport.discard(); nativeWorkspaceSource = choice.view.selection.mode === "IMPORTED" ? "computer" : "server";
+            dialog.dataset.agent = choice.agent; dialog.dataset.conversation = choice.conversation;
+            $("chatWorkspaceSearch").value = ""; $("chatWorkspaceDialogStatus").textContent = "";
+            options(); renderNativeWorkspaceImport(); dialog.showModal(); (nativeWorkspaceSource === "computer" ? $("chatNativeChoose") : $("chatWorkspaceSearch")).focus();
+        });
+        ["chatWorkspaceClose", "chatWorkspaceCancel"].forEach(id => $(id).addEventListener("click", () => dialog.close()));
+        dialog.addEventListener("close", () => { nativeWorkspaceImport.discard(); readyNativeImport = null; unknownNativeBinding = null; $("chatWorkspaceChoose")?.focus(); });
+        $("chatWorkspaceServer").addEventListener("click", () => {
+            nativeWorkspaceSource = "server"; nativeWorkspaceImport.discard(); readyNativeImport = null; unknownNativeBinding = null;
+            if (draft?.mode === "IMPORTED") draft = {mode: "DEFAULT", workspaceId: null};
+            options(); renderNativeWorkspaceImport(); $("chatWorkspaceSearch").focus();
+        });
+        $("chatWorkspaceComputer").addEventListener("click", () => { nativeWorkspaceSource = "computer"; renderNativeWorkspaceImport(); $("chatNativeChoose").focus(); });
+        $("chatNativeChoose").addEventListener("click", () => { readyNativeImport = null; unknownNativeBinding = null; nativeWorkspaceImport.pick(); });
+        $("chatNativeCheck").addEventListener("click", async () => {
+            const pending = unknownNativeBinding;
+            try {
+                if (pending) { if (!await reconcileBinding() && unknownNativeBinding === pending && sameScope(pending.context)) nativeWorkspaceImport.bindingFailed("尚未唯一确认绑定结果，请核对会话列表或稍后再次只读核对；不会重新创建会话。"); }
+                else await bindReady(await nativeWorkspaceImport.check());
+            } catch (error) { if (pending && unknownNativeBinding === pending && sameScope(pending.context)) nativeWorkspaceImport.bindingFailed(`${core.formatWorkspaceImportFailure(error)} 请继续只读核对。`); }
+        });
+        $("chatNativeComplete").addEventListener("click", async () => bindReady(await nativeWorkspaceImport.check(true)));
+        $("chatNativeRevoke").addEventListener("click", () => nativeWorkspaceImport.revoke());
+        $("chatWorkspaceSearch").addEventListener("input", options);
+        $("chatWorkspaceReload").addEventListener("click", () => { nativeWorkspaceImport.refresh(); workspaceChoice.load(state.selectedAgentId, state.selectedConversationId); });
+        $("chatNativeCandidates").addEventListener("keydown", event => { if (event.key === "Enter" && event.target?.matches?.('input[type="checkbox"]')) event.preventDefault(); });
+        $("chatWorkspaceNew").addEventListener("click", () => createChatConversation().then(() => $("chatWorkspaceChoose").click())
+            .catch(error => setStatus($("chatFormStatus"), error.message, "error")));
+        $("chatWorkspaceForm").addEventListener("submit", async event => {
+            event.preventDefault(); const button = $("chatWorkspaceSave"); if (button.disabled) return;
+            if (nativeWorkspaceSource === "computer") { await bindReady(nativeWorkspaceImport.value().phase === "READY" ? readyNativeImport : await nativeWorkspaceImport.confirm()); return; }
+            button.disabled = true;
+            try { if (await workspaceChoice.save(draft)) dialog.close(); }
+            catch (error) { $("chatWorkspaceDialogStatus").textContent = `${error.message} 关闭后重新读取目录状态。`; }
+            finally { button.disabled = false; }
+        });
+    }
+
     async function initializeChatPage() {
         if (!$("chatPage")) return;
         if (!state.selectedAgentId) {
@@ -2642,9 +2848,11 @@
             setStatus($("chatFormStatus"), "请先选择 Agent。", "error");
             return;
         }
+        const session = sessionEpoch.capture();
         const created = await api.request(`/api/agents/${encodeURIComponent(agentId)}/conversations`, {
-            method: "POST"
+            method: "POST", body: JSON.stringify({workspaceSelection: {mode: "DEFAULT", workspaceId: null}})
         });
+        if (!sessionEpoch.isCurrent(session) || state.selectedAgentId !== agentId) return;
         state.selectedAgentId = agentId;
         state.selectedConversationId = created.id;
         chatUx.activate();
@@ -2667,6 +2875,8 @@
             renderChatApprovals();
             return false;
         }
+        if ($("chatWorkspaceSummary")) await workspaceChoice.load(agentId, conversationId);
+        if (!isCurrent()) return false;
         const base = `/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}`;
         // 查询结束前不开放发送，防止页面刷新时短暂绕过待审批发送锁。
         state.chatLoading = true;
@@ -3471,7 +3681,8 @@
         state.chatBusy = busy;
         [$("chatAgentSelect"), $("newChatConversationBtn"), $("newChatConversationTopBtn"), $("chatSendBtn")].filter(Boolean)
             .forEach((control) => { control.disabled = busy; });
-        updateChatSendAvailability();
+        if ($("chatWorkspaceSummary")) renderWorkspaceChoice();
+        else updateChatSendAvailability();
     }
 
     function updateChatSendAvailability() {
@@ -3483,8 +3694,9 @@
             || state.approvalHistory.some((approval) => approval.approvalId === id));
         const active = Boolean(state.activeChatRun);
         const unknown = chatUx.isUnknown();
-        if (sendButton) sendButton.disabled = state.chatBusy || state.chatLoading || active || waiting || resuming || unknown;
-        if (input) input.disabled = state.chatBusy || state.chatLoading || active || waiting || resuming || unknown;
+        const workspaceBlocked = !!$("chatWorkspaceSummary") && !workspaceChoice.ready();
+        if (sendButton) sendButton.disabled = state.chatBusy || state.chatLoading || active || waiting || resuming || unknown || workspaceBlocked;
+        if (input) input.disabled = state.chatBusy || state.chatLoading || active || waiting || resuming || unknown || workspaceBlocked;
         const stop = $("chatStopBtn");
         if (stop) {
             stop.hidden = !active;
@@ -3511,6 +3723,10 @@
         if (chatUx.isUnknown() || state.chatBusy || state.chatLoading || state.activeChatRun || [...state.pendingApprovals.values()]
                 .some((approval) => approval.status === "PENDING" || state.approvalSubmissions.has(approval.approvalId))
                 || state.approvalHistory.some((approval) => state.approvalSubmissions.has(approval.approvalId))) return;
+        if ($("chatWorkspaceSummary") && !workspaceChoice.ready()) {
+            setStatus($("chatFormStatus"), "工作区目录状态尚未确认，请重新读取后发送。", "error");
+            return;
+        }
         const agentId = $("chatAgentSelect")?.value;
         const input = $("chatInput")?.value.trim();
         if (!agentId || !input) {
@@ -3529,6 +3745,11 @@
                 const conversationId = await ensureConversation(agentId);
                 operationConversationId = conversationId;
                 if (!operationCurrent()) return;
+                if ($("chatWorkspaceSummary")) {
+                    await workspaceChoice.load(agentId, conversationId);
+                    if (!operationCurrent()) return;
+                    if (!workspaceChoice.ready()) throw new Error("工作区目录状态不可用，请重新读取或新建会话。");
+                }
                 chatUx.beginSubmission($("chatInput").value);
                 const session = sessionEpoch.capture();
                 const isCurrent = () => sessionEpoch.isCurrent(session) && state.selectedAgentId === agentId
@@ -3996,6 +4217,8 @@
             ["错误", run.errorMessage],
             ["错误码", run.errorCode],
             ["错误编号", run.errorId],
+            ["工作区", detail?.workspaceSelection?.displayName || "沿用 Agent 配置"],
+            ["只读参考目录", detail?.workspaceSelection?.directory || "—"],
             ["执行主体", run.principalId],
             ["开始时间", core.formatDateTime(run.startedAt)],
             ["结束时间", core.formatDateTime(run.finishedAt)]
@@ -4303,6 +4526,7 @@
                     : renderChatWelcome("当前 Agent 还没有会话，发送第一条消息即可开始。"); })
                 .catch((error) => setStatus($("chatFormStatus"), error.message, "error"));
         });
+        bindWorkspaceChoice();
         bind("newChatConversationBtn", "click", () => createChatConversation()
             .catch((error) => setStatus($("chatFormStatus"), error.message, "error")));
         bind("newChatConversationTopBtn", "click", () => createChatConversation()

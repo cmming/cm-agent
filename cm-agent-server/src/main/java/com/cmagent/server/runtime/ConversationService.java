@@ -41,6 +41,10 @@ import java.util.function.Consumer;
  */
 @Service
 public class ConversationService {
+    /** 仅Spring完整装配开启新来源闸门；旧手工装配仍被创建入口限制为旧模式。 */
+    private WorkspaceImportAccess importAccess;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureImportAccess(WorkspaceImportAccess access) { this.importAccess = access; }
     private final ConversationRepository conversationRepository;
     private final ConversationMessageRepository messageRepository;
     private final AgentDefinitionRepository agentRepository;
@@ -49,6 +53,12 @@ public class ConversationService {
     private final RunExecutionService executionService;
     private final ToolApprovalService approvalService;
     private final ConversationPromptComposer promptComposer;
+    /** 与首发共用控制锁和 JDBC 行锁，绑定更新不能穿过消息创建边界。 */
+    private WorkspaceSelectionService workspaceSelections;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureWorkspaceSelections(WorkspaceSelectionService service) { this.workspaceSelections = service; }
+
     private final SensitiveDataRedactor redactor;
     private final TransactionTemplate transactionTemplate;
 
@@ -99,11 +109,53 @@ public class ConversationService {
      * @throws ResponseStatusException Agent 不属于当前租户或不存在时抛出 404
      */
     public Conversation create(PrincipalRef principal, UUID agentId) {
+        return create(principal, agentId, null);
+    }
+
+    /**
+     * 创建会话并原子保存选择；无请求体保持 DEFAULT。正文读取不在此短事务内执行。
+     * @param principal 可信认证主体
+     * @param agentId 当前租户 Agent
+     * @param selection 可省略的逻辑目录选择
+     * @return 新空会话
+     */
+    public Conversation create(PrincipalRef principal, UUID agentId, com.cmagent.core.domain.WorkspaceSelection selection) {
+        // 手工装配旧服务只兼容 DEFAULT，不能静默忽略调用方显式选择的资料边界。
+        if (workspaceSelections == null && selection != null && selection.mode() != com.cmagent.core.domain.WorkspaceSelection.Mode.DEFAULT)
+            throw new IllegalStateException("当前服务未装配工作区选择能力");
         requireAgent(principal, agentId);
-        Instant now = Instant.now();
-        return conversationRepository.save(principal.tenantId(), new Conversation(
-                UUID.randomUUID(), principal.tenantId(), agentId, Conversation.DEFAULT_TITLE,
-                principal.principalId(), now, now));
+        return inTransaction(() -> {
+            Instant now = Instant.now();
+            UUID id = UUID.randomUUID();
+            var binding = workspaceSelections == null ? null : workspaceSelections.newConversation(principal, agentId, id, selection);
+            if (binding != null) workspaceSelections.saveNewConversation(binding);
+            try {
+                var created=new Conversation(id,principal.tenantId(),agentId,Conversation.DEFAULT_TITLE,principal.principalId(),now,now);
+                return binding!=null && binding.selection().mode()==com.cmagent.core.domain.WorkspaceSelection.Mode.IMPORTED
+                        ? conversationRepository.saveWithWorkspaceProtocol(principal.tenantId(),created,3)
+                        : conversationRepository.save(principal.tenantId(),created);
+            } catch (RuntimeException failure) {
+                // memory 没有数据库回滚，预存选择失败不能遗留半个会话；补偿失败保留原故障为 suppressed。
+                try { if (binding != null) workspaceSelections.abandonNewConversation(binding); }
+                catch (RuntimeException cleanup) { cleanup.addSuppressed(failure); throw cleanup; }
+                throw failure;
+            }
+        });
+    }
+
+    /**
+     * 条件改绑与首发使用相同锁顺序；跨实例由 Repository 行锁串行化，事务不包含文件或模型调用。
+     * @param principal 可信主体
+     * @param agentId 当前 Agent
+     * @param conversationId 会话标识
+     * @param selection 显式新选择
+     * @param expectedVersion 最后读取的版本
+     * @return 保存后的安全视图
+     */
+    public WorkspaceSelectionService.View updateWorkspace(PrincipalRef principal, UUID agentId, UUID conversationId,
+            com.cmagent.core.domain.WorkspaceSelection selection, long expectedVersion) {
+        return executionService.controls().withConversation(conversationId, () -> inTransaction(() ->
+                workspaceSelections.update(principal, get(principal, agentId, conversationId), selection, expectedVersion)));
     }
 
     /**
@@ -112,9 +164,11 @@ public class ConversationService {
      * <p>跨租户和跨 Agent 均统一返回 404，避免泄露会话是否存在。</p>
      */
     public Conversation get(PrincipalRef principal, UUID agentId, UUID conversationId) {
-        return conversationRepository.findByTenantAndAgentAndId(
+        var conversation = conversationRepository.findByTenantAndAgentAndId(
                         principal.tenantId(), agentId, conversationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "会话不存在"));
+        if (importAccess != null) importAccess.conversation(principal, conversation);
+        return conversation;
     }
 
     /**
@@ -123,7 +177,8 @@ public class ConversationService {
     public List<Conversation> list(
             PrincipalRef principal, UUID agentId, ConversationPageRequest pageRequest) {
         requireAgent(principal, agentId);
-        return conversationRepository.listByTenantAndAgent(principal.tenantId(), agentId, pageRequest);
+        return importAccess == null ? conversationRepository.listByTenantAndAgent(principal.tenantId(), agentId, pageRequest)
+                : conversationRepository.listVisible(principal.tenantId(), agentId, principal.principalId(), pageRequest);
     }
 
     /**
@@ -136,7 +191,10 @@ public class ConversationService {
             MessagePageRequest pageRequest
     ) {
         get(principal, agentId, conversationId);
-        return messageRepository.list(principal.tenantId(), conversationId, pageRequest);
+        var page = messageRepository.list(principal.tenantId(), conversationId, pageRequest);
+        // 也核对固定Run来源，避免历史不一致数据经消息入口旁路私有运行。
+        if (importAccess != null) for (var message : page) if (message.runId() != null) importAccess.run(principal, agentId, message.runId());
+        return page;
     }
 
     /**
@@ -196,11 +254,19 @@ public class ConversationService {
         UUID runId = UUID.randomUUID();
         UUID userMessageId = UUID.randomUUID();
         StartedState started = executionService.controls().withConversation(conversationId, () -> inTransaction(() -> {
+            // JDBC FOR UPDATE 与改绑共用同一行；不能只依赖单进程控制锁。
+            conversationRepository.lock(principal.tenantId(), agentId, conversationId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "会话不存在"));
             if (activeRun(principal, agentId, conversationId) != null) {
                 throw new RunControlException(com.cmagent.api.ApiErrorCode.RUN_CONTROL_CONFLICT,
                         "当前会话仍有未结束运行，请先停止或核对运行状态");
             }
-            RunRecord run = runPersistenceService.start(principal, agentId, safeInput, runId);
+            var workspace = workspaceSelections == null ? null : workspaceSelections.forConversation(principal, conversation, runId);
+            RunRecord run = workspace!=null && workspace.selection().mode()==com.cmagent.core.domain.WorkspaceSelection.Mode.IMPORTED
+                    ? runPersistenceService.start(principal,agentId,safeInput,runId,com.cmagent.core.domain.RunKind.NORMAL,3)
+                    : runPersistenceService.start(principal,agentId,safeInput,runId);
+            try {
+            if (workspace != null) workspaceSelections.saveRun(workspace);
             ConversationMessage userMessage = messageRepository.append(principal.tenantId(),
                     new ConversationMessageDraft(
                             userMessageId, principal.tenantId(), conversationId, MessageRole.USER,
@@ -210,6 +276,14 @@ public class ConversationService {
                         principal.tenantId(), conversationId, titleFrom(safeInput), userMessage.createdAt());
             }
             return new StartedState(run, userMessage);
+            } catch (RuntimeException failure) {
+                // JDBC 由短事务回滚，memory 则显式关闭已创建的 Run，不能遗留永远活动的半次首发。
+                if (transactionTemplate == null) {
+                    try { runPersistenceService.completeFailure(principal, run); }
+                    catch (RuntimeException cleanup) { cleanup.addSuppressed(failure); throw cleanup; }
+                }
+                throw failure;
+            }
         }));
         var execution = executionService.controls().register(started.run(), conversationId);
         try {
@@ -283,8 +357,10 @@ public class ConversationService {
                 .noneMatch(message -> message.role() == MessageRole.USER)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "运行不存在或不属于当前会话");
         }
-        return runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId)
+        var run = runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "运行不存在"));
+        if (importAccess != null) importAccess.run(principal, run);
+        return run;
     }
 
     /** 返回活动 Run，包含停止中及不可达执行句柄；查询不能自动重放或收口运行。 */
@@ -293,6 +369,7 @@ public class ConversationService {
         return messageRepository.activeRunCandidates(principal.tenantId(), conversationId).stream()
                 .map(id -> runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, id))
                 .flatMap(java.util.Optional::stream).filter(run -> run.status().isActive())
+                .peek(run -> { if (importAccess != null) importAccess.run(principal, run); })
                 .sorted(java.util.Comparator.comparing(RunRecord::startedAt).reversed()).findFirst().orElse(null);
     }
 
@@ -303,7 +380,7 @@ public class ConversationService {
             if (!principal.tenantId().equals(message.tenantId())) throw new IllegalArgumentException("消息租户不一致");
             if (message.runId() != null && !statuses.containsKey(message.runId())) {
                 runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, message.runId())
-                        .ifPresent(run -> statuses.put(run.id(), run.status()));
+                        .ifPresent(run -> { if (importAccess != null) importAccess.run(principal, run); statuses.put(run.id(), run.status()); });
             }
         }
         return java.util.Map.copyOf(statuses);

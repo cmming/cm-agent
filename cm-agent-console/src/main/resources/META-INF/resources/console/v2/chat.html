@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="/console/v2/assets/sandbox-endpoints.css?v=1.0.0">
     <link rel="stylesheet" href="/console/v2/assets/skill-artifacts.css?v=1.0.0">
     <link rel="stylesheet" href="/assets/chat-stop.css?v=1.0.1">
-    <link rel="stylesheet" href="/console/v2/assets/workbench.css?v=1.0.0">
+    <link rel="stylesheet" href="/console/v2/assets/workbench.css?v=1.0.2">
 </head>
 <body data-console-version="v2" data-page="chatPage">
 <div class="console-layout">
@@ -57,6 +57,41 @@
                     <div id="chatApprovalList" class="chat-approval-list"></div>
                     <p id="chatApprovalStatus" class="form-status" role="status" aria-live="polite"></p>
                 </section>
+                <div class="chat-workspace-bar" aria-label="工作区参考目录">
+                    <div><strong id="chatWorkspaceSummary">正在读取工作区…</strong><p id="chatWorkspaceStatus" role="status" aria-live="polite"></p></div>
+                    <button id="chatWorkspaceChoose" class="button ghost compact" type="button">选择目录</button>
+                    <button id="chatWorkspaceReload" class="button ghost compact" type="button">重新读取</button>
+                    <button id="chatWorkspaceNew" class="button ghost compact" type="button" hidden>新会话换目录</button>
+                </div>
+                <dialog id="chatWorkspaceDialog" class="workspace-picker" aria-labelledby="chatWorkspaceHeading">
+                    <form id="chatWorkspaceForm">
+                        <div class="panel-heading"><h2 id="chatWorkspaceHeading">选择工作区参考目录</h2><button id="chatWorkspaceClose" class="button ghost compact" type="button">关闭</button></div>
+                        <p>资料仅作只读参考，首条消息后固定；换目录请新建会话。</p>
+                        <div class="workspace-source-switch" role="group" aria-label="资料来源">
+                            <button id="chatWorkspaceServer" class="button ghost compact" type="button" aria-pressed="true">服务器登记目录</button>
+                            <button id="chatWorkspaceComputer" class="button ghost compact" type="button" aria-pressed="false">我的电脑</button>
+                        </div>
+                        <section id="chatWorkspaceServerPanel" aria-label="服务器登记目录">
+                        <label for="chatWorkspaceSearch">查找目录</label><input id="chatWorkspaceSearch" type="search" placeholder="按名称或相对位置查找">
+                        <fieldset id="chatWorkspaceOptions"><legend>可选目录</legend></fieldset>
+                        </section>
+                        <section id="chatWorkspaceComputerPanel" class="workspace-local" aria-label="我的电脑资料导入" hidden>
+                            <p id="chatNativeNotice">在自己的电脑选择文件夹。仅选择不会上传；明确确认后，勾选文件将离开电脑，上传到当前 CM Agent Server，作为不可变的只读快照。不会修改你的文件。</p>
+                            <div class="workspace-local-actions"><button id="chatNativeChoose" class="button ghost" type="button" aria-describedby="chatNativeNotice">打开系统文件夹选择器</button><span id="chatNativeFolder">尚未选择本机文件夹</span></div>
+                            <input id="chatNativeDirectoryInput" class="sr-only" type="file" webkitdirectory multiple tabindex="-1" aria-hidden="true">
+                            <p id="chatNativeStatus" role="status" aria-live="polite"></p>
+                            <p id="chatNativeBudget" class="workspace-local-budget"></p>
+                            <fieldset id="chatNativeCandidates"><legend>本机候选资料 · 默认不勾选</legend></fieldset>
+                            <details id="chatNativeExcluded"><summary id="chatNativeExcludedSummary">排除原因</summary><ul id="chatNativeExcludedList"></ul></details>
+                            <div id="chatNativePreviewRegion" hidden><h3>本机正文预览</h3><pre id="chatNativePreview" tabindex="0"></pre></div>
+                            <progress id="chatNativeProgress" max="1" value="0" aria-label="所选资料上传进度" hidden></progress>
+                            <div class="workspace-local-actions"><button id="chatNativeCheck" class="button ghost compact" type="button" hidden>核对服务器状态</button><button id="chatNativeComplete" class="button ghost compact" type="button" hidden>完成已发送资料的核对</button><button id="chatNativeRevoke" class="button ghost compact" type="button" hidden>撤销本次导入</button></div>
+                            <p class="field-help">文件名规则不能识别所有敏感内容，请自行核对。未上传草稿只在本页保留；刷新需重新选择。浏览器目录 input 通道会先展开目录，超预算时请选更小范围。</p>
+                        </section>
+                        <p id="chatWorkspaceDialogStatus" role="status" aria-live="polite"></p>
+                        <div class="workspace-picker-actions"><button id="chatWorkspaceCancel" class="button ghost" type="button">取消</button><button id="chatWorkspaceSave" class="button primary" type="submit">保存选择</button></div>
+                    </form>
+                </dialog>
                 <form id="chatForm" class="chat-composer">
                     <label class="sr-only" for="chatInput">输入消息</label>
                     <textarea id="chatInput" rows="2" required placeholder="输入消息，Enter 发送，Shift+Enter 换行" aria-describedby="chatInputHint"></textarea>
@@ -67,10 +102,10 @@
         </section>
     </main>
 </div>
-<script src="/assets/console-core.js?v=2.0.17"></script>
+<script src="/assets/console-core.js?v=2.0.19"></script>
 <script src="/console/v2/assets/sandbox-endpoints.js?v=1.1.1"></script>
 <script src="/console/v2/assets/skill-artifacts.js?v=1.0.2"></script>
-<script src="/assets/app.js?v=2.0.35"></script>
+<script src="/assets/app.js?v=2.0.38"></script>
 <script src="/console/v2/assets/skills.js?v=2.1.2"></script>
 </body>
 </html>

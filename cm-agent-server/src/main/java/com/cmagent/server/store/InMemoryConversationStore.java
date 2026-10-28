@@ -24,6 +24,53 @@ import java.util.concurrent.ConcurrentHashMap;
  * 保存，服务重启后会话、消息和锁都会丢失，因此不能作为生产持久化方案。</p>
  */
 public class InMemoryConversationStore implements ConversationRepository, ConversationMessageRepository {
+    /** 会话来源头与首次保存同一监视器维护；绑定行丢失后不能把私有空会话降为默认共享。 */
+    private final java.util.Map<UUID, Integer> workspaceProtocols = new java.util.HashMap<>();
+    @Override public boolean supportsWorkspaceProtocol() { return true; }
+    /** 当前会话必须真实存在；头见证缺失属于状态损坏，不能使用getOrDefault伪装旧来源。 */
+    @Override public synchronized int workspaceProtocol(UUID tenantId, UUID agentId, UUID conversationId) {
+        findByTenantAndAgentAndId(tenantId, agentId, conversationId).orElseThrow(() -> new NoSuchElementException("会话不存在"));
+        Integer protocol = workspaceProtocols.get(conversationId);
+        if (protocol == null) throw new IllegalStateException("会话来源见证缺失");
+        if (protocol != 0 && protocol != 3) throw new IllegalStateException("会话来源见证不合法");
+        return protocol;
+    }
+    /** 宿主已持空会话控制锁并完成版本校验，只改来源头，不碰消息、标题或更新时间。 */
+    @Override public synchronized void updateWorkspaceProtocol(UUID tenantId, UUID agentId, UUID conversationId, int protocol) {
+        requireProtocol(protocol);
+        workspaceProtocol(tenantId, agentId, conversationId);
+        workspaceProtocols.put(conversationId, protocol);
+    }
+    /** 在LIMIT前复核导入owner；旧手工装配只能使用旧接口，不伪装支持新可见分页。 */
+    private final com.cmagent.core.repository.WorkspaceSelectionRepository workspaceSelections;
+    /** 延迟取得运行仓储，避免运行仓储依赖会话仓储时形成构造循环；不在分页后补过滤。 */
+    private final java.util.function.Supplier<com.cmagent.core.repository.RunRepository> workspaceRuns;
+    /** 兼容未接入导入的旧本地测试。 */
+    public InMemoryConversationStore() { this.workspaceSelections = null; this.workspaceRuns=null; }
+    /** @param workspaceSelections 与会话/运行共用的可信来源元数据 */
+    public InMemoryConversationStore(com.cmagent.core.repository.WorkspaceSelectionRepository workspaceSelections) { this(workspaceSelections,null); }
+    /**
+     * @param workspaceSelections 可信来源元数据
+     * @param workspaceRuns 宿主延迟供应运行仓储，查询前必须已完成完整装配
+     */
+    public InMemoryConversationStore(com.cmagent.core.repository.WorkspaceSelectionRepository workspaceSelections,java.util.function.Supplier<com.cmagent.core.repository.RunRepository> workspaceRuns) {
+        this.workspaceSelections=Objects.requireNonNull(workspaceSelections);this.workspaceRuns=workspaceRuns;
+    }
+    @Override public List<Conversation> listVisible(UUID tenantId, UUID agentId, String principalId, ConversationPageRequest pageRequest) {
+        if (workspaceSelections == null) throw new UnsupportedOperationException("当前内存仓储未装配导入可见分页");
+        if (workspaceRuns==null)throw new UnsupportedOperationException("当前内存仓储未装配导入来源见证过滤");
+        final List<Conversation> visibleHeads;
+        synchronized (this) {
+            // 复制会话与头见证的同一视图后退出监视器，避免跨调用Run仓储形成C→R/R→C反锁。
+            visibleHeads = conversations.values().stream().filter(c -> tenantId.equals(c.tenantId()) && agentId.equals(c.agentId()))
+                    .filter(c -> workspaceProtocol(tenantId, agentId, c.id()) == 0 || principalId.equals(c.createdBy())).toList();
+        }
+        var sourceRuns=workspaceRuns.get();
+        return visibleHeads.stream()
+                .filter(c -> workspaceSelections.visibleConversation(c, principalId) && sourceRuns.visibleConversationFromWorkspace(c,principalId)).filter(c -> isBefore(c, pageRequest))
+                .sorted(Comparator.comparing(Conversation::updatedAt).reversed().thenComparing(c -> c.id().toString(), Comparator.reverseOrder()))
+                .limit(pageRequest.limit()).toList();
+    }
     /** 在会话自身锁内检查关联消息，运行文件仍须另外验证 Run 创建者。 */
     @Override
     public Optional<Conversation> findByRun(UUID tenantId,UUID runId) {
@@ -45,11 +92,19 @@ public class InMemoryConversationStore implements ConversationRepository, Conver
      * 保存新会话并初始化对应的消息列表。
      */
     public Conversation save(UUID tenantId, Conversation conversation) {
+        return saveWithWorkspaceProtocol(tenantId, conversation, 0);
+    }
+
+    /** 首次发布会话前先固定见证和空消息槽；重复保存不能重置已存在会话的来源。 */
+    @Override public synchronized Conversation saveWithWorkspaceProtocol(UUID tenantId, Conversation conversation, int protocol) {
         requireTenant(tenantId, conversation.tenantId());
-        if (conversations.putIfAbsent(conversation.id(), conversation) != null) {
+        requireProtocol(protocol);
+        if (conversations.containsKey(conversation.id())) {
             throw new IllegalStateException("会话已存在");
         }
         messages.put(conversation.id(), new java.util.ArrayList<>());
+        workspaceProtocols.put(conversation.id(), protocol);
+        conversations.put(conversation.id(), conversation);
         return conversation;
     }
 
@@ -181,6 +236,10 @@ public class InMemoryConversationStore implements ConversationRepository, Conver
      */
     private Object lock(UUID conversationId) {
         return conversationLocks.computeIfAbsent(conversationId, ignored -> new Object());
+    }
+
+    private static void requireProtocol(int protocol) {
+        if (protocol != 0 && protocol != 3) throw new IllegalArgumentException("会话工作区协议不合法");
     }
 
     private static boolean isBefore(Conversation item, ConversationPageRequest request) {

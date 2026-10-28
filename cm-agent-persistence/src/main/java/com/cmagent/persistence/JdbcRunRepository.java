@@ -19,6 +19,39 @@ import java.util.UUID;
 
 /** 使用 JDBC 持久化 Agent 运行的状态、输入、输出和时间信息。 */
 public class JdbcRunRepository implements RunRepository {
+    @Override public boolean supportsWorkspaceProtocol(){return true;}
+    /** 固定Run来源和关联会话任一使用导入，都在排序/LIMIT前复核原主体，防止经独立Run列表旁路。 */
+    @Override public List<RunRecord> listVisible(UUID tenantId, UUID agentId, String principalId, RunPageRequest page) {
+        String runOwner = JdbcOwnerPredicate.equal(jdbcClient, "r.principal_id", ":principal");
+        String fixedOwner = JdbcOwnerPredicate.equal(jdbcClient, "s.principal_id", ":principal");
+        String bindingOwner = JdbcOwnerPredicate.equal(jdbcClient, "b.principal_id", ":principal");
+        String creator = JdbcOwnerPredicate.equal(jdbcClient, "c.created_by", ":principal");
+        var query = jdbcClient.sql("""
+                SELECT r.* FROM runs r WHERE r.tenant_id=:tenant AND r.agent_id=:agent AND r.run_kind='NORMAL'
+                AND (r.workspace_protocol=0 OR (
+                """+runOwner+"))"+"""
+                AND NOT EXISTS (SELECT 1 FROM run_workspace_selections s WHERE s.tenant_id=r.tenant_id AND s.agent_id=r.agent_id
+                  AND s.resource_id=r.id AND s.selection_mode='IMPORTED' AND NOT (
+                """ + fixedOwner + " AND " + runOwner + "))"
+                + " AND NOT EXISTS (SELECT 1 FROM messages m JOIN conversations c ON c.tenant_id=m.tenant_id AND c.id=m.conversation_id"
+                + " JOIN conversation_workspace_bindings b ON b.tenant_id=c.tenant_id AND b.agent_id=c.agent_id AND b.resource_id=c.id"
+                + " WHERE m.tenant_id=r.tenant_id AND m.run_id=r.id AND b.selection_mode='IMPORTED' AND NOT ("
+                + bindingOwner + " AND " + creator + " AND " + runOwner + "))"
+                + " AND NOT EXISTS (SELECT 1 FROM messages hm JOIN conversations hc ON hc.tenant_id=hm.tenant_id AND hc.id=hm.conversation_id"
+                + " WHERE hm.tenant_id=r.tenant_id AND hm.run_id=r.id AND hc.workspace_protocol=3 AND NOT ("
+                + JdbcOwnerPredicate.equal(jdbcClient,"hc.created_by",":principal")+" AND "+runOwner+"))"
+                + " AND NOT EXISTS (SELECT 1 FROM messages cm JOIN conversations cc ON cc.tenant_id=cm.tenant_id AND cc.id=cm.conversation_id"
+                + " JOIN messages pm ON pm.tenant_id=cc.tenant_id AND pm.conversation_id=cc.id"
+                + " JOIN runs pr ON pr.tenant_id=pm.tenant_id AND pr.id=pm.run_id"
+                + " WHERE cm.tenant_id=r.tenant_id AND cm.run_id=r.id AND pr.workspace_protocol=3 AND NOT ("
+                + JdbcOwnerPredicate.equal(jdbcClient,"pr.principal_id",":principal")+" AND "
+                + JdbcOwnerPredicate.equal(jdbcClient,"cc.created_by",":principal")+" AND "+runOwner+"))"
+                + (page.beforeStartedAt() == null ? "" : " AND (r.started_at<:before OR (r.started_at=:before AND r.id<:beforeId))")
+                + " ORDER BY r.started_at DESC,r.id DESC LIMIT :limit")
+                .param("tenant", tenantId.toString()).param("agent", agentId.toString()).param("principal", principalId).param("limit", page.limit());
+        if (page.beforeStartedAt() != null) query = query.param("before", Timestamp.from(page.beforeStartedAt())).param("beforeId", page.beforeId().toString());
+        return query.query(this::mapRun).list();
+    }
     @Override
     public boolean resumeWaitingApproval(RunRecord snapshot) {
         if (snapshot.status() != RunStatus.WAITING_APPROVAL) return false;
@@ -75,6 +108,11 @@ public class JdbcRunRepository implements RunRepository {
      * @return 已保存的运行记录
      */
     public RunRecord save(UUID tenantId, RunRecord run) {
+        return saveWithWorkspaceProtocol(tenantId, run, 0);
+    }
+    /** 首次INSERT包含不可变见证，避免先暴露运行输入再补选择元数据的跨实例窗口。 */
+    @Override public RunRecord saveWithWorkspaceProtocol(UUID tenantId, RunRecord run, int protocol) {
+        if (protocol != 0 && protocol != 3) throw new IllegalArgumentException("工作区运行协议不合法");
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(run, "run 不能为空");
         if (!tenantId.equals(run.tenantId())) {
@@ -84,10 +122,10 @@ public class JdbcRunRepository implements RunRepository {
         jdbcClient.sql("""
                         INSERT INTO runs (
                             id, tenant_id, agent_id, principal_id, run_kind, status, input_text, output_text,
-                            error_message, started_at, finished_at
+                            error_message, started_at, finished_at, workspace_protocol
                         ) VALUES (
                             :id, :tenantId, :agentId, :principalId, :runKind, :status, :input, :output,
-                            :errorMessage, :startedAt, :finishedAt
+                            :errorMessage, :startedAt, :finishedAt, :workspaceProtocol
                         )
                         """)
                 .param("id", run.id().toString())
@@ -101,8 +139,25 @@ public class JdbcRunRepository implements RunRepository {
                 .param("errorMessage", nullIfBlank(run.errorMessage()))
                 .param("startedAt", Timestamp.from(run.startedAt()))
                 .param("finishedAt", run.finishedAt() == null ? null : Timestamp.from(run.finishedAt()))
+                .param("workspaceProtocol", protocol)
                 .update();
         return run;
+    }
+    /** 来源见证独立于选择/检查点；丢失Run不能伪装成旧记录。 */
+    @Override public int workspaceProtocol(UUID tenant, UUID agent, UUID run) {
+        return jdbcClient.sql("SELECT workspace_protocol FROM runs WHERE tenant_id=:tenant AND agent_id=:agent AND id=:run")
+                .param("tenant",tenant.toString()).param("agent",agent.toString()).param("run",run.toString()).query(Integer.class).optional()
+                .orElseThrow(()->new java.util.NoSuchElementException("运行不存在"));
+    }
+
+    /** 选择行丢失也不能公开已派生的标题或回答，依据长期Run见证与原创建者判定。 */
+    @Override public boolean visibleConversationFromWorkspace(com.cmagent.core.domain.Conversation conversation,String principal) {
+        String owner=JdbcOwnerPredicate.equal(jdbcClient,"r.principal_id",":principal");
+        if(!conversation.createdBy().equals(principal)) owner="1=0";
+        return jdbcClient.sql("SELECT COUNT(*) FROM messages m JOIN runs r ON r.tenant_id=m.tenant_id AND r.id=m.run_id"
+                +" WHERE m.tenant_id=:tenant AND m.conversation_id=:conversation AND r.workspace_protocol=3 AND NOT ("+owner+")")
+                .param("tenant",conversation.tenantId().toString()).param("conversation",conversation.id().toString())
+                .param("principal",principal).query(Long.class).single()==0;
     }
 
     @Override

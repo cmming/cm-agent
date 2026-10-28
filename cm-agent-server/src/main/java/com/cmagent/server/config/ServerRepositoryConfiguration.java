@@ -52,6 +52,13 @@ import java.util.UUID;
 @EnableConfigurationProperties(CmAgentPersistenceProperties.class)
 /** 按持久化模式选择 memory 或 JDBC Repository 实现。 */
 public class ServerRepositoryConfiguration {
+    /** @return 只供本地/测试的选择仓储；生产重启恢复必须使用 JDBC */
+    @Bean
+    @ConditionalOnMissingBean(com.cmagent.core.repository.WorkspaceSelectionRepository.class)
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    com.cmagent.core.repository.WorkspaceSelectionRepository memoryWorkspaceSelectionRepository() {
+        return new com.cmagent.server.store.InMemoryWorkspaceSelectionRepository();
+    }
     /** 本地/测试模式的部署门禁与三个内存存储共享实例，不能以空替代绕过真实阻塞。 */
     @Bean
     @ConditionalOnMissingBean(com.cmagent.core.repository.RuntimeExecutionModeRepository.class)
@@ -176,11 +183,12 @@ public class ServerRepositoryConfiguration {
 
     @Bean
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
-    public InMemoryConversationStore inMemoryConversationStore() {
+    public InMemoryConversationStore inMemoryConversationStore(com.cmagent.core.repository.WorkspaceSelectionRepository selections,
+            org.springframework.beans.factory.ObjectProvider<RunRepository> runs) {
         // memory 是默认值，静默装配会让运行数据丢失风险完全不可见；这里在装配首个 memory
         // bean 时输出一次 INFO，生产 profile 的强制校验由 CmAgentPersistenceProperties.validate 负责。
         log.info(MEMORY_MODE_LOG);
-        return new InMemoryConversationStore();
+        return new InMemoryConversationStore(selections,runs::getObject);
     }
 
     @Bean
@@ -208,8 +216,8 @@ public class ServerRepositoryConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
-    public InMemoryPlatformStore inMemoryPlatformStore() {
-        InMemoryPlatformStore store = new InMemoryPlatformStore();
+    public InMemoryPlatformStore inMemoryPlatformStore(com.cmagent.core.repository.WorkspaceSelectionRepository selections, ConversationRepository conversations) {
+        InMemoryPlatformStore store = new InMemoryPlatformStore(selections, conversations);
         store.saveModelConfig(new ModelConfig(
                 DEFAULT_MODEL_ID,
                 DEFAULT_TENANT_ID,
