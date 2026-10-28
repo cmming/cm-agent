@@ -2,9 +2,17 @@
 
 日期：2026-10-27；主题：workspace-directory-selection-implementation；当前修订：R2；修订日期：2026-10-28；模式：mode=default。
 
+## 2026-10-28 本地提交记录
+
+用户明确要求“将修改的内容提交”。已确认代码与工作包主提交：`cc441dd585f36fd165d2071232690109a64aed90`，主题“实现工作区参考资料选择与受控导入并兼容Windows可信ACL”，共124个相关文件。本节由随后文档提交保存；原分析六文档亦随主提交首次纳入Git，其“未提交”等字样保留为形成时历史。未推送、未合并、未部署。
+
+提交范围为目录选择、受控导入、单选修复、R2可信Windows ACL及相应测试/生产说明/工作包；不包含用户application.yml/application-mysql.yml/application-ok.yml、.gitignore、.workbuddy、.env或target生成物。逐项核对主提交的108个源码文件与最终已验证补丁一致（仅Git换行规范化），没有重复运行业务套件；Windows80项全通过、Rocky993项无失败/错误且97条件跳过的证据适用。R1 T11–T14剩余门禁仍未全部完成，本地提交不等同正式发布。
+
+暂存检查只发现V22两方言历史迁移末尾空行提示，按不可修改历史迁移的约束保留原文；其他暂存空白和高置信敏感信息扫描通过。未修改真实ACL或重启8080，主提交后的无关脏文件哈希保持不变。后续问答或实施先读当前记录，旧HEAD369418b及“未提交”均为历史/验证基线，不应当作当前Git状态。
+
 ## 2026-10-28 R2实施交付与当前验收
 
-用户在R2文档交付后明确要求“继续后面的步骤”，已按mode=default实施T16–T18；当前R2增量完成，未提交、未推送、未合并、未部署。未重启用户8080服务，未修改用户reference/imports、YAML、.env、.gitignore、.workbuddy或无关脏改动。R1 T11–T14整体门禁仍未完成，不能用本次ACL通过替代原生窗口、真实Provider或原IMPORTED双库门禁。
+用户在R2文档交付后明确要求“继续后面的步骤”，已按mode=default实施T16–T18；当前R2增量完成，已本地提交（见文首提交记录）、未推送、未合并、未部署。未重启用户8080服务，未修改用户reference/imports、YAML、.env、.gitignore、.workbuddy或无关脏改动。R1 T11–T14整体门禁仍未完成，不能用本次ACL通过替代原生窗口、真实Provider或原IMPORTED双库门禁。
 
 ### 实际实现
 
@@ -45,7 +53,7 @@ Rocky目录`/tmp/cm-agent-workspace-acl-r2-20261028-8c21ef`，HEAD为`369418b3bd
 
 无新增API字段、schema、迁移或配置键；当前最高迁移仍V25，历史迁移未改。实际服务使用新代码前须重新加载Maven依赖/构建产物并重启Server；本次未替用户重启或部署。保留SYSTEM/Administrators不表示Everyone/Users/Authenticated Users的ALLOW也可保留；仍需部署者核对自己的专用目录权限，应用不会自动修复ACL。
 
-未修改现有浏览器设置，未重新操作用户聊天页或原生文件夹窗口；前端未变，不重跑JS/视觉套件。外部Provider未调用，其他Windows版本/语言与32位/ARM未实测，不将本机和Rocky测试扩展成这些环境通过。R1 T11–T14尚未完整收口；后续先核对其未验清单，不重复已完成T16–T18。未提交、未推送、未合并、未部署。
+未修改现有浏览器设置，未重新操作用户聊天页或原生文件夹窗口；前端未变，不重跑JS/视觉套件。外部Provider未调用，其他Windows版本/语言与32位/ARM未实测，不将本机和Rocky测试扩展成这些环境通过。R1 T11–T14尚未完整收口；后续先核对其未验清单，不重复已完成T16–T18。已本地提交（见文首提交记录）、未推送、未合并、未部署。
 
 ## 当前修订与授权边界
 
@@ -79,6 +87,7 @@ Rocky目录`/tmp/cm-agent-workspace-acl-r2-20261028-8c21ef`，HEAD为`369418b3bd
 
 ```text
 仓库：F:/java/cm-agent；工作包：2026-10-27 / workspace-directory-selection-implementation / R2；mode=default。
+当前代码已本地提交：cc441dd585f36fd165d2071232690109a64aed90；未推送、未合并、未部署，不重复提交或重做已完成实现。
 开始先读AGENTS.md、相关POM/README/生产说明与以下六份当前文档：
 F:/java/cm-agent/docs/superpowers/checklists/2026-10-27-workspace-directory-selection-implementation-checklist.md
 F:/java/cm-agent/docs/superpowers/prompts/2026-10-27-workspace-directory-selection-implementation-prompt.md
