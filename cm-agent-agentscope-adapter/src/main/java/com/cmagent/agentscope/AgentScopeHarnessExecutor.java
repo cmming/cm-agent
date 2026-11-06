@@ -23,6 +23,8 @@ import java.util.function.Consumer;
  */
 final class AgentScopeHarnessExecutor implements AgentScopeExecutor {
     @Override public boolean supportsWorkspaceContext() { return true; }
+    /** 项目保护与审批使用同一治理循环，能力声明必须跟随其真实权限开关，不能绕过默认拒绝。 */
+    @Override public boolean supportsLocalProjects() { return pipeline.supportsLocalProjects(); }
     /** 唯一治理执行循环，避免两个策略各自维护审批与严格失败映射。 */
     private final AgentScopeReActExecutor pipeline;
 

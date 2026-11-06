@@ -1,6 +1,7 @@
 package com.cmagent.core.domain;
 
 import com.cmagent.api.PrincipalRef;
+import com.cmagent.core.security.OperationAuthorizationSnapshot;
 
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -25,6 +26,8 @@ import java.util.UUID;
  * @param skillDependencies 按技能标识分组的固定依赖解析
  * @param cancellation 本运行独享的停止信号，由可信服务端创建，不接受客户端覆盖
  * @param workspaceContext 可选的可信只读参考快照；旧调用默认不携带，不授予文件或工具权限
+ * @param projectContext 可选的可信项目Run及受保护工具标识；与旧参考快照互斥
+ * @param localClientAuthorization 可选的本轮设备授权；旧调用默认没有本机客户端能力
  */
 public record AgentRunRequest(
         UUID runId,
@@ -38,8 +41,28 @@ public record AgentRunRequest(
         List<SkillVersionView> skills,
         Map<UUID, List<SkillDependencyResolution>> skillDependencies,
         com.cmagent.core.runtime.RunCancellation cancellation,
-        WorkspaceContextSnapshot workspaceContext
+        WorkspaceContextSnapshot workspaceContext,
+        ProjectRuntimeContext projectContext,
+        OperationAuthorizationSnapshot localClientAuthorization
 ) {
+    /** 保留加入本机客户端授权前的十三参数合同；旧运行不能隐式取得设备能力。 */
+    public AgentRunRequest(UUID runId, UUID tenantId, AgentDefinition agent, ModelConfig modelConfig,
+            PrincipalRef principal, String input, List<ToolDefinition> tools, UUID conversationId,
+            List<SkillVersionView> skills, Map<UUID, List<SkillDependencyResolution>> dependencies,
+            com.cmagent.core.runtime.RunCancellation cancellation, WorkspaceContextSnapshot workspaceContext,
+            ProjectRuntimeContext projectContext) {
+        this(runId, tenantId, agent, modelConfig, principal, input, tools, conversationId, skills,
+                dependencies, cancellation, workspaceContext, projectContext, null);
+    }
+
+    /** 保留原十二参数合同；旧资料运行不隐式获得本机项目工具。 */
+    public AgentRunRequest(UUID runId, UUID tenantId, AgentDefinition agent, ModelConfig modelConfig,
+            PrincipalRef principal, String input, List<ToolDefinition> tools, UUID conversationId,
+            List<SkillVersionView> skills, Map<UUID, List<SkillDependencyResolution>> dependencies,
+            com.cmagent.core.runtime.RunCancellation cancellation, WorkspaceContextSnapshot workspaceContext) {
+        this(runId, tenantId, agent, modelConfig, principal, input, tools, conversationId, skills, dependencies,
+                cancellation, workspaceContext, null);
+    }
     /** 保留原十一参数调用；宿主未显式准备资料时不增加输入或状态。 */
     public AgentRunRequest(UUID runId, UUID tenantId, AgentDefinition agent, ModelConfig modelConfig,
             PrincipalRef principal, String input, List<ToolDefinition> tools, UUID conversationId,
@@ -99,6 +122,27 @@ public record AgentRunRequest(
             throw new IllegalArgumentException("参考快照不属于当前可信运行主体或 Agent");
         }
         tools = List.copyOf(Objects.requireNonNull(tools, "tools 不能为空"));
+        if (projectContext != null) {
+            var fixed = projectContext.binding();
+            if (workspaceContext != null || !tenantId.equals(fixed.tenantId()) || !runId.equals(fixed.runId())
+                    || !agent.id().equals(fixed.agentId()) || !Objects.equals(conversationId, fixed.conversationId())
+                    || !principal.principalId().equals(fixed.ownerId())
+                    || !tools.stream().map(ToolDefinition::id).collect(java.util.stream.Collectors.toSet())
+                        .containsAll(projectContext.protectedToolIds()))
+                throw new IllegalArgumentException("项目上下文不属于当前可信运行或包含未授权工具");
+        }
+        if (localClientAuthorization != null) {
+            var authorization = localClientAuthorization;
+            // 授权只能绑定本次已由可信运行编排创建的会话和运行，不能通过客户端请求体注入。
+            if (!tenantId.equals(authorization.tenantId())
+                    || !principal.principalId().equals(authorization.principalId())
+                    || !runId.equals(authorization.runId())
+                    || !agent.id().equals(authorization.agentId())
+                    || !authorization.conversationId().equals(conversationId)
+                    || projectContext != null || workspaceContext != null) {
+                throw new IllegalArgumentException("本机客户端授权不属于当前运行或范围互斥");
+            }
+        }
         skills = List.copyOf(Objects.requireNonNull(skills, "skills 不能为空"));
         skillDependencies = freezeDependencies(skillDependencies);
         if (!tenantId.equals(agent.tenantId())) {

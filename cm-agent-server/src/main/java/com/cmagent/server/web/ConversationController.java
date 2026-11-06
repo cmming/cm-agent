@@ -10,6 +10,7 @@ import com.cmagent.core.domain.ConversationPageRequest;
 import com.cmagent.core.domain.ConversationRunResult;
 import com.cmagent.core.domain.MessagePageRequest;
 import com.cmagent.core.security.AuthorizationDecision;
+import com.cmagent.core.security.OperationAuthorizationMode;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.audit.AuditPersistenceException;
@@ -173,7 +174,8 @@ public class ConversationController {
     ) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:run", "CONVERSATION", conversationId.toString());
-        return conversationService.send(principal, agentId, conversationId, request.input());
+        return conversationService.send(principal, agentId, conversationId, request.input(),
+                request.localClient(), request.projectAuthorizationMode());
     }
 
     /**
@@ -200,6 +202,29 @@ public class ConversationController {
         controlDiagnostic(request, principal, agentId, conversationId, runId);
         authorize(principal, "agent:read", "RUN", runId.toString());
         return conversationService.run(principal, agentId, conversationId, runId);
+    }
+
+    /**
+     * 返回项目 Run 固定的授权方式，只用于刷新后的显示恢复。
+     *
+     * <p>授权方式来自服务端加密 Run 快照，客户端不能通过该只读接口修改；普通 Run 或已清理快照
+     * 没有项目模式，统一返回 404。</p>
+     */
+    @GetMapping("/{conversationId}/runs/{runId}/authorization-mode")
+    public org.springframework.http.ResponseEntity<ProjectRunAuthorization> projectAuthorizationMode(
+            @PathVariable("agentId") UUID agentId, @PathVariable("conversationId") UUID conversationId,
+            @PathVariable("runId") UUID runId, Authentication authentication, HttpServletRequest request) {
+        PrincipalRef principal = principal(authentication);
+        controlDiagnostic(request, principal, agentId, conversationId, runId);
+        authorize(principal, "agent:read", "RUN", runId.toString());
+        OperationAuthorizationMode mode = conversationService.projectAuthorizationMode(
+                principal, agentId, conversationId, runId);
+        if (mode == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "项目运行授权方式不存在");
+        }
+        return org.springframework.http.ResponseEntity.ok()
+                .cacheControl(org.springframework.http.CacheControl.noStore())
+                .body(new ProjectRunAuthorization(mode));
     }
 
     /** 恢复刷新或 started 丢失后的活动运行，空结果表示当前会话没有活动运行。 */
@@ -242,9 +267,12 @@ public class ConversationController {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:run", "CONVERSATION", conversationId.toString());
         String errorId = RequestCorrelationFilter.errorIdOf(servletRequest);
+        // SSE工作线程不会继承原始Servlet连接上下文，本机项目必须在提交响应前检查真实来源。
+        conversationService.verifyProjectRequest(principal, agentId, conversationId);
         SseEmitter emitter = new SseEmitter(0L);
         streamExecutor.execute(() -> executeStream(
-                emitter, principal, agentId, conversationId, request.input(), errorId));
+                emitter, principal, agentId, conversationId, request.input(), request.localClient(),
+                request.projectAuthorizationMode(), errorId));
         return emitter;
     }
 
@@ -257,6 +285,8 @@ public class ConversationController {
             UUID agentId,
             UUID conversationId,
             String input,
+            com.cmagent.server.runtime.LocalClientRunSelection localClient,
+            com.cmagent.core.security.OperationAuthorizationMode projectAuthorizationMode,
             String errorId
     ) {
         AtomicReference<String> replyId = new AtomicReference<>();
@@ -266,6 +296,8 @@ public class ConversationController {
                     agentId,
                     conversationId,
                     input,
+                    localClient,
+                    projectAuthorizationMode,
                     started -> send(emitter, "started", started),
                     delta -> sendDelta(emitter, replyId, delta),
                     progress -> send(emitter, "progress", progress));
@@ -462,6 +494,8 @@ public class ConversationController {
         ApiErrorCode code;
         String message;
         if(failure instanceof com.cmagent.server.runtime.DeferredWorkspaceFailure deferred)failure=deferred.finish();
+        if(failure instanceof com.cmagent.server.runtime.LocalProjectAccessException projectFailure)
+            return new ConversationStreamError(ApiErrorCode.valueOf(projectFailure.errorCode()),projectFailure.getMessage(),projectFailure.errorId(),conversationId);
         if (failure instanceof com.cmagent.core.runtime.WorkspaceContextException workspaceFailure) {
             if(workspaceFailure.code()==ApiErrorCode.WORKSPACE_RESOURCE_NOT_FOUND)
                 return new ConversationStreamError(ApiErrorCode.CONVERSATION_NOT_FOUND,"会话或 Agent 不存在",workspaceFailure.errorId(),conversationId);
@@ -594,8 +628,20 @@ public class ConversationController {
      *
      * <p>tenant、角色、序号、消息标识和 Run 关联均由服务端生成，不能通过请求体覆盖可信会话边界。</p>
      */
-    public record SendMessageRequest(@NotBlank String input) {
+    public record SendMessageRequest(@NotBlank String input,
+                                     com.cmagent.server.runtime.LocalClientRunSelection localClient,
+                                     com.cmagent.core.security.OperationAuthorizationMode projectAuthorizationMode) {
+        /** 保留旧 input-only 请求，未携带设备选择即没有本机客户端能力。 */
+        public SendMessageRequest(String input) { this(input, null, null); }
+
+        /** 兼容设备授权引入后的请求构造；项目模式缺省由服务端按高风险询问处理。 */
+        public SendMessageRequest(String input, com.cmagent.server.runtime.LocalClientRunSelection localClient) {
+            this(input, localClient, null);
+        }
     }
+
+    /** @param mode 当前项目 Run 不可变授权方式，只读返回给控制台 */
+    public record ProjectRunAuthorization(OperationAuthorizationMode mode) {}
 
     /** 使用不透明复合游标返回的会话列表页。 */
     public record ConversationPage(List<Conversation> items, String nextCursor) {

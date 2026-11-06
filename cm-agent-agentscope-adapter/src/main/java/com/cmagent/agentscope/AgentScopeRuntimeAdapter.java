@@ -39,6 +39,8 @@ import java.util.function.Consumer;
  */
 public class AgentScopeRuntimeAdapter implements AgentRuntime {
     @Override public boolean supportsWorkspaceContext() { return executor.supportsWorkspaceContext(); }
+    /** 实际执行策略必须显式承诺，不能仅因为配置使用真实Provider就推断支持项目。 */
+    @Override public boolean supportsLocalProjects() { return executor.supportsLocalProjects(); }
     @Override
     public boolean supportsCancellation() {
         return executor.supportsCancellation();

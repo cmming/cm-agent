@@ -52,6 +52,12 @@ public class AgentScopeToolBridge extends ToolBase {
 
     private static final String UNEXPECTED_ERROR_MESSAGE = "工具调用失败";
     private static final int DISPLAY_PAYLOAD_MAX_CHARACTERS = 12_000;
+    /** 只展示受信项目调用元数据，不能从模型参数或名称前缀推断保护范围。 */
+    static final String PROTECTED_INPUT_SUMMARY = "项目工具参数已保护，详细内容请在工作区预览";
+    /** 旧网关结果没有独立摘要时失败关闭，不能为兼容而把正文复制进普通记录。 */
+    static final String PROTECTED_OUTPUT_SUMMARY = "项目工具结果已交付，请在工作区查看详情";
+    /** 旧网关失败未声明保护合同，错误文本也可能夹带终端或文件正文。 */
+    static final String PROTECTED_FAILURE_SUMMARY = "受保护的项目工具未完成，请核对操作状态";
 
     private final AgentRunRequest request;
     private final ToolDefinition tool;
@@ -219,7 +225,7 @@ public class AgentScopeToolBridge extends ToolBase {
         String inputSummary = "输入无法序列化";
         try {
             String inputJson = objectMapper.writeValueAsString(input);
-            inputSummary = displayPayload(inputJson);
+            inputSummary = protectedInput() ? PROTECTED_INPUT_SUMMARY : displayPayload(inputJson);
             progressConsumer.accept(AgentProgressEvent.toolCallStarted(
                     null, toolCallId, tool.name(), inputSummary));
             progressConsumer.accept(AgentProgressEvent.toolCallCompleted(null, toolCallId, tool.name()));
@@ -242,7 +248,8 @@ public class AgentScopeToolBridge extends ToolBase {
                 completedToolCallIds.add(toolCallId);
                 log.info("工具调用成功。runId={}, tenantId={}, toolId={}, toolName={}, toolCallId={}, durationMs={}",
                         request.runId(), request.tenantId(), tool.id(), tool.name(), toolCallId, duration.toMillis());
-                String outputSummary = displayPayload(result.output());
+                String outputSummary = displayPayload(protectedInput() && !result.protectedPayload()
+                        ? PROTECTED_OUTPUT_SUMMARY : result.displayOutput());
                 records.add(new ToolCallRecord(
                         tool.id(), toolCallId, tool.name(), inputSummary, outputSummary, RunStatus.SUCCEEDED,
                         duration, true, ""));
@@ -253,7 +260,8 @@ public class AgentScopeToolBridge extends ToolBase {
 
             RunStatus status = result.authorized() ? RunStatus.FAILED : RunStatus.DENIED;
             completedToolCallIds.add(toolCallId);
-            String errorMessage = displayPayload(result.errorMessage());
+            String errorMessage = displayPayload(protectedInput() && !result.protectedPayload()
+                    ? PROTECTED_FAILURE_SUMMARY : result.errorMessage());
             records.add(new ToolCallRecord(
                     tool.id(), toolCallId, tool.name(), inputSummary, "", status,
                     duration, result.authorized(), errorMessage));
@@ -266,7 +274,7 @@ public class AgentScopeToolBridge extends ToolBase {
                         request.runId(), request.tenantId(), tool.id(), tool.name(), toolCallId);
             } else {
                 log.warn("工具调用失败。runId={}, tenantId={}, toolId={}, toolName={}, toolCallId={}, durationMs={}, reason={}",
-                        request.runId(), request.tenantId(), tool.id(), tool.name(), toolCallId, duration.toMillis(), result.errorMessage());
+                        request.runId(), request.tenantId(), tool.id(), tool.name(), toolCallId, duration.toMillis(), errorMessage);
             }
             return ToolResultBlock.error(result.errorMessage()).withState(ToolResultState.ERROR);
         } catch (AgentScopeRunGate.RunAbortedException aborted) {
@@ -293,6 +301,11 @@ public class AgentScopeToolBridge extends ToolBase {
                     exception.getClass().getName(), safeExceptionStack(exception));
             return ToolResultBlock.error(UNEXPECTED_ERROR_MESSAGE).withState(ToolResultState.ERROR);
         }
+    }
+
+    /** 精确工具ID集合由宿主固定且AgentRunRequest校验归属，模型自报名称不能扩大或关闭保护。 */
+    private boolean protectedInput() {
+        return request.projectContext() != null && request.projectContext().protectedToolIds().contains(tool.id());
     }
 
     /**

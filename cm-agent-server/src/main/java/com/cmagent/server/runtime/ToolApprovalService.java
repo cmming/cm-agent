@@ -50,6 +50,13 @@ import java.util.function.Supplier;
 /** 编排审批创建、原子决定、Run 恢复、会话消息和安全视图。 */
 @Service
 public class ToolApprovalService {
+    /** 审批恢复终态需要撤销仍在数据库中的单轮设备授权；未启用时不产生额外行为。 */
+    private LocalClientAuthorizationService localClients;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureLocalClients(
+            org.springframework.beans.factory.ObjectProvider<LocalClientAuthorizationService> provider) {
+        localClients = provider.getIfAvailable();
+    }
     /** 服务入口独立复核IMPORTED owner，不能依赖Controller调用顺序或前端隐藏。 */
     private WorkspaceImportAccess importAccess;
     @org.springframework.beans.factory.annotation.Autowired
@@ -71,12 +78,20 @@ public class ToolApprovalService {
             }
             if (transactionTemplate != null) auditCancellation(principal, pending);
         }
+        runExecutionService.cleanupEphemeralAuthorization(principal, run);
         deleteCheckpoint(principal, run);
+        revokeLocalClientGrant(principal, run.id());
     }
 
     private void auditCancellation(PrincipalRef principal, ToolApprovalRequest pending) {
         auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_CANCEL",
                 "TOOL_APPROVAL", pending.id().toString(), "CANCELLED", "运行已停止，待审批操作已取消");
+    }
+
+    private void revokeLocalClientGrant(PrincipalRef principal, UUID runId) {
+        if (localClients == null) return;
+        localClients.active(principal, runId).ifPresent(grant ->
+                localClients.revoke(principal, grant.authorizationId()));
     }
     private static final int PENDING_LIMIT = 50;
     private static final long POLICY_VERSION = 1L;
@@ -386,6 +401,8 @@ public class ToolApprovalService {
                         ? new AgentRunResult(waitingRun.id(), RunStatus.CANCELLED, "", List.of(), waitingRun.startedAt(), now, "")
                         : denied;
                 RunRecord row = runPersistenceService.complete(principal, waitingRun, result, List.of());
+                revokeLocalClientGrant(principal, waitingRun.id());
+                runExecutionService.cleanupEphemeralAuthorization(principal, waitingRun);
                 deleteCheckpoint(principal, waitingRun);
                 runExecutionService.controls().release(waitingRun.id());
                 return row;
@@ -402,7 +419,10 @@ public class ToolApprovalService {
                         principal, agentId, waitingRun, "", conversationId, new RuntimeApprovalDecisions(runtimeDecisions),
                         deltaConsumer, progressConsumer, finish -> inTransaction(() -> {
                             AgentRuntimeResult result = finish.get();
-                            if (result.run().status() == RunStatus.CANCELLED) deleteCheckpoint(principal, waitingRun);
+                            if (result.run().status() == RunStatus.CANCELLED) {
+                                runExecutionService.cleanupEphemeralAuthorization(principal, waitingRun);
+                                deleteCheckpoint(principal, waitingRun);
+                            }
                             if (result.run().status() == RunStatus.WAITING_APPROVAL) {
                                 create(principal, agentId, conversationId, waitingRun.id(), result.pendingApproval());
                             } else if (result.assistantMessage() != null) {
@@ -410,6 +430,9 @@ public class ToolApprovalService {
                                         UUID.randomUUID(), principal.tenantId(), conversationId, MessageRole.ASSISTANT,
                                         result.assistantMessage().senderName(), result.assistantMessage().contentBlocks(),
                                         waitingRun.id(), clock.instant()));
+                            }
+                            if (!result.run().status().isActive()) {
+                                revokeLocalClientGrant(principal, waitingRun.id());
                             }
                             return result;
                         }));
@@ -496,6 +519,7 @@ public class ToolApprovalService {
                     List.of());
             runtimeResult = new AgentRuntimeResult(new AgentRunResult(completed.id(), completed.status(),
                     completed.output(), List.of(), completed.startedAt(), completed.finishedAt(), completed.errorMessage()), null);
+            runExecutionService.cleanupEphemeralAuthorization(principal, waitingRun);
             deleteCheckpoint(principal, waitingRun);
         } else {
             List<RuntimeApprovalDecisions.Item> runtimeDecisions = current.items().stream()
@@ -624,6 +648,7 @@ public class ToolApprovalService {
                         }
                         if (runRepository.expireWaitingApproval(run, cutoff)) {
                             // 状态槽属于运行发起人，系统审计身份不能替换状态槽中的 principalId。
+                            runExecutionService.cleanupEphemeralAuthorization(actor, run);
                             deleteCheckpoint(actor, run);
                             expireTrial(actor, request, run, cutoff);
                             auditAppender.append(request.tenantId(), actor.principalId(), "AGENT_RUN", "RUN",
@@ -679,6 +704,7 @@ public class ToolApprovalService {
                 throw new IllegalArgumentException("失败运行不属于当前发起主体");
             }
             if (current.status().isActive()) runPersistenceService.completeFailure(principal, current);
+            runExecutionService.cleanupEphemeralAuthorization(principal, current);
             deleteCheckpoint(principal, current);
             return true;
         }));

@@ -3,6 +3,7 @@ package com.cmagent.agentscope;
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.*;
 import com.cmagent.core.runtime.*;
+import com.cmagent.core.security.*;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -28,6 +29,96 @@ class AgentScopeLiveProviderAcceptanceTest {
     static Stream<Arguments> modesAndProviders() {
         return Arrays.stream(AgentScopeExecutionMode.values()).flatMap(mode ->
                 Arrays.stream(ModelProviderType.values()).map(provider -> Arguments.of(mode, provider)));
+    }
+
+    static Stream<Arguments> authorizationModes() {
+        return Arrays.stream(AgentScopeExecutionMode.values()).flatMap(execution ->
+                Arrays.stream(OperationAuthorizationMode.values()).map(mode -> Arguments.of(execution, mode)));
+    }
+
+    static Stream<Arguments> projectAuthorizationModes() {
+        return Arrays.stream(AgentScopeExecutionMode.values()).flatMap(execution ->
+                Arrays.stream(OperationAuthorizationMode.values()).map(mode -> Arguments.of(execution, mode)));
+    }
+
+    @ParameterizedTest @MethodSource("authorizationModes")
+    void 真实模型的本机工具遵循三种确认方式并可恢复(
+            AgentScopeExecutionMode execution, OperationAuthorizationMode mode) {
+        var original = request(ModelProviderType.OPENAI_COMPATIBLE, List.of(),
+                "必须调用一次 local_client_command 工具取得本轮回执，然后原样输出回执，不要猜测回执。");
+        UUID tenant = original.tenantId(), conversation = UUID.randomUUID();
+        UUID toolId = UUID.nameUUIDFromBytes(("cm-agent-local-client-tool:" + tenant + ":COMMAND")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var tool = new ToolDefinition(toolId, tenant, "local_client_command", "获取本轮随机回执，只调用一次，无参数。",
+                ToolType.LOCAL, "{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}",
+                ToolRiskLevel.HIGH, true, "cm-agent-local://command", "system", "system");
+        Instant now = Instant.now();
+        var grant = new OperationAuthorizationSnapshot(UUID.randomUUID(), tenant, original.principal().principalId(),
+                original.agentId(), conversation, original.runId(), UUID.randomUUID(), mode,
+                Set.of(OperationCategory.COMMAND), 1, now, now.plusSeconds(300));
+        var request = new AgentRunRequest(original.runId(), tenant, original.agent(), original.modelConfig(),
+                original.principal(), original.input(), List.of(tool), conversation, List.of(), Map.of(),
+                new RunCancellation(), null, null, grant);
+        String receipt = "验收回执" + UUID.randomUUID();
+        var calls = new AtomicInteger();
+        var runtime = runtime(execution, call -> { calls.incrementAndGet(); return ToolInvocationResult.succeeded(receipt); });
+        var result = runtime.runStructured(request, ignored -> {}, ignored -> {});
+        if (mode == OperationAuthorizationMode.FULL_ACCESS) {
+            assertEquals(RunStatus.SUCCEEDED, result.run().status(), "自动方式未成功");
+        } else {
+            assertEquals(RunStatus.WAITING_APPROVAL, result.run().status(), "询问方式未暂停");
+            assertEquals(0, calls.get(), "审批前不得执行工具");
+            var pending = result.pendingApproval().items();
+            assertEquals(1, pending.size(), "待审批调用数量不正确");
+            var item = pending.getFirst();
+            var decisions = new RuntimeApprovalDecisions(List.of(new RuntimeApprovalDecisions.Item(
+                    item.toolCallId(), item.toolId(), item.inputHash(), ToolApprovalDecision.APPROVE)));
+            result = runtime.resumeStructured(request, decisions, ignored -> {}, ignored -> {});
+            assertEquals(RunStatus.SUCCEEDED, result.run().status(), "审批恢复未成功");
+        }
+        assertEquals(1, calls.get(), "工具调用次数不正确");
+        // 模型可能改写回执；本合同关注暂停、恢复和网关调用次数，原样输出由独立合同验证。
+        assertFalse(result.run().output().isBlank(), "模型未返回最终回答");
+    }
+
+    @ParameterizedTest @MethodSource("projectAuthorizationModes")
+    void 真实模型的项目工具遵循三种确认方式并可恢复(
+            AgentScopeExecutionMode execution, OperationAuthorizationMode mode) {
+        var original = request(ModelProviderType.OPENAI_COMPATIBLE, List.of(),
+                "必须调用一次 project_run_command 工具取得本轮回执，然后输出最终回答，不要猜测回执。");
+        UUID tenant = original.tenantId(), project = UUID.randomUUID(), conversation = UUID.randomUUID();
+        UUID toolId = UUID.nameUUIDFromBytes(("cm-agent/local-project/v1/" + tenant + "/RUN_COMMAND")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var tool = new ToolDefinition(toolId, tenant, "project_run_command",
+                "获取本轮项目验收随机回执，只调用一次，无参数。", ToolType.LOCAL,
+                "{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}",
+                ToolRiskLevel.HIGH, true, "local-project:RUN_COMMAND", "system", "system");
+        Instant now = Instant.now();
+        var binding = new LocalProjectBinding(tenant, original.principal().principalId(), project,
+                original.agentId(), conversation, original.runId(), UUID.randomUUID(), "0".repeat(64),
+                "test-node", 1, now);
+        var projectContext = new ProjectRuntimeContext(binding, Set.of(toolId), mode);
+        var request = new AgentRunRequest(original.runId(), tenant, original.agent(), original.modelConfig(),
+                original.principal(), original.input(), List.of(tool), conversation, List.of(), Map.of(),
+                new RunCancellation(), null, projectContext, null);
+        String receipt = "项目验收回执" + UUID.randomUUID();
+        var calls = new AtomicInteger();
+        var runtime = runtime(execution, call -> { calls.incrementAndGet(); return ToolInvocationResult.succeeded(receipt); });
+
+        var result = runtime.runStructured(request, ignored -> {}, ignored -> {});
+        if (mode == OperationAuthorizationMode.FULL_ACCESS) {
+            assertEquals(RunStatus.SUCCEEDED, result.run().status(), "项目自动方式未成功");
+        } else {
+            assertEquals(RunStatus.WAITING_APPROVAL, result.run().status(), "项目询问方式未暂停");
+            assertEquals(0, calls.get(), "项目审批前不得执行工具");
+            var item = result.pendingApproval().items().getFirst();
+            var decisions = new RuntimeApprovalDecisions(List.of(new RuntimeApprovalDecisions.Item(
+                    item.toolCallId(), item.toolId(), item.inputHash(), ToolApprovalDecision.APPROVE)));
+            result = runtime.resumeStructured(request, decisions, ignored -> {}, ignored -> {});
+            assertEquals(RunStatus.SUCCEEDED, result.run().status(), "项目审批恢复未成功");
+        }
+        assertEquals(1, calls.get(), "项目工具调用次数不正确");
+        assertFalse(result.run().output().isBlank(), "模型未返回最终回答");
     }
 
     @ParameterizedTest @MethodSource("modesAndProviders")

@@ -50,6 +50,7 @@ class ConsoleResourceTest {
         String chat = resource("META-INF/resources/console/v2/chat.html");
         String runs = resource("META-INF/resources/console/v2/runs.html");
         String audit = resource("META-INF/resources/console/v2/audit.html");
+        String localClient = resource("META-INF/resources/console/v2/local-client.html");
         String app = resource("META-INF/resources/assets/app.js");
 
         assertThat(login)
@@ -102,15 +103,21 @@ class ConsoleResourceTest {
         assertThat(audit)
                 .contains("data-page=\"auditPage\"", "id=\"auditPage\"", "id=\"auditList\"")
                 .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"");
+        assertThat(localClient)
+                .contains("data-page=\"localClientPage\"", "id=\"localClientPage\"",
+                        "id=\"localClientPairForm\"", "id=\"localClientDeviceList\"",
+                        "id=\"localClientDeviceDetail\"", "每轮 Run", "不会自动重放")
+                .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
 
-        for (String page : new String[]{overview, agents, modelConfigs, tools, skills, chat, runs, audit}) {
+        for (String page : new String[]{overview, agents, modelConfigs, tools, skills, chat, runs, audit, localClient}) {
             assertThat(page.indexOf("href=\"/console/v2/model-configs.html\""))
                     .isLessThan(page.indexOf("href=\"/console/v2/agents.html\""));
         }
         assertThat(app).contains(
                 "loadModelConfigs(undefined, session)", "function updateOverviewOnboarding", "overviewPrimaryAction",
                 "function renderToolDetail", "function showToolWorkspace", "startToolCreateBtn",
-                "FOLLOW_PUBLISHED", "固定到历史发布版本", "expectedRevision"
+                "FOLLOW_PUBLISHED", "固定到历史发布版本", "expectedRevision",
+                "loadLocalClientDevices", "confirmLocalClientPair", "selectedLocalClient"
         );
     }
 
@@ -121,7 +128,7 @@ class ConsoleResourceTest {
     void v2跨页会话不在浏览器脚本中存储令牌() throws IOException {
         String app = resource("META-INF/resources/assets/app.js");
         String[] pages = {
-                "login.html", "overview.html", "agents.html", "model-configs.html", "tools.html", "skills.html", "chat.html", "runs.html", "audit.html"
+                "login.html", "overview.html", "agents.html", "model-configs.html", "tools.html", "skills.html", "projects.html", "local-client.html", "chat.html", "runs.html", "audit.html"
         };
 
         assertThat(app)
@@ -132,9 +139,9 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.38", "/assets/console-core.js?v=2.0.19", "/assets/styles.css?v=2.0.17", "skill-artifacts.js?v=1.0.2", "skill-artifacts.css?v=1.0.0")
+                    .contains("/assets/app.js?v=2.0.42", "/assets/console-core.js?v=2.0.19", "/assets/styles.css?v=2.0.17", "skill-artifacts.js?v=1.0.2", "skill-artifacts.css?v=1.0.0")
                     .contains("/console/v2/assets/sandbox-endpoints.js?v=1.1.1", "/console/v2/assets/sandbox-endpoints.css?v=1.0.0")
-                    .contains("/console/v2/assets/workbench.css?v=1.0.2")
+                    .contains("/console/v2/assets/workbench.css?v=1.0.3")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");
         }
     }

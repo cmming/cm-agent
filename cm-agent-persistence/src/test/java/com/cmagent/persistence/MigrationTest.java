@@ -56,6 +56,9 @@ class MigrationTest {
             "runtime_checkpoints",
             "runtime_execution_modes", "conversation_workspace_bindings", "run_workspace_selections",
             "workspace_imports", "workspace_import_files", "workspace_import_leases",
+            "local_project_roots", "local_projects", "local_project_conversations", "local_project_runs", "local_project_operations",
+            "local_client_devices", "local_client_challenges", "local_client_run_grants",
+            "local_client_pairing_sessions", "local_client_operations",
             "skill_definitions",
             "skill_versions",
             "skill_resources",
@@ -135,15 +138,21 @@ class MigrationTest {
         assertThat(importStage).isEqualTo(1);
         int requestStage = CmAgentFlyway.configure(dataSource).target("24").load().migrate().migrationsExecuted;
         assertThat(requestStage).isEqualTo(1);
-        int witnessStage=CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
+        int witnessStage=CmAgentFlyway.configure(dataSource).target("25").load().migrate().migrationsExecuted;
         assertThat(witnessStage).isEqualTo(1);
+        int projectStage=CmAgentFlyway.configure(dataSource).target("26").load().migrate().migrationsExecuted;
+        assertThat(projectStage).isEqualTo(1);
+        int localClientStage=CmAgentFlyway.configure(dataSource).target("27").load().migrate().migrationsExecuted;
+        assertThat(localClientStage).isEqualTo(1);
+        int pairingOperationStage=CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
+        assertThat(pairingOperationStage).isEqualTo(1);
 
         assertThat(firstStage).isEqualTo(12);
         assertThat(secondStage).isEqualTo(4);
         assertThat(passwordStage).isEqualTo(1);
         assertThat(JdbcClient.create(dataSource).sql("SELECT ssh_auth_type FROM skill_sandbox_endpoints WHERE id='90000000-0000-0000-0000-000000000020'")
                 .query(String.class).single()).isEqualTo("KEY");
-        assertSchemaContract(firstStage + secondStage + passwordStage + descriptionStage + checkpointStage + importStage + requestStage + witnessStage,
+        assertSchemaContract(firstStage + secondStage + passwordStage + descriptionStage + checkpointStage + importStage + requestStage + witnessStage + projectStage + localClientStage + pairingOperationStage,
                 jdbcUrl, username, password);
         assertThat(JdbcClient.create(dataSource).sql("""
                         SELECT skills_json FROM run_skill_snapshots
@@ -434,7 +443,7 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(25);
+        assertThat(migrationsExecuted).isEqualTo(28);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);

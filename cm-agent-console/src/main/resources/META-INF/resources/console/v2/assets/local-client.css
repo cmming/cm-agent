@@ -1,0 +1,360 @@
+body[data-page="localClientPage"] {
+    --local-client-ink: #172238;
+    --local-client-muted: #59697f;
+    --local-client-border: #dbe2ec;
+    --local-client-soft: #f7f9fc;
+}
+
+body[data-page="localClientPage"] .local-client-layout {
+    display: grid;
+    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+}
+
+body[data-page="localClientPage"] .local-client-pairing-panel {
+    position: sticky;
+    top: 82px;
+}
+
+body[data-page="localClientPage"] .panel-heading p {
+    margin: 5px 0 0;
+    color: var(--local-client-muted);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.65;
+}
+
+body[data-page="localClientPage"] .local-client-pair-form {
+    display: grid;
+    gap: 12px;
+}
+
+body[data-page="localClientPage"] .local-client-pair-form label {
+    color: var(--local-client-ink);
+    font-size: 13px;
+    font-weight: 650;
+}
+
+body[data-page="localClientPage"] .local-client-pair-form textarea {
+    min-height: 210px;
+    resize: vertical;
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+body[data-page="localClientPage"] .local-client-pair-preview {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px;
+    padding: 12px;
+    border: 1px solid #c8d8f2;
+    border-radius: 9px;
+    background: #f2f6ff;
+}
+
+body[data-page="localClientPage"] .local-client-pair-preview span {
+    grid-column: 1 / -1;
+    color: var(--local-client-muted);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+body[data-page="localClientPage"] .local-client-pair-preview strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: 14px;
+}
+
+body[data-page="localClientPage"] .local-client-pair-preview small {
+    color: var(--local-client-muted);
+}
+
+body[data-page="localClientPage"] .local-client-risk-note {
+    margin: 0;
+    padding: 11px 12px;
+    border: 1px solid #ecd9b8;
+    border-radius: 9px;
+    background: #fff9ed;
+    color: #724b0b;
+    font-size: 12px;
+    line-height: 1.7;
+}
+
+body[data-page="localClientPage"] .local-client-device-workspace {
+    display: grid;
+    grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
+    gap: 20px;
+    min-width: 0;
+}
+
+body[data-page="localClientPage"] .local-client-device-list-panel,
+body[data-page="localClientPage"] .local-client-device-detail-panel {
+    min-height: 420px;
+}
+
+body[data-page="localClientPage"] #localClientDeviceList .resource-item {
+    border-color: transparent;
+    background: transparent;
+}
+
+body[data-page="localClientPage"] #localClientDeviceList .resource-item:hover {
+    border-color: var(--local-client-border);
+    background: var(--local-client-soft);
+}
+
+body[data-page="localClientPage"] #localClientDeviceList .resource-item.active {
+    border-color: #a9c4ef;
+    background: #eef4ff;
+    box-shadow: none;
+}
+
+body[data-page="localClientPage"] .local-client-device-row {
+    display: grid;
+    gap: 4px;
+    width: 100%;
+    padding: 12px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+}
+
+body[data-page="localClientPage"] .local-client-device-row strong {
+    overflow-wrap: anywhere;
+}
+
+body[data-page="localClientPage"] .local-client-device-row span {
+    color: var(--local-client-muted);
+    font-size: 12px;
+}
+
+body[data-page="localClientPage"] .local-client-detail-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #edf0f5;
+}
+
+body[data-page="localClientPage"] .local-client-detail-heading h2 {
+    margin: 0;
+    font-size: 20px;
+    overflow-wrap: anywhere;
+}
+
+body[data-page="localClientPage"] .local-client-detail-heading p {
+    margin: 4px 0 0;
+    color: var(--local-client-muted);
+    font-size: 12px;
+}
+
+body[data-page="localClientPage"] .local-client-detail-list {
+    display: grid;
+    grid-template-columns: 100px minmax(0, 1fr);
+    margin: 16px 0 22px;
+}
+
+body[data-page="localClientPage"] .local-client-detail-list dt,
+body[data-page="localClientPage"] .local-client-detail-list dd {
+    margin: 0;
+    padding: 10px 0;
+    border-bottom: 1px solid #edf0f5;
+    line-height: 1.65;
+}
+
+body[data-page="localClientPage"] .local-client-detail-list dt {
+    color: var(--local-client-muted);
+    font-size: 12px;
+}
+
+body[data-page="localClientPage"] .local-client-detail-list dd {
+    overflow-wrap: anywhere;
+    font-size: 13px;
+}
+
+body[data-page="localClientPage"] .local-client-revoke-zone {
+    padding-top: 16px;
+    border-top: 1px solid var(--local-client-border);
+}
+
+body[data-page="localClientPage"] .local-client-revoke-zone p {
+    margin: 0 0 10px;
+    color: var(--local-client-muted);
+    font-size: 12px;
+    line-height: 1.7;
+}
+
+body[data-page="localClientPage"] .local-client-scope {
+    margin-top: 20px;
+    padding: 22px 24px;
+    border: 1px solid var(--local-client-border);
+    border-radius: 12px;
+    background: #fff;
+}
+
+body[data-page="localClientPage"] .local-client-scope h2 {
+    margin: 0 0 18px;
+    font-size: 16px;
+}
+
+body[data-page="localClientPage"] .local-client-scope dl {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin: 0;
+}
+
+body[data-page="localClientPage"] .local-client-scope dl > div {
+    min-width: 0;
+    padding: 0 18px;
+    border-left: 1px solid #edf0f5;
+}
+
+body[data-page="localClientPage"] .local-client-scope dl > div:first-child {
+    padding-left: 0;
+    border-left: 0;
+}
+
+body[data-page="localClientPage"] .local-client-scope dt {
+    margin-bottom: 6px;
+    color: var(--local-client-ink);
+    font-size: 13px;
+    font-weight: 650;
+}
+
+body[data-page="localClientPage"] .local-client-scope dd {
+    margin: 0;
+    color: var(--local-client-muted);
+    font-size: 12px;
+    line-height: 1.7;
+}
+
+.chat-local-client-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 18px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+}
+
+.chat-local-client-bar > div {
+    flex: 1 1 260px;
+    min-width: 0;
+}
+
+.chat-local-client-bar p {
+    margin: 3px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.chat-local-client-bar select {
+    min-width: 130px;
+    max-width: 210px;
+}
+
+.chat-local-client-categories {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.chat-local-client-categories label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+
+.chat-local-client-categories input {
+    width: auto;
+    accent-color: var(--accent);
+}
+
+@media (max-width: 1400px) {
+    body[data-page="localClientPage"] .local-client-layout {
+        grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+    }
+    body[data-page="localClientPage"] .local-client-device-workspace {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    body[data-page="localClientPage"] .local-client-device-list-panel {
+        min-height: 0;
+    }
+}
+
+@media (max-width: 1080px) {
+    body[data-page="localClientPage"] .local-client-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    body[data-page="localClientPage"] .local-client-pairing-panel {
+        position: static;
+    }
+}
+
+@media (max-width: 900px) {
+    body[data-page="localClientPage"] .local-client-device-workspace {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    body[data-page="localClientPage"] .local-client-scope dl {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        row-gap: 18px;
+    }
+    body[data-page="localClientPage"] .local-client-scope dl > div:nth-child(3) {
+        padding-left: 0;
+        border-left: 0;
+    }
+    .chat-local-client-bar {
+        padding: 10px 12px;
+    }
+}
+
+@media (max-width: 600px) {
+    body[data-page="localClientPage"] .page-intro {
+        flex-direction: column;
+    }
+    body[data-page="localClientPage"] .page-intro .button {
+        width: 100%;
+        justify-content: center;
+    }
+    body[data-page="localClientPage"] .local-client-scope {
+        padding: 18px;
+    }
+    body[data-page="localClientPage"] .local-client-scope dl {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    body[data-page="localClientPage"] .local-client-scope dl > div {
+        padding: 0 0 14px;
+        border-left: 0;
+        border-bottom: 1px solid #edf0f5;
+    }
+    body[data-page="localClientPage"] .local-client-scope dl > div:last-child {
+        padding-bottom: 0;
+        border-bottom: 0;
+    }
+    .chat-local-client-bar select {
+        max-width: none;
+        width: 100%;
+    }
+    .chat-local-client-categories {
+        width: 100%;
+    }
+}
+
+/* 首次连接说明可能长于视口；让页面滚动而不是把配对区固定在屏幕内。 */
+body[data-page="localClientPage"] .local-client-pairing-panel { position: static; }
+body[data-page="localClientPage"] .local-client-setup { margin: 0 0 20px; }
+body[data-page="localClientPage"] .local-client-setup ol { margin: 0; padding-left: 20px; }
+body[data-page="localClientPage"] .local-client-setup li { padding-left: 3px; margin: 0 0 15px; line-height: 1.6; font-size: 13px; }
+body[data-page="localClientPage"] .local-client-setup li::marker { color: var(--local-client-muted); font-weight: 700; }
+body[data-page="localClientPage"] .local-client-setup li p { margin: 5px 0; color: var(--local-client-muted); font-size: 12px; line-height: 1.7; }
+body[data-page="localClientPage"] .local-client-setup details { margin-top: 8px; }
+body[data-page="localClientPage"] .local-client-setup summary { width: fit-content; cursor: pointer; font-weight: 600; }
+body[data-page="localClientPage"] .local-client-setup pre { max-width: 100%; overflow-x: auto; padding: 10px; border: 1px solid var(--local-client-border); border-radius: 8px; background: var(--local-client-soft); font: 12px/1.6 "Cascadia Code", Consolas, monospace; white-space: pre; }
+body[data-page="localClientPage"] .local-client-pair-boundary { margin: 0; padding: 12px; border: 1px solid var(--local-client-border); border-radius: 8px; color: var(--local-client-ink); background: var(--local-client-soft); font-size: 12px; line-height: 1.7; }

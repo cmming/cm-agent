@@ -15,6 +15,7 @@
     <modules>
         <module>cm-agent-api</module>
         <module>cm-agent-core</module>
+        <module>cm-agent-local-client</module>
         <module>cm-agent-persistence</module>
         <module>cm-agent-spring-boot-starter</module>
         <module>cm-agent-console</module>

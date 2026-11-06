@@ -49,6 +49,7 @@ import com.cmagent.persistence.JdbcSkillReleaseRepository;
 import com.cmagent.persistence.JdbcSkillResourceRepository;
 import com.cmagent.persistence.JdbcSkillTrialRepository;
 import com.cmagent.persistence.JdbcSkillVersionRepository;
+import com.cmagent.persistence.JdbcLocalClientDeviceRepository;
 import com.cmagent.server.service.SkillUnitOfWork;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
@@ -72,6 +73,12 @@ import java.time.Instant;
 @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "jdbc")
 /** JDBC 持久化条件配置，负责装配事务、Flyway 和 JDBC 访问所需组件。 */
 public class JdbcPersistenceConfiguration {
+    /** 设备配对、挑战、单轮授权和操作队列必须共用一个带短事务的 JDBC 实现。 */
+    @Bean
+    com.cmagent.persistence.JdbcLocalClientDeviceRepository jdbcLocalClientDeviceRepository(
+            JdbcClient cmAgentJdbcClient, TransactionTemplate cmAgentTransactionTemplate) {
+        return new JdbcLocalClientDeviceRepository(cmAgentJdbcClient, cmAgentTransactionTemplate);
+    }
     /** @return 与会话短事务共用连接的工作区选择仓储 */
     @Bean
     com.cmagent.core.repository.WorkspaceSelectionRepository jdbcWorkspaceSelectionRepository(JdbcClient jdbcClient) {

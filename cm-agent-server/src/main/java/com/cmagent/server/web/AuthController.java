@@ -7,6 +7,7 @@ import com.cmagent.server.security.ConsoleSessionCookie;
 import com.cmagent.server.security.CurrentUserResponse;
 import com.cmagent.server.security.LoginRequest;
 import com.cmagent.server.security.LoginResponse;
+import com.cmagent.server.config.LocalProjectProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -24,6 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.UUID;
 
 @RestController
@@ -60,6 +63,18 @@ public class AuthController {
     private final JwtService jwtService;
     private final BootstrapAdminProperties bootstrapAdminProperties;
     private final AuditAppender auditAppender;
+    /** 默认独立关闭；部署配置只影响当前bootstrap主体，不修改角色、数据库权限或Agent工具grant。 */
+    private LocalProjectProperties localProjects=new LocalProjectProperties();
+    /** 可信Spring环境再次限定local/test；不能靠客户端声明本机模式获得项目权限。 */
+    private org.springframework.core.env.Environment environment;
+
+    /** 保留既有构造器给独立认证测试；生产装配按配置显式选择项目权限，不引入原生组件依赖。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureLocalProjects(org.springframework.beans.factory.ObjectProvider<LocalProjectProperties> provider,
+                                org.springframework.core.env.Environment environment) {
+        this.localProjects=provider.getIfAvailable(LocalProjectProperties::new);this.environment=environment;
+        if(localProjects.isEnabled())projectLoginPermissions();
+    }
     /**
      * 创建 {@code AuthController} 实例并保存其运行所需依赖。
      *
@@ -105,7 +120,8 @@ public class AuthController {
 
         String configuredUsername = bootstrapAdminProperties.getBootstrapAdminUsername();
         String displayName = bootstrapAdminProperties.getBootstrapAdminDisplayName();
-        String token = jwtService.createToken(TENANT_ID, configuredUsername, displayName, PERMISSIONS);
+        List<String> permissions=projectLoginPermissions();
+        String token = jwtService.createToken(TENANT_ID, configuredUsername, displayName, permissions);
         httpResponse.addHeader(
                 HttpHeaders.SET_COOKIE,
                 ConsoleSessionCookie.active(token, httpRequest.isSecure()).toString()
@@ -113,7 +129,19 @@ public class AuthController {
         auditLogin(configuredUsername, "SUCCEEDED", "登录成功");
         // 登录成功只记录主体标识，绝不含 token 或密码；token 已写入 HttpOnly Cookie 与响应体。
         log.info("登录成功。principalId={}, tenantId={}", configuredUsername, TENANT_ID);
-        return new LoginResponse(TENANT_ID.toString(), configuredUsername, displayName, PERMISSIONS, token);
+        return new LoginResponse(TENANT_ID.toString(), configuredUsername, displayName, permissions, token);
+    }
+
+    /** 只在完整本机部署开启后追加显式项目权限；关闭、默认空列表均保持原固定登录权限集合。 */
+    private List<String> projectLoginPermissions() {
+        if(!localProjects.isEnabled())return PERMISSIONS;
+        localProjects.validate();
+        var profiles=environment==null?List.<String>of():Arrays.asList(environment.getActiveProfiles());
+        if(profiles.stream().noneMatch(value->"local".equalsIgnoreCase(value)||"test".equalsIgnoreCase(value))
+                ||profiles.stream().anyMatch(value->"prod".equalsIgnoreCase(value)||"production".equalsIgnoreCase(value)||"supabase".equalsIgnoreCase(value)))
+            throw new IllegalStateException("本地项目bootstrap授权仅允许明确启用的local/test部署");
+        var permissions=new ArrayList<>(PERMISSIONS);permissions.addAll(localProjects.getBootstrapPermissions());
+        return List.copyOf(permissions);
     }
 
     /**

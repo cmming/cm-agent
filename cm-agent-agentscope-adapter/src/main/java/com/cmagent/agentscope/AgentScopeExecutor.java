@@ -21,6 +21,9 @@ interface AgentScopeExecutor {
     /** @return 是否把校验后的参考快照作为数据输入模型，旧自定义策略默认不支持 */
     default boolean supportsWorkspaceContext() { return false; }
 
+    /** @return 是否消费固定项目来源并保护正文/参数；旧Lambda与尚未接线的执行策略默认关闭 */
+    default boolean supportsLocalProjects() { return false; }
+
     /** 是否消费停止信号并等待在途调用退出；旧 Lambda/自定义实现默认不声明此能力。 */
     default boolean supportsCancellation() { return false; }
 

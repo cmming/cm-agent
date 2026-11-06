@@ -619,3 +619,104 @@ manifest最多16KiB，complete正文最多1KiB；拒绝未知字段、重复JSON
 DRAFT或撤销批次不可绑定，过期410；参数400、未知/不可见404、状态/版本/关闭409、HTTP正文超限413、内容/预算422、配额/并发429、正文超时或存储503、未知内部错误500。审计不可用为AUDIT_UNAVAILABLE/503；响应中文原因和errorId能检索同号脱敏日志。HTTP中的私有派生资源拒绝复用旧路由通用404 code/message，不额外泄露其存在；后台使用WORKSPACE_RESOURCE_NOT_FOUND记录治理分类。
 
 T10的READY只表示导入持久化完成：`ready=true`时`bindable=false`，capabilities的`runtimeAvailable=false`，运行接线仍待T11。关闭上传不会移除已有卷/密钥或放宽归属校验；GET和DELETE仍需原主体及入口权限。V24对owner精确比较，避免MySQL默认大小写比较或尾随空格把不同主体的请求关联合并。自定义ConversationRepository/RunRepository必须实现新listVisible合同，未实现时明确拒绝，不能截断后过滤或降级为共享列表。
+
+## 本地项目开发工作区
+
+独立开关 `cm-agent.local-projects.enabled` 默认 `false`，不受 `workspace-context` 或 `imports` 开关替代。关闭时能力查询返回 `enabled=false`，不装配原生选择、私有状态锁或文件/进程服务。当前功能未发布；首次启用前须核对[运维步骤与验证边界](operations.md#本地项目开发工作区运维)。
+
+启用仅支持 Windows x64，同一台电脑运行 Server、原生文件夹窗口和项目文件；需要交互式桌面。必须显式使用 `local` 或 `test` profile，禁止同时激活 `prod`、`production`、`supabase`；要求 JDBC、字面回环监听、禁用转发头、真实 AgentScope 运行时及权限审批、关闭 Studio。运行时可用 `react` 或受控 `harness`，自定义 Runtime 还必须声明支持项目保护合同。门禁不满足会拒绝启动，不降级到 memory 或演示执行器。
+
+下面是独立配置片段，不包含数据库连接、登录或模型 API Key；沿用已有 JDBC 和模型配置。示例中的私有目录、稳定节点、允许源和工具程序均由部署者提供，不能照搬为任意电脑的实际路径。
+
+```yaml
+spring:
+  profiles:
+    active: local
+server:
+  address: 127.0.0.1
+  forward-headers-strategy: none
+cm-agent:
+  fake-runtime-enabled: false
+  persistence:
+    mode: jdbc
+  agentscope:
+    enabled: true
+    permission-enabled: true
+    execution-mode: react
+    studio:
+      enabled: false
+  model-credentials:
+    encryption-key: ${CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY}
+  local-projects:
+    enabled: true
+    allow-non-loopback: false
+    node-id: ${CM_AGENT_LOCAL_PROJECT_NODE_ID}
+    state-directory: ${CM_AGENT_LOCAL_PROJECT_STATE_DIRECTORY}
+    allowed-origins:
+      - http://127.0.0.1:8080
+    selection-ttl: 2m
+    bootstrap-permissions: []
+    commands:
+      tools:
+        javac:
+          executable: ${CM_AGENT_JAVAC_EXE}
+          prefix-arguments: []
+          environment: {}
+          allowed-environment: []
+          build: true
+```
+
+| 配置 | 约束与含义 |
+|---|---|
+| `node-id` | 必填，稳定的 1～80 位字母、数字、点、下划线或连字符标识，首位为字母或数字；重启不变，更换节点不能接管旧根或旧审批 |
+| `state-directory` | 必填、预先创建的本机私有绝对目录；不能与应用工作目录重叠，不能是用户主目录及其祖先，不能为网络卷、链接或路径别名；允许项仅可信所有者、固定 SID 的 SYSTEM/Administrators，需保证运行账号可写 |
+| `allow-non-loopback` | 默认 `false`。关闭时必须使用回环监听和回环来源。显式开启后允许非回环 `server.address` 与精确非回环 Origin，但仍保留 Host、Origin、`X-CM-Agent-Local-Project`、Fetch Metadata 和转发头拒绝检查；不能使用 `*`、`0.0.0.0` 或 `::` 作为浏览器来源。该能力会让远端请求操作服务器所在电脑的项目文件，必须配合 HTTPS、防火墙和网络隔离 |
+| `allowed-origins` | 必填，最多 8 个精确 HTTP/HTTPS 源，含实际端口；不带路径、查询、片段或通配符，Host/Origin 必须匹配；默认只允许回环源，`allow-non-loopback=true` 时才允许非回环精确源。不要把 `localhost` 与 `127.0.0.1` 当作同一源 |
+| `selection-ttl` | 默认 `2m`，大于 0 且不超过 `5m`；选择票据一次使用，轮询不延长票据期限，取消不产生目录授权 |
+| `bootstrap-permissions` | 默认空；仅允许 `project:read`、`project:write`、`project:execute`、`project:manage` 四项明细的无重复子集，不接受通配符或其他权限。仅在功能明确启用且 `local`/`test` 无生产混合 profile 时，追加到已通过真实登录的 bootstrap 主体；不修改旧角色或 Agent grant |
+| `commands.tools` | 默认空，最多 32 项，标识以字母开头且仅含字母、数字、下划线或连字符，最长 64 位；空配置仍可使用项目文件功能，不宣称命令/构建可用 |
+| `executable` / `prefix-arguments` | 真实普通 `.exe` 文件绝对路径及固定前缀，不扫描 PATH；运行前复核程序摘要。脚本须由部署者显式配置解释器及前缀，不能将脚本路径当作 `.exe` |
+
+仅当明确接受“远端用户可以操作服务器本机项目目录”的风险时，才可同时启用非回环监听与非回环来源。生产 profile 仍拒绝该能力；不要把它用于无认证、明文 HTTP 或来源不受限的网络。
+| `environment` / `allowed-environment` | 显式基础环境及允许请求覆盖的名称；子进程不继承 Server 全量环境。宿主固定加入 `SystemRoot` 和私有 `TEMP`/`TMP`，不允许请求覆盖这三项；秘密字段和秘密赋值参数被拒绝 |
+| `build` | 默认 `false`，标记该工具链可用于构建能力展示，不免除逐调用 HIGH 审批 |
+
+私有状态目录由一个服务实例独占，并持有 `.instance-lock`；服务只建立固定 `changes`、`temp` 子目录，不自动修改用户项目 ACL。根、操作清单、恢复材料和 Run 读取快照使用现有持久 `model-credentials.encryption-key` 保护；保留原数据库、密钥、节点和状态目录，不能用临时密钥重启。项目目录、应用目录、私有状态区及已有工作区/导入私有区有排除和身份检查，客户端不能上传任意宿主绝对路径注册项目。
+
+### 项目权限、入口与运行边界
+
+V26 新增 `local_project_roots`、`local_projects`、`local_project_conversations`、`local_project_runs`、`local_project_operations` 五表，双方言表和字段均有中文原生注释；迁移只登记 `project:read`、`project:write`、`project:execute`、`project:manage`，不自动赋给旧角色。所有资源同时核对 tenant、精确原 owner、固定 Agent/会话/Run 和节点，租户管理员不能替代原 owner 读取私有项目。已有 `agent:run`、`agent:approve`、工具授权等要求继续生效。
+
+当前本机登录使用既有 bootstrap 管理员。若需完整开发能力，部署者须在 `bootstrap-permissions` 中显式列出上述四项项目权限，并重新登录取得新会话；留空或关闭功能时，原登录权限集合不增加项目权限。不能通过客户端修改 JWT、手工构造身份或使用通配权限绕过这一配置。
+
+控制台入口为 `/console/v2/projects.html`。新建项目会话要求主体具有 `project:manage`、`tool:grant` 与 `agent:run`；服务端会登记固定项目工具目录，只为所选 Agent 补齐缺失 grant，已有合法授权不重复覆盖。登记和 grant 仍不等于 HIGH 批准。项目会话仅加载本轮冻结的专用项目工具，不加载普通业务工具或 Skill；后加 grant 不会扩大已经启动的 Run，恢复不能更换工具集合。项目 Run 的系统提示会明确列出可用 `project_*` 工具，并要求通过项目相对路径读取，不得把 Harness 原生文件系统禁用解释为没有项目授权。文件正文可发送给选定模型，预览和引用前应核对项目资料范围。
+
+项目会话发送消息时可提交 `projectAuthorizationMode`：
+
+- `ASK_ON_EFFECT`：只读直接执行，文件变更、命令和未知副作用逐项审批。
+- `ASK_ON_RISK`：低风险读取和零项目副作用提案直接执行，高风险文件变更、命令和未知操作审批；未提交模式时使用此兼容值。
+- `FULL_ACCESS`：仅为当前项目、Agent 和 Run 内已识别且通过 grant、归属、策略和审计检查的固定项目工具自动授权。
+
+授权方式和冻结工具集合写入原 Run 加密检查点；审批恢复只使用原值，不重新采纳浏览器后提交的模式。非项目会话不能提交该字段，项目会话也不能与独立本机客户端授权同时使用。正常成功、停止、审批拒绝、过期和失败收口都会撤销检查点并写 `PROJECT_RUN_AUTHORIZATION/REVOKED_<MODE>`。`FULL_ACCESS` 的自动副作用另写 `PROJECT_AUTO_AUTHORIZATION`，不伪造人工批准。审计失败发生在真实文件或命令副作用前时，状态不推进且不执行。
+
+固定工具定义的 `endpoint` 保存 `local-project:KIND` 逻辑标识，满足既有工具表的非空约束，不是 URL、命令或可自动执行的地址。实际执行仍由精确租户工具 ID、当前项目 Run 和治理授权决定；此修正不新增迁移。
+
+`/api/projects` API 在认证后要求真实连接两端均为回环地址、精确 Host/Origin 和 `X-CM-Agent-Local-Project: 1`，拒绝 `Forwarded`、`X-Forwarded-For`、`X-Forwarded-Host`、`X-Real-IP`；不支持通过反向代理、隧道或远程浏览器操作原生目录。核心入口包括能力查询、原生选择请求/轮询、消费票据登记项目、项目/会话列表、文件树/文本/搜索、工具登记、精确审批、操作历史、归档及 UNKNOWN 核对。正文响应不缓存；项目来源协议固定为 4，独立见证防止来源头损坏后回退到 DEFAULT 或旧导入入口。
+
+### 当前固定预算
+
+单个可读 UTF-8 文件最多 1 MiB，每次文本读取最多 64 KiB；一个 Run 最多固定 32 个文件、合计 2 MiB 的首次脱敏全文，审批恢复继续使用原快照，不重新加载外部新正文。浏览器文件预览为实时内容；引用附带相对路径、SHA256 和范围，不能把引用当作文件正文已上传。目录单页最多 200 项；浏览器实时搜索最多 100 条，扫描预算 8 MiB/5 秒；模型正文搜索复用 Run 冻结全文并受 32 文件/2 MiB 累计预算约束，已冻结文件不因外部更新或删除而隐式改版。搜索返回 partial 时不能视为全项目扫描。
+
+文件提案最多 20 个互不重叠动作，单文件 1 MiB、批次 2 MiB；支持新建、替换、移动、删除文件及新建/删除空目录。恢复材料保留 7 天，每个项目最多 100 MiB，这不是节点总配额；到期不能自动撤销。撤销也是新提案和新 HIGH 审批，当前内容、身份或权限已变化则拒绝覆盖。
+
+命令提案必须指定 1～1800 秒超时和 1～1 MiB 合并输出上限，同时固定程序摘要、参数、相对工作目录、显式环境和构建配置摘要。当前实例同一时间仅派发一个本机命令，最多缓存 32 份命令状态/输出；输出有界、脱敏并标明截断，不持久保存，重启或淘汰后 `outputAvailable=false` 不能解释为空输出。Job 只管理本次进程树，命令仍继承运行账号权限，可访问根外文件和网络，不提供操作系统级隔离。
+
+专用操作预览在清单超过固定七天后返回 410/PROJECT_OPERATION_EXPIRED，历史状态仍可查询；不存在或不属于当前Run的操作返回404，不按基础设施错误处理。项目会话状态每2秒有界核对，最多150轮，连续3次失败暂停；停止请求仅发送一次，须等服务端确认，不自动重发。
+
+## 本机客户端功能开关
+
+`cm-agent.local-client.enabled` 默认关闭，当前实现仍处于开发和验证阶段，不应视为生产可用。仅在隔离测试环境显式启用；远程连接需要配置客户端可访问的 HTTPS `cm-agent.local-client.audience`。设备配对、授权撤销、审计失败及跨平台完整链路的验收状态见 [实施账本](superpowers/progress/2026-11-02-agent-operation-authorization-implementation-ledger.md)。
+
+本机客户端提示设备不可用时，先检查设备是否撤销以及服务端功能是否开放；已执行操作若无法回报，结果可能未知，不应自动重试。单轮本机确认方式只影响本机客户端固定工具，不改变普通业务工具的原审批要求。
+
+本机客户端空闲时两秒轮询一次；仅挑战请求返回 429 且任务尚未领取时延迟后重新申请挑战。结果回报失败仍可能已产生副作用，不自动重试。网络审批目标在摘要中显示 `<已脱敏>`，不得为空，原始 URL 只在当前 Run 交给模型并用于实际派发，不进入持久化消息、审批摘要、进度或日志。因此，显式选择本机客户端时，本轮当前输入会发送给配置的模型提供方；普通运行仍使用脱敏输入。

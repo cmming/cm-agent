@@ -26,6 +26,10 @@ public final class WorkspaceSelectionService {
     void configureRuns(RunRepository repository){this.runs=repository;}
     /** @return Run的不可变协议，旧手工装配仅能沿用原目录合同 */
     int protocol(RunRecord run){return runs==null?0:runs.workspaceProtocol(run.tenantId(),run.agentId(),run.id());}
+    /** 项目持久来源不随头字段降级而消失；仅内部执行分流使用，不授予文件或历史访问权。 */
+    boolean hasLocalProjectSource(RunRecord run) {
+        return runs != null && runs.hasLocalProjectSource(run.tenantId(), run.agentId(), run.id());
+    }
     /** @return 长期固定元数据，不补写或按当前映射推断 */
     WorkspaceBinding frozen(RunRecord run){return rows.run(run.tenantId(),run.agentId(),run.id()).orElse(null);}
     /** 管理员配置的唯一目录来源。 */ private final WorkspaceContextProperties policy;

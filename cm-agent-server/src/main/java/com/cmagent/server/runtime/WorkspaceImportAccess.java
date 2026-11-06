@@ -11,9 +11,14 @@ import java.util.UUID;
 /**
  * IMPORTED派生资源的统一读取闸门；只补充新来源owner约束，不改变原三态租户权限。
  * 主体必须来自认证JwtSession；不存在、跨tenant/Agent/owner均返回同一404，不先返回标题或回答。
+ * 项目来源交专用授权闸门；功能关闭或头与绑定不一致时明确拒绝，不能落回旧目录或导入规则。
  */
 @Component
 public final class WorkspaceImportAccess {
+    /** 默认未启用项目时继续拒绝4；不能仅因持久化认识协议就放行旧入口。 */
+    private LocalProjectResourceAccess projects;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureProjects(org.springframework.beans.factory.ObjectProvider<LocalProjectResourceAccess> provider) { projects = provider.getIfAvailable(); }
     /** 长期来源元数据，不能用当前catalog猜测私有性。 */
     private final WorkspaceSelectionRepository selections;
     /** 可信会话及Run关联。 */
@@ -34,6 +39,14 @@ public final class WorkspaceImportAccess {
     }
     /** 只接收仓储核实的会话，用户输入不能构造可信归属。 */
     public void conversation(PrincipalRef principal, Conversation value) {
+        if (!principal.tenantId().equals(value.tenantId())) denied(principal, value.id());
+        // 头字段不是唯一来源证据；损坏或降为0/3仍交项目闸门，后者要求头与固定绑定完全一致。
+        if (conversations.workspaceProtocol(value.tenantId(),value.agentId(),value.id())==LocalProjectBinding.PROTOCOL
+                || conversations.hasLocalProjectSource(value.tenantId(), value.agentId(), value.id())) {
+            if (projects == null) denied(principal, value.id());
+            projects.conversation(principal, value);
+            return;
+        }
         if (!principal.tenantId().equals(value.tenantId()) || !selections.visibleConversation(value, principal.principalId())
                 || conversations.workspaceProtocol(value.tenantId(),value.agentId(),value.id())==3 && !principal.principalId().equals(value.createdBy())
                 || !runs.visibleConversationFromWorkspace(value,principal.principalId())) denied(principal, value.id());
@@ -45,7 +58,17 @@ public final class WorkspaceImportAccess {
     }
     /** 同时校验固定Run来源及派生会话，避免通过运行详情/技能记录入口旁路。 */
     public void run(PrincipalRef principal, RunRecord value) {
+        if (!principal.tenantId().equals(value.tenantId())) denied(principal, value.id());
+        if (runs.workspaceProtocol(value.tenantId(),value.agentId(),value.id())==LocalProjectBinding.PROTOCOL
+                || runs.hasLocalProjectSource(value.tenantId(), value.agentId(), value.id())) {
+            if (projects == null) denied(principal, value.id());
+            projects.run(principal, value);
+            return;
+        }
         var conversation = conversations.findByRun(principal.tenantId(), value.id()).orElse(null);
+        if (conversation!=null && (conversations.workspaceProtocol(conversation.tenantId(),conversation.agentId(),conversation.id())==LocalProjectBinding.PROTOCOL
+                || conversations.hasLocalProjectSource(conversation.tenantId(), conversation.agentId(), conversation.id())))
+            denied(principal, value.id());
         if (!principal.tenantId().equals(value.tenantId()) || runs.workspaceProtocol(value.tenantId(),value.agentId(),value.id())==3 && !principal.principalId().equals(value.principalId())
                 || !selections.visibleRun(value, conversation, principal.principalId())
                 || conversation!=null && (conversations.workspaceProtocol(conversation.tenantId(),conversation.agentId(),conversation.id())==3

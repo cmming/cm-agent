@@ -86,6 +86,7 @@ public class SecurityConfig {
                             "/assets/**",
                             "/api/auth/login",
                             "/api/auth/logout",
+                            "/api/local-client/bootstrap/**",
                             "/actuator/health"
                     ).permitAll();
                     if (isPublicApiDocsAllowed()) {

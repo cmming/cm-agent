@@ -35,9 +35,10 @@ function harness({stream, request, refresh} = {}) {
         api:{request:async(url,options)=>{requests.push({url,options});return request?.(url,options);},
             stream:async(url,options,emit)=>{requests.push({url,options});await stream?.(emit);}}};
     const renderer = app.slice(app.indexOf("function renderChatMessages("), app.indexOf("function renderChatWelcome("));
+    const localClient = app.slice(app.indexOf("function selectedLocalClient("), app.indexOf("function renderChatConversations("));
     const sender = app.slice(app.indexOf("async function sendChatMessage("), app.indexOf("// 轮询只查询权威状态"));
     const streamError = app.slice(app.indexOf("function streamEventError("), app.indexOf("function shortIdentifier("));
-    vm.runInNewContext(`${streamError}\n${renderer}\n${sender};globalThis.actions={renderChatMessages,createChatRunFailure,showChatRunOutcome,sendChatMessage};`,context);
+    vm.runInNewContext(`${streamError}\n${renderer}\n${localClient}\n${sender};globalThis.actions={renderChatMessages,createChatRunFailure,showChatRunOutcome,sendChatMessage};`,context);
     return {state,nodes,statuses,requests,actions:context.actions,logout:()=>epoch++};
 }
 

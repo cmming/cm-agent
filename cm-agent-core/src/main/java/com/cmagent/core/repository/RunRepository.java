@@ -16,8 +16,28 @@ import java.util.UUID;
  * 定义 Agent 运行记录的创建、终态更新、查询和游标分页契约。
  */
 public interface RunRepository {
+    /** 冷启动只描述执行结果未知，不声称已停止原进程或撤销原文件副作用。 */
+    String INTERRUPTED_FAILURE_MESSAGE = "执行器已重建，原执行结果无法确认，请核对本机操作";
+    /**
+     * 项目冷启动专用CAS，不能使用complete的CANCELLING转CANCELLED语义冒充确认停止。
+     * @param snapshot 来自可信仓储的NORMAL/协议4、RUNNING或CANCELLING快照
+     * @param finishedAt 服务端收口时间，以持久开始时间为下界
+     * @return 完整tenant/agent/精确owner/kind/status/startedAt仍一致时标记FAILED，否则false
+     */
+    default boolean failInterrupted(RunRecord snapshot, Instant finishedAt) {
+        throw new UnsupportedOperationException("当前运行仓储未实现失联执行CAS");
+    }
     /** @return 是否实现首次原子来源见证；旧嵌入仓储不得仅声明支持却忽略协议 */
     default boolean supportsWorkspaceProtocol(){return false;}
+    /**
+     * 内部安全见证：项目绑定及已知派生关联不随来源头降级而消失；调用方仍必须完成项目授权。
+     * 不得通过 HTTP 暴露此结果；没有本机项目能力的旧实现默认返回 false。
+     * @param tenantId 可信租户
+     * @param agentId 已核实的当前资源 Agent
+     * @param runId 当前运行标识
+     * @return 是否有持久项目来源证据，不表示当前主体拥有读取或执行权限
+     */
+    default boolean hasLocalProjectSource(UUID tenantId, UUID agentId, UUID runId) { return false; }
     /** 使用原发起人和等待态快照原子恢复 RUNNING；停止先赢得竞争时返回 false，不能重放原 Run。 */
     default boolean resumeWaitingApproval(RunRecord snapshot) {
         throw new UnsupportedOperationException("当前仓储不支持原子审批恢复");

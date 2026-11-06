@@ -104,6 +104,9 @@ public class ToolController {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:read", "TOOL", "list");
         return toolQueryService.listByTenant(principal.tenantId()).stream()
+                // 本机客户端工具只按 Run 临时注入，不能出现在普通工具治理目录或被授权/发布。
+                .filter(tool -> !com.cmagent.server.runtime.LocalClientToolCatalog.managed(
+                        principal.tenantId(), tool.tool().id()))
                 .map(this::toSummary)
                 .toList();
     }
@@ -151,6 +154,7 @@ public class ToolController {
     ) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", "TOOL", id.toString());
+        rejectManagedLocalClientTool(principal, id);
         ManagementCommandService.ToolUpdateResult updated = managementCommandService.updateTool(
                 principal,
                 id,
@@ -183,6 +187,7 @@ public class ToolController {
     public ResponseEntity<Void> delete(@PathVariable("id") UUID id, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:delete", "TOOL", id.toString());
+        rejectManagedLocalClientTool(principal, id);
         managementCommandService.deleteTool(principal, id);
         return ResponseEntity.noContent().build();
     }
@@ -204,6 +209,7 @@ public class ToolController {
     ) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", "TOOL", id.toString());
+        rejectManagedLocalClientTool(principal, id);
         return managementCommandService.grantTool(principal, id, request.agentId());
     }
 
@@ -224,6 +230,7 @@ public class ToolController {
     ) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", "TOOL", id.toString());
+        rejectManagedLocalClientTool(principal, id);
         return managementCommandService.revokeTool(principal, id, agentId);
     }
 
@@ -244,6 +251,7 @@ public class ToolController {
     ) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:debug", "TOOL", id.toString());
+        rejectManagedLocalClientTool(principal, id);
         return toolDebugService.debug(principal, id, canonicalJson(request.input()), request.confirmedToolName());
     }
 
@@ -262,6 +270,7 @@ public class ToolController {
     ) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", "TOOL", id.toString());
+        rejectManagedLocalClientTool(principal, id);
         return mcpPublicationService.publish(principal, id);
     }
 
@@ -277,6 +286,7 @@ public class ToolController {
     public ResponseEntity<Void> unpublishMcpTool(@PathVariable("id") UUID id, Authentication authentication) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "tool:grant", "TOOL", id.toString());
+        rejectManagedLocalClientTool(principal, id);
         mcpPublicationService.unpublish(principal, id);
         return ResponseEntity.noContent().build();
     }
@@ -292,6 +302,13 @@ public class ToolController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录或令牌无效");
         }
         return new PrincipalRef(session.tenantId(), session.principalId(), session.displayName(), Set.copyOf(session.permissions()));
+    }
+
+    /** 固定本机工具由设备配对和 Run 授权管理，普通工具写入口必须拒绝篡改或发布。 */
+    private static void rejectManagedLocalClientTool(PrincipalRef principal, UUID toolId) {
+        if (com.cmagent.server.runtime.LocalClientToolCatalog.managed(principal.tenantId(), toolId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "本机客户端工具由运行授权入口管理");
+        }
     }
 
     /**

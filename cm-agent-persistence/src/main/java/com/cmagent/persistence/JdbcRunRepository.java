@@ -19,15 +19,46 @@ import java.util.UUID;
 
 /** 使用 JDBC 持久化 Agent 运行的状态、输入、输出和时间信息。 */
 public class JdbcRunRepository implements RunRepository {
+    /** 冷启动不套用普通complete的停止语义；归属和原状态CAS失败时由外层回滚所有UNKNOWN推进及审计。 */
+    @Override public boolean failInterrupted(RunRecord snapshot, Instant finishedAt) {
+        if (snapshot.kind() != RunKind.NORMAL || snapshot.status() != RunStatus.RUNNING && snapshot.status() != RunStatus.CANCELLING) return false;
+        Instant end = finishedAt.isBefore(snapshot.startedAt()) ? snapshot.startedAt() : finishedAt;
+        return jdbcClient.sql("UPDATE runs SET status='FAILED',output_text=NULL,error_message=:reason,finished_at=:finished"
+                + " WHERE tenant_id=:tenant AND id=:run AND agent_id=:agent AND "
+                + JdbcOwnerPredicate.equal(jdbcClient, "principal_id", ":owner")
+                + " AND run_kind='NORMAL' AND workspace_protocol=4 AND status=:status AND started_at=:started")
+                .param("reason", RunRepository.INTERRUPTED_FAILURE_MESSAGE).param("finished", Timestamp.from(end))
+                .param("tenant", snapshot.tenantId().toString()).param("run", snapshot.id().toString()).param("agent", snapshot.agentId().toString())
+                .param("owner", snapshot.principalId()).param("status", snapshot.status().name()).param("started", Timestamp.from(snapshot.startedAt())).update() == 1;
+    }
+    /**
+     * 固定别名 r 的项目安全见证，独立于可损坏的来源头；所有派生关联保持 tenant 一致。
+     * 已有本机绑定即使 owner/Agent 字段不一致也不能退回旧列表；实际可见性由上层项目闸门核验。
+     */
+    private static final String LOCAL_PROJECT_SOURCE = "(r.workspace_protocol=4"
+            + " OR EXISTS (SELECT 1 FROM local_project_runs lp WHERE lp.tenant_id=r.tenant_id AND lp.run_id=r.id)"
+            + " OR EXISTS (SELECT 1 FROM messages lm JOIN conversations lc ON lc.tenant_id=lm.tenant_id AND lc.id=lm.conversation_id"
+            + " WHERE lm.tenant_id=r.tenant_id AND lm.run_id=r.id AND (lc.workspace_protocol=4"
+            + " OR EXISTS (SELECT 1 FROM local_project_conversations lpc WHERE lpc.tenant_id=lc.tenant_id AND lpc.conversation_id=lc.id)"
+            + " OR EXISTS (SELECT 1 FROM messages pm JOIN runs pr ON pr.tenant_id=pm.tenant_id AND pr.id=pm.run_id"
+            + " WHERE pm.tenant_id=lc.tenant_id AND pm.conversation_id=lc.id AND (pr.workspace_protocol=4"
+            + " OR EXISTS (SELECT 1 FROM local_project_runs lpr WHERE lpr.tenant_id=pr.tenant_id AND lpr.run_id=pr.id))))))";
+
+    @Override public boolean hasLocalProjectSource(UUID tenantId, UUID agentId, UUID runId) {
+        return jdbcClient.sql("SELECT COUNT(*) FROM runs r WHERE r.tenant_id=:tenant AND r.agent_id=:agent AND r.id=:id AND "
+                + LOCAL_PROJECT_SOURCE).param("tenant", tenantId.toString()).param("agent", agentId.toString())
+                .param("id", runId.toString()).query(Long.class).single() != 0;
+    }
     @Override public boolean supportsWorkspaceProtocol(){return true;}
-    /** 固定Run来源和关联会话任一使用导入，都在排序/LIMIT前复核原主体，防止经独立Run列表旁路。 */
+    /** 固定Run来源和关联会话任一使用导入，都在排序/LIMIT前复核原主体，防止经独立Run列表旁路。
+     * 项目及已知派生资源仅由项目读取闸门提供，不能因头字段降级而落入旧列表。 */
     @Override public List<RunRecord> listVisible(UUID tenantId, UUID agentId, String principalId, RunPageRequest page) {
         String runOwner = JdbcOwnerPredicate.equal(jdbcClient, "r.principal_id", ":principal");
         String fixedOwner = JdbcOwnerPredicate.equal(jdbcClient, "s.principal_id", ":principal");
         String bindingOwner = JdbcOwnerPredicate.equal(jdbcClient, "b.principal_id", ":principal");
         String creator = JdbcOwnerPredicate.equal(jdbcClient, "c.created_by", ":principal");
         var query = jdbcClient.sql("""
-                SELECT r.* FROM runs r WHERE r.tenant_id=:tenant AND r.agent_id=:agent AND r.run_kind='NORMAL'
+                SELECT r.* FROM runs r WHERE r.tenant_id=:tenant AND r.agent_id=:agent AND r.run_kind='NORMAL' AND r.workspace_protocol<>4
                 AND (r.workspace_protocol=0 OR (
                 """+runOwner+"))"+"""
                 AND NOT EXISTS (SELECT 1 FROM run_workspace_selections s WHERE s.tenant_id=r.tenant_id AND s.agent_id=r.agent_id
@@ -46,6 +77,7 @@ public class JdbcRunRepository implements RunRepository {
                 + " WHERE cm.tenant_id=r.tenant_id AND cm.run_id=r.id AND pr.workspace_protocol=3 AND NOT ("
                 + JdbcOwnerPredicate.equal(jdbcClient,"pr.principal_id",":principal")+" AND "
                 + JdbcOwnerPredicate.equal(jdbcClient,"cc.created_by",":principal")+" AND "+runOwner+"))"
+                + " AND NOT " + LOCAL_PROJECT_SOURCE
                 + (page.beforeStartedAt() == null ? "" : " AND (r.started_at<:before OR (r.started_at=:before AND r.id<:beforeId))")
                 + " ORDER BY r.started_at DESC,r.id DESC LIMIT :limit")
                 .param("tenant", tenantId.toString()).param("agent", agentId.toString()).param("principal", principalId).param("limit", page.limit());
@@ -152,10 +184,11 @@ public class JdbcRunRepository implements RunRepository {
 
     /** 选择行丢失也不能公开已派生的标题或回答，依据长期Run见证与原创建者判定。 */
     @Override public boolean visibleConversationFromWorkspace(com.cmagent.core.domain.Conversation conversation,String principal) {
+        if (new JdbcConversationRepository(jdbcClient).hasLocalProjectSource(conversation.tenantId(), conversation.agentId(), conversation.id())) return false;
         String owner=JdbcOwnerPredicate.equal(jdbcClient,"r.principal_id",":principal");
         if(!conversation.createdBy().equals(principal)) owner="1=0";
         return jdbcClient.sql("SELECT COUNT(*) FROM messages m JOIN runs r ON r.tenant_id=m.tenant_id AND r.id=m.run_id"
-                +" WHERE m.tenant_id=:tenant AND m.conversation_id=:conversation AND r.workspace_protocol=3 AND NOT ("+owner+")")
+                +" WHERE m.tenant_id=:tenant AND m.conversation_id=:conversation AND (r.workspace_protocol=4 OR (r.workspace_protocol=3 AND NOT ("+owner+")))")
                 .param("tenant",conversation.tenantId().toString()).param("conversation",conversation.id().toString())
                 .param("principal",principal).query(Long.class).single()==0;
     }

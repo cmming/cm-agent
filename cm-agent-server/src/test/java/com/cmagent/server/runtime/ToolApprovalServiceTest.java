@@ -39,12 +39,28 @@ class ToolApprovalServiceTest {
     void 摘要脱敏且缺少任一权限或非发起人时只读() {
         var view = create();
         assertThat(view.canDecide()).isTrue();
-        assertThat(view.items().getFirst().inputSummary()).doesNotContain("private-test-marker", "internal.invalid");
+        assertThat(view.items().getFirst().inputSummary())
+                .isNotBlank()
+                .contains("<已脱敏>")
+                .doesNotContain("private-test-marker", "internal.invalid");
         for (PrincipalRef actor : List.of(
                 new PrincipalRef(tenant, "initiator", "发起人", Set.of("agent:approve")),
                 new PrincipalRef(tenant, "other", "其他人", Set.of("agent:run", "agent:approve")))) {
             assertThat(service.get(actor, agent, conversation, view.approvalId()).canDecide()).isFalse();
         }
+    }
+
+    @Test
+    void 网络工具审批摘要保留URL脱敏占位符且不为空() {
+        var view = service.create(principal, agent, conversation, UUID.randomUUID(), new RuntimePendingApproval(
+                "reply", List.of(new RuntimePendingApproval.RuntimePendingToolCall(
+                        "network-call", UUID.randomUUID(), "local_client_network", ToolRiskLevel.HIGH,
+                        "{\"method\":\"GET\",\"url\":\"http://127.0.0.1:8080/actuator/health\"}",
+                        "a".repeat(64)))));
+
+        assertThat(view.items().getFirst().inputSummary())
+                .contains("\"url\":\"<已脱敏>\"")
+                .doesNotContain("127.0.0.1", "\"url\":\"\"");
     }
 
     @Test
@@ -99,6 +115,7 @@ class ToolApprovalServiceTest {
         assertThat(repository.find(tenant, agent, conversation, approvalId).orElseThrow().status()).isEqualTo(ToolApprovalStatus.EXPIRED);
         verify(checkpoints).deleteSession(tenant, tenant + ":initiator", runId.toString());
         verify(runs).expireWaitingApproval(eq(waiting), any());
+        verify(execution).cleanupEphemeralAuthorization(principal, waiting);
         RunExecutionTestDouble.assertNoExecution(execution);
     }
 
@@ -126,6 +143,7 @@ class ToolApprovalServiceTest {
         verify(runs).expireWaitingApproval(eq(waiting), any());
         verify(audit).append(tenant, "initiator", "TOOL_APPROVAL_EXPIRE", "TOOL_APPROVAL", approvalId.toString(),
                 "EXPIRED", "高风险工具审批请求已过期");
+        verify(execution).cleanupEphemeralAuthorization(principal, waiting);
         RunExecutionTestDouble.assertNoExecution(execution);
     }
 

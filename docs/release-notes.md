@@ -1,5 +1,35 @@
 # 发布说明
 
+## 未发布：本机运行管理脚本
+
+- 新增 `scripts/manage-local-runtime.ps1` 和 `scripts/manage-local-runtime.sh`，支持 `start`、`status`、`stop`、`restart`，默认管理 8080 服务端和本机客户端。
+- Linux 脚本支持 `--client-state-dir` 和 600 权限 `--client-password-file`，使用 Python PTY 在客户端关闭终端回显后输入口令；已在 Rocky Linux 9.3、JDK 21、MySQL 8.4 上完成真实 `restart --build`、Flyway v28、设备配对和客户端签名挑战轮询验收。
+- 已在目标 Linux 上用真实 DashScope `qwen-plus` 完成 `local_client_read_files` 业务链路：Run、单轮授权、操作排队/派发/完成、工具调用和客户端文件正文均核对成功。
+- PowerShell 支持 `-Target server|client` 与 `-Build`；Bash 对应支持 `--target server|client` 与 `--build`。启动服务端后等待健康检查，停止时先关闭客户端且不删除配对身份。
+- 已实测客户端 start/stop/restart、服务端幂等启动、构建重启和默认双端重启；脚本不输出密钥或数据库凭据。
+
+## 未发布：本机客户端工具输入与网络审批修复
+
+- `local_client_read_files` 不再使用 `oneOf` Schema；数字或模型适配器产生的数字字符串均可通过校验，客户端继续执行范围和动作校验。
+- `local_client_change_files` 同步移除 `oneOf`；`expectedSize` 数字字符串可用于追加，客户端继续按动作校验必需字段和当前文件大小。
+- 已通过 8080 真实 Run 验证一次本机追加审批和派发：测试文件从 `abc` 变为 `abcdef`，本机操作成功返回。
+- 本机客户端 Run 的当前输入保留原始 URL 等精确工具参数交给模型，持久化消息、审批摘要、进度和日志仍脱敏；审批 URL 显示 `<已脱敏>` 而不是空值。
+- 已在 8080 真实 Run 验证目录列举成功，以及本机客户端访问健康端点返回 HTTP 200 和 `{"status":"UP"}`；回归测试已补充。
+
+## 未发布：本机客户端可执行 fat JAR
+
+- `cm-agent-local-client` 的 `package` 现在同时生成普通薄 JAR 和 `cm-agent-local-client-<版本>-all.jar`；后者内嵌运行依赖并声明 `Main-Class`，可直接执行 `java -jar ... pair|run`。
+- 本机客户端页已改为单文件分发：构建电脑需要 JDK 21 与 Maven 3.9+，目标电脑只需 JDK 21，不再复制 `target/classes`、`target/lib` 或源码。
+- 已在 Windows JDK 21 验证 22 项客户端测试、16 项控制台资源测试、12 项 Node 页面回归及 fat JAR `help` 启动；真实配对、跨平台实机、远程 TLS 和生产安装包签名仍未验收。
+
+## 未发布：项目会话三种本轮授权方式
+
+- `projects.html` 选中项目后可创建会话并每轮选择“请求批准”“帮我自动批准”或“完全访问”；模式只绑定当前项目、Agent 和 Run，审批恢复沿用原 Run 快照。
+- 项目文件应用、命令执行和命令停止在实际副作用前统一复核同一权威模式；完全访问自动授权单独审计，普通工具和未知操作不继承该模式。
+- 修复运行正常成功时只删除项目授权检查点、未记录撤销审计的问题；成功、停止、拒绝、过期和失败现在统一幂等撤销。独立本机客户端仍用于远程 Server，与项目会话保持互斥。
+- 已通过定向 Java/Node、真实 DashScope ReAct/Harness 三模式、Windows 浏览器项目页、实际文件/`javac` 与远端 MySQL 8.4 联合验收；Linux/macOS 桌面和远程 TLS/多实例仍未验收。Linux、macOS 实机缺口保留在工作包。
+- 项目页现在直接列出 11 个固定 `project_*` 工具；当前 `8080` 实例已用 `测试Qwen` 和 `opencode-glm5.3-falsh` 在真实项目新会话中完成 `project_list_files`、`project_read_file` 的 `HELP.md` 读取，两个 Run 均成功并产生成对授权撤销与工具审计。
+
 ## 未发布：会话运行失败可见反馈
 
 - 修复会话聊天将 FAILED 终态提示为“回答已完成”的问题；发送、轮询和审批恢复统一按真实业务状态显示结果，只有 SUCCEEDED 显示成功。
@@ -353,3 +383,23 @@
 - 校验覆盖登记根、选中的中间目录和文件，审批恢复/ASK及交付前重新检查；保留原正文快照、路径/链接/预算、owner/RBAC和严格错误诊断。源文件删除不重建正文，仅对仍存在路径及存活祖先查权限。
 - Server新增JNA5.17.0核心依赖，用只读Win32 API取得SID并显式释放资源；不新增Shell/helper，不修改用户ACL，不影响POSIX或IMPORTED/Skill/Harness私有存储策略，无schema/配置键变更。
 - Windows真实NTFS、两策略回环合同与Rocky兼容结果分别见[工作包账本](superpowers/progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)。需包含新依赖并重启Server；不将R2通过等同R1全部原生窗口/真实Provider发布门禁完成。未提交、未部署。
+
+## 2026-10-30 本地项目开发工作区（未发布，默认关闭）
+
+- 在 2026-10-29 的 T1/T2 原生及持久化基线上，接入 `/console/v2/projects.html` 与 `/api/projects`：使用 Windows 原生窗口选择本机文件夹，登记私有项目，创建固定 Agent 的项目会话，浏览目录、预览/搜索文本、引用文件版本及保留归档历史。项目使用原目录，不要求 Git，也不复制或删除项目目录。
+- 新增 `cm-agent.local-projects` 独立默认关闭配置。首期仅 Windows x64 同机 `local`/`test`、JDBC、精确回环来源与监听、无转发头、私有单实例状态目录、固定节点和真实审批运行时可启用，须关闭 Studio。ReAct/受控 Harness 均使用项目专用工具与首次读取快照；项目模式当前不加载普通业务工具或 Skill。
+- 文件修改/条件撤销、固定工具链命令和构建接入原工具授权及逐调用 HIGH 审批，绑定精确版本/digest、不可变计划与至多一次派发。命令显式环境、超时、输出上限及本次 Job 进程树停止；命令具有运行账号的根外/网络权限，不提供操作系统级隔离。
+- 增加操作历史、UNKNOWN 原意图的人工核对终结、冷启动失联 Run 收口和七天私有材料清理；未知结果不自动重放，人工终结不撤销外部副作用。命令输出为实例内最多 32 份有界缓存，无持久输出恢复；文件恢复容量上限为每项目 100 MiB，不是节点总配额。
+- V26 新增五张带中文原生注释的项目表及四个未自动赋给旧角色的 `project:*` 权限。原主体隔离、固定节点/根/Agent/会话/Run 和协议 4 长期见证贯穿历史读取与运行，禁止降级到 DEFAULT；旧参考和导入协议保留。工具登记、Agent grant 与 HIGH 批准分别配置，不自动授予权限。
+- 补齐真实登录授权入口：新增默认空的 `cm-agent.local-projects.bootstrap-permissions`，仅允许四项项目权限明细，明确启用的 `local`/`test` bootstrap 登录才追加，不自动扩大旧角色或 Agent grant；工具登记改用既有 `tool:grant` 并保留 `project:manage` 要求。固定工具端点改为非空 `local-project:KIND` 逻辑标识，满足既有工具表约束，不提供地址执行能力，不新增迁移。
+- Rocky PostgreSQL 16/MySQL 8.4 持久化完整套件 92 项通过；Windows 夹具、服务合同、SDK 回环和前端模拟 API 验证的证据分别记录，真实 Provider、原生窗口、JDBC 与完整页面组合验收仍未完成。原 YAML 和既有 8080 服务未改，未提交、未部署。启用与运行边界见[配置](configuration.md#本地项目开发工作区)、[运维](operations.md#本地项目开发工作区运维)及[实施账本](superpowers/progress/2026-10-29-local-project-workspace-implementation-ledger.md)。
+
+- 本机客户端开发验证：补充设备不可用和结果回报未知提示；单轮本机确认方式不再放宽普通高风险工具审批。该功能仍默认关闭，完整跨平台与真实设备联合验收未完成。
+
+- 本机客户端开发验证：降低空闲轮询频率，并在领取前挑战限流时延迟重试；网络审批目标仍需实现可安全核对的展示。
+
+## 2026-11-03 项目会话工具自动准备与真实读取验收（未发布）
+
+- `projects.html` 新建项目会话时自动安装固定项目工具目录，并为所选 Agent 补齐缺失 grant；仍需 `project:manage`、`tool:grant`、`agent:run`，已有授权不重复覆盖。
+- 项目 Run 系统提示明确列出本轮 `project_*` 工具，说明 Harness 原生文件和 Shell 禁用及相对路径、权威失败、禁止要求粘贴的边界。
+- Windows 浏览器、MySQL 8.4、真实 DashScope `qwen-plus` 已实测从 `F:\java\cm-jl` 的 `HELP.md` 读取 1224 字节并返回稳定 SHA256；Run 成功，工具调用与授权撤销审计成对。证据见项目工作包账本。

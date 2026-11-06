@@ -39,7 +39,7 @@ public class ConversationPromptComposer {
      * 再恢复原始顺序。关联失败 Run 的 USER 消息会被显式标记，避免模型将其误认为已有成功回复。</p>
      *
      * @param history 已按会话序号正序排列的完整历史
-     * @param currentInput 本轮已脱敏的用户输入
+     * @param currentInput 本轮交给模型的用户输入；普通运行已脱敏，本机客户端运行保留工具所需的原始当前参数
      * @param failedRunIds 历史中运行失败的消息关联 Run 标识
      * @return 带服务端生成边界的模型输入；没有可用历史时仅返回当前输入
      */
@@ -54,7 +54,7 @@ public class ConversationPromptComposer {
     /**
      * 将用户停止作为可信历史状态标注；未闭合工具块不进入下一轮，不能伪造工具成功结果。
      * @param history 已持久化消息窗口
-     * @param currentInput 当前脱敏输入
+     * @param currentInput 当前用户输入；是否脱敏由调用方的运行类型决定
      * @param failedRunIds 已失败的历史 Run
      * @param stoppedRunIds 已由用户停止的历史 Run
      * @return 保留中断事实的受控历史输入

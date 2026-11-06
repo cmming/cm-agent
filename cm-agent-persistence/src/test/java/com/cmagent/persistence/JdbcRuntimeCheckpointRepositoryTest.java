@@ -72,7 +72,8 @@ class JdbcRuntimeCheckpointRepositoryTest {
         }
         assertThat(repository.find(tenant, previous.userId(), previous.sessionId(), previous.stateKey()))
                 .contains(previous);
-        assertThat(CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted).isEqualTo(6);
+        // 保留旧检查点升级合同；新增V26后，V20至V26共七个后续版本。
+        assertThat(CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted).isEqualTo(7);
         assertThat(repository.find(tenant, previous.userId(), previous.sessionId(), previous.stateKey()))
                 .contains(previous);
         // 同一槽更新不会替换 ID 或创建时间；新的状态槽走 INSERT，同样必须完整保存较大载荷。

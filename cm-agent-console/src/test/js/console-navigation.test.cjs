@@ -38,7 +38,8 @@ function navigationHarness() {
         }
     };
     for (const key of ["submitStateGuard", "toolLoadRevision", "agentDetailRevision", "modelConfigLoadRevision",
-        "modelConfigDetailRevision", "modelCatalogDiscoveryRevision", "localExampleLoadRevision", "localExampleInstallRevision"]) context[key] = invalidate;
+        "modelConfigDetailRevision", "modelCatalogDiscoveryRevision", "localClientLoadRevision",
+        "localExampleLoadRevision", "localExampleInstallRevision"]) context[key] = invalidate;
     vm.createContext(context);
     vm.runInContext(functionSource("disposeSkillPages") + "\n" + functionSource("loadMultiPage"), context);
     return {context, state, views, events, navigate: (url) => context.loadMultiPage(url)};

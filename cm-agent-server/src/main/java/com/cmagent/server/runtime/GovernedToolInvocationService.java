@@ -22,6 +22,17 @@ import java.util.Objects;
 @Service
 /** 面向 AgentScope 的工具调用网关，确保每次调用都重新经过治理链路。 */
 public class GovernedToolInvocationService implements ToolInvocationGateway {
+    /** 可选本机客户端能力；关闭时不注册服务也不会进入远程工具分支。 */
+    private LocalClientOperationService localClientOperations;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureLocalClientOperations(
+            org.springframework.beans.factory.ObjectProvider<LocalClientOperationService> provider) {
+        localClientOperations = provider.getIfAvailable();
+    }
+    /** 延迟解析项目入口，避免Runtime与本机状态卷装配循环；关闭时仍不开放项目工具。 */
+    private org.springframework.beans.factory.ObjectProvider<LocalProjectTools> projectTools;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureProjectTools(org.springframework.beans.factory.ObjectProvider<LocalProjectTools> provider) { projectTools = provider; }
     private static final String RESOURCE_TYPE = "TOOL";
     private static final String TOOL_UNAVAILABLE = "工具不可用";
     private static final String TOOL_EXECUTION_FAILED = "工具执行失败";
@@ -68,6 +79,19 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
      */
     public ToolInvocationResult invoke(ToolInvocationRequest request) {
         Objects.requireNonNull(request, "request 不能为空");
+        var localKind = LocalClientToolCatalog.find(request.tenantId(), request.toolId());
+        if (localKind.isPresent()) {
+            if (localClientOperations == null) {
+                appendAudit(request, "TOOL_CALL_DENIED", "DENIED", "本机客户端功能未启用");
+                return ToolInvocationResult.deniedProtected("本机客户端功能未启用");
+            }
+            ToolInvocationResult localResult = localClientOperations.invoke(request, localKind.orElseThrow());
+            if (!localResult.authorized()) {
+                auditAppender.accessDenied(request.principal(), RESOURCE_TYPE, request.toolId().toString(),
+                        "local-client:invoke", localResult.errorMessage());
+            }
+            return localResult;
+        }
         ToolDefinition tool = toolRepository.findByTenantAndId(request.tenantId(), request.toolId())
                 .filter(definition -> isVisibleDefinition(request, definition))
                 .orElse(null);
@@ -83,6 +107,22 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
                     request.principal(), RESOURCE_TYPE, request.toolId().toString(), "tool:invoke", decision.reason()
             );
             return ToolInvocationResult.denied(decision.reason());
+        }
+
+        // 项目工具仍先经过相同的租户/定义/grant策略；专用入口额外核对固定Run和真实HIGH决定。
+        // 不能注册普通ToolRegistry执行器，否则独立调试或MCP可能绕过项目Run上下文。
+        if (LocalProjectToolCatalog.managed(request.tenantId(), request.toolId())) {
+            var projects = projectTools == null ? null : projectTools.getIfAvailable();
+            if(projects==null){appendAudit(request,"TOOL_CALL_DENIED","DENIED","本地项目功能未启用");return ToolInvocationResult.deniedProtected("本地项目功能未启用");}
+            appendAudit(request,"TOOL_CALL_STARTED","RUNNING","项目工具调用已开始");
+            try {
+                var result=projects.invoke(request,tool);
+                appendAudit(request,result.success()?"TOOL_CALL_COMPLETED":"TOOL_CALL_FAILED",result.success()?"SUCCEEDED":result.authorized()?"FAILED":"DENIED","项目工具受控结果");
+                return result;
+            }catch(com.cmagent.core.runtime.ToolInvocationInfrastructureException failure){
+                // 项目边界已写同号安全诊断，这里只写工具元数据审计，继续抛出以关闭Runtime派发门控。
+                appendAudit(request,"TOOL_CALL_FAILED","FAILED","项目工具支撑设施不可用");throw failure;
+            }
         }
 
         ToolExecutionRequest executionRequest = new ToolExecutionRequest(

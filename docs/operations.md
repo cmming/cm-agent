@@ -299,3 +299,95 @@ HTTP正文总等待5秒、4个无队列读取槽；真实底层流若不响应�
 私有派生资源的列表在游标/LIMIT之前过滤，详情/消息/审批/技能记录/停止入口复核固定Run和会话来源。对外复用原路由缺失时的404 code/message，避免错误差异成为存在性探针；后台治理分类WORKSPACE_RESOURCE_NOT_FOUND和前端共享同一errorId。原三态有效资源的权限保持原语义；自定义仓储需实现listVisible，旧实现默认拒绝而不泄露私有列表。
 
 密文固定期限不等于清单元数据自动擦除：当前保留已知批次、manifest及请求关联tombstone供历史核对和围栏使用，仅原主体可查；尚无自动清单元数据擦除功能。READY仍不可运行绑定，原生窗口与真实Provider验收待T11–T14，默认关闭上传，不能将本阶段配置直接视为完整功能发布。
+
+## 本地项目开发工作区运维
+
+当前功能未发布，`cm-agent.local-projects.enabled` 默认关闭。仅支持 Windows x64 上 Server 与项目同机的交互式桌面 `local`/`test` 部署，不适用于远程网页选择用户电脑目录或 Windows 无桌面服务。配置前置条件、工具链字段和固定预算见[本地项目配置](configuration.md#本地项目开发工作区)。该功能在原目录操作，不复制项目，不要求 Git；所有变更和命令仍应使用已有版本管理与独立备份。
+
+### 启用与首次核验
+
+1. 按既有流程备份数据库，升级对应 PostgreSQL/MySQL 方言到 V26，保留 V1–V25 原文；不得手工删除来源见证、绑定或操作记录来回退 DEFAULT。项目仓储、绑定、操作和严格审计的 `JdbcClient`/`TransactionTemplate` 须共用 DataSource。
+2. 为运行账号预建一个新的空私有本机状态目录，检查所有者和 ACL，仅允许可信所有者、固定 SID 的 SYSTEM/Administrators；确认不是应用工作目录、其重叠目录、用户主目录及其祖先、网络卷或链接。不要为了启用功能批量修改用户项目 ACL。保留稳定节点 ID、原持久模型凭据主密钥和状态目录；不可生成临时替代品。
+3. 显式监听 `127.0.0.1` 或 IPv6 回环，关闭转发头和 Studio，配置精确本机页面源，启用 JDBC 与真实 ReAct/受控 Harness 审批运行时。一次只允许一个实例持有私有状态锁；配置不完整、锁占用或恢复失败时应拒绝启动，不能改用无锁、memory 或模拟运行时绕过。
+4. 在隔离的自建测试项目验证原生窗口的“使用此文件夹”与“取消”。取消不应生成可消费目录票据；原生对话框仍需在桌面关闭，服务不强制操作用户窗口。关闭后才重新发起选择，不循环弹窗。登记项目不接受手写宿主绝对路径。
+5. 分别配置原主体的四项项目明细权限、Agent 运行/审批权限及工具管理权限。当前本机 bootstrap 登录通过默认空的 `cm-agent.local-projects.bootstrap-permissions` 显式追加所需项目权限，完整开发需列出 `project:read`、`project:write`、`project:execute`、`project:manage`，随后重新登录；不接受通配符、重复或非项目权限，关闭功能时不追加。新建项目会话要求 `project:manage`、`tool:grant`、`agent:run`，服务端会登记固定目录并补齐所选 Agent 的缺失 `project_*` grant；已有合法授权不重复覆盖，普通用户权限不会自动提升。先核验目录/文本/搜索和固定 Agent 会话，再在自建文件上验证精确文件提案、HIGH 拒绝/批准、外部修改冲突、条件撤销。
+6. 命令工具链从空配置开始，按需加入经过核实的绝对 `.exe`、固定前缀和显式环境；不扫描 PATH，不继承 Server 全量环境。先用安全夹具验证程序/构建摘要变化会拒绝旧提案、超时、输出截断和本次 Job 进程树停止，再允许项目构建。不要把 `build=true` 当作信任任意项目脚本或免审批。
+
+操作者应通过配置中完全一致的本机地址打开 `/console/v2/projects.html`，不能混用 `localhost`、`127.0.0.1` 或不同端口。API 要求本机标记头和直接回环连接，代理/隧道携带转发头会被拒绝；不要通过放开来源或删除来源检查解决入口错误。每次失败核对页面的中文原因、`errorCode` 和 `errorId`，后台按同号检索，不复制凭据、正文或原始异常到排查记录。
+
+固定项目工具登记沿用既有工具表；`endpoint` 是非空的 `local-project:KIND` 逻辑标识，不能按地址联网或执行。无需新增迁移，也不能为登记失败去放宽工具表约束；应核对当前版本、登录权限和同号诊断。
+
+### 执行、停止与结果未知
+
+文件应用与命令派发都依赖不可变 `operationId`、版本、digest 和同一 Run 的逐调用 HIGH 决定；批准后以持久 CAS 至多派发一次。原生文件/进程副作用与数据库不是原子事务，网络中断、超时或持久化失败不能按失败页面推定“没有执行”。请求结果未知时先读取原操作，不重发批准、文件应用或命令启动，不更换 ID 伪装重试。
+
+命令在原项目工作目录运行，继承服务账号权限，可能操作目录外资源、网络和插件。Job 仅限制本次进程树的生命周期，不提供 OS 沙箱，也不会通过 PID/名称扫杀其他进程。停止按钮只发出本次 Job 的停止请求，须继续核对退出状态；已发生的文件、网络或其他外部副作用不会随停止自动撤销。
+
+`RUNNING` 或 `UNKNOWN` 的副作用阻止新操作和项目归档。文件核对仅在具有完整前后状态与原生身份/权限证据时收口；证据不足继续保持 UNKNOWN。原主体在原节点人工核实后，可使用操作历史中的明确确认入口，将精确当前版本的 UNKNOWN 原意图终结为 `CANCELLED`，同时接受可能已发生的副作用；需要 `project:manage`、`agent:run` 及该类操作的写入/执行权限。此入口只改元数据，不打开项目根、不解密正文、不杀进程、不撤销、不重放，也不是后续操作的 HIGH 批准。版本冲突或响应丢失后先刷新原记录，不自动重试。
+
+### 重启恢复与私有材料清理
+
+冷启动在接受新请求前，仅按当前固定节点及长期来源发现失联的 `RUNNING`/`CANCELLING` 项目 Run：将已派发操作推进 UNKNOWN、失联 Run 收口 FAILED，并记录同事务审计；不重放模型、命令或文件操作。待审批状态保留检查点，恢复仍需原主体、原节点、原根身份、原密钥、原工具集合及当前有效权限。来源或根不可用时保持拒绝，不重新选目录替代旧绑定。
+
+读取快照是每个 Run 最多 32 个文件、合计 2 MiB 的首次脱敏全文；审批等待保持固定快照，恢复不会重新读取外部新正文。终态或到期后清理快照。浏览器预览是实时内容，可能与已冻结 Run 不同，应核对引用中的 SHA256。
+
+文件恢复材料和命令清单按创建时间固定保留 7 天，查看/审批不续期；后台每 5 分钟分批清理私有材料。未派发的到期意图先条件取消再擦除，已知终态/UNKNOWN 保留操作元数据墓碑，RUNNING 不由保留清理擅自结束或重放。文件恢复区最多 100 MiB/项目，并非节点总容量限制；运维仍应监控状态卷和数据库空间。七天后不能依赖应用自动撤销，私有恢复区也不是项目备份。
+
+命令 stdout/stderr 仅为当前实例的有界脱敏缓存，最多 32 份，无持久输出恢复；重启或淘汰后不可取回。`outputAvailable=false` 表示输出不可用，不等于命令没有输出或没有执行。保留数据库、主密钥和私有状态卷的一致备份；恢复期间保持停止派发，不能把项目文件回滚与命令外部副作用回滚混为一谈。
+
+### 归档、关闭与回退
+
+归档仅更新登记元数据，不删除或移动原目录、不清空会话和操作历史。归档前拒绝仍有运行、待审批、停止中或 UNKNOWN 副作用的项目；历史仍按原 owner 和来源读取，归档后不允许活文件浏览、新会话、发送或新副作用。恢复材料到期不影响历史元数据的归属校验。
+
+关闭前先停止新请求并排空/核对项目 Run、审批和本机 Job，保留数据库、节点、密钥和状态目录；关闭配置不能作为停止已运行程序的替代手段。关闭后不再装配项目能力，不能将项目历史经普通会话或参考目录入口读取执行。即使活动 Run 已排空，历史来源 4 仍要求可识别它的读取闸门；禁止与不认识协议 4 的旧二进制混跑同库。回退须使用保留拒绝闸门的兼容版本，或独立验证的数据恢复方案，不反向删表、不抹除来源见证。
+
+### 当前验证适用范围
+
+Rocky 容器上的 PostgreSQL 16/MySQL 8.4 持久化完整套件已运行 92 项，失败/错误/跳过均为 0，覆盖 V26、归属、分页、并发派发和恢复仓储合同。Windows 原生夹具、服务/控制器合同、SDK 回环与前端模拟 API 验证分别有证据。R2/R3 已在隔离 Windows 浏览器、真实 DashScope/Provider 与 MySQL 8.4 上完成项目模式及 `HELP.md` 真实读取，但不能代替 Linux/macOS 桌面、原生文件夹选择器自动化、远程 TLS 或多实例验收。功能尚未提交或部署，本轮未重启既有 8080 服务。当前具体命令、版本清单、剩余门禁以[本机客户端页账本](superpowers/progress/2026-11-03-local-client-page-ledger.md)为准。
+
+## 本机运行管理脚本
+
+使用 [manage-local-runtime.ps1](../scripts/manage-local-runtime.ps1) 统一管理 8080 服务端和本机客户端：
+
+```powershell
+.\scripts\manage-local-runtime.ps1 status
+.\scripts\manage-local-runtime.ps1 start
+.\scripts\manage-local-runtime.ps1 stop
+.\scripts\manage-local-runtime.ps1 restart
+```
+
+默认 `Target=both`，同时操作服务端和客户端；仅操作一端时使用 `-Target server` 或 `-Target client`。`restart -Build` 会先构建客户端 fat JAR、安装服务端依赖并更新运行包。脚本启动服务端后会等待 `/actuator/health` 返回 200，再启动客户端；停止时先关闭客户端，不删除设备身份或配对关系。
+
+默认路径可通过 `ProjectRoot`、`RuntimeDirectory`、`JavaHome`、`MavenExecutable`、`Port` 和 `TimeoutSeconds` 覆盖。日志位于运行目录的 `server-8080.*.log` 与 `client-run.*.log`。脚本只从 `.env` 写入进程环境，不显示密钥值；它不是 Windows 服务，电脑重启后仍需手动执行 `start`。
+
+`local` profile 当前显式监听 `0.0.0.0:8080`，并显式启用 `cm-agent.local-projects.enabled` 与 `cm-agent.local-projects.allow-non-loopback`。允许的精确来源为 `http://127.0.0.1:8080`、`http://localhost:8080` 和 `http://192.168.0.159:8080`；基础配置仍保持回环默认，生产 profile 不会继承该覆盖。Host、Origin、`X-CM-Agent-Local-Project`、Fetch Metadata 和转发头拒绝检查仍然生效，`0.0.0.0` 通配地址不能作为浏览器来源。该模式会让远端会话操作服务端所在电脑的项目文件，属于高风险管理，必须限制来源防火墙并优先升级为 HTTPS；不需要远端本机文件能力时应关闭 `local-projects`。
+
+Linux 使用 [manage-local-runtime.sh](../scripts/manage-local-runtime.sh)，保持相同的动作和目标语义：
+
+```bash
+chmod +x scripts/manage-local-runtime.sh
+scripts/manage-local-runtime.sh status
+scripts/manage-local-runtime.sh start
+scripts/manage-local-runtime.sh stop
+scripts/manage-local-runtime.sh restart
+scripts/manage-local-runtime.sh start --target client
+scripts/manage-local-runtime.sh restart --target server --build
+```
+
+Linux 版默认可执行文件来自 `JAVA_HOME` 或 `PATH`，Maven 来自 `PATH`，运行目录为 `${XDG_STATE_HOME:-$HOME/.local/state}/cm-agent/local-runtime`。目标机应安装 JDK 21；使用 `--build` 时还需要 Maven 3.9+。可通过 `--project-root`、`--runtime-dir`、`--java-home`、`--maven`、`--port` 和 `--timeout` 覆盖默认值。脚本使用 `nohup` 后台启动，停止时先关闭客户端，不删除 `~/.cm-agent/local-client/identity.json` 或配对关系。Linux 版也不是 systemd 服务，主机重启后需重新执行 `start`。
+
+无法使用 Secret Service 的 Linux 客户端会使用加密口令身份。此类环境必须额外指定客户端状态目录和仅当前用户可读的 600 权限口令文件：
+
+```bash
+scripts/manage-local-runtime.sh start --target client \
+  --client-state-dir /srv/cm-agent/local-client-state \
+  --client-password-file /srv/cm-agent/secrets/client.pass
+```
+
+脚本需要 `python3` 为客户端提供伪终端，并等待 Java 关闭终端回显后再输入单行口令；口令不会出现在命令行、普通日志或终端转录中。缺少 `python3` 时脚本拒绝启动 PASSWORD 身份，不会退化到明文或弱口令方案。
+
+2026-11-05 已在 Rocky Linux 9.3、JDK 21、MySQL 8.4 和当前真实工作树上完成 `restart --build` 验收：Flyway v28、服务端 HTTP 200、真实 Linux 设备配对 ACTIVE、客户端持续完成签名挑战。该次构建使用主机现有 Maven 3.6.3 成功，但生产环境仍按项目要求使用 Maven 3.9+。
+
+MySQL 8.4 新建空库应使用服务器默认的 `utf8mb4_0900_ai_ci`。若手工指定 `utf8mb4_unicode_ci`，V19 的 `skill_artifacts` 外键会因排序规则与既有租户表不一致而失败；该错误应在建库阶段修正，不能修改已发布迁移规避。
+
+在同一验收实例上，真实 DashScope `qwen-plus` 已通过 `FULL_ACCESS + READ_ONLY` 单轮授权调用 `local_client_read_files`。Run、工具调用和本机操作均为 `SUCCEEDED`，最终结果包含客户端侧文件原文。目标 Linux 无法直连模型时应配置受控 HTTPS 出网代理；该代理必须只对回环或受信网段开放，不得把模型 API Key 写入代理日志或命令行。

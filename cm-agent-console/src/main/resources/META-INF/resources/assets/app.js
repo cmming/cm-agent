@@ -14,6 +14,8 @@
         modelConfigsPage: "/console/v2/model-configs.html",
         toolsPage: "/console/v2/tools.html",
         skillsPage: "/console/v2/skills.html",
+        projectsPage: "/console/v2/projects.html",
+        localClientPage: "/console/v2/local-client.html",
         chatPage: "/console/v2/chat.html",
         runsPage: "/console/v2/runs.html",
         auditPage: "/console/v2/audit.html"
@@ -70,7 +72,10 @@
         chatCancelPending: false,
         chatRunStatuses: {},
         auditEvents: [],
-        auditCursor: ""
+        auditCursor: "",
+        localClientDevices: [],
+        selectedLocalClientDeviceId: "",
+        localClientRevokeArmed: ""
     };
     const toolPublicationLock = core.createToolPublicationLock();
     const approvalDrafts = core.createApprovalDraftStore();
@@ -84,6 +89,7 @@
     const modelConfigLoadRevision = core.createLoadRevisionGate();
     const modelConfigDetailRevision = core.createLoadRevisionGate();
     const modelCatalogDiscoveryRevision = core.createLoadRevisionGate();
+    const localClientLoadRevision = core.createLoadRevisionGate();
     const localExampleInstallLock = core.createToolPublicationLock();
     const localExampleLoadRevision = core.createLoadRevisionGate();
     const localExampleInstallRevision = core.createKeyedLoadRevisionGate();
@@ -110,6 +116,8 @@
         modelConfigsPage: ["模型配置", "管理 Provider、服务地址和默认模型名称。"],
         toolsPage: ["工具治理", "注册 Tool，并向指定 Agent 授予使用权限。"],
         skillsPage: ["技能管理", "导入、查看、启停和更新本租户技能版本。"],
+        projectsPage: ["本地项目", "选择本机文件夹，浏览项目文件。"],
+        localClientPage: ["本机客户端", "登记客户端设备，并查看或撤销配对。"],
         chatPage: ["会话聊天", "选择 Agent，在同一会话中保留上下文并实时查看回答。"],
         runsPage: ["运行记录", "执行 Agent，并查看运行历史、结果与工具调用。"],
         auditPage: ["审计日志", "追踪当前租户的安全事件和资源操作。"]
@@ -251,6 +259,7 @@
         modelCatalogDiscoveryRevision.invalidate();
         localExampleLoadRevision.invalidate();
         localExampleInstallRevision.invalidateAll();
+        localClientLoadRevision.invalidate();
         const nextNodes = Array.from(nextDocument.body.children)
             .filter((node) => node.tagName !== "SCRIPT")
             .map((node) => document.importNode(node, true));
@@ -276,8 +285,10 @@
         artifactManager?.dispose();
         state.skillsPage?.dispose();
         state.sandboxPage?.dispose();
+        state.projectsPage?.dispose();
         state.skillsPage = null;
         state.sandboxPage = null;
+        state.projectsPage = null;
     }
 
     function reportPageNavigationError(error) {
@@ -314,6 +325,7 @@
         modelCatalogDiscoveryRevision.invalidate();
         localExampleLoadRevision.invalidate();
         localExampleInstallRevision.invalidateAll();
+        localClientLoadRevision.invalidate();
         state.token = "";
         state.currentUser = null;
         state.agents = [];
@@ -357,6 +369,9 @@
         state.selectedRunId = "";
         state.auditEvents = [];
         state.auditCursor = "";
+        state.localClientDevices = [];
+        state.selectedLocalClientDeviceId = "";
+        state.localClientRevokeArmed = "";
         $("loginPassword").value = "";
         $("consoleView").hidden = true;
         $("loginView").hidden = false;
@@ -499,6 +514,17 @@
                     });
                     state.sandboxPage.mount();
                 }
+                break;
+            case "projectsPage":
+                if (window.CmAgentLocalProjects && !state.projectsPage) {
+                    state.projectsPage = window.CmAgentLocalProjects.createProjectPage({
+                        api, document, host: window, getSessionEpoch: () => sessionEpoch.capture()
+                    });
+                    await state.projectsPage.mount();
+                }
+                break;
+            case "localClientPage":
+                await loadLocalClientDevices(session);
                 break;
             case "chatPage":
                 await loadAgents(session);
@@ -2773,6 +2799,7 @@
 
     async function initializeChatPage() {
         if (!$("chatPage")) return;
+        loadLocalClientDevices().catch(() => {});
         if (!state.selectedAgentId) {
             renderChatConversations();
             renderChatWelcome("暂无可用 Agent，请先创建并启用一个 Agent。");
@@ -2785,6 +2812,250 @@
         } else {
             renderChatWelcome("当前 Agent 还没有会话，发送第一条消息即可开始。");
         }
+    }
+
+    function localClientPlatformLabel(platform) {
+        return ({WINDOWS: "Windows", MACOS: "macOS", LINUX: "Linux"})[platform] || "未知平台";
+    }
+
+    function localClientDeviceStateLabel(state) {
+        return state === "ACTIVE" ? "已配对" : "已撤销";
+    }
+
+    function parseLocalClientPairPackage() {
+        const text = $("localClientPairPackage")?.value?.trim() || "";
+        if (!text) throw new Error("请粘贴客户端配对包。");
+        let value;
+        try {
+            value = JSON.parse(text);
+        } catch {
+            throw new Error("配对包不是有效 JSON，请重新复制完整内容。");
+        }
+        const fields = ["requestId", "nonce", "deviceName", "platform", "publicKey", "proof"];
+        if (fields.some((field) => typeof value?.[field] !== "string" || !value[field].trim())) {
+            throw new Error("配对包缺少客户端签名或设备字段。");
+        }
+        if (!["WINDOWS", "MACOS", "LINUX"].includes(value.platform)) {
+            throw new Error("配对包中的操作系统类别无效。");
+        }
+        return value;
+    }
+
+    function renderLocalClientPairPreview(failSoftly = true) {
+        const preview = $("localClientPairPreview");
+        if (!preview) return null;
+        try {
+            const value = parseLocalClientPairPackage();
+            $("localClientPairDeviceName").textContent = value.deviceName;
+            $("localClientPairPlatform").textContent = localClientPlatformLabel(value.platform);
+            preview.hidden = false;
+            return value;
+        } catch (error) {
+            preview.hidden = true;
+            if (!failSoftly) throw error;
+            return null;
+        }
+    }
+
+    async function confirmLocalClientPair() {
+        const button = $("confirmLocalClientPairBtn");
+        const status = $("localClientPairStatus");
+        let pairing;
+        try {
+            pairing = parseLocalClientPairPackage();
+        } catch (error) {
+            setStatus(status, error.message, "error");
+            return;
+        }
+        await withSubmitState(button, async () => {
+            setStatus(status, "正在登记客户端签名…", "neutral");
+            const pending = await api.request("/api/local-client/pairings", {
+                method: "POST",
+                body: JSON.stringify(pairing)
+            });
+            const confirmed = await api.request(
+                `/api/local-client/pairings/${encodeURIComponent(pending.pairingId)}/confirm`,
+                {method: "POST", body: "{}"}
+            );
+            if (confirmed.state !== "CONFIRMED" || !confirmed.deviceId) {
+                throw new Error("服务端未返回已确认设备，请刷新设备列表核对。");
+            }
+            $("localClientPairPackage").value = "";
+            $("localClientPairPreview").hidden = true;
+            state.selectedLocalClientDeviceId = confirmed.deviceId;
+            await loadLocalClientDevices();
+            setStatus(status, "服务端已确认配对。请确认目标电脑的本机客户端终端也显示配对完成；客户端完成前设备不能执行操作。", "neutral");
+        });
+    }
+
+    async function loadLocalClientDevices(session = sessionEpoch.capture(), focusDeviceId = "") {
+        const revision = localClientLoadRevision.issue();
+        try {
+            const devices = await api.request("/api/local-client/devices");
+            if (!sessionEpoch.isCurrent(session) || !localClientLoadRevision.isCurrent(revision)) return;
+            state.localClientDevices = Array.isArray(devices) ? devices : [];
+            if (!state.localClientDevices.some((device) => device.deviceId === state.selectedLocalClientDeviceId)) {
+                state.selectedLocalClientDeviceId = state.localClientDevices.find((device) => device.state === "ACTIVE")?.deviceId
+                    || state.localClientDevices[0]?.deviceId || "";
+            }
+            state.localClientRevokeArmed = "";
+            renderLocalClientDevices("", focusDeviceId);
+            renderChatLocalClientOptions();
+            setStatus($("localClientDeviceStatus"), "", "neutral");
+        } catch (error) {
+            if (!sessionEpoch.isCurrent(session) || !localClientLoadRevision.isCurrent(revision)) return;
+            state.localClientDevices = [];
+            renderLocalClientDevices(error.message);
+            renderChatLocalClientOptions(error.message);
+            setStatus($("localClientDeviceStatus"), `无法读取本机客户端：${error.message}`, "error");
+        }
+    }
+
+    function renderLocalClientDevices(errorMessage = "", focusDeviceId = "") {
+        const list = $("localClientDeviceList");
+        if (!list) return;
+        const count = $("localClientDeviceCount");
+        let focusTarget = null;
+        list.replaceChildren();
+        if (count) count.textContent = `共 ${state.localClientDevices.length} 台`;
+        if (errorMessage) {
+            list.append(emptyState(`无法读取本机客户端：${errorMessage}`));
+            renderLocalClientDeviceDetail();
+            return;
+        }
+        if (!state.localClientDevices.length) {
+            list.append(emptyState("还没有已配对设备。先在电脑上运行本机客户端并生成配对包。"));
+            renderLocalClientDeviceDetail();
+            return;
+        }
+        for (const device of state.localClientDevices) {
+            const item = element("article", {className: "resource-item"});
+            item.classList.toggle("active", device.deviceId === state.selectedLocalClientDeviceId);
+            const button = element("button", {className: "local-client-device-row", type: "button"});
+            button.setAttribute("aria-pressed", String(device.deviceId === state.selectedLocalClientDeviceId));
+            button.setAttribute("aria-controls", "localClientDeviceDetail");
+            button.append(
+                element("strong", {text: device.displayName || "未命名设备"}),
+                element("span", {text: `${localClientPlatformLabel(device.platform)} · ${localClientDeviceStateLabel(device.state)}`})
+            );
+            button.addEventListener("click", () => {
+                state.selectedLocalClientDeviceId = device.deviceId;
+                state.localClientRevokeArmed = "";
+                renderLocalClientDevices("", device.deviceId);
+            });
+            item.append(button);
+            list.append(item);
+            if (device.deviceId === focusDeviceId) focusTarget = button;
+        }
+        renderLocalClientDeviceDetail();
+        focusTarget?.focus({preventScroll: true});
+    }
+
+    function renderLocalClientDeviceDetail(restoreRevokeFocus = false) {
+        const container = $("localClientDeviceDetail");
+        if (!container) return;
+        const device = state.localClientDevices.find((item) => item.deviceId === state.selectedLocalClientDeviceId);
+        if (!device) {
+            container.replaceChildren(emptyState("尚未选择设备。设备列表不表示客户端当前在线。"));
+            return;
+        }
+        const heading = element("div", {className: "local-client-detail-heading"});
+        const title = element("div");
+        title.append(
+            element("h2", {text: device.displayName || "未命名设备"}),
+            element("p", {text: "设备在线状态由本机客户端独立维护，此页只显示服务端配对状态。"})
+        );
+        const badge = element("span", {className: "status-badge", text: localClientDeviceStateLabel(device.state)});
+        badge.dataset.tone = device.state === "ACTIVE" ? "success" : "neutral";
+        heading.append(title, badge);
+        const details = element("dl", {className: "local-client-detail-list"});
+        [
+            ["平台", localClientPlatformLabel(device.platform)],
+            ["设备标识", device.deviceId],
+            ["配对时间", core.formatDateTime(device.createdAt)],
+            ["状态版本", device.version],
+            ["最近更新", core.formatDateTime(device.updatedAt)]
+        ].forEach(([label, value]) => details.append(element("dt", {text: label}), element("dd", {text: value})));
+        container.replaceChildren(heading, details);
+        if (device.state !== "ACTIVE") {
+            container.append(emptyState("设备已撤销，不会再签发挑战、领取任务或建立新的单轮授权。"));
+            return;
+        }
+        const danger = element("div", {className: "local-client-revoke-zone"});
+        danger.append(element("p", {text: "撤销会立即阻断新挑战和未派发任务；已经发生的文件、网络或命令副作用不会回滚。"}));
+        const revoke = element("button", {
+            className: "button danger",
+            type: "button",
+            text: state.localClientRevokeArmed === device.deviceId ? "再次点击确认撤销" : "撤销此设备"
+        });
+        revoke.addEventListener("click", () => revokeLocalClientDevice(device));
+        danger.append(revoke);
+        container.append(danger);
+        if (restoreRevokeFocus) revoke.focus({preventScroll: true});
+    }
+
+    async function revokeLocalClientDevice(device) {
+        if (state.localClientRevokeArmed !== device.deviceId) {
+            state.localClientRevokeArmed = device.deviceId;
+            renderLocalClientDeviceDetail(true);
+            setStatus($("globalStatus"), "再次点击确认撤销；已发生的文件、网络或命令副作用不会回滚。", "neutral");
+            return;
+        }
+        const button = document.querySelector(".local-client-revoke-zone .button");
+        try {
+            await withSubmitState(button, async () => {
+                await api.request(`/api/local-client/devices/${encodeURIComponent(device.deviceId)}/revoke`, {
+                    method: "POST",
+                    body: JSON.stringify({expectedVersion: device.version})
+                });
+                await loadLocalClientDevices(sessionEpoch.capture(), device.deviceId);
+            });
+            setStatus($("globalStatus"), "设备已撤销；后续挑战、领取和新的单轮授权将被拒绝。", "success");
+        } catch (error) {
+            state.localClientRevokeArmed = "";
+            await loadLocalClientDevices(sessionEpoch.capture(), device.deviceId).catch(() => {});
+            setStatus($("globalStatus"), error.status === 409
+                ? `${error.message} 设备状态已变化，已刷新列表；请核对后重新决定。`
+                : `${error.message} 撤销结果尚未确认，请刷新设备列表核对，不会自动重复撤销。`, "error");
+        }
+    }
+
+    function renderChatLocalClientOptions(errorMessage = "") {
+        const select = $("chatLocalClientDevice");
+        if (!select) return;
+        const previous = select.value;
+        select.replaceChildren(option("", "不使用本机客户端"));
+        state.localClientDevices.filter((device) => device.state === "ACTIVE").forEach((device) => {
+            select.append(option(device.deviceId, `${device.displayName} · ${localClientPlatformLabel(device.platform)}`));
+        });
+        if ([...select.options].some((item) => item.value === previous)) select.value = previous;
+        const unavailable = Boolean(errorMessage);
+        const hasDevice = select.options.length > 1;
+        select.disabled = unavailable || !hasDevice || state.chatBusy;
+        const note = $("chatLocalClientAvailability");
+        if (note) {
+            note.textContent = unavailable
+                ? `本机客户端当前不可用：${errorMessage}`
+                : hasDevice
+                    ? "选择设备后会向本轮 Agent 开放所选能力；Run 结束后失效。"
+                    : "当前账号还没有已配对设备，可前往“本机客户端”页面连接。";
+        }
+        syncChatLocalClientControls();
+    }
+
+    function syncChatLocalClientControls() {
+        const selected = Boolean($("chatLocalClientDevice")?.value);
+        [$("chatLocalClientMode"), ...document.querySelectorAll(".chat-local-client-categories input")].filter(Boolean)
+            .forEach((control) => { control.disabled = !selected || state.chatBusy; });
+    }
+
+    function selectedLocalClient() {
+        const deviceId = $("chatLocalClientDevice")?.value || "";
+        if (!deviceId) return null;
+        const categories = [...document.querySelectorAll(".chat-local-client-categories input:checked")]
+            .map((control) => control.value);
+        if (!categories.length) throw new Error("请选择至少一种本机操作能力。");
+        return {deviceId, mode: $("chatLocalClientMode")?.value || "ASK_ON_EFFECT", categories};
     }
 
     function renderChatConversations() {
@@ -3679,8 +3950,11 @@
 
     function setChatBusy(busy) {
         state.chatBusy = busy;
-        [$("chatAgentSelect"), $("newChatConversationBtn"), $("newChatConversationTopBtn"), $("chatSendBtn")].filter(Boolean)
+        [$("chatAgentSelect"), $("newChatConversationBtn"), $("newChatConversationTopBtn"),
+            $("chatLocalClientDevice"), $("chatLocalClientMode"), $("chatSendBtn")].filter(Boolean)
             .forEach((control) => { control.disabled = busy; });
+        document.querySelectorAll(".chat-local-client-categories input")
+            .forEach((control) => { control.disabled = busy || !$("chatLocalClientDevice")?.value; });
         if ($("chatWorkspaceSummary")) renderWorkspaceChoice();
         else updateChatSendAvailability();
     }
@@ -3733,6 +4007,13 @@
             setStatus($("chatFormStatus"), "请选择 Agent 并输入消息。", "error");
             return;
         }
+        let localClient;
+        try {
+            localClient = selectedLocalClient();
+        } catch (error) {
+            setStatus($("chatFormStatus"), error.message, "error");
+            return;
+        }
         let streamedOutput = "";
         const operationSession = sessionEpoch.capture();
         let operationConversationId = null;
@@ -3765,7 +4046,7 @@
                 let approvalRequired = null;
                 await api.stream(`/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/messages/stream`, {
                     method: "POST",
-                    body: JSON.stringify({input})
+                    body: JSON.stringify({input, localClient})
                 }, (event) => {
                     if (!isCurrent()) return;
                     if (event.type === "started") {
@@ -4533,6 +4814,16 @@
             .catch((error) => setStatus($("chatFormStatus"), error.message, "error")));
         bind("refreshAuditBtn", "click", () => loadAudit({append: false}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
         bind("loadMoreAuditBtn", "click", () => loadAudit({append: true}).catch((error) => setStatus($("globalStatus"), error.message, "error")));
+        bind("refreshLocalClientDevicesBtn", "click", () => loadLocalClientDevices()
+            .catch((error) => setStatus($("globalStatus"), error.message, "error")));
+        bind("localClientPairForm", "submit", (event) => {
+            event.preventDefault();
+            confirmLocalClientPair().catch((error) => setStatus($("localClientPairStatus"), error.message, "error"));
+        });
+        bind("localClientPairPackage", "input", () => renderLocalClientPairPreview(true));
+        bind("chatLocalClientDevice", "change", syncChatLocalClientControls);
+        document.querySelectorAll(".chat-local-client-categories input")
+            .forEach((control) => control.addEventListener("change", syncChatLocalClientControls));
         document.querySelectorAll("button[data-page]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));
         document.querySelectorAll("button[data-navigate]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.navigate)));
         centerActiveNavigation();

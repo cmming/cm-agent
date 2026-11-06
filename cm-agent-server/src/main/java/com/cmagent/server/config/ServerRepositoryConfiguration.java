@@ -31,6 +31,7 @@ import com.cmagent.core.repository.SkillVersionRepository;
 import com.cmagent.server.store.InMemoryPlatformStore;
 import com.cmagent.server.store.InMemorySkillStore;
 import com.cmagent.server.store.InMemoryConversationStore;
+import com.cmagent.server.store.InMemoryLocalClientAuthorizationRepository;
 import com.cmagent.server.store.InMemoryToolApprovalRepository;
 import com.cmagent.server.store.InMemoryRuntimeCheckpointRepository;
 import org.slf4j.Logger;
@@ -52,6 +53,13 @@ import java.util.UUID;
 @EnableConfigurationProperties(CmAgentPersistenceProperties.class)
 /** 按持久化模式选择 memory 或 JDBC Repository 实现。 */
 public class ServerRepositoryConfiguration {
+    /** memory 模式的设备、配对、单轮授权、挑战和操作队列共享一份同步状态。 */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "cm-agent.persistence", name = "mode", havingValue = "memory", matchIfMissing = true)
+    InMemoryLocalClientAuthorizationRepository inMemoryLocalClientAuthorizationRepository() {
+        return new InMemoryLocalClientAuthorizationRepository();
+    }
     /** @return 只供本地/测试的选择仓储；生产重启恢复必须使用 JDBC */
     @Bean
     @ConditionalOnMissingBean(com.cmagent.core.repository.WorkspaceSelectionRepository.class)

@@ -3,6 +3,7 @@ package com.cmagent.agentscope;
 import com.cmagent.core.domain.ToolDefinition;
 import com.cmagent.core.domain.ToolRiskLevel;
 import com.cmagent.core.domain.ToolType;
+import com.cmagent.core.security.OperationAuthorizationMode;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionMode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,6 +17,72 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AgentScopePermissionPolicyTest {
+
+    @Test
+    void 三种模式仅影响固定本机工具且普通高风险仍须审批() {
+        UUID tenant = UUID.randomUUID();
+        var read = local(tenant, "READ_FILES", "local_client_read_files", ToolRiskLevel.LOW);
+        var file = local(tenant, "CHANGE_FILES", "local_client_change_files", ToolRiskLevel.HIGH);
+        var network = local(tenant, "NETWORK", "local_client_network", ToolRiskLevel.HIGH);
+        var command = local(tenant, "COMMAND", "local_client_command", ToolRiskLevel.HIGH);
+        var business = tool("business_high", ToolRiskLevel.HIGH);
+        var all = List.of(read, file, network, command, business);
+        var effect = AgentScopeReActExecutor.permissionContext(all, true, true, OperationAuthorizationMode.ASK_ON_EFFECT);
+        assertThat(effect.getAllowRules()).containsKey(read.name());
+        assertThat(effect.getAskRules()).containsKeys(file.name(), network.name(), command.name(), business.name());
+        var risk = AgentScopeReActExecutor.permissionContext(all, true, true, OperationAuthorizationMode.ASK_ON_RISK);
+        assertThat(risk.getAllowRules()).containsKey(read.name());
+        assertThat(risk.getAskRules()).containsKeys(file.name(), network.name(), command.name(), business.name());
+        var full = AgentScopeReActExecutor.permissionContext(all, true, true, OperationAuthorizationMode.FULL_ACCESS);
+        assertThat(full.getAllowRules()).containsKeys(read.name(), file.name(), network.name(), command.name());
+        assertThat(full.getAskRules()).containsKey(business.name());
+        var noApproval = AgentScopeReActExecutor.permissionContext(all, true, false, OperationAuthorizationMode.ASK_ON_EFFECT);
+        assertThat(noApproval.getDenyRules()).containsKeys(file.name(), network.name(), command.name(), business.name());
+    }
+
+    @Test
+    void 同名非固定工具不能借本机完全访问绕过审批() {
+        var forged = tool("local_client_command", ToolRiskLevel.HIGH);
+        var context = AgentScopeReActExecutor.permissionContext(List.of(forged), true, true,
+                OperationAuthorizationMode.FULL_ACCESS);
+        assertThat(context.getAskRules()).containsKey(forged.name());
+    }
+
+    @Test
+    void 项目模式只作用于固定项目工具且普通高风险仍须审批() {
+        UUID tenant = UUID.randomUUID();
+        var read = project(tenant, "READ", "project_read_file", ToolRiskLevel.LOW, "READ_ONLY");
+        var apply = project(tenant, "APPLY_CHANGE", "project_apply_changes", ToolRiskLevel.HIGH, "FILE_CHANGE");
+        var command = project(tenant, "RUN_COMMAND", "project_run_command", ToolRiskLevel.HIGH, "COMMAND");
+        var business = tool("business_high", ToolRiskLevel.HIGH);
+
+        var effect = AgentScopeReActExecutor.permissionContext(List.of(read, apply, command, business), true, true,
+                OperationAuthorizationMode.ASK_ON_EFFECT);
+        assertThat(effect.getAllowRules()).containsKey(read.name());
+        assertThat(effect.getAskRules()).containsKeys(apply.name(), command.name(), business.name());
+
+        var full = AgentScopeReActExecutor.permissionContext(List.of(read, apply, command, business), true, true,
+                OperationAuthorizationMode.FULL_ACCESS);
+        assertThat(full.getAllowRules()).containsKeys(read.name(), apply.name(), command.name());
+        assertThat(full.getAskRules()).containsKey(business.name());
+    }
+
+    private static ToolDefinition local(UUID tenant, String kind, String name, ToolRiskLevel risk) {
+        UUID id = UUID.nameUUIDFromBytes(("cm-agent-local-client-tool:" + tenant + ":" + kind)
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return new ToolDefinition(id, tenant, name, "测试工具", ToolType.LOCAL,
+                "{\"type\":\"object\",\"properties\":{}}", risk, true,
+                "cm-agent-local://" + kind.toLowerCase(java.util.Locale.ROOT), "tester", "tester");
+    }
+
+    private static ToolDefinition project(UUID tenant, String kind, String name, ToolRiskLevel risk,
+                                          String category) {
+        UUID id = UUID.nameUUIDFromBytes(("cm-agent/local-project/v1/" + tenant + "/" + kind)
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return new ToolDefinition(id, tenant, name, "项目" + category + "工具", ToolType.LOCAL,
+                "{\"type\":\"object\",\"properties\":{}}", risk, true,
+                "local-project:" + kind, "tester", "tester");
+    }
 
     @Test
     void 启用权限引擎后仅高风险工具进入逐次询问() {

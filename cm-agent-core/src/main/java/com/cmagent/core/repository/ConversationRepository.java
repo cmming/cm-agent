@@ -14,6 +14,16 @@ public interface ConversationRepository {
     default boolean supportsWorkspaceProtocol() { return false; }
 
     /**
+     * 内部安全见证：即使来源头损坏降级，已绑定项目或派生自项目运行的会话也不能回退旧来源。
+     * 仅供可信服务分流，不作为对外存在性接口；没有本机项目能力的旧实现默认无此见证。
+     * @param tenantId 可信租户
+     * @param agentId 已核实的当前资源 Agent
+     * @param conversationId 当前资源标识
+     * @return 是否仍有持久项目来源证据；不代表当前主体已获项目访问权限
+     */
+    default boolean hasLocalProjectSource(UUID tenantId, UUID agentId, UUID conversationId) { return false; }
+
+    /**
      * 首次保存会话时原子固定当前来源头见证，不能在保存后另补写而暴露旧默认来源窗口。
      * @param tenantId 可信认证租户
      * @param conversation 已完成认证与归属检查的新会话

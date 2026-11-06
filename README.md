@@ -237,3 +237,11 @@ Windows服务器登记资料现在允许可信所有者、`SYSTEM`和本机内�
 R1 已完成 T9 存储基线及 T10 受控导入 API：支持能力查询、明确确认后的 manifest/逐文件上传、READY 完成、结果核对和撤销，默认关闭。创建响应丢失可按同一次确认的 `requestId` 查询，不盲目重复创建。IMPORTED 派生会话/Run 的读取按原主体隔离，列表在游标分页前过滤；原三态保持原权限。
 
 本阶段仍没有操作系统文件夹窗口、浏览器预览/勾选流程或 IMPORTED 运行绑定，READY 的 `bindable` 仍为 `false`，不能把 API 验收当作原生窗口或真实模型验收。部署和协议见 [导入存储配置](docs/configuration.md#本机只读导入存储基线t9)、[T10导入API](docs/configuration.md#本机只读导入apit10) 及 [导入维护](docs/operations.md#本机只读导入存储维护t9)。
+
+### 本地项目开发工作区（未发布，默认关闭）
+
+控制台 v2 的“本地项目”支持通过 Windows 原生窗口选择本机文件夹，将原目录登记为私有项目，并在项目内创建绑定固定 Agent 的会话。项目页提供目录树、文本预览、搜索和带版本的文件引用；Agent 通过专用治理工具提出文件修改、条件撤销、命令和构建计划，实际文件写入或程序启动须逐调用 HIGH 审批。项目归档保留目录和历史，结果未知的操作不会自动重放。原只读参考资料及上传快照入口保留各自语义。
+
+`cm-agent.local-projects.enabled` 默认 `false`。首期仅支持 Server 与文件夹同机的 Windows x64 `local`/`test` 部署，要求 JDBC、显式回环监听、关闭转发头与 Studio、固定节点和私有状态目录，以及真实 ReAct 或受控 Harness 审批运行时。JDBC 新增 V26 五张项目表；四个 `project:*` 权限由部署者显式赋给主体，固定项目工具目录和 Agent grant 仍按原有 `tool:grant` 权限治理。新建项目会话会为所选 Agent 自动补齐当前固定 `project_*` 工具的缺失 grant，但不会自动提升普通用户权限；Run 首发后工具集合冻结。项目 Run 的系统提示明确列出这些工具，并说明原生 Harness 文件系统禁用时仍应通过项目工具读取。项目会话不加载普通业务工具或 Skill。
+
+命令在原项目目录执行，继承服务运行账号的操作系统权限，可能访问目录外资源和网络；Job 负责本次进程树的生命周期，不提供操作系统级沙箱。工具链须由部署者显式配置；空配置不会显示命令或构建可用。启用方式、预算、恢复及归档说明见[本地项目配置](docs/configuration.md#本地项目开发工作区)和[本地项目运维](docs/operations.md#本地项目开发工作区运维)。当前授权、页面、真实 Provider 与浏览器读取证据及剩余门禁见[实施账本](docs/superpowers/progress/2026-11-02-agent-operation-authorization-implementation-ledger.md)。

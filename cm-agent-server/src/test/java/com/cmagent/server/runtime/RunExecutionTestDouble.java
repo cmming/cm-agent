@@ -15,6 +15,8 @@ final class RunExecutionTestDouble {
 
     static void assertNoExecution(RunExecutionService execution) {
         assertThat(mockingDetails(execution).getInvocations().stream()
-                .filter(invocation -> !"controls".equals(invocation.getMethod().getName())).toList()).isEmpty();
+                .filter(invocation -> !"controls".equals(invocation.getMethod().getName())
+                        && !"cleanupEphemeralAuthorization".equals(invocation.getMethod().getName()))
+                .toList()).isEmpty();
     }
 }

@@ -22,6 +22,22 @@ import java.util.UUID;
  * 列表使用 {@code updated_at + id} 复合游标，保证数据库排序与 Core 分页语义一致。</p>
  */
 public class JdbcConversationRepository implements ConversationRepository {
+    /**
+     * 已知项目来源不依赖可损坏的头字段；固定别名 c 仅供本仓储使用。
+     * 不以绑定中的 owner/Agent 再缩小见证，否则这两个字段损坏也会使私有资料回退旧来源。
+     * 实际资源仍先按 tenant/Agent 查询，权限由项目读取闸门完成；派生关联始终保持同一 tenant。
+     */
+    private static final String LOCAL_PROJECT_SOURCE = "(c.workspace_protocol=4"
+            + " OR EXISTS (SELECT 1 FROM local_project_conversations lp WHERE lp.tenant_id=c.tenant_id AND lp.conversation_id=c.id)"
+            + " OR EXISTS (SELECT 1 FROM messages lm JOIN runs lr ON lr.tenant_id=lm.tenant_id AND lr.id=lm.run_id"
+            + " WHERE lm.tenant_id=c.tenant_id AND lm.conversation_id=c.id AND (lr.workspace_protocol=4"
+            + " OR EXISTS (SELECT 1 FROM local_project_runs lpr WHERE lpr.tenant_id=lr.tenant_id AND lpr.run_id=lr.id))))";
+
+    @Override public boolean hasLocalProjectSource(UUID tenantId, UUID agentId, UUID conversationId) {
+        return jdbcClient.sql("SELECT COUNT(*) FROM conversations c WHERE c.tenant_id=:tenant AND c.agent_id=:agent AND c.id=:id AND "
+                + LOCAL_PROJECT_SOURCE).param("tenant", tenantId.toString()).param("agent", agentId.toString())
+                .param("id", conversationId.toString()).query(Long.class).single() != 0;
+    }
     @Override public boolean supportsWorkspaceProtocol() { return true; }
 
     /** 直接读取原会话列，不从可能丢失的绑定行推断；缺失和非法协议都不能降为0。 */
@@ -29,7 +45,9 @@ public class JdbcConversationRepository implements ConversationRepository {
         int protocol = jdbcClient.sql("SELECT workspace_protocol FROM conversations WHERE tenant_id=:tenant AND agent_id=:agent AND id=:id")
                 .param("tenant", tenantId.toString()).param("agent", agentId.toString()).param("id", conversationId.toString())
                 .query(Integer.class).optional().orElseThrow(() -> new NoSuchElementException("会话不存在"));
-        if (protocol != 0 && protocol != 3) throw new IllegalStateException("会话来源见证不合法");
+        // 项目协议4先由读取闸门明确拒绝；不能把已登记的新来源当未知数据绕回旧来源。
+        if (protocol != 0 && protocol != 3 && protocol != com.cmagent.core.domain.LocalProjectBinding.PROTOCOL)
+            throw new IllegalStateException("会话来源见证不合法");
         return protocol;
     }
 
@@ -44,13 +62,14 @@ public class JdbcConversationRepository implements ConversationRepository {
             throw new NoSuchElementException("会话来源见证未能更新");
     }
 
-    /** owner条件在游标和LIMIT前执行；原三态仍可按原租户权限读取，不扩大为全部会话私有。 */
+    /** owner条件在游标和LIMIT前执行；原三态仍保留原租户权限，不扩大为全部会话私有。
+     * 项目及已知派生资源仅由项目专页和项目闸门读取，来源头损坏也不能进入旧列表。 */
     @Override public List<Conversation> listVisible(UUID tenantId, UUID agentId, String principalId, ConversationPageRequest page) {
         String owner = JdbcOwnerPredicate.equal(jdbcClient, "b.principal_id", ":principal");
         String creator = JdbcOwnerPredicate.equal(jdbcClient, "c.created_by", ":principal");
         var query = jdbcClient.sql("""
                 SELECT c.id,c.tenant_id,c.agent_id,c.title,c.created_by,c.created_at,c.updated_at FROM conversations c
-                WHERE c.tenant_id=:tenant AND c.agent_id=:agent
+                WHERE c.tenant_id=:tenant AND c.agent_id=:agent AND c.workspace_protocol<>4
                 AND (c.workspace_protocol=0 OR
                 """ + creator + ") "
                 + """
@@ -61,6 +80,7 @@ public class JdbcConversationRepository implements ConversationRepository {
                 + " AND NOT EXISTS (SELECT 1 FROM messages m JOIN runs r ON r.tenant_id=m.tenant_id AND r.id=m.run_id"
                 + " WHERE m.tenant_id=c.tenant_id AND m.conversation_id=c.id AND r.workspace_protocol=3 AND NOT ("
                 + JdbcOwnerPredicate.equal(jdbcClient,"r.principal_id",":principal")+" AND "+creator+"))"
+                + " AND NOT " + LOCAL_PROJECT_SOURCE
                 + (page.beforeUpdatedAt() == null ? "" : " AND (c.updated_at<:before OR (c.updated_at=:before AND c.id<:beforeId))")
                 + " ORDER BY c.updated_at DESC,c.id DESC LIMIT :limit")
                 .param("tenant", tenantId.toString()).param("agent", agentId.toString()).param("principal", principalId).param("limit", page.limit());

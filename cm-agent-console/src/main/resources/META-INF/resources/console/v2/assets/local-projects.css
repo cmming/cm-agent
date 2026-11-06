@@ -1,0 +1,211 @@
+/* 本地项目沿用列表—详情工作台，文件正文只占当前预览区域。 */
+body[data-console-version="v2"] .local-project-grid { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; align-items: start; }
+.local-project-toolbar, .project-tree-toolbar, .project-preview-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.local-project-list-panel .resource-list { max-height: calc(100vh - 340px); overflow: auto; }
+.local-project-item { display: flex; flex-direction: column; gap: 5px; width: 100%; text-align: left; }
+.local-project-item strong, .local-project-item span { overflow-wrap: anywhere; }
+.local-project-item > span, .project-file-kind, .project-file-action { color: var(--muted); font-size: 12px; }
+.local-project-panel + .local-project-panel { margin-top: 18px; }
+.local-project-add { margin-bottom: 20px; }
+.local-project-add form { max-width: 720px; }
+.local-project-add .project-add-fields { display: flex; align-items: end; gap: 14px; flex-wrap: wrap; margin: 16px 0; }
+.project-add-fields > div { flex: 1 1 220px; }
+.project-add-fields label, .project-rename label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 600; }
+.project-add-fields input { width: 100%; }
+.local-project-capability { margin-bottom: 20px; color: var(--muted); line-height: 1.7; font-size: 13px; }
+.local-project-empty { padding: 70px 28px; text-align: center; }
+.local-project-empty h2 { font-size: 20px; margin-top: 0; }
+.local-project-empty p { max-width: 48ch; margin: 10px auto; color: var(--muted); line-height: 1.8; }
+.project-rename { margin: 18px 0; padding: 16px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.project-rename form { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+.project-rename input { width: min(100%, 340px); }
+.project-tree-toolbar h3, .project-preview-toolbar h3 { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.project-tree-toolbar > div { display: flex; gap: 8px; }
+.project-tree-path { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; padding: 9px 0; margin: 0; }
+.project-file-list { max-height: 380px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.project-file-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) 64px; align-items: center; gap: 10px; width: 100%; padding: 12px 8px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; text-align: left; color: var(--text); cursor: pointer; }
+.project-file-row:hover:not(:disabled) { background: var(--surface-soft); }
+.project-file-row:disabled { cursor: default; }
+.project-file-name { overflow-wrap: anywhere; font-size: 13px; }
+.project-file-action { text-align: right; }
+.project-file-row:disabled .project-file-name { color: var(--muted); }
+.project-preview { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
+.project-preview pre { max-height: 520px; min-height: 120px; overflow: auto; padding: 16px; margin: 12px 0 0; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 8px; font: 12px/1.8 "Cascadia Code", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.project-preview .form-status { font-variant-numeric: tabular-nums; }
+.project-development { margin: 22px 0; padding: 20px 0; border-block: 1px solid var(--border); }
+.project-development h3 { margin-top: 0; }
+.project-conversation-toolbar, .project-conversation-list { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.project-conversation-toolbar select { flex: 1 1 180px; min-width: 0; }
+.project-authorization-mode { display: grid; gap: 8px; margin: 14px 0; padding: 14px; border-block: 1px solid var(--border); }
+.project-authorization-mode select { width: 100%; min-width: 0; }
+.project-authorization-mode .field-help { margin: 0; }
+.project-chat-messages { max-height: 520px; overflow: auto; margin: 16px 0; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.project-chat-message { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.project-chat-message pre, .project-operation-preview pre, .project-approval-item pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 440px; overflow: auto; background: var(--surface-soft); padding: 12px; border-radius: 8px; font: 12px/1.8 "Cascadia Code", Consolas, monospace; }
+.project-chat-message pre { background: transparent; padding: 0; font-family: inherit; font-size: 14px; }
+.project-approval-card { padding: 16px 0; border-block: 1px solid var(--border); }
+.project-approval-item { padding: 12px 0; }
+.project-approval-item > strong, .project-operation-preview h4 { overflow-wrap: anywhere; }
+.project-approval-item label { display: flex; align-items: center; gap: 8px; margin: 10px 0; font-size: 13px; }
+.project-approval-item input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 18px; }
+.project-development textarea { width: 100%; margin-top: 8px; }
+/* 三个工作区在桌面保留项目列表、会话和文件的独立滚动，窄屏只切换当前任务面板。 */
+.project-working-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(260px, .85fr); gap: 18px; align-items: start; }
+.project-working-grid > .project-development, .project-files-pane { margin: 0; padding: 0; border: 0; min-width: 0; max-height: max(480px, calc(100vh - 380px)); overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.project-files-pane { padding-left: 16px; border-left: 1px solid var(--border); }
+.project-pane-switch { display: none; }
+.project-diff-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.project-diff-columns > div { min-width: 0; }
+.project-file-change h5, .project-exact-preview h5 { margin: 14px 0 6px; font-size: 13px; }
+.project-diff-columns h6 { font-size: 12px; margin: 8px 0 4px; color: var(--muted); }
+.project-diff-columns pre { margin: 0; max-height: 260px; }
+.project-change-path { overflow-wrap: anywhere; font-size: 13px; margin: 6px 0; }
+.project-command-facts, .project-version-details dl { display: grid; grid-template-columns: minmax(85px, auto) minmax(0, 1fr); gap: 8px 12px; font-size: 13px; }
+.project-command-facts dt, .project-version-details dt { color: var(--muted); }
+.project-command-facts dd, .project-version-details dd { margin: 0; overflow-wrap: anywhere; }
+.project-command-arguments { padding-left: 26px; font: 12px/1.8 "Cascadia Code", Consolas, monospace; overflow-wrap: anywhere; }
+.project-version-details { margin: 10px 0; font-size: 12px; color: var(--muted); }
+.project-version-details summary { cursor: pointer; }
+.project-version-details p { overflow-wrap: anywhere; }
+
+/* 项目工作台沿用控制台的资源选中态，并让筛选、会话与文件操作保持清晰分组。 */
+body[data-console-version="v2"] #projectsPage .local-project-list-panel,
+body[data-console-version="v2"] #projectsPage .local-project-detail { min-width: 0; }
+body[data-console-version="v2"] #projectsPage .local-project-list-panel .panel-heading { margin-bottom: 14px; }
+body[data-console-version="v2"] #projectsPage .local-project-list-panel > label,
+body[data-console-version="v2"] #projectSearchForm > label.field-help { display: flex; align-items: center; gap: 8px; width: fit-content; margin: 0; line-height: 1.5; cursor: pointer; }
+body[data-console-version="v2"] #projectsPage input[type="checkbox"] { width: 16px; height: 16px; flex: 0 0 16px; margin: 0; accent-color: var(--accent); }
+body[data-console-version="v2"] #projectsPage .local-project-list-panel .resource-list { display: grid; gap: 6px; margin-top: 14px; }
+body[data-console-version="v2"] #projectsPage .local-project-item { padding: 12px; border: 1px solid transparent; border-radius: 9px; background: transparent; line-height: 1.5; }
+body[data-console-version="v2"] #projectsPage .local-project-item:hover { border-color: var(--border); background: var(--surface-soft); }
+body[data-console-version="v2"] #projectsPage .local-project-item[aria-pressed="true"] { border-color: #a9c4ef; background: #eef4ff; }
+body[data-console-version="v2"] #projectsPage .local-project-item strong { font-size: 14px; }
+body[data-console-version="v2"] #projectsPage .local-project-toolbar h2 { margin: 0; overflow-wrap: anywhere; }
+body[data-console-version="v2"] #projectArchiveControls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 14px; }
+body[data-console-version="v2"] #projectArchiveControls .field-help { flex: 1 1 280px; margin: 0; line-height: 1.6; }
+body[data-console-version="v2"] #projectsPage .project-rename { margin: 16px 0; padding: 14px 0; }
+body[data-console-version="v2"] #projectsPage .project-rename summary { width: fit-content; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
+body[data-console-version="v2"] #projectsPage .project-rename form { margin-top: 14px; }
+body[data-console-version="v2"] #projectsPage .project-working-grid { gap: 20px; }
+body[data-console-version="v2"] #projectsPage .project-development h3,
+body[data-console-version="v2"] #projectsPage .project-tree-toolbar h3 { font-size: 16px; margin: 0; }
+body[data-console-version="v2"] #projectsPage .project-development > .field-help { margin: 8px 0 0; line-height: 1.6; }
+body[data-console-version="v2"] #projectsPage .project-conversation-toolbar { align-items: end; gap: 8px; margin: 16px 0 12px; }
+body[data-console-version="v2"] #projectChatAgentLabel { flex-basis: 100%; font-size: 13px; font-weight: 600; }
+body[data-console-version="v2"] #projectsPage .project-conversation-list { margin: 8px 0; }
+body[data-console-version="v2"] #projectChatBody { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+body[data-console-version="v2"] #projectChatBody h4 { margin: 0; font-size: 14px; }
+body[data-console-version="v2"] #projectsPage .project-chat-messages { margin: 12px 0 16px; }
+body[data-console-version="v2"] #projectsPage .project-chat-message { padding: 14px 0; line-height: 1.65; }
+body[data-console-version="v2"] #projectChatForm { margin-top: 18px; }
+body[data-console-version="v2"] #projectChatForm > label,
+body[data-console-version="v2"] #projectSearchForm > label:first-child { display: block; font-size: 13px; font-weight: 600; }
+body[data-console-version="v2"] #projectChatForm .field-help { line-height: 1.6; }
+body[data-console-version="v2"] #projectSearchForm { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 10px; margin-top: 18px; }
+body[data-console-version="v2"] #projectSearchForm > label:first-child,
+body[data-console-version="v2"] #projectSearchQuery { grid-column: 1 / -1; }
+body[data-console-version="v2"] #projectSearchQuery { width: 100%; min-width: 0; }
+body[data-console-version="v2"] #projectSearchSubmit { justify-self: end; }
+body[data-console-version="v2"] #projectsPage .project-tree-path { margin-top: 14px; padding: 10px 0; border-bottom: 1px solid var(--border); font-weight: 600; }
+body[data-console-version="v2"] #projectsPage .project-file-row { min-width: 0; border-radius: 0; }
+body[data-console-version="v2"] #projectsPage :is(button, input, select, textarea, summary, [tabindex="0"]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 操作入口与项目身份各自成组，避免辅助说明和管理动作抢占会话的视觉重心。 */
+body[data-console-version="v2"] #projectsPage .project-icon { width: 18px; height: 18px; flex: 0 0 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+body[data-console-version="v2"] #projectAddBtn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+body[data-console-version="v2"] #projectsPage .project-guidance { display: flex; align-items: center; gap: 12px 24px; flex-wrap: wrap; margin-bottom: 20px; padding: 12px 0 18px; border-bottom: 1px solid var(--border); }
+body[data-console-version="v2"] #projectsPage .local-project-capability { flex: 1 1 600px; margin: 0; }
+body[data-console-version="v2"] #projectsPage .local-project-list-panel { position: sticky; top: 82px; }
+body[data-console-version="v2"] #projectsPage .project-heading-group { display: flex; align-items: center; gap: 12px; min-width: 0; }
+body[data-console-version="v2"] #projectsPage .project-heading-copy { display: grid; gap: 4px; min-width: 0; }
+body[data-console-version="v2"] #projectsPage .project-folder-mark { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; border-radius: 10px; background: var(--surface-soft); color: var(--muted); }
+body[data-console-version="v2"] #projectsPage .project-folder-mark .project-icon { width: 23px; height: 23px; }
+body[data-console-version="v2"] #projectsPage .project-empty-icon { display: block; width: 42px; height: 42px; margin: 0 auto 20px; fill: none; stroke: var(--muted); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+body[data-console-version="v2"] #projectsPage .form-status:empty { min-height: 0; margin: 0; }
+body[data-console-version="v2"] #projectsPage .project-conversation-list:empty { margin: 0; }
+body[data-console-version="v2"] #projectsPage .project-conversation-list .button { max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+
+/* 会话和文件各保留一层滚动；消息正文与目录列表不再形成嵌套滚动区。 */
+body[data-console-version="v2"] #projectsPage .project-working-grid > .project-development,
+body[data-console-version="v2"] #projectsPage .project-files-pane { max-height: max(560px, calc(100dvh - 340px)); scrollbar-gutter: stable; }
+body[data-console-version="v2"] #projectsPage .project-chat-messages { display: flex; flex-direction: column; gap: 18px; max-height: none; overflow: visible; margin: 18px 0 24px; }
+body[data-console-version="v2"] #projectsPage .project-chat-message { min-width: 0; padding: 0 0 18px; }
+body[data-console-version="v2"] #projectsPage .project-chat-message > strong { display: block; font-size: 12px; color: var(--muted); }
+body[data-console-version="v2"] #projectsPage .project-chat-message pre { max-height: none; overflow: visible; margin: 8px 0 0; line-height: 1.8; }
+body[data-console-version="v2"] #projectsPage .project-chat-message[data-role="user"] { align-self: end; max-width: 90%; padding: 12px 16px; border: 0; border-radius: 9px; background: #eef4ff; }
+body[data-console-version="v2"] #projectsPage .project-chat-message[data-role="user"] > strong { color: #1e50b0; }
+body[data-console-version="v2"] #projectChatForm { padding-top: 18px; border-top: 1px solid var(--border); }
+body[data-console-version="v2"] #projectChatInput { min-height: 110px; background: var(--surface-soft); resize: vertical; }
+body[data-console-version="v2"] #projectChatInput:focus { background: var(--surface); }
+body[data-console-version="v2"] #projectChatForm > .button { display: flex; margin: 14px 0 0 auto; }
+body[data-console-version="v2"] #projectsPage .project-tree-toolbar { position: sticky; top: 0; z-index: 1; padding-bottom: 12px; background: var(--surface); }
+body[data-console-version="v2"] #projectSearchForm { margin-top: 6px; }
+body[data-console-version="v2"] #projectsPage .project-file-list { max-height: none; overflow: visible; }
+body[data-console-version="v2"] #projectsPage .project-file-row { min-height: 46px; padding: 11px 8px; border-color: #edf0f5; }
+body[data-console-version="v2"] #projectsPage .project-file-kind { font-size: 11px; }
+body[data-console-version="v2"] #projectsPage .project-file-row:not(:disabled):hover .project-file-action { color: var(--accent); }
+@media (max-width: 1100px) {
+    .project-pane-switch { display: flex; width: fit-content; gap: 4px; margin: 16px 0; padding: 4px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
+    body[data-console-version="v2"] #projectsPage .project-pane-switch .button { min-width: 80px; border-color: transparent; background: transparent; }
+    body[data-console-version="v2"] #projectsPage .project-pane-switch [aria-pressed="true"] { border-color: var(--border); color: var(--accent); background: var(--surface); }
+    .project-working-grid { display: block; }
+    .project-files-pane { padding-left: 0; border-left: 0; }
+    .project-working-grid[data-active-pane="chat"] > .project-files-pane, .project-working-grid[data-active-pane="files"] > .project-development { display: none; }
+}
+@media (max-width: 1100px) { body[data-console-version="v2"] .local-project-grid { grid-template-columns: 220px minmax(0, 1fr); gap: 14px; } }
+@media (max-width: 760px) {
+    body[data-console-version="v2"] .local-project-grid { grid-template-columns: minmax(0, 1fr); }
+    body[data-console-version="v2"] #projectsPage .local-project-list-panel { position: static; }
+    .local-project-list-panel .resource-list { max-height: 240px; }
+    .local-project-empty { padding: 28px 12px; }
+    .project-rename form > div, .project-rename input { width: 100%; }
+    .project-file-row { grid-template-columns: 36px minmax(0, 1fr) 58px; gap: 6px; }
+    .project-diff-columns { grid-template-columns: minmax(0, 1fr); }
+    body[data-console-version="v2"] #projectsPage .project-conversation-toolbar select { flex-basis: 100%; }
+    body[data-console-version="v2"] #projectsPage .project-working-grid > .project-development,
+    body[data-console-version="v2"] #projectsPage .project-files-pane { max-height: none; overflow: visible; }
+    body[data-console-version="v2"] #projectsPage .project-guidance { gap: 12px; padding-top: 0; }
+    body[data-console-version="v2"] #projectsPage .project-pane-switch { width: 100%; }
+    body[data-console-version="v2"] #projectsPage .project-pane-switch .button { flex: 1; }
+    body[data-console-version="v2"] #projectsPage .button { min-height: 40px; }
+    body[data-console-version="v2"] #projectChatForm > .button { justify-content: center; width: 100%; }
+    body[data-console-version="v2"] #projectsPage .project-tree-toolbar { position: static; }
+}
+
+/* 会话与文件共用工作区，页面承担纵向滚动，输入入口位于会话内容之前。 */
+body[data-console-version="v2"] #projectsPage .project-pane-switch { display: flex; width: fit-content; gap: 4px; margin: 16px 0; padding: 4px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
+body[data-console-version="v2"] #projectsPage .project-pane-switch .button { min-width: 80px; border-color: transparent; background: transparent; }
+body[data-console-version="v2"] #projectsPage .project-pane-switch [aria-pressed="true"] { border-color: var(--border); color: var(--accent); background: var(--surface); }
+body[data-console-version="v2"] #projectsPage .project-working-grid { display: block; }
+body[data-console-version="v2"] #projectsPage .project-working-grid > .project-development,
+body[data-console-version="v2"] #projectsPage .project-files-pane { max-height: none; overflow: visible; padding: 0; border: 0; }
+body[data-console-version="v2"] #projectsPage .project-working-grid[data-active-pane="chat"] > .project-files-pane,
+body[data-console-version="v2"] #projectsPage .project-working-grid[data-active-pane="files"] > .project-development { display: none; }
+body[data-console-version="v2"] #projectsPage .project-tool-details { margin-top: 8px; }
+body[data-console-version="v2"] #projectsPage .project-tool-details summary,
+body[data-console-version="v2"] #projectsPage .project-conversation-history summary { width: fit-content; font-size: 13px; color: var(--muted); cursor: pointer; }
+body[data-console-version="v2"] #projectChatForm { margin: 16px 0 24px; padding: 16px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
+body[data-console-version="v2"] #projectChatInput { background: var(--surface); }
+body[data-console-version="v2"] #projectsPage .project-tree-toolbar { position: static; }
+@media (max-width: 760px) {
+    body[data-console-version="v2"] #projectsPage .project-pane-switch { width: 100%; }
+    body[data-console-version="v2"] #projectsPage .project-pane-switch .button { flex: 1; }
+}
+
+/* 原生下拉框在窄屏会截断选中项，单独换行显示完整文字。 */
+.project-authorization-selection { display: none; }
+@media (max-width: 760px) {
+    body[data-console-version="v2"] #projectsPage .project-authorization-selection { display: block; margin: 0; color: var(--text); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+}
+
+/* 管理操作按需展开，常用会话控件保持相近，审批置于任务输入前。 */
+body[data-console-version="v2"] #projectsPage .project-management { margin-top: 14px; }
+body[data-console-version="v2"] #projectsPage .project-management > summary { width: fit-content; cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 600; }
+body[data-console-version="v2"] #projectsPage .project-management .project-rename { margin-bottom: 0; }
+body[data-console-version="v2"] #projectsPage .project-development { max-width: 960px; }
+body[data-console-version="v2"] #projectsPage .project-conversation-toolbar select { max-width: 340px; }
+body[data-console-version="v2"] #projectApprovalItems:not(:empty) { margin-top: 16px; }
+body[data-console-version="v2"] #projectsPage .project-tree-toolbar > div { flex-wrap: wrap; }
+@media (max-width: 760px) {
+    body[data-console-version="v2"] #projectsPage .project-conversation-toolbar select { max-width: none; }
+}

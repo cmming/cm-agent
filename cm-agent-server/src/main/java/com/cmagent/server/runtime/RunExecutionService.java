@@ -45,6 +45,13 @@ import java.util.function.Consumer;
 @Service
 /** 编排 Agent 单轮运行，连接运行时、工具治理、持久化和输出脱敏边界。 */
 public class RunExecutionService {
+    /** 项目专用来源/工具快照，不覆盖旧参考资料合同。 */
+    private LocalProjectRunService projectRuns;
+    @Autowired void configureProjectRuns(org.springframework.beans.factory.ObjectProvider<LocalProjectRunService> provider) { projectRuns = provider.getIfAvailable(); }
+    /** 审批拒绝、停止或过期由审批服务收口时，也必须撤销项目 Run 快照并记录同一撤销审计。 */
+    void cleanupEphemeralAuthorization(PrincipalRef principal, RunRecord run) {
+        if (projectRuns != null) projectRuns.cleanup(principal, run);
+    }
     /** 所有会话、审批恢复与停止共享本实例的句柄和短锁，不提供跨实例命令路由。 */
     private final RunControlRegistry controls = new RunControlRegistry();
 
@@ -71,6 +78,13 @@ public class RunExecutionService {
     private WorkspaceSelectionService workspaceSelections;
     @Autowired
     void configureWorkspaceSelections(WorkspaceSelectionService service) { this.workspaceSelections = service; }
+
+    /** 本机客户端为可选部署能力；关闭时不接受任何设备选择。 */
+    private LocalClientAuthorizationService localClients;
+    @Autowired
+    void configureLocalClients(org.springframework.beans.factory.ObjectProvider<LocalClientAuthorizationService> provider) {
+        localClients = provider.getIfAvailable();
+    }
 
     @Autowired
     void configureWorkspaceContexts(WorkspaceContextService service) { this.workspaceContexts = Objects.requireNonNull(service); }
@@ -165,9 +179,21 @@ public class RunExecutionService {
      */
     public AgentRunResult run(PrincipalRef principal, UUID agentId, String input,
             com.cmagent.core.domain.WorkspaceSelection selection, Consumer<String> outputDeltaConsumer) {
+        return run(principal, agentId, input, selection, null, outputDeltaConsumer);
+    }
+
+    /** 固定本轮设备授权后启动独立运行；设备与工作区选择能力互斥。 */
+    public AgentRunResult run(PrincipalRef principal, UUID agentId, String input,
+            com.cmagent.core.domain.WorkspaceSelection selection, LocalClientRunSelection localClient,
+            Consumer<String> outputDeltaConsumer) {
         // 手工装配旧服务只兼容 DEFAULT，不能静默忽略调用方显式选择的资料边界。
         if (workspaceSelections == null && selection != null && selection.mode() != com.cmagent.core.domain.WorkspaceSelection.Mode.DEFAULT)
             throw new IllegalStateException("当前服务未装配工作区选择能力");
+        if (localClient != null && localClients == null)
+            throw new IllegalStateException("当前服务未启用本机客户端");
+        if (localClient != null && selection != null
+                && selection.mode() != com.cmagent.core.domain.WorkspaceSelection.Mode.DEFAULT)
+            throw new IllegalArgumentException("本机客户端授权不能与工作区选择同时使用");
         Objects.requireNonNull(outputDeltaConsumer, "outputDeltaConsumer 不能为空");
         ResolvedRunContext context = resolve(principal, agentId);
         UUID runId = UUID.randomUUID();
@@ -177,13 +203,17 @@ public class RunExecutionService {
                 : persistenceService.start(principal,context.agent().id(),input,runId);
         try {
             if (workspace != null) workspaceSelections.saveRun(workspace);
+            if (localClient != null) {
+                // 独立 Run 没有会话审批入口，因此本机设备授权使用运行级入口；浏览器当前只开放会话流。
+                throw new IllegalStateException("独立运行暂不开放本机客户端授权");
+            }
         } catch (RuntimeException failure) {
             // 新增选择持久化属于严格边界；收口失败不能被旧 best-effort 路径吞掉。
             try { persistenceService.completeFailure(principal, runningRun); }
             catch (RuntimeException cleanup) { cleanup.addSuppressed(failure); throw cleanup; }
             throw failure;
         }
-        return executePrepared(principal, context, runningRun, input, null, null, null,
+        return executePrepared(principal, context, runningRun, input, null, null, null, null,
                 delta -> outputDeltaConsumer.accept(delta.delta()), ignored -> {
                 }).run();
     }
@@ -245,7 +275,7 @@ public class RunExecutionService {
             throw new IllegalArgumentException("预创建 Run 不属于当前租户或 Agent");
         }
         return executePrepared(
-                principal, resolve(principal, agentId), runningRun, runtimeInput, conversationId, null, null,
+                principal, resolve(principal, agentId), runningRun, runtimeInput, conversationId, null, null, null,
                 deltaConsumer, progressConsumer);
     }
 
@@ -276,7 +306,7 @@ public class RunExecutionService {
             throw new IllegalArgumentException("待恢复 Run 不属于当前发起主体");
         }
         return executePrepared(principal, resolve(principal, agentId), waitingRun, "", conversationId,
-                Objects.requireNonNull(decisions, "decisions 不能为空"), null, deltaConsumer, progressConsumer);
+                null, Objects.requireNonNull(decisions, "decisions 不能为空"), null, deltaConsumer, progressConsumer);
     }
 
     /**
@@ -315,7 +345,7 @@ public class RunExecutionService {
             throw new IllegalArgumentException("预创建 Run 不属于当前租户或 Agent");
         }
         return executePrepared(principal, resolve(principal, agentId), runningRun, runtimeInput, null,
-                null, selection, deltaConsumer, progressConsumer);
+                null, null, selection, deltaConsumer, progressConsumer);
     }
 
     private AgentRuntimeResult executePrepared(
@@ -324,12 +354,14 @@ public class RunExecutionService {
             RunRecord runningRun,
             String runtimeInput,
             UUID conversationId,
+            com.cmagent.core.security.OperationAuthorizationMode projectAuthorizationMode,
             RuntimeApprovalDecisions approvalDecisions,
             SkillRuntimeSelection selection,
             Consumer<AgentTextDelta> deltaConsumer,
             Consumer<AgentProgressEvent> progressConsumer
     ) {
-        return executePrepared(principal, context, runningRun, runtimeInput, conversationId, approvalDecisions,
+        return executePrepared(principal, context, runningRun, runtimeInput, conversationId, projectAuthorizationMode,
+                approvalDecisions,
                 selection, deltaConsumer, progressConsumer, java.util.function.Supplier::get);
     }
 
@@ -341,40 +373,71 @@ public class RunExecutionService {
             UUID conversationId, RuntimeApprovalDecisions decisions, Consumer<AgentTextDelta> deltaConsumer,
             Consumer<AgentProgressEvent> progressConsumer,
             java.util.function.Function<java.util.function.Supplier<AgentRuntimeResult>, AgentRuntimeResult> finalizer) {
+        return runPreparedAndFinalize(principal, agentId, run, input, conversationId, null, decisions,
+                deltaConsumer, progressConsumer, finalizer);
+    }
+
+    /**
+     * 会话首发可携带服务端选择后的项目授权方式；审批恢复调用旧重载并由加密快照恢复原值。
+     */
+    AgentRuntimeResult runPreparedAndFinalize(PrincipalRef principal, UUID agentId, RunRecord run, String input,
+            UUID conversationId, com.cmagent.core.security.OperationAuthorizationMode projectAuthorizationMode,
+            RuntimeApprovalDecisions decisions, Consumer<AgentTextDelta> deltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer,
+            java.util.function.Function<java.util.function.Supplier<AgentRuntimeResult>, AgentRuntimeResult> finalizer) {
         if (!principal.tenantId().equals(run.tenantId()) || !agentId.equals(run.agentId())
                 || !principal.principalId().equals(run.principalId())) {
             throw new IllegalArgumentException("运行不属于当前可信主体或 Agent");
         }
         return executePrepared(principal, resolve(principal, agentId), run, input, conversationId,
-                decisions, null, deltaConsumer, progressConsumer, finalizer);
+                projectAuthorizationMode, decisions, null, deltaConsumer, progressConsumer, finalizer);
     }
 
     private AgentRuntimeResult executePrepared(PrincipalRef principal, ResolvedRunContext context, RunRecord runningRun,
-            String runtimeInput, UUID conversationId, RuntimeApprovalDecisions approvalDecisions,
+            String runtimeInput, UUID conversationId,
+            com.cmagent.core.security.OperationAuthorizationMode projectAuthorizationMode,
+            RuntimeApprovalDecisions approvalDecisions,
             SkillRuntimeSelection selection, Consumer<AgentTextDelta> deltaConsumer,
             Consumer<AgentProgressEvent> progressConsumer,
             java.util.function.Function<java.util.function.Supplier<AgentRuntimeResult>, AgentRuntimeResult> finalizer) {
         Objects.requireNonNull(deltaConsumer, "deltaConsumer 不能为空");
         Objects.requireNonNull(progressConsumer, "progressConsumer 不能为空");
+        var localAuthorization = localClients == null ? null
+                : localClients.active(principal, runningRun.id()).orElse(null);
+        if (localAuthorization != null) {
+            // 本机设备与项目/旧参考资料能力互斥；虚拟工具只在本轮权威授权仍有效时注入。
+            var tools = new ArrayList<>(context.authorizedTools());
+            tools.addAll(localClients.tools(localAuthorization));
+            context = new ResolvedRunContext(context.agent(), context.modelConfig(), tools);
+        }
 
         AgentRuntimeResult runtimeEnvelope;
         try {
-            boolean workspaceAttempted = workspaceContexts != null;
+            var project = projectRuns == null ? null : projectAuthorizationMode == null
+                    ? projectRuns.prepare(principal, runningRun, conversationId, context.authorizedTools(),
+                            approvalDecisions != null)
+                    : projectRuns.prepare(principal, runningRun, conversationId, context.authorizedTools(),
+                            projectAuthorizationMode, approvalDecisions != null);
+            boolean workspaceAttempted = project == null && localAuthorization == null && workspaceContexts != null;
             AgentRuntimeResult workspaceResult = null;
             RuntimeException primaryWorkspaceFailure = null;
             try {
-                var workspace = workspaceContexts == null ? null : workspaceContexts.prepare(principal, runningRun, approvalDecisions != null);
+                var workspace = !workspaceAttempted ? null : workspaceContexts.prepare(principal, runningRun, approvalDecisions != null);
                 // 将完整运行上下文交给 Runtime；Runtime 内部可能继续发起受治理的工具调用。
-                var skills = approvalDecisions == null
+                var skills = project != null ? null : approvalDecisions == null
                         ? skillRuntimeService.prepare(principal, runningRun, selection)
                         : skillRuntimeService.restore(principal, runningRun);
-                skillRuntimeService.verifyRequiredDependencies(skills, context.authorizedTools());
+                if (skills != null) skillRuntimeService.verifyRequiredDependencies(skills, context.authorizedTools());
+                // 项目只开放固定目录内的显式授权工具；旧Run不会因安装项目目录而得到本机能力。
+                var runtimeTools = context.authorizedTools().stream().filter(tool -> project == null
+                        ? !LocalProjectToolCatalog.managed(principal.tenantId(), tool.id()) : project.protectedToolIds().contains(tool.id())).toList();
                 AgentRunRequest runtimeRequest = new AgentRunRequest(
                         runningRun.id(), principal.tenantId(), context.agent(), context.modelConfig(), principal,
-                        runtimeInput, context.authorizedTools(), conversationId, skills.versions(),
-                        skills.dependencyResolutions(), controls.find(runningRun.id()) == null
+                        runtimeInput, runtimeTools, conversationId, skills == null ? List.of() : skills.versions(),
+                        skills == null ? Map.of() : skills.dependencyResolutions(), controls.find(runningRun.id()) == null
                                 ? new com.cmagent.core.runtime.RunCancellation()
-                                : controls.find(runningRun.id()).cancellation(), workspace
+                                : controls.find(runningRun.id()).cancellation(), workspace, project,
+                        localAuthorization
                 );
                 Consumer<AgentTextDelta> safeDelta = delta -> {
                     String text = redactor.redact(delta.delta());
@@ -388,11 +451,20 @@ public class RunExecutionService {
                 Consumer<AgentProgressEvent> safeProgress = progress -> {
                     if (!runtimeRequest.cancellation().isRequested()) progressConsumer.accept(redactProgress(progress));
                 };
-                workspaceResult = approvalDecisions == null
-                        ? runtime.runStructured(runtimeRequest, safeDelta, safeProgress)
-                        : runtime.resumeStructured(runtimeRequest, approvalDecisions, safeDelta, safeProgress);
+                try {
+                    workspaceResult = approvalDecisions == null
+                            ? runtime.runStructured(runtimeRequest, safeDelta, safeProgress)
+                            : runtime.resumeStructured(runtimeRequest, approvalDecisions, safeDelta, safeProgress);
+                } finally {
+                    // 项目命令返回的是异步启动状态，专属Job仍持有本Run的调用许可直到实际退出。
+                    // 模型即使提前回答、再次ASK或抛错，也须在锁和数据库事务之外等待该许可释放，
+                    // 否则Run会提前终结并释放停止句柄，使仍在执行的进程无法通过运行入口停止。
+                    if (project != null) runtimeRequest.cancellation().awaitQuiescence();
+                }
                 if (workspace != null && workspaceResult.run().status() == com.cmagent.core.domain.RunStatus.WAITING_APPROVAL)
                     workspaceContexts.retain(runningRun, workspace);
+                if (project != null && workspaceResult.run().status() == com.cmagent.core.domain.RunStatus.WAITING_APPROVAL)
+                    projectRuns.retain(principal,runningRun,project);
             } catch (RuntimeException failure) {
                 primaryWorkspaceFailure = failure;
                 throw failure;
@@ -406,8 +478,16 @@ public class RunExecutionService {
                         throw cleanup;
                     }
                 }
+                if (project != null && (primaryWorkspaceFailure != null || workspaceResult == null
+                        || workspaceResult.run().status() != com.cmagent.core.domain.RunStatus.WAITING_APPROVAL))
+                    projectRuns.cleanup(principal, runningRun, project.authorizationMode());
             }
             runtimeEnvelope = workspaceResult;
+        } catch (LocalProjectAccessException projectFailure) {
+            // 项目服务已记录同号脱敏诊断，只完成Run失败状态，不重复打印或改写错误编号。
+            try { persistenceService.completeFailure(principal, runningRun); }
+            catch (RuntimeException closure) { closure.addSuppressed(projectFailure); throw closure; }
+            throw projectFailure;
         } catch (AuditPersistenceException auditFailure) {
             // 审计持久化失败时尽力关闭运行记录，并保留原异常交给上层严格处理。
             bestEffortFailureClosure(principal, runningRun);
@@ -431,6 +511,13 @@ public class RunExecutionService {
             }
             throw skillFailure;
         } catch (RuntimeException runtimeFailure) {
+            if(runtimeFailure instanceof com.cmagent.core.runtime.ToolInvocationInfrastructureException
+                    && runtimeFailure.getCause() instanceof LocalProjectAccessException projectFailure) {
+                // 适配器的致命门控保留此安全原因；诊断已由项目边界完成，响应必须沿用同一个编号。
+                try { persistenceService.completeFailure(principal,runningRun); }
+                catch(RuntimeException closure) { closure.addSuppressed(projectFailure);throw closure; }
+                throw projectFailure;
+            }
             // 普通 Runtime 异常先记录可关联诊断，再依次尝试完成失败状态和失败审计。
             diagnosticLogger.error(new ErrorDiagnosticLogger.DiagnosticContext(
                     runningRun.id().toString(), "AGENT_RUNTIME", "RUNTIME_EXECUTION_FAILED",
@@ -456,9 +543,10 @@ public class RunExecutionService {
         }
 
         AgentRuntimeResult envelope = runtimeEnvelope;
+        ResolvedRunContext resolvedContext = context;
         // 停止与终态用同一短锁竞争，会话 finalizer 将消息/审批与 Run 收口放进同一数据库事务。
         return controls.withRun(runningRun.id(), () -> {
-            AgentRuntimeResult result = finalizer.apply(() -> finalizeResult(principal, context, runningRun, envelope));
+            AgentRuntimeResult result = finalizer.apply(() -> finalizeResult(principal, resolvedContext, runningRun, envelope));
             // 等待审批必须在同一短锁内释放句柄，否则停止可能把已返回的片段误认作仍可中断执行。
             controls.release(runningRun.id());
             return result;

@@ -80,6 +80,9 @@ public final class WorkspaceContextService {
         if (selections == null && !policy.isEnabled() && !resume) return null;
         long start = System.nanoTime();
         try {
+            // 项目只走专用执行入口；持久绑定仍存在而头字段降级也不能按旧目录/DEFAULT重新准备资料。
+            if (selections != null && (selections.protocol(run) == LocalProjectBinding.PROTOCOL || selections.hasLocalProjectSource(run)))
+                throw controlled(run, ApiErrorCode.WORKSPACE_CONTEXT_SNAPSHOT_UNAVAILABLE);
             policy.validate();
             if(imported(run))return prepareImported(run,resume,start);
             var row = checkpoints.find(run.tenantId(), user(run), run.id().toString(), KEY).orElse(null);

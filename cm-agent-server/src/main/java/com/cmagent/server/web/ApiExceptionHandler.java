@@ -34,6 +34,13 @@ import java.time.Instant;
 @RestControllerAdvice
 /** 将常见业务异常转换为稳定、脱敏的 JSON 错误响应。 */
 public class ApiExceptionHandler {
+    /** 项目边界已写同号审计/诊断，历史与审批入口沿用原编号，不再次展开宿主异常。 */
+    @ExceptionHandler(com.cmagent.server.runtime.LocalProjectAccessException.class)
+    public ResponseEntity<com.cmagent.server.web.LocalProjectController.Failure> localProjectFailure(
+            com.cmagent.server.runtime.LocalProjectAccessException failure) {
+        return ResponseEntity.status(failure.status()).cacheControl(org.springframework.http.CacheControl.noStore())
+                .body(new com.cmagent.server.web.LocalProjectController.Failure(failure.errorCode(), failure.errorId(), failure.getMessage()));
+    }
     /** 业务短事务已退出后才写拒绝审计，避免随回滚丢失或独立事务等待外层锁。 */
     @ExceptionHandler(com.cmagent.server.runtime.DeferredWorkspaceFailure.class)
     public ResponseEntity<ApiErrorResponse> deferredWorkspaceFailure(com.cmagent.server.runtime.DeferredWorkspaceFailure failure,HttpServletRequest request){

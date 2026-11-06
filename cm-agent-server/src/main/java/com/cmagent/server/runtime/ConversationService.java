@@ -18,6 +18,7 @@ import com.cmagent.core.repository.AgentDefinitionRepository;
 import com.cmagent.core.repository.ConversationMessageRepository;
 import com.cmagent.core.repository.ConversationRepository;
 import com.cmagent.core.repository.RunRepository;
+import com.cmagent.core.security.OperationAuthorizationMode;
 import com.cmagent.server.security.SensitiveDataRedactor;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.Nullable;
@@ -41,6 +42,10 @@ import java.util.function.Consumer;
  */
 @Service
 public class ConversationService {
+    /** 项目启用时才装配，首发不走旧工作区默认选择；关闭后仍由来源闸门拒绝4。 */
+    private LocalProjectRunService projectRuns;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureProjectRuns(org.springframework.beans.factory.ObjectProvider<LocalProjectRunService> provider) { projectRuns = provider.getIfAvailable(); }
     /** 仅Spring完整装配开启新来源闸门；旧手工装配仍被创建入口限制为旧模式。 */
     private WorkspaceImportAccess importAccess;
     @org.springframework.beans.factory.annotation.Autowired
@@ -59,6 +64,13 @@ public class ConversationService {
     @org.springframework.beans.factory.annotation.Autowired
     void configureWorkspaceSelections(WorkspaceSelectionService service) { this.workspaceSelections = service; }
 
+    /** 本机客户端仅在功能启用并装配服务时可用；旧手工测试装配保持无设备能力。 */
+    private LocalClientAuthorizationService localClients;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureLocalClients(org.springframework.beans.factory.ObjectProvider<LocalClientAuthorizationService> provider) {
+        localClients = provider.getIfAvailable();
+    }
+
     private final SensitiveDataRedactor redactor;
     private final TransactionTemplate transactionTemplate;
 
@@ -73,7 +85,7 @@ public class ConversationService {
      * @param executionService 调用受治理 Runtime
      * @param approvalService 阻止同会话并发消息并保存 Runtime ASK 审批
      * @param promptComposer 构造受限历史上下文
-     * @param redactor 在持久化和模型调用前清理文本
+     * @param redactor 在持久化、展示及非本机模型调用前清理文本
      * @param transactionTemplate JDBC 模式的短事务模板；内存模式可为空
      */
     public ConversationService(
@@ -172,6 +184,19 @@ public class ConversationService {
     }
 
     /**
+     * 在HTTP线程创建SSE之前复核项目来源和本机请求；普通会话仍保留原异步错误合同。
+     * @param principal JWT认证主体 @param agentId 路由Agent @param conversationId 路由会话
+     */
+    public void verifyProjectRequest(PrincipalRef principal, UUID agentId, UUID conversationId) {
+        var conversation = conversationRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, conversationId).orElse(null);
+        if (conversation != null && (conversationRepository.workspaceProtocol(principal.tenantId(), agentId, conversationId) == com.cmagent.core.domain.LocalProjectBinding.PROTOCOL
+                ||conversationRepository.hasLocalProjectSource(principal.tenantId(),agentId,conversationId))) {
+            if (importAccess == null) throw new IllegalStateException("当前服务不支持项目会话来源核验");
+            importAccess.conversation(principal, conversation);
+        }
+    }
+
+    /**
      * 按稳定复合游标列出当前主体可见的 Agent 会话。
      */
     public List<Conversation> list(
@@ -248,12 +273,80 @@ public class ConversationService {
             Consumer<AgentTextDelta> deltaConsumer,
             Consumer<AgentProgressEvent> progressConsumer
     ) {
+        return send(principal, agentId, conversationId, input, null, null, startedConsumer,
+                deltaConsumer, progressConsumer);
+    }
+
+    /** 同步入口携带可选设备授权，旧调用和 JSON 未提供选择时保持无设备能力。 */
+    public ConversationRunResult send(
+            PrincipalRef principal, UUID agentId, UUID conversationId, String input,
+            LocalClientRunSelection localClient) {
+        return send(principal, agentId, conversationId, input, localClient, null,
+                ignored -> { }, ignored -> { }, ignored -> { });
+    }
+
+    /**
+     * 同步项目入口携带本轮授权方式；旧调用未提供模式时由项目快照采用高风险询问兼容值。
+     */
+    public ConversationRunResult send(
+            PrincipalRef principal, UUID agentId, UUID conversationId, String input,
+            LocalClientRunSelection localClient, OperationAuthorizationMode projectAuthorizationMode) {
+        return send(principal, agentId, conversationId, input, localClient, projectAuthorizationMode,
+                ignored -> { }, ignored -> { }, ignored -> { });
+    }
+
+    /** 保留原设备授权完整重载；未显式提交项目模式时由项目会话采用高风险询问。 */
+    public ConversationRunResult send(
+            PrincipalRef principal,
+            UUID agentId,
+            UUID conversationId,
+            String input,
+            LocalClientRunSelection localClient,
+            Consumer<ConversationRunStarted> startedConsumer,
+            Consumer<AgentTextDelta> deltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
+        return send(principal, agentId, conversationId, input, localClient, null,
+                startedConsumer, deltaConsumer, progressConsumer);
+    }
+
+    /**
+     * 追加消息并按本轮设备或项目选择创建单轮授权。
+     *
+     * <p>设备授权与项目或导入资料能力互斥。授权、USER 消息和 RUNNING Run 在同一短事务边界
+     * 建立；Run 终态后立即撤销，审批等待期间保留供恢复。</p>
+     */
+    public ConversationRunResult send(
+            PrincipalRef principal,
+            UUID agentId,
+            UUID conversationId,
+            String input,
+            LocalClientRunSelection localClient,
+            OperationAuthorizationMode projectAuthorizationMode,
+            Consumer<ConversationRunStarted> startedConsumer,
+            Consumer<AgentTextDelta> deltaConsumer,
+            Consumer<AgentProgressEvent> progressConsumer
+    ) {
         Conversation conversation = get(principal, agentId, conversationId);
+        if (localClient != null && localClients == null) {
+            throw new IllegalStateException("当前服务未启用本机客户端");
+        }
         approvalService.requireNoPending(principal, agentId, conversationId);
         String safeInput = redactor.redact(input);
         UUID runId = UUID.randomUUID();
         UUID userMessageId = UUID.randomUUID();
+        // 原生根I/O必须在短事务外预检；事务内仍锁定项目并固定来源，真实工具执行前会再次核验。
+        var project = projectRuns == null ? null : projectRuns.preflight(principal, conversation, runId);
+        if (localClient != null && project != null) {
+            throw new IllegalArgumentException("本机客户端授权不能与项目会话同时使用");
+        }
+        if (projectAuthorizationMode != null && project == null) {
+            throw new IllegalArgumentException("项目授权方式只能用于项目会话");
+        }
+        java.util.concurrent.atomic.AtomicReference<com.cmagent.core.security.OperationAuthorizationSnapshot>
+                localGrant = new java.util.concurrent.atomic.AtomicReference<>();
         StartedState started = executionService.controls().withConversation(conversationId, () -> inTransaction(() -> {
+            if (project != null) projectRuns.lock(project);
             // JDBC FOR UPDATE 与改绑共用同一行；不能只依赖单进程控制锁。
             conversationRepository.lock(principal.tenantId(), agentId, conversationId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "会话不存在"));
@@ -261,16 +354,22 @@ public class ConversationService {
                 throw new RunControlException(com.cmagent.api.ApiErrorCode.RUN_CONTROL_CONFLICT,
                         "当前会话仍有未结束运行，请先停止或核对运行状态");
             }
-            var workspace = workspaceSelections == null ? null : workspaceSelections.forConversation(principal, conversation, runId);
+            var workspace = localClient != null || project != null || workspaceSelections == null
+                    ? null : workspaceSelections.forConversation(principal, conversation, runId);
             RunRecord run = workspace!=null && workspace.selection().mode()==com.cmagent.core.domain.WorkspaceSelection.Mode.IMPORTED
                     ? runPersistenceService.start(principal,agentId,safeInput,runId,com.cmagent.core.domain.RunKind.NORMAL,3)
                     : runPersistenceService.start(principal,agentId,safeInput,runId);
             try {
+            if (project != null) projectRuns.save(project);
             if (workspace != null) workspaceSelections.saveRun(workspace);
             ConversationMessage userMessage = messageRepository.append(principal.tenantId(),
                     new ConversationMessageDraft(
                             userMessageId, principal.tenantId(), conversationId, MessageRole.USER,
                             principal.displayName(), List.of(MessageContentBlock.text(safeInput)), runId, Instant.now()));
+            if (localClient != null) {
+                localGrant.set(localClients.createForRun(principal, agentId, conversationId, runId,
+                        localClient.deviceId(), localClient.mode(), localClient.categories()));
+            }
             if (Conversation.DEFAULT_TITLE.equals(conversation.title())) {
                 conversationRepository.touch(
                         principal.tenantId(), conversationId, titleFrom(safeInput), userMessage.createdAt());
@@ -308,10 +407,14 @@ public class ConversationService {
                 .filter(id -> runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, id)
                         .map(run -> run.status() == RunStatus.CANCELLED).orElse(false))
                 .collect(java.util.stream.Collectors.toSet());
-        String runtimeInput = promptComposer.compose(history, safeInput, failedRunIds, stoppedRunIds);
+        // 持久化和审批展示必须保留脱敏结果；本机工具需要完整 URL 等当前参数，只有显式选择设备时才把
+        // 本轮原始输入交给模型。历史消息仍来自已脱敏存储，不重新暴露旧会话中的敏感内容。
+        String modelInput = modelInputFor(input, safeInput, localClient != null);
+        String runtimeInput = promptComposer.compose(history, modelInput, failedRunIds, stoppedRunIds);
         java.util.concurrent.atomic.AtomicReference<ConversationMessage> assistant = new java.util.concurrent.atomic.AtomicReference<>();
         AgentRuntimeResult runtimeResult = executionService.runPreparedAndFinalize(
-                principal, agentId, started.run(), runtimeInput, conversationId, null, deltaConsumer, progressConsumer,
+                principal, agentId, started.run(), runtimeInput, conversationId, projectAuthorizationMode, null,
+                deltaConsumer, progressConsumer,
                 finish -> inTransaction(() -> {
                     AgentRuntimeResult result = finish.get();
                     if (result.run().status() == RunStatus.CANCELLED) {
@@ -319,6 +422,9 @@ public class ConversationService {
                     }
                     if (result.run().status() == RunStatus.WAITING_APPROVAL) {
                         approvalService.create(principal, agentId, conversationId, runId, result.pendingApproval());
+                    }
+                    if (localGrant.get() != null && !result.run().status().isActive()) {
+                        localClients.revoke(principal, localGrant.get().authorizationId());
                     }
                     if (result.assistantMessage() != null) {
                         assistant.set(messageRepository.append(principal.tenantId(), new ConversationMessageDraft(
@@ -336,6 +442,10 @@ public class ConversationService {
                 runtimeResult.run(),
                 assistantMessage);
         } catch (RuntimeException failure) {
+            if (localGrant.get() != null) {
+                try { localClients.revoke(principal, localGrant.get().authorizationId()); }
+                catch (RuntimeException cleanup) { failure.addSuppressed(cleanup); }
+            }
             // 包含 Agent 停用等 Runtime 入场前失败；只关闭仍活动的本轮，保留原异常和严格审计失败语义。
             try {
                 // ASK 的 Runtime 已保存检查点；审批创建或通知失败也必须清理，不能只更新 Run 终态。
@@ -350,6 +460,18 @@ public class ConversationService {
         }
     }
 
+    /**
+     * 选择交给模型的当前输入。
+     *
+     * @param originalInput 本轮用户原始输入，仅用于需要精确工具参数的本机客户端运行
+     * @param persistedInput 已脱敏并持久化的输入
+     * @param localClientEnabled 本轮是否显式选择已配对设备
+     * @return 非本机运行保持脱敏输入；本机运行使用原始当前输入
+     */
+    static String modelInputFor(String originalInput, String persistedInput, boolean localClientEnabled) {
+        return localClientEnabled ? originalInput : persistedInput;
+    }
+
     /** 查询会话内权威 Run；租户和 Agent 必须来自已认证上下文及已验证路由。 */
     public RunRecord run(PrincipalRef principal, UUID agentId, UUID conversationId, UUID runId) {
         get(principal, agentId, conversationId);
@@ -361,6 +483,24 @@ public class ConversationService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "运行不存在"));
         if (importAccess != null) importAccess.run(principal, run);
         return run;
+    }
+
+    /**
+     * 读取活动项目 Run 的权威授权方式，供页面刷新后恢复审批提示。
+     *
+     * <p>会话归属与 Run 仍复用 {@link #run} 的租户、Agent 和消息关联校验；项目组件关闭或普通
+     * 会话没有项目快照时返回 {@code null}。该方法只读，不能据此创建或改写 Run 授权。</p>
+     *
+     * @param principal 可信认证主体
+     * @param agentId 路由中的 Agent
+     * @param conversationId 当前会话
+     * @param runId 当前 Run
+     * @return 项目 Run 固定的授权方式；非项目 Run 返回 {@code null}
+     */
+    public com.cmagent.core.security.OperationAuthorizationMode projectAuthorizationMode(
+            PrincipalRef principal, UUID agentId, UUID conversationId, UUID runId) {
+        RunRecord run = run(principal, agentId, conversationId, runId);
+        return projectRuns == null ? null : projectRuns.authorizationMode(principal, run);
     }
 
     /** 返回活动 Run，包含停止中及不可达执行句柄；查询不能自动重放或收口运行。 */
