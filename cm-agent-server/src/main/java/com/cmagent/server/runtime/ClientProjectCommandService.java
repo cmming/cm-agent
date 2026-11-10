@@ -579,9 +579,6 @@ public final class ClientProjectCommandService implements AutoCloseable {
                     || observed == ClientProjectCommand.State.STOP_REQUESTED)
                 ? ClientProjectCommand.State.STOP_REQUESTED : observed;
         long sequence = output.path("sequence").asLong(-1);
-        if (sequence < command.sequence() || sequence > 1_000_000_000L) {
-            throw new IllegalArgumentException("命令输出序号无效");
-        }
         boolean available = output.path("outputAvailable").asBoolean(false);
         boolean truncated = output.path("truncated").asBoolean(false);
         Integer exit = output.path("exitCode").isInt() ? output.path("exitCode").intValue() : null;
@@ -589,6 +586,26 @@ public final class ClientProjectCommandService implements AutoCloseable {
         String stderr = decodeText(output.path("stderrBase64").asText(""));
         String outputJson = cipher.encrypt(json.createObjectNode()
                 .put("stdout", safe(stdout)).put("stderr", safe(stderr)).toString());
+        boolean recoveredReceipt = (task.kind() == ClientProjectTask.Kind.COMMAND_STATUS
+                || task.kind() == ClientProjectTask.Kind.STOP_COMMAND)
+                && observed == ClientProjectCommand.State.UNKNOWN && sequence == 0
+                && !available && exit == null && stdout.isEmpty() && stderr.isEmpty();
+        if (recoveredReceipt) {
+            // 重启后的私有回执不持有输出或输出序号；只证明结果未知，不能回退已收集输出或伪称进程退出。
+            sequence = command.sequence();
+            available = command.outputAvailable();
+            truncated = command.truncated();
+            exit = command.exitCode();
+            outputJson = command.encryptedOutput();
+            if (available) {
+                JsonNode prior = decrypt(outputJson);
+                stdout = prior.path("stdout").asText("");
+                stderr = prior.path("stderr").asText("");
+            }
+        }
+        if (sequence < command.sequence() || sequence > 1_000_000_000L || sequence < 0) {
+            throw new IllegalArgumentException("命令输出序号无效");
+        }
         boolean repeatedTerminal = Set.of(ClientProjectCommand.State.SUCCEEDED,
                         ClientProjectCommand.State.FAILED, ClientProjectCommand.State.CANCELLED)
                 .contains(command.state()) && state == command.state();

@@ -49,6 +49,42 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ClientProjectCommandServiceTest {
+    @Test void 重启后的无输出未知回执保留服务端序号和已有输出() throws Exception {
+        var cipher = new ModelCredentialCipher(new javax.crypto.spec.SecretKeySpec(new byte[32], "AES"));
+        String priorOutput = cipher.encrypt("{\"stdout\":\"已核验输出\",\"stderr\":\"\"}");
+        UUID commandId = UUID.randomUUID(), project = UUID.randomUUID(), run = UUID.randomUUID();
+        UUID agent = UUID.randomUUID(), conversation = UUID.randomUUID(), deviceId = UUID.randomUUID();
+        var running = new ClientProjectCommand(commandId, tenant, owner, project, agent, conversation,
+                run, "a".repeat(64), "b".repeat(64), true, "encrypted-plan", priorOutput,
+                true, false, null, ClientProjectCommand.State.RUNNING, false, 8, 3, now, now);
+        var task = new ClientProjectTask(UUID.randomUUID(), tenant, owner, deviceId, project, run,
+                agent, conversation, null, commandId, ClientProjectTask.Kind.COMMAND_STATUS,
+                "encrypted-request", ClientProjectTask.State.DISPATCHED, "", "", now,
+                now.plusSeconds(60), now, null, 2);
+        when(commands.lock(tenant, owner, commandId)).thenReturn(Optional.of(running));
+        when(commands.update(eq(tenant), eq(owner), eq(commandId), eq(3L), any()))
+                .thenAnswer(call -> Optional.of(call.getArgument(4)));
+        when(tasks.complete(any(), any(), any(), any(), anyLong(), any(), any(), any(), any())).thenReturn(true);
+        var keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        var device = new LocalClientDevice(deviceId, tenant, owner, "设备", LocalClientDevice.Platform.WINDOWS,
+                Base64.getEncoder().encodeToString(keys.getPublic().getEncoded()), LocalClientDevice.State.ACTIVE,
+                1, now, now);
+        var payload = new ObjectMapper().createObjectNode().put("state", "UNKNOWN").put("sequence", 0)
+                .put("outputAvailable", false).put("stdoutBase64", "").put("stderrBase64", "");
+
+        service().completeSuccess(device, task, payload, now);
+
+        var captured = ArgumentCaptor.forClass(ClientProjectCommand.class);
+        verify(commands).update(eq(tenant), eq(owner), eq(commandId), eq(3L), captured.capture());
+        assertThat(captured.getValue().state()).isEqualTo(ClientProjectCommand.State.UNKNOWN);
+        assertThat(captured.getValue().sequence()).isEqualTo(8);
+        assertThat(captured.getValue().encryptedOutput()).isEqualTo(priorOutput);
+        assertThat(captured.getValue().exitCode()).isNull();
+        payload.put("state", "RUNNING");
+        assertThatThrownBy(() -> service().completeSuccess(device, task, payload, now))
+                .isInstanceOf(IllegalArgumentException.class).hasMessage("命令输出序号无效");
+    }
+
     private final UUID tenant = UUID.randomUUID();
     private final String owner = "owner";
     private final ClientProjectCommandRepository commands =
