@@ -1032,25 +1032,10 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             String input = canonicalJson(objectMapper, block.getInput());
             return new RuntimePendingApproval.RuntimePendingToolCall(
                     block.getId(), tool.id(), tool.name(), tool.riskLevel(),
-                    protectedToolIds.contains(tool.id()) ? protectedApprovalSummary(block.getInput()) : approvalInputSummary(input),
+                    protectedToolIds.contains(tool.id()) ? AgentScopeToolBridge.protectedInputSummary(block.getInput(), tool.name()) : approvalInputSummary(input),
                     approvalInputHash(objectMapper, block.getInput()));
         }).toList();
         return new RuntimePendingApproval(replyId, items);
-    }
-
-    /**
-     * 项目HIGH只展示经严格格式校验的不可变操作引用，方便原owner定位完整差异/命令清单。
-     * 不复制任意输入字段；畸形引用仍用固定摘要，真实网关会拒绝执行。
-     */
-    private static String protectedApprovalSummary(Map<String,Object> input) {
-        if(input==null||!input.keySet().equals(Set.of("operationId","version","digest")))return AgentScopeToolBridge.PROTECTED_INPUT_SUMMARY;
-        try {
-            String id=java.util.UUID.fromString((String)input.get("operationId")).toString();
-            Object number=input.get("version");String digest=(String)input.get("digest");
-            if(!(number instanceof Number version)||version.longValue()<1||version.longValue()>Integer.MAX_VALUE
-                    ||version.doubleValue()!=version.longValue()||digest==null||!digest.matches("[0-9a-f]{64}"))return AgentScopeToolBridge.PROTECTED_INPUT_SUMMARY;
-            return "项目操作 operationId="+id+" version="+version.longValue()+" digest="+digest;
-        }catch(RuntimeException invalid){return AgentScopeToolBridge.PROTECTED_INPUT_SUMMARY;}
     }
 
     private static String canonicalJson(ObjectMapper objectMapper, Map<String, Object> input) {

@@ -290,6 +290,14 @@ class AgentScopeProtectedToolPayloadTest {
 
         assertThat(bridge.records().getFirst().inputSummary()).isEqualTo(
                 "项目命令 commandId=" + commandId + " version=2 digest=" + "d".repeat(64));
+        var asking = ToolUseBlock.builder().id("call-asking").name(tool.name()).input(arguments)
+                .state(ToolCallState.ASKING).build();
+        var pending = AgentScopeReActExecutor.completedResult(Msg.builder().name("assistant")
+                        .role(MsgRole.ASSISTANT).content(asking)
+                        .generateReason(GenerateReason.PERMISSION_ASKING).build(),
+                List.of(), null, List.of(tool), new ObjectMapper(), true, Set.of(toolId));
+        assertThat(pending.pendingApproval().items().getFirst().inputSummary())
+                .isEqualTo(bridge.records().getFirst().inputSummary());
     }
 
     private static Msg message() {

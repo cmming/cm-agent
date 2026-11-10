@@ -93,15 +93,34 @@ public final class ClientProjectRunService {
                 binding.clientRootId(), binding.rootIdentity(), binding.projectVersion(), clock.instant());
     }
 
-    /** HTTP 消息/审批入口在读取派生资源前验证固定项目来源仍一致。 */
+    /** 历史读取核验长期来源；归档和执行快照清理不撤销原主体的历史读取权。 */
     void verifyConversation(PrincipalRef principal, Conversation conversation) {
         requireBrowserRequest(principal, conversation.id());
+        if (!principal.tenantId().equals(conversation.tenantId())
+                || !principal.principalId().equals(conversation.createdBy())) {
+            throw reject(principal, conversation.id(), "CLIENT_PROJECT_CONVERSATION_NOT_FOUND", 404,
+                    "设备项目会话不存在或不可访问");
+        }
         if (conversations.workspaceProtocol(principal.tenantId(), conversation.agentId(),
                 conversation.id()) != ClientProjectBinding.PROTOCOL) {
             throw reject(principal, conversation.id(), "CLIENT_PROJECT_BINDING_CORRUPT", 409,
                     "设备项目会话来源见证损坏");
         }
-        preflight(principal, conversation, UUID.randomUUID());
+        var binding = bindings.conversation(principal.tenantId(), principal.principalId(), conversation.id())
+                .orElseThrow(() -> reject(principal, conversation.id(), "CLIENT_PROJECT_BINDING_MISSING", 409,
+                        "设备项目会话来源绑定缺失"));
+        authorize(principal, "project:read", binding.projectId());
+        var project = projects.find(principal.tenantId(), principal.principalId(), binding.projectId())
+                .orElseThrow(() -> reject(principal, binding.projectId(), "CLIENT_PROJECT_NOT_FOUND", 404,
+                        "设备项目不存在或不可访问"));
+        if (!binding.agentId().equals(conversation.agentId()) || binding.runId() != null
+                || !binding.conversationId().equals(conversation.id())
+                || !project.deviceId().equals(binding.deviceId())
+                || !project.clientRootId().equals(binding.clientRootId())
+                || !project.rootIdentity().equals(binding.rootIdentity())) {
+            throw reject(principal, conversation.id(), "CLIENT_PROJECT_BINDING_CONFLICT", 409,
+                    "设备项目会话来源已变化");
+        }
     }
 
     /** 事务内锁定项目并复核会话绑定。 */
@@ -218,23 +237,30 @@ public final class ClientProjectRunService {
 
     void verifyResource(PrincipalRef principal, RunRecord run) {
         requireBrowserRequest(principal, run.id());
+        if (!principal.tenantId().equals(run.tenantId())
+                || !principal.principalId().equals(run.principalId())
+                || runs.workspaceProtocol(run.tenantId(), run.agentId(), run.id()) != ClientProjectBinding.PROTOCOL) {
+            throw reject(principal, run.id(), "CLIENT_PROJECT_BINDING_CORRUPT", 409,
+                    "设备项目Run来源见证损坏");
+        }
         var binding = bindings.run(principal.tenantId(), principal.principalId(), run.id())
                 .orElseThrow(() -> reject(principal, run.id(), "CLIENT_PROJECT_BINDING_MISSING",
                         409, "设备项目Run来源绑定缺失"));
-        if (!binding.agentId().equals(run.agentId())) {
+        if (!binding.agentId().equals(run.agentId()) || !run.id().equals(binding.runId())) {
             throw reject(principal, run.id(), "CLIENT_PROJECT_BINDING_CONFLICT", 409,
                     "设备项目Run来源不一致");
         }
-        var project = projects.find(principal.tenantId(), principal.principalId(), binding.projectId())
-                .orElseThrow(() -> reject(principal, run.id(), "CLIENT_PROJECT_NOT_FOUND", 404,
-                        "设备项目不存在或不可访问"));
-        if (!project.deviceId().equals(binding.deviceId())
-                || !project.clientRootId().equals(binding.clientRootId())
-                || !project.rootIdentity().equals(binding.rootIdentity())) {
+        var conversation = conversations.findByTenantAndAgentAndId(principal.tenantId(), run.agentId(),
+                binding.conversationId()).orElseThrow(() -> reject(principal, run.id(),
+                        "CLIENT_PROJECT_BINDING_MISSING", 409, "设备项目Run原会话缺失"));
+        verifyConversation(principal, conversation);
+        var source = bindings.conversation(principal.tenantId(), principal.principalId(), conversation.id())
+                .orElseThrow();
+        if (!sameOrigin(source, binding)) {
             throw reject(principal, run.id(), "CLIENT_PROJECT_BINDING_CONFLICT", 409,
                     "设备项目Run来源已变化");
         }
-        snapshots.verify(principal, binding);
+        // 派生资源读取依赖长期见证；执行快照由 prepare/retain 单独核验，终态清理后仍可查历史。
     }
 
     public List<Conversation> listConversations(PrincipalRef principal, UUID projectId,

@@ -25,6 +25,49 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class ClientProjectRunServiceTest {
+    @Test void 终态和归档历史只依赖长期来源且跨主体仍拒绝() {
+        UUID tenant = UUID.randomUUID(), projectId = UUID.randomUUID(), agent = UUID.randomUUID();
+        Instant now = Instant.parse("2026-11-10T00:00:00Z");
+        var principal = new PrincipalRef(tenant, "owner", "测试", Set.of("project:read"));
+        var conversations = mock(ConversationRepository.class);
+        var bindings = mock(ClientProjectBindingRepository.class);
+        var projects = mock(ClientProjectRepository.class);
+        var runs = mock(RunRepository.class);
+        var snapshots = mock(ClientProjectReadSnapshots.class);
+        var conversation = new Conversation(UUID.randomUUID(), tenant, agent, "历史", "owner", now, now);
+        var project = new ClientProject(projectId, tenant, "owner", UUID.randomUUID(), UUID.randomUUID(),
+                "a".repeat(64), "已归档项目", ClientProject.State.ARCHIVED, 2, now, now);
+        var run = com.cmagent.core.domain.RunRecord.create(UUID.randomUUID(), tenant, agent, "owner", "", now)
+                .complete(com.cmagent.core.domain.RunStatus.SUCCEEDED, "完成", "", now);
+        var source = new ClientProjectBinding(tenant, "owner", projectId, agent, conversation.id(), null,
+                project.deviceId(), project.clientRootId(), project.rootIdentity(), 1, now);
+        var runSource = new ClientProjectBinding(tenant, "owner", projectId, agent, conversation.id(), run.id(),
+                project.deviceId(), project.clientRootId(), project.rootIdentity(), 1, now);
+        when(conversations.workspaceProtocol(tenant, agent, conversation.id())).thenReturn(5);
+        when(conversations.findByTenantAndAgentAndId(tenant, agent, conversation.id())).thenReturn(Optional.of(conversation));
+        when(runs.workspaceProtocol(tenant, agent, run.id())).thenReturn(5);
+        when(bindings.conversation(tenant, "owner", conversation.id())).thenReturn(Optional.of(source));
+        when(bindings.run(tenant, "owner", run.id())).thenReturn(Optional.of(runSource));
+        when(projects.find(tenant, "owner", projectId)).thenReturn(Optional.of(project));
+        var service = new ClientProjectRunService(runs, projects, bindings, mock(AgentDefinitionRepository.class),
+                conversations, mock(ToolGrantRepository.class), mock(ClientProjectToolCatalog.class),
+                new DefaultPermissionEvaluator(), mock(AuditAppender.class), mock(TransactionTemplate.class),
+                java.time.Clock.fixed(now, java.time.ZoneOffset.UTC), snapshots);
+
+        service.verifyConversation(principal, conversation);
+        service.verifyResource(principal, run);
+
+        org.mockito.Mockito.verifyNoInteractions(snapshots);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.verifyConversation(
+                new PrincipalRef(tenant, "another", "其他主体", Set.of("project:read")), conversation))
+                .isInstanceOfSatisfying(LocalProjectAccessException.class,
+                        failure -> assertThat(failure.status()).isEqualTo(404));
+        when(runs.workspaceProtocol(tenant, agent, run.id())).thenReturn(0);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.verifyResource(principal, run))
+                .isInstanceOfSatisfying(LocalProjectAccessException.class,
+                        failure -> assertThat(failure.errorCode()).isEqualTo("CLIENT_PROJECT_BINDING_CORRUPT"));
+    }
+
     @Test void 通用消息和Run入口仍要求设备项目专用请求头() {
         var properties = new com.cmagent.server.config.ClientProjectProperties();
         properties.setEnabled(true);

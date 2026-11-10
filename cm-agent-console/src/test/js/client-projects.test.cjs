@@ -136,6 +136,62 @@ test("设备项目经通用消息审批和Run路由时仍携带专用行动头",
     }
 });
 
+test("精确拒绝使用真实SSE审批路由且断流错误保留编号并禁止重提", async () => {
+    const previousOption = global.Option;
+    global.Option = class { constructor(label, value) { this.label = label; this.value = value; } };
+    try {
+        for (const failure of [false, true]) {
+            const document = dom(), streams = [], scheduled = [];
+            let pending = true;
+            const approval = {approvalId: "approval", version: 3, status: "PENDING", canDecide: true,
+                items: [{itemId: "item", toolName: "client_project_run_command", inputSummary: "精确操作"}]};
+            const page = projects.createClientProjectPage({document, getSessionEpoch: () => 1,
+                host: {...host(), setTimeout(callback) { scheduled.push(callback); return scheduled.length; },
+                    CmAgentProjectDevelopment: {operationReference: () => ({operationId: "command"})}},
+                api: {request: async (url) => {
+                    if (url.endsWith("/capabilities")) return {enabled: true};
+                    if (url === "/api/local-client/devices") return [{deviceId: "device", state: "ACTIVE"}];
+                    if (url.startsWith("/api/client-projects?")) return [{id: "project", deviceId: "device", state: "ACTIVE"}];
+                    if (url === "/api/agents") return [{id: "agent", name: "验收", enabled: true}];
+                    if (url.includes("/conversations?")) return [{id: "conversation", agentId: "agent"}];
+                    if (url.endsWith("/queries")) return {requestId: "query", expiresAt: "2099-01-01T00:00:00Z"};
+                    if (url.includes("/queries/")) return {requestId: "query", state: "SUCCEEDED", output: {entries: []}};
+                    if (url.endsWith("/active-run")) return null;
+                    if (url.endsWith("/approvals")) return {items: pending ? [approval] : []};
+                    return {items: []};
+                }, stream: async (url, options, onEvent) => {
+                    streams.push([url, options]);
+                    onEvent({type: "approval-decision", data: {status: "DENIED"}});
+                    if (failure) onEvent({type: "error", data: {code: "RUNTIME_ERROR", errorId: "fixture-error", message: "受控失败"}});
+                    pending = false;
+                    onEvent({type: "completed", data: {run: {status: "DENIED"}}});
+                }}});
+            try {
+                await page.mount();
+                await document.getElementById("clientProjectList").children[0].events.click();
+                await document.getElementById("clientProjectConversationList").children[0].events.click();
+                const card = document.getElementById("clientProjectApprovalItems").children[0];
+                const select = card.children[1].children.at(-1);
+                select.value = "DENY"; select.events.change();
+                await scheduled.shift()();
+                assert.equal(document.getElementById("clientProjectApprovalItems").children[0], card);
+                assert.equal(select.value, "DENY");
+                await card.children.at(-1).events.click();
+                assert.equal(streams.length, 1);
+                assert.equal(streams[0][0], "/api/agents/agent/conversations/conversation/approvals/approval/decision/stream");
+                assert.equal(streams[0][1].headers["X-CM-Agent-Client-Project"], "1");
+                assert.deepEqual(JSON.parse(streams[0][1].body), {expectedVersion: 3, decisions: [{itemId: "item", decision: "DENY"}]});
+                const message = document.getElementById("clientProjectChatStatus").textContent;
+                assert.match(message, failure ? /受控失败.*RUNTIME_ERROR.*fixture-error.*不能再次提交/ : /DENIED/);
+                if (failure) assert.equal(card.children.at(-1).disabled, true);
+            } finally { page.dispose(); }
+        }
+    } finally {
+        if (previousOption === undefined) delete global.Option;
+        else global.Option = previousOption;
+    }
+});
+
 function dom() {
     class Node {
         constructor() {

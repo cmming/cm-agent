@@ -311,13 +311,13 @@ public class AgentScopeToolBridge extends ToolBase {
     }
 
     /**
-     * 受保护工具默认隐藏原始输入；仅文件应用和固定工具链启动允许公开审批定位字段。
+     * 桥接记录与 ReAct 审批暂停共用同一格式；仅文件应用和固定工具链启动允许公开审批定位字段。
      *
      * <p>operationId、version 和 digest 不含文件正文，页面据此请求专用预览；任何附加字段、
      * 不同工具名或格式异常都会退回完全隐藏，不能借审批摘要泄漏模型补丁内容。</p>
      */
-    private static String protectedInputSummary(Map<String, Object> input, String toolName) {
-        if (!("project_apply_changes".equals(toolName)
+    static String protectedInputSummary(Map<String, Object> input, String toolName) {
+        if (input == null || !("project_apply_changes".equals(toolName)
                 || "client_project_apply_changes".equals(toolName)
                 || "client_project_run_command".equals(toolName))
                 || !input.keySet().equals(Set.of("operationId", "version", "digest"))) {

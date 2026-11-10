@@ -78,6 +78,7 @@
         let agents = [], conversation = null, messages = [], activeRunId = null;
         let conversationRequestId = null;
         let activeRunStatus = null, approvalPending = true, runPollTimer = null, runPollAttempts = 0;
+        let approvalRenderSignature = null;
         let conversationRevision = 0;
         let listRevision = 0, detailRevision = 0, treeRevision = 0, textRevision = 0, searchRevision = 0;
         const controllers = new Set();
@@ -100,6 +101,32 @@
                     headers: {...options.headers, ...boundary},
                     signal: controller.signal
                 });
+            } finally {
+                controllers.delete(controller);
+            }
+        }
+
+        async function submitDecision(url, payload) {
+            if (!valid()) throw new Error("项目工作区已离开，请核对原审批。");
+            const controller = new AbortController();
+            controllers.add(controller);
+            let outcome = null, settled = false;
+            try {
+                // 通用会话只提供 SSE 审批恢复；决定接受不等于运行完成，断流后不能再次提交。
+                await api.stream(url, {method: "POST", headers: boundary,
+                    body: JSON.stringify(payload), signal: controller.signal}, event => {
+                    if (!valid()) return;
+                    if (event.type === "error") {
+                        const value = event.data || {};
+                        throw new Error(`${value.message || "审批恢复失败"}${value.code ? `（错误码：${value.code}）` : ""}${value.errorId ? `（错误编号：${value.errorId}）` : ""}`);
+                    }
+                    if (event.type === "completed" || event.type === "approval-required") {
+                        settled = true;
+                        outcome = event.data;
+                    }
+                });
+                if (valid() && !settled) throw new Error("审批恢复未返回最终状态，请刷新会话核对。");
+                return outcome;
             } finally {
                 controllers.delete(controller);
             }
@@ -350,6 +377,10 @@
             const pending = (page.items || []).filter(item => item.status === "PENDING");
             approvalPending = pending.length > 0;
             const target = $("clientProjectApprovalItems");
+            // 权威版本未变时保留已读取的精确预览和逐项选择，避免两秒轮询反复清空用户正在确认的审批。
+            const signature = JSON.stringify({projectId: selected?.id, agentId, conversationId, stamp, pending});
+            if (signature === approvalRenderSignature) { updateSendState(); return; }
+            approvalRenderSignature = signature;
             target.replaceChildren();
             const projectDev = host.CmAgentProjectDevelopment;
             for (const approval of pending) {
@@ -430,13 +461,14 @@
                     submit.disabled = true;
                     card.querySelectorAll?.("button,select,input").forEach(control => control.disabled = true);
                     try {
-                        await request(`/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/approvals/${encodeURIComponent(approval.approvalId)}/decision`, {
-                            method: "POST",
-                            body: JSON.stringify({expectedVersion: approval.version,
+                        const outcome = await submitDecision(`/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/approvals/${encodeURIComponent(approval.approvalId)}/decision/stream`, {
+                            expectedVersion: approval.version,
                                 decisions: (approval.items || []).map(item => ({itemId: item.itemId,
-                                    decision: choices.get(item.itemId)}))})
+                                    decision: choices.get(item.itemId)}))
                         });
-                        status("clientProjectChatStatus", "审批决定已接受，正在核对运行状态。");
+                        if (!valid() || conversation?.id !== conversationId || stamp !== conversationRevision) return;
+                        status("clientProjectChatStatus", outcome?.run?.status
+                            ? `本轮状态：${outcome.run.status}。` : "审批决定已接受，正在核对运行状态。");
                         await refreshConversation();
                         scheduleRunPoll();
                     } catch (error) {
@@ -778,6 +810,7 @@
                 preview = null; selected = null; items = [];
                 conversationRequestId = null;
                 activeRunId = null; activeRunStatus = null; approvalPending = true;
+                approvalRenderSignature = null;
                 lastCommand = null;
                 $("clientProjectApprovalItems")?.replaceChildren();
                 $("clientProjectSearchResults")?.replaceChildren();

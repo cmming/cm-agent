@@ -122,7 +122,8 @@ public record ClientProjectCommand(UUID id, UUID tenantId, String ownerId, UUID 
     private boolean allowed(State next) {
         return switch (state) {
             case PROPOSED -> next == State.QUEUED || next == State.CANCELLED;
-            case QUEUED -> next == State.RUNNING || next == State.STOP_REQUESTED
+            // 快命令可能在首次签名回报前已经退出；完整退出回执可合并启动与退出两次观察，零退出码约束仍生效。
+            case QUEUED -> next == State.RUNNING || next == State.SUCCEEDED || next == State.STOP_REQUESTED
                     || next == State.FAILED
                     || next == State.CANCELLED || next == State.UNKNOWN;
             case RUNNING -> next == State.RUNNING || next == State.STOP_REQUESTED || next == State.SUCCEEDED

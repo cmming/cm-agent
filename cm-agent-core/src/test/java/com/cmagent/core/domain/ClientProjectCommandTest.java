@@ -38,6 +38,16 @@ class ClientProjectCommandTest {
                 .isInstanceOf(IllegalStateException.class);
     }
 
+    @Test void 快命令允许首次回报即退出但仍要求成功证据() {
+        Instant now = Instant.parse("2026-11-10T00:00:00Z");
+        var queued = command(now).update(ClientProjectCommand.State.QUEUED, false, null,
+                false, false, "", 0, now);
+        assertThat(queued.update(ClientProjectCommand.State.SUCCEEDED, false, 0, false, true,
+                "encrypted-output", 1, now).state()).isEqualTo(ClientProjectCommand.State.SUCCEEDED);
+        assertThatThrownBy(() -> queued.update(ClientProjectCommand.State.SUCCEEDED, false, null,
+                false, false, "", 1, now)).isInstanceOf(IllegalStateException.class);
+    }
+
     private static ClientProjectCommand command(Instant now) {
         return new ClientProjectCommand(UUID.randomUUID(), UUID.randomUUID(), "owner",
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),

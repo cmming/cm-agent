@@ -17,7 +17,7 @@ import java.util.UUID;
  * @param clientRootId 客户端不透明根标识
  * @param rootIdentity 固定目录对象身份摘要
  * @param projectVersion 绑定时的项目版本
- * @param createdAt 来源固定时间
+ * @param createdAt 来源固定时间，统一到双方言 TIMESTAMP(6) 的微秒精度
  */
 public record ClientProjectBinding(UUID tenantId, String ownerId, UUID projectId, UUID agentId,
         UUID conversationId, UUID runId, UUID deviceId, UUID clientRootId, String rootIdentity,
@@ -33,6 +33,8 @@ public record ClientProjectBinding(UUID tenantId, String ownerId, UUID projectId
         Objects.requireNonNull(deviceId);
         Objects.requireNonNull(clientRootId);
         Objects.requireNonNull(createdAt);
+        // 来源会同时进入 JDBC 和认证加密快照；先统一精度，避免数据库往返后仅时间尾数变化就被判为来源篡改。
+        createdAt = createdAt.truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         if (ownerId == null || ownerId.isBlank() || ownerId.length() > 200
                 || rootIdentity == null || !rootIdentity.matches("[0-9a-f]{64}")
                 || projectVersion < 1) {
