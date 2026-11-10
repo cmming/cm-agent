@@ -17,6 +17,35 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ClientProjectCommandOperationsTest {
+    @Test void 重复状态读取不重复累计输出或消耗输出预算(@TempDir Path directory) throws Exception {
+        var fixture = operations(directory);
+        try (var operations = fixture.operations()) {
+            var mapper = new ObjectMapper();
+            var plan = operations.plan(fixture.identity(), planInput(fixture.binding(), mapperArgs("0")));
+            var input = mapper.createObjectNode().put("rootId", fixture.binding().rootId().toString())
+                    .put("operationId", UUID.randomUUID().toString())
+                    .put("planDigest", plan.path("planDigest").asText());
+            input.set("manifest", plan.path("manifest").deepCopy());
+            operations.start(fixture.identity(), input);
+            ObjectNode terminal = null;
+            for (int attempt = 0; attempt < 100; attempt++) {
+                terminal = operations.status(fixture.identity(), input);
+                if (terminal.path("state").asText().equals("SUCCEEDED")) break;
+                Thread.sleep(50);
+            }
+            assertThat(terminal.path("state").asText()).isEqualTo("SUCCEEDED");
+            String output = new String(java.util.Base64.getDecoder().decode(terminal.path("stdoutBase64").asText()),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(output.lines().toList()).containsExactly("COMMAND_STARTED");
+            for (int attempt = 0; attempt < 10; attempt++) {
+                var repeated = operations.status(fixture.identity(), input);
+                assertThat(repeated.path("stdoutBase64")).isEqualTo(terminal.path("stdoutBase64"));
+                assertThat(repeated.path("sequence")).isEqualTo(terminal.path("sequence"));
+                assertThat(repeated.path("truncated").asBoolean()).isFalse();
+            }
+        }
+    }
+
     @Test void 固定工具链命令异步运行并可由停止链路取得退出证据(@TempDir Path directory)
             throws Exception {
         var identityStore = new DeviceIdentityStore(directory.resolve("identity"),

@@ -542,11 +542,14 @@ final class ClientProjectCommandOperations implements AutoCloseable {
 
         private synchronized void accept(LocalCommandOperations.CommandStatus value) {
             byte[] bytes = value.output();
+            // await 返回从启动至今的累计输出；监视线程与状态查询共用快照，只追加尚未接收的尾部。
+            int offset = Math.min(output.size(), bytes.length);
             int remaining = MAX_OUTPUT_BYTES - output.size();
-            int accepted = Math.min(remaining, bytes.length);
-            output.write(bytes, 0, accepted);
-            truncated |= value.truncated() || accepted < bytes.length;
-            if (bytes.length > 0) sequence++;
+            int accepted = Math.min(remaining, bytes.length - offset);
+            output.write(bytes, offset, accepted);
+            boolean nextTruncated = truncated || value.truncated() || accepted < bytes.length - offset;
+            if (accepted > 0 || nextTruncated != truncated) sequence++;
+            truncated = nextTruncated;
             java.util.Arrays.fill(bytes, (byte) 0);
         }
 
