@@ -62,8 +62,13 @@ public class RunExecutionService {
     }
     /** 审批拒绝、停止或过期由审批服务收口时，也必须撤销项目 Run 快照并记录同一撤销审计。 */
     void cleanupEphemeralAuthorization(PrincipalRef principal, RunRecord run) {
-        if (projectRuns != null) projectRuns.cleanup(principal, run);
-        if (clientProjectRuns != null) clientProjectRuns.cleanup(principal, run);
+        if (!principal.tenantId().equals(run.tenantId())) throw new SecurityException("运行清理租户不匹配");
+        // 调度器的审计主体可能是 system:approval-expiry；临时授权槽仍属于仓储 Run 的原发起人。
+        // 此内部链路只撤销授权、不授予能力，不能把系统主体当成快照 owner，也不能使用请求传入的 owner。
+        PrincipalRef owner = principal.principalId().equals(run.principalId()) ? principal
+                : new PrincipalRef(run.tenantId(), run.principalId(), run.principalId(), java.util.Set.of());
+        if (projectRuns != null) projectRuns.cleanup(owner, run);
+        if (clientProjectRuns != null) clientProjectRuns.cleanup(owner, run);
     }
     /** 所有会话、审批恢复与停止共享本实例的句柄和短锁，不提供跨实例命令路由。 */
     private final RunControlRegistry controls = new RunControlRegistry();

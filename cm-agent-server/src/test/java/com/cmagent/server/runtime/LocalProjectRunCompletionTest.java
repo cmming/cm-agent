@@ -69,6 +69,17 @@ class LocalProjectRunCompletionTest {
         var value=invocation.get();if(value!=null)value.close();
     }
 
+    @Test void 过期调度器按持久Run原主体撤销快照且不能跨租户清理() {
+        var actor = new PrincipalRef(tenant, "system:approval-expiry", "审批过期调度", Set.of());
+        service.cleanupEphemeralAuthorization(actor, run);
+        verify(projects).cleanup(argThat(value -> value.tenantId().equals(tenant)
+                && value.principalId().equals("owner") && value.permissions().isEmpty()), eq(run));
+        verify(clientProjects).cleanup(argThat(value -> value.tenantId().equals(tenant)
+                && value.principalId().equals("owner")), eq(run));
+        assertThrows(SecurityException.class, () -> service.cleanupEphemeralAuthorization(
+                new PrincipalRef(UUID.randomUUID(), "system:approval-expiry", "其他租户", Set.of()), run));
+    }
+
     @Test void 项目模型提前完成时等待Job退出再清理并持久成功() throws Exception {
         runtimeReturns(success());
         var executor=Executors.newSingleThreadExecutor();

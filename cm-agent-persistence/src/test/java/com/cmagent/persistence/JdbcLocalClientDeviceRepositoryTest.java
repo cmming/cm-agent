@@ -285,6 +285,7 @@ class JdbcLocalClientDeviceRepositoryTest {
                 "合成加密清单", "", false, false, null, ClientProjectCommand.State.PROPOSED,
                 false, 0, 1, now, now);
         assertThat(commands.insert(proposed)).isTrue();
+        assertThat(commands.find(tenant, "Owner", proposed.id()).orElseThrow().exitCode()).isNull();
         assertThat(commands.find(tenant, "owner", proposed.id())).isEmpty();
         assertThat(commands.find(UUID.randomUUID(), "Owner", proposed.id())).isEmpty();
         var queued = proposed.update(ClientProjectCommand.State.QUEUED, false, null, false, false, "", 0, now);
@@ -311,8 +312,11 @@ class JdbcLocalClientDeviceRepositoryTest {
                 ClientProjectTask.State.SUCCEEDED, "合成加密结果", "", now)).isTrue();
         assertThat(tasks.complete(tenant, "Owner", device.id(), task.id(), claimed.version(),
                 ClientProjectTask.State.SUCCEEDED, "合成加密结果", "", now)).isFalse();
-        var stopped = queued.update(ClientProjectCommand.State.STOP_REQUESTED, true, null, false, false, "", 0, now);
-        assertThat(commands.update(tenant, "Owner", proposed.id(), queued.version(), stopped)).contains(stopped);
+        var running = queued.update(ClientProjectCommand.State.RUNNING, false, null, false, false, "", 0, now);
+        assertThat(commands.update(tenant, "Owner", proposed.id(), queued.version(), running)).contains(running);
+        assertThat(commands.find(tenant, "Owner", proposed.id())).contains(running);
+        var stopped = running.update(ClientProjectCommand.State.STOP_REQUESTED, true, null, false, false, "", 0, now);
+        assertThat(commands.update(tenant, "Owner", proposed.id(), running.version(), stopped)).contains(stopped);
         assertThat(commands.expireUnsettled(tenant, "Owner", run.id(), now.plusSeconds(1), now.plusSeconds(2))).isEqualTo(1);
         var unknown = commands.find(tenant, "Owner", proposed.id()).orElseThrow();
         assertThat(unknown.state()).isEqualTo(ClientProjectCommand.State.UNKNOWN);
@@ -321,6 +325,7 @@ class JdbcLocalClientDeviceRepositoryTest {
         var completed = unknown.update(ClientProjectCommand.State.SUCCEEDED, true, 0, false, true,
                 "合成加密输出", 1, now.plusSeconds(3));
         assertThat(commands.update(tenant, "Owner", proposed.id(), unknown.version(), completed)).contains(completed);
+        assertThat(commands.find(tenant, "Owner", proposed.id())).contains(completed);
         assertThat(commands.hasUnsettledForProject(tenant, "Owner", projectId)).isFalse();
     }
 

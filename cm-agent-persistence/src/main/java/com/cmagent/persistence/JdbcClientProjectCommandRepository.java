@@ -154,6 +154,8 @@ public final class JdbcClientProjectCommandRepository
         Timestamp created = row.getTimestamp("created_at");
         Timestamp updated = row.getTimestamp("updated_at");
         int exitCode = row.getInt("exit_code");
+        // wasNull 只描述最近读取的列，必须紧跟 exit_code 捕获；否则 RUNNING 的 NULL 会被误读为退出码 0。
+        Integer nullableExitCode = row.wasNull() ? null : exitCode;
         return new ClientProjectCommand(UUID.fromString(row.getString("id")),
                 UUID.fromString(row.getString("tenant_id")), row.getString("owner_id"),
                 UUID.fromString(row.getString("project_id")),
@@ -163,7 +165,7 @@ public final class JdbcClientProjectCommandRepository
                 row.getString("display_digest"), row.getBoolean("display_exact"),
                 row.getString("encrypted_plan"), row.getString("encrypted_output"),
                 row.getBoolean("output_available"), row.getBoolean("truncated"),
-                row.wasNull() ? null : exitCode, ClientProjectCommand.State.valueOf(
+                nullableExitCode, ClientProjectCommand.State.valueOf(
                         row.getString("state")), row.getBoolean("stop_requested"),
                 row.getLong("sequence_no"), row.getLong("version"), created.toInstant(),
                 updated.toInstant());
