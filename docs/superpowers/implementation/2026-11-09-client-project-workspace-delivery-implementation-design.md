@@ -1,6 +1,17 @@
 # 本机客户端项目工作区实施说明
 
-日期：2026-11-09；当前修订 R3（2026-11-10）；mode=default；未提交。
+日期：2026-11-09；当前修订 R3（2026-11-10）；mode=default；业务代码已提交并推送。
+
+## R3 续验结果（2026-11-10）
+
+当前仍为 R3、mode=default；这是原任务的实现与验收收口，不新增需求修订或重复工作包。业务代码已提交并推送至 `d85f785`，客户端输出修复为 `c8d6ad3`。T6/T17 的真实 Windows 命令子集通过；T9 改为进行中，整体验收仍未闭合。
+
+- Rocky：`17bf309` 上持久化全量 94/94 通过；`9e1745e` 上迁移/检查点/设备仓储及 core 命令定向通过；最终 `c8d6ad3` 对齐双库命令仓储增量 2/2 和 core 命令 3/3 通过。当前持久化/core 与该次验证无差异，不把全量 94 项冒充在最终提交重跑。
+- Windows：真实已配对客户端、认证浏览器和 `OPENAI_COMPATIBLE / glm-5.3` 完成工具链查询、提案、HIGH 精确预览/批准、命令成功、Run 屏障、进程树停止、重复停止查询、客户端重启 UNKNOWN 回报与人工对账。所用 Agent 显示名为“测试Qwen”，实际模型以运行配置的 `glm-5.3` 为准。
+- UNKNOWN：本机孤立回执为 UNKNOWN；服务端恢复后仍为 UNKNOWN/version=17，输出序号 69 与已有 1579 字节输出保留。人工对账 HTTP 200 不改变状态、版本、序号；真实审计存在；归档 HTTP 409 `CLIENT_PROJECT_TASK_PENDING`，测试进程数量为 0，未自动重放。
+- 边界：使用既有登记的验收项目；原生目录窗口在当前自动化桌面不可操作，不能据此宣称完整“选择目录到开发”验收通过。远端 Server/TLS、多实例、设备撤销、Windows 注销/断电、文件写入竞争和完整窄屏/迟到响应矩阵仍未验。
+
+具体命令、Run/命令编号、失败修复与证据适用范围以[账本](../progress/2026-11-09-client-project-workspace-delivery-ledger.md)为准。
 
 R0 只建立了独立实施工作包并完成 T0 的初始环境/代码调查。R1 交付“协议 5 只读纵切面”。R2 补充只读门禁和文件变更审批纵切：协议版本头、单在途选择、Windows 文件身份、Run 级读取快照、变更计划、HIGH 审批、条件应用、条件撤销和客户端私有回执。R3 完成固定工具链命令、命令启动许可、有界输出、进程树停止、Run 完成屏障和 UNKNOWN 对账的模块级纵切。
 
@@ -42,7 +53,7 @@ R0 只建立了独立实施工作包并完成 T0 的初始环境/代码调查。
 - 异步控制：`ConversationService` 和 `ToolApprovalService` 在收到 `RUNNING` 命令屏障信号时保留 Run 执行句柄；`RunExecutionService` 的异步最终回写使用同一 Run 短锁并在结束后释放，因此用户在等待期间仍可停止。
 - 页面：项目页能力报告 `commands=true`；`client-projects.js` 支持命令精确预览、查看状态/有界输出、请求停止与 UNKNOWN 人工确认，所有命令内容按纯文本渲染，离页或切项目丢弃迟到结果。
 
-## R1/R2 历史验证与 R3 当前验证
+## R1/R2 与 R3 初始验证（历史）
 
 - `mvn -q -pl cm-agent-local-client -am clean test`：通过，32/32，失败、错误、跳过均为 0。
 - `mvn -q -pl cm-agent-server -am "-Dtest=ClientProjectServiceTest,ClientProjectRequestBoundaryTest,ClientProjectToolCatalogTest,ToolOperationCategoriesTest,ProjectRuntimeContextTest,ClientProjectRootStoreTest,LocalClientServerClientTest,AgentScopeProtectedToolPayloadTest,ConsoleResourceTest" "-Dsurefire.failIfNoSpecifiedTests=false" clean test`：通过。
@@ -63,14 +74,21 @@ R0 只建立了独立实施工作包并完成 T0 的初始环境/代码调查。
 - R3 V29 静态双方言检查：`MIGRATION_STATIC_OK tables=6 pgColumnComments=91 myColumnComments=89 tableComments=6/6`；新表集合一致，全部表有注释，89 个新增列均由方言注释覆盖，PostgreSQL 另更新 2 个既有列注释。
 - `mvn -q -pl cm-agent-persistence -am "-DskipTests" package` 与 `mvn -q "-DskipTests" package`：均退出码 0。
 
+## R3 续验实际交付
+
+- Task 解码/回报使用一次性 taskId；SELECT_ROOT 按该标识幂等登记，LIST/READ 不再错误拒绝未用的空 query。
+- RunPersistenceService 首次保存协议 5；WorkspaceImportAccess 与 ClientProjectRunService 核对持久会话/Run 见证、精确主体及浏览器行动头。历史读取不再依赖会被终态清理的读取快照。
+- ClientProjectBinding 在写入 JDBC/快照前统一微秒；ClientProjectReadSnapshotsTest 保留根身份变化拒绝。
+- client-projects.js 使用真实 SSE 审批恢复接口并保留错误编号；相同权威审批版本的轮询不重建卡片；ReAct 与桥接记录共用 protectedInputSummary。
+- JdbcClientProjectCommandRepository 在读取 exit_code 后立即捕获 wasNull；双库测试补充 RUNNING NULL、CAS 竞争、唯一领取、UNKNOWN 隔离和终态读取。
+- 客户端仅追加累计输出的新尾部，重复状态查询不增加输出和序号；ClientProjectCommandService 接受无输出 UNKNOWN 恢复回执，但保留最后已核验输出/序号且不接受 RUNNING 倒退。
+- RunExecutionService 的调度清理按持久 Run 原主体定位临时授权槽，租户仍先验证；调度审计主体不再误用为快照 owner。
+
 ## 未完成和限制
 
-- R3 续验补丁（2026-11-10）：`LocalClientServerClient.Task` 分离 taskId/operationId，结果回报要求 taskId；`LocalClientTaskExecutor` 用 taskId 登记目录。`ClientProjectService` 将空词拒绝限定到 SEARCH，保留全部查询的长度与 NUL 校验。协议解码/回报、目录幂等和列表/搜索回归已通过本轮定向 Maven。历史外部验收限制由账本最新续验记录覆盖。
-- Rocky PostgreSQL 16/MySQL 8.4 的 V29 迁移、原生注释、并发和重启验证尚未执行；当前未提交工作树不满足仓库要求的远端提交对齐条件，远端根分区仅余约 1.8 GiB 且已有大量无关容器，本轮未启动新 Testcontainers。
-- 尚未进行真实 Windows 目录窗口自动化、远端 Server/TLS 配对、真实 Provider 工具调用、设备撤销/离线、Run 重连和完整浏览器窄屏/键盘验收。8080 的 Playwright 访问被重定向到登录页，当前无已登录项目会话。
-- 多文件条件写不保证原子；部分成功后的 T5/T12 真实断线、客户端重启、外部编辑器和 Windows ACL 竞争仍待 T9。
-- `ClientProjectController.Capabilities` 当前报告 `changes=true`、`commands=true`；命令入口仍受功能开关、协议 5、Run 固定来源、精确审批、当前设备和当前权限共同限制。
-- 真实 Windows 进程树、断线、客户端重启/停机/注销/断电、设备撤销后的受限回执、Server 重启、TLS、真实 Provider、浏览器和 Rocky 双库尚未证明；本轮静态项目页 URL 返回 200 但无已认证会话证据，模块合同不能替代 T9 端到端验收。
-- Rocky 只读复核显示指定三套镜像存在，但根分区 70 GiB 已用 69 GiB、仅余 1.8 GiB（98%）；本地未提交工作树无法满足远端提交对齐门禁，因此未启动 Testcontainers。
+- 真实原生选择器未通过：请求被领取，Swing 模态等待，但当前自动化桌面未暴露可操作窗口；任务过期 UNKNOWN。使用固定选择器的历史辅助程序不计入本轮真实窗口证据。javaw 启动方式实验未解决并已撤回。
+- 真实 Windows 命令子集通过，不能替代文件变更竞争、注销/断电、设备撤销、跨主机 TLS、多实例和旧程序栅栏验收。
+- 长运行超过页面轮询预算后，本轮通过重新选择原会话核对终态；完整迟到响应/窄屏/键盘矩阵未验。
+- 当前验收项目保持 UNKNOWN 隔离，人工确认不解除；测试父子进程均已不存在。不能删除私有回执或改数据库状态来制造通过。
 
 关联：[清单](../checklists/2026-11-09-client-project-workspace-delivery-checklist.md)｜[设计](../specs/2026-11-09-client-project-workspace-delivery-design.md)｜[计划](../plans/2026-11-09-client-project-workspace-delivery.md)｜[提示词](../prompts/2026-11-09-client-project-workspace-delivery-prompt.md)｜[账本](../progress/2026-11-09-client-project-workspace-delivery-ledger.md)。

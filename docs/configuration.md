@@ -756,6 +756,6 @@ V26 新增 `local_project_roots`、`local_projects`、`local_project_conversatio
 
 示例中的路径只是占位符，应替换为管理员和用户共同核实的普通可执行文件，不能用未核实的 `.cmd`、Shell、脚本解释器或凭据替代安全配置。项目命令的环境由清单完整替换，不继承客户端启动环境；`cmd.exe`、PowerShell、WSL 和常见 Unix Shell 被拒绝，模型参数中疑似密码、Token、API Key 或凭据赋值在计划阶段拒绝。命令提案冻结构建工具版本定义、可执行文件 SHA-256、argv、项目相对工作目录、环境摘要和根目录主要构建配置摘要；批准后任一变化都拒绝启动。脚本内容、插件行为、临时下载依赖、子进程网络访问和外部服务不在完整冻结范围内。
 
-`cm-agent.client-projects.command-task-ttl` 限制单条计划、启动、状态和停止任务的完成期限，`command-barrier-timeout` 限制 Run 在模型结束后等待命令收敛的期限，两者都有生产上限。命令启动后的 Run 可在后台保持 `RUNNING`，但模型回答结束本身不会产生 `SUCCEEDED`。所有已启动命令明确成功、失败、取消或 UNKNOWN 后，Run 才能成功；可证明进程未创建的启动拒绝记为 `FAILED`，进程可能已经创建但无法确认时报 `UNKNOWN`。超时会先登记停止，再把未决命令收口为 UNKNOWN。停止任务不保证操作系统进程或外部副作用立即结束，重复停止只读取设备权威状态。`UNKNOWN` 人工确认只记录逻辑处置，不解除项目根隔离，也不允许重放命令。
+`cm-agent.client-projects.command-task-ttl` 限制单条计划、启动、状态和停止任务的完成期限，`command-barrier-timeout` 限制 Run 在模型结束后等待命令收敛的期限，两者都有生产上限。命令启动后的 Run 可在后台保持 `RUNNING`，但模型回答结束本身不会产生 `SUCCEEDED`。Run 必须等待已启动命令收敛，且仅在全部已执行命令成功时才能成功；失败、取消或 UNKNOWN 均不能算成功；可证明进程未创建的启动拒绝记为 `FAILED`，进程可能已经创建但无法确认时报 `UNKNOWN`。超时会先登记停止，再把未决命令收口为 UNKNOWN。停止任务不保证操作系统进程或外部副作用立即结束，重复停止只读取设备权威状态。`UNKNOWN` 人工确认只记录逻辑处置，不解除项目根隔离，也不允许重放命令。
 
-客户端命令回执保存在 `~/.cm-agent/client-project-commands`，只写入命令编号、rootId、计划摘要、状态、停止标记、退出码和更新时间，不保存 argv、环境、输出或绝对路径。客户端重启会把孤立的 `RUNNING`/`STOP_REQUESTED` 回执改记为 UNKNOWN；客户端正常退出会请求停止并等待有界进程树收口。根隔离仍以 Server 命令状态和客户端持久回执共同证明，Windows 注销、断电、已脱离进程树的后代及外部服务副作用仍须人工核对。
+客户端命令回执保存在 `~/.cm-agent/client-project-commands`，只写入命令编号、rootId、计划摘要、状态、停止标记、退出码和更新时间，不保存 argv、环境、输出或绝对路径。客户端重启会把孤立的 `RUNNING`/`STOP_REQUESTED` 回执改记为 UNKNOWN；恢复回执不持有输出，Server 保留最后已核验输出和序号，不把重启时的零序号解释为输出回退；客户端执行正常关闭路径时会请求停止并进行有界等待；操作系统强制结束、注销或断电不能视为已完成该清理。根隔离仍以 Server 命令状态和客户端持久回执共同证明，Windows 注销、断电、已脱离进程树的后代及外部服务副作用仍须人工核对。

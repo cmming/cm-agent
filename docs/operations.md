@@ -401,3 +401,7 @@ scripts/manage-local-runtime.sh start --target client \
 MySQL 8.4 新建空库应使用服务器默认的 `utf8mb4_0900_ai_ci`。若手工指定 `utf8mb4_unicode_ci`，V19 的 `skill_artifacts` 外键会因排序规则与既有租户表不一致而失败；该错误应在建库阶段修正，不能修改已发布迁移规避。
 
 在同一验收实例上，真实 DashScope `qwen-plus` 已通过 `FULL_ACCESS + READ_ONLY` 单轮授权调用 `local_client_read_files`。Run、工具调用和本机操作均为 `SUCCEEDED`，最终结果包含客户端侧文件原文。目标 Linux 无法直连模型时应配置受控 HTTPS 出网代理；该代理必须只对回环或受信网段开放，不得把模型 API Key 写入代理日志或命令行。
+
+### 设备项目命令重启后的 UNKNOWN 核对
+
+重启后的客户端会把孤立运行回执改记为 UNKNOWN；状态任务成功仅表示回报已接收，不代表原命令成功或进程静止。Server 保留最后已核验输出及序号。原主体在项目页核对命令状态、输出、本机回执和真实进程后，可以勾选并提交 UNKNOWN 对账；该操作只写元数据审计，不改变命令版本和 UNKNOWN 状态，也不释放项目隔离或自动重放。项目归档遇到 UNKNOWN 返回 409，应按命令编号继续核对，不要删除回执或直接改库。
