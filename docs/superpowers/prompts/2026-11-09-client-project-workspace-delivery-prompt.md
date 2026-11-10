@@ -6,6 +6,7 @@
 
 ```text
 仓库：F:\java\cm-agent
+R3 续验授权：用户已要求核对 T6/T17 后提交并推送，再执行 Rocky 双库和真实 Windows 端到端验收；该授权替代文末关于未经授权不得提交的通用限制。先读取账本最新续验记录，保护配置和设计等无关修改；只提交本范围文件，不能把历史“未提交/未登录”作为当前阻塞直接复用。
 先读取 AGENTS.md、R2 需求工作包及本 R3 实施工作包六份文档。当前 mode=default，工程细节自主决定并记录假设。T0/T13 已完成；T6/T17 已达到模块级可运行和自动化合同，但真实 Windows/断线/崩溃/注销、Server 重启、设备撤销、双库、Provider、TLS 和浏览器证据仍未完成。禁止重复实现或覆盖当前未提交改动，按依赖推进 T1–T18。
 
 R2 追加交付：客户端 Windows 文件对象身份、协议版本头、每设备单在选择窗口、Run 级固定读取快照；`client_project_propose_changes`、`client_project_apply_changes`、`client_project_propose_undo`、`client_project_change_status`；原文摘要/脱敏摘要分离、HIGH 审批后端复核、条件应用、部分成功 UNKNOWN、客户端私有操作回执及项目页逐项预览。

@@ -180,9 +180,13 @@ final class LocalClientServerClient implements AutoCloseable {
                 || "UNKNOWN".equals(state))) {
             throw new IllegalArgumentException("设备项目任务终态无效");
         }
+        if (task.taskId() == null) {
+            // 项目任务结果只能回报到服务端签发的一次性任务，不能复用 operationId 或其他任务标识。
+            throw new IllegalArgumentException("设备项目任务标识无效");
+        }
         byte[] body = json.writeValueAsBytes(new ResultPayload(state, task.version(), output, error));
         URI endpoint = resolve(identityServer(identity),
-                "/api/local-client/bootstrap/project-tasks/" + task.operationId() + "/result");
+                "/api/local-client/bootstrap/project-tasks/" + task.taskId() + "/result");
         HttpResponse<String> response = signedPost(identity, endpoint, body,
                 Map.of("X-CM-Client-Project-Protocol",
                         Integer.toString(com.cmagent.core.domain.ClientProjectBinding.PROTOCOL)));
@@ -298,8 +302,21 @@ final class LocalClientServerClient implements AutoCloseable {
     /** 服务端短期挑战。 */
     record Challenge(UUID challengeId, String nonce, String expiresAt) { }
 
-    /** 服务端任务请求。 */
-    record Task(UUID operationId, String category, long version, JsonNode request) { }
+    /**
+     * 服务端任务请求。
+     *
+     * @param taskId 项目任务的一次性标识；通用绝对路径任务响应不包含此字段
+     * @param operationId 通用本机操作或项目业务操作标识
+     * @param category 服务端固定的任务类别
+     * @param version 领取时的条件版本
+     * @param request 已由服务端约束并加密传输的任务请求
+     */
+    record Task(UUID taskId, UUID operationId, String category, long version, JsonNode request) {
+        /** 兼容不包含项目任务标识的通用本机操作响应。 */
+        Task(UUID operationId, String category, long version, JsonNode request) {
+            this(null, operationId, category, version, request);
+        }
+    }
 
     private record ChallengeRequest(UUID deviceId) { }
     private record ResultPayload(String state, long expectedVersion, JsonNode output, String error) { }

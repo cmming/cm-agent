@@ -13,6 +13,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 /** 在签名任务已通过服务端授权后执行本机文件、网络和命令原语。 */
 final class LocalClientTaskExecutor implements AutoCloseable {
@@ -98,7 +99,13 @@ final class LocalClientTaskExecutor implements AutoCloseable {
         if (selected.isEmpty()) {
             return Outcome.failed("用户取消了项目文件夹选择", json.createObjectNode());
         }
-        var binding = projectRoots.register(identity, task.operationId(), selected.orElseThrow());
+        // 浏览器目录选择任务的业务 operationId 为空，幂等登记必须使用服务端下发的一次性 taskId；
+        // 兼容旧构造器生成的无 taskId 测试任务时才回退到 operationId。
+        UUID registrationId = task.taskId() == null ? task.operationId() : task.taskId();
+        if (registrationId == null) {
+            throw new IOException("设备项目任务标识无效");
+        }
+        var binding = projectRoots.register(identity, registrationId, selected.orElseThrow());
         ObjectNode output = json.createObjectNode();
         output.put("rootId", binding.rootId().toString());
         output.put("rootIdentity", binding.identity());

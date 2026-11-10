@@ -4,6 +4,9 @@
 
 ## R0 历史基线
 
+- R3 续验起点（2026-11-10）：当前 HEAD `1b19863`，远端已有主体 `21344f4`；本轮六个代码/测试文件和六份工作包、发布说明尚未提交。无关配置、设计、忽略规则和工作目录保留不动。
+- 本轮 `mvn -q -pl cm-agent-local-client,cm-agent-server -am "-Dtest=ClientProject*Test,LocalClientServerClientTest,LocalClientTaskExecutorTest,LocalProjectRunCompletionTest" "-Dsurefire.failIfNoSpecifiedTests=false" test`：JDK 21.0.11/Maven 3.9.4，退出码 0；客户端匹配 19 项、Server 匹配 27 项，均无失败/错误/跳过。未运行数据库测试（该命令没有匹配持久化测试）。
+- Rocky 当前根分区余量约 1.7 GiB、可用内存约 3.7 GiB；既有 `/tmp/cm-agent-verify-v29fix-20261110` 对应 `1b19863` 的 MigrationTest 报告 3/3 通过。这是恢复发现的历史报告，不作为本轮完整双库复跑或端到端通过。接下来用对齐新提交的隔离目录和已有 Maven 缓存串行验证，禁止清理无关容器/卷。
 - HEAD `0a96c6a0a70c77c20d29e325e276a7eba7ce5010`，工作树已有用户配置、设计文件及原 R2 工作包改动，保持不动。
 - Maven 3.9.4；`F:\java21` 提供 JDK 21.0.11。默认 shell 为 JDK 17，后续命令显式切换。
 - R0 形成时最高迁移为 V28；候选 V29 已在本 R2 实施并通过静态双方言检查。

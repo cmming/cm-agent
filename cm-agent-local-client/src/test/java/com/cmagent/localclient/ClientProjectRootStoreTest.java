@@ -25,13 +25,16 @@ class ClientProjectRootStoreTest {
         var roots = new ClientProjectRootStore(directory.resolve("roots"), new ObjectMapper());
         var executor = new LocalClientTaskExecutor(new ObjectMapper(), roots, ignored -> Optional.of(project));
 
-        UUID selectId = UUID.randomUUID();
-        var select = executor.execute(identity, new LocalClientServerClient.Task(selectId,
+        UUID taskId = UUID.randomUUID();
+        UUID operationId = UUID.randomUUID();
+        var select = executor.execute(identity, new LocalClientServerClient.Task(taskId, operationId,
                 "PROJECT_SELECT_ROOT", 2,
                 new ObjectMapper().createObjectNode().put("kind", "SELECT_ROOT")));
 
         assertThat(select.success()).isTrue();
         assertThat(select.output().toString()).doesNotContain(project.toString());
+        assertThat(roots.register(identity, taskId, project).displayName())
+                .isEqualTo(select.output().path("displayName").asText());
         UUID rootId = UUID.fromString(select.output().path("rootId").asText());
         String rootIdentity = select.output().path("rootIdentity").asText();
         assertThat(rootIdentity).matches("[0-9a-f]{64}");

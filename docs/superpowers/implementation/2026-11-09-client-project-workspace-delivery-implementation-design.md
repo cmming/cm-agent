@@ -65,6 +65,7 @@ R0 只建立了独立实施工作包并完成 T0 的初始环境/代码调查。
 
 ## 未完成和限制
 
+- R3 续验补丁（2026-11-10）：`LocalClientServerClient.Task` 分离 taskId/operationId，结果回报要求 taskId；`LocalClientTaskExecutor` 用 taskId 登记目录。`ClientProjectService` 将空词拒绝限定到 SEARCH，保留全部查询的长度与 NUL 校验。协议解码/回报、目录幂等和列表/搜索回归已通过本轮定向 Maven。历史外部验收限制由账本最新续验记录覆盖。
 - Rocky PostgreSQL 16/MySQL 8.4 的 V29 迁移、原生注释、并发和重启验证尚未执行；当前未提交工作树不满足仓库要求的远端提交对齐条件，远端根分区仅余约 1.8 GiB 且已有大量无关容器，本轮未启动新 Testcontainers。
 - 尚未进行真实 Windows 目录窗口自动化、远端 Server/TLS 配对、真实 Provider 工具调用、设备撤销/离线、Run 重连和完整浏览器窄屏/键盘验收。8080 的 Playwright 访问被重定向到登录页，当前无已登录项目会话。
 - 多文件条件写不保证原子；部分成功后的 T5/T12 真实断线、客户端重启、外部编辑器和 Windows ACL 竞争仍待 T9。

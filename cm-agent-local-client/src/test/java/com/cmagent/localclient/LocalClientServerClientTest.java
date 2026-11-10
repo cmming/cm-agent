@@ -51,6 +51,54 @@ class LocalClientServerClientTest {
     }
 
     @Test
+    void 项目任务按服务端一次性taskId解码并回报(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory)
+            throws Exception {
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        var resultPath = new java.util.concurrent.atomic.AtomicReference<String>();
+        server.createContext("/api/local-client/bootstrap/challenges", exchange -> {
+            byte[] body = ("{\"challengeId\":\"" + UUID.randomUUID() + "\",\"nonce\":\""
+                    + java.util.Base64.getEncoder().encodeToString(new byte[32]) + "\"}")
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        UUID taskId = UUID.randomUUID();
+        UUID operationId = UUID.randomUUID();
+        server.createContext("/api/local-client/bootstrap/project-tasks/next", exchange -> {
+            byte[] body = ("{\"taskId\":\"" + taskId + "\",\"operationId\":\"" + operationId
+                    + "\",\"category\":\"PROJECT_SELECT_ROOT\",\"version\":1,\"request\":{}}")
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.createContext("/api/local-client/bootstrap/project-tasks/" + taskId + "/result", exchange -> {
+            resultPath.set(exchange.getRequestURI().getPath());
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+        });
+        server.start();
+        try (var client = new LocalClientServerClient(new ObjectMapper(), new SecureRandom())) {
+            var store = new DeviceIdentityStore(directory, new ObjectMapper(), new SecureRandom(),
+                    java.util.Optional.empty());
+            var identity = store.create(URI.create("http://127.0.0.1:" + server.getAddress().getPort()),
+                    "测试机", com.cmagent.core.domain.LocalClientDevice.Platform.WINDOWS,
+                    "fixture-pass".toCharArray());
+            identity = store.confirm(identity, UUID.randomUUID(), UUID.randomUUID(), "owner");
+            var task = client.nextProjectTask(identity).orElseThrow();
+            assertThat(task.taskId()).isEqualTo(taskId);
+            assertThat(task.operationId()).isEqualTo(operationId);
+            client.reportProjectTask(identity, task, "SUCCEEDED",
+                    new ObjectMapper().createObjectNode(), "");
+            assertThat(resultPath.get())
+                    .isEqualTo("/api/local-client/bootstrap/project-tasks/" + taskId + "/result");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void 设备不可用时提示核对而执行后回报失败提示结果可能未知(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         var challengeStatus = new AtomicInteger(404);

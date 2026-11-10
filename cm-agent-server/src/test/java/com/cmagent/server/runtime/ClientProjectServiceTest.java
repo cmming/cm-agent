@@ -32,6 +32,7 @@ import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -165,6 +166,29 @@ class ClientProjectServiceTest {
         verify(operations).insert(operation.capture());
         assertThat(operation.getValue().planDigest()).isEqualTo(output.path("planDigest").asText());
         assertThat(operation.getValue().displayExact()).isFalse();
+    }
+
+    @Test void 列表查询忽略未使用的空搜索词而搜索仍要求非空() {
+        UUID requestId = UUID.randomUUID(), projectId = UUID.randomUUID();
+        ClientProject project = new ClientProject(projectId, tenant, principal.principalId(),
+                device.id(), UUID.randomUUID(), "a".repeat(64), "项目",
+                ClientProject.State.ACTIVE, 1, now, now);
+        when(projects.find(tenant, principal.principalId(), projectId))
+                .thenReturn(Optional.of(project));
+        when(tasks.findForOwner(tenant, principal.principalId(), requestId))
+                .thenReturn(Optional.empty());
+        when(tasks.insert(any())).thenReturn(true);
+
+        var view = service.startQuery(principal, projectId, requestId,
+                ClientProjectTask.Kind.LIST,
+                new ClientProjectService.ReadRequest("", "", 100, 0, 65_536, "", false));
+
+        assertThat(view.kind()).isEqualTo("LIST");
+        verify(tasks).insert(any());
+        assertThatThrownBy(() -> service.startQuery(principal, projectId, UUID.randomUUID(),
+                ClientProjectTask.Kind.SEARCH,
+                new ClientProjectService.ReadRequest("", "", 100, 0, 65_536, "", false)))
+                .hasMessageContaining("搜索词不能为空");
     }
 
     @Test void 应用许可仅在原提案版本摘要匹配时登记一次() {

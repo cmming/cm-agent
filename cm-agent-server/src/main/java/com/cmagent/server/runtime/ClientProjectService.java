@@ -341,6 +341,11 @@ public final class ClientProjectService {
             throw reject(principal, projectId, "CLIENT_PROJECT_TASK_INVALID", 400,
                     "只读查询种类无效");
         }
+        if (kind == ClientProjectTask.Kind.SEARCH
+                && (request.query() == null || request.query().isBlank())) {
+            throw reject(principal, projectId, "CLIENT_PROJECT_TASK_INVALID", 400,
+                    "设备项目搜索词不能为空");
+        }
         authorize(principal, "project:read", projectId);
         ClientProject project = activeProject(principal, projectId);
         var existing = tasks.findForOwner(principal.tenantId(), principal.principalId(), requestId)
@@ -1198,7 +1203,7 @@ public final class ClientProjectService {
         public ReadRequest {
             if (path != null && (path.length() > 1024 || path.indexOf('\0') >= 0)
                     || cursor != null && (cursor.length() > 1024 || cursor.indexOf('\0') >= 0)
-                    || query != null && (query.isBlank() || query.length() > 256)
+                    || query != null && (query.length() > 256 || query.indexOf('\0') >= 0)
                     || limit < 1 || limit > 200 || offset < 0 || offset > 2_097_152
                     || maxBytes < 4 || maxBytes > 786_432) {
                 throw new IllegalArgumentException("设备项目查询参数无效");
