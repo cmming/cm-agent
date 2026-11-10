@@ -33,6 +33,13 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
     private org.springframework.beans.factory.ObjectProvider<LocalProjectTools> projectTools;
     @org.springframework.beans.factory.annotation.Autowired
     void configureProjectTools(org.springframework.beans.factory.ObjectProvider<LocalProjectTools> provider) { projectTools = provider; }
+    /** 已配对设备项目工具与 Server 本机项目使用独立执行器。 */
+    private org.springframework.beans.factory.ObjectProvider<ClientProjectTools> clientProjectTools;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureClientProjectTools(
+            org.springframework.beans.factory.ObjectProvider<ClientProjectTools> provider) {
+        clientProjectTools = provider;
+    }
     private static final String RESOURCE_TYPE = "TOOL";
     private static final String TOOL_UNAVAILABLE = "工具不可用";
     private static final String TOOL_EXECUTION_FAILED = "工具执行失败";
@@ -122,6 +129,26 @@ public class GovernedToolInvocationService implements ToolInvocationGateway {
             }catch(com.cmagent.core.runtime.ToolInvocationInfrastructureException failure){
                 // 项目边界已写同号安全诊断，这里只写工具元数据审计，继续抛出以关闭Runtime派发门控。
                 appendAudit(request,"TOOL_CALL_FAILED","FAILED","项目工具支撑设施不可用");throw failure;
+            }
+        }
+
+        if (ClientProjectToolCatalog.managed(request.tenantId(), request.toolId())) {
+            var clientProjects = clientProjectTools == null ? null
+                    : clientProjectTools.getIfAvailable();
+            if (clientProjects == null) {
+                appendAudit(request, "TOOL_CALL_DENIED", "DENIED", "已配对设备项目功能未启用");
+                return ToolInvocationResult.deniedProtected("已配对设备项目功能未启用");
+            }
+            appendAudit(request, "TOOL_CALL_STARTED", "RUNNING", "设备项目工具调用已开始");
+            try {
+                var result = clientProjects.invoke(request, tool);
+                appendAudit(request, result.success() ? "TOOL_CALL_COMPLETED" : "TOOL_CALL_FAILED",
+                        result.success() ? "SUCCEEDED" : result.authorized() ? "FAILED" : "DENIED",
+                        "设备项目工具受控结果");
+                return result;
+            } catch (com.cmagent.core.runtime.ToolInvocationInfrastructureException failure) {
+                appendAudit(request, "TOOL_CALL_FAILED", "FAILED", "设备项目工具支撑设施不可用");
+                throw failure;
             }
         }
 

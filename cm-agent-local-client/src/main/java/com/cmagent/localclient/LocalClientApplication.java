@@ -111,15 +111,18 @@ public final class LocalClientApplication {
                 throw new IllegalStateException("设备尚未完成浏览器配对");
             }
             var json = new ObjectMapper();
-            var executor = new LocalClientTaskExecutor(json);
             AtomicBoolean running = new AtomicBoolean(true);
             Runtime.getRuntime().addShutdownHook(new Thread(() -> running.set(false), "cm-agent-local-client-shutdown"));
-            try (var client = new LocalClientServerClient(json, new SecureRandom())) {
+            try (var executor = new LocalClientTaskExecutor(json);
+                 var client = new LocalClientServerClient(json, new SecureRandom())) {
                 System.out.println("本机客户端已启动，设备标识：" + identity.metadata().deviceId());
+                boolean projectTurn = true;
                 while (running.get()) {
                     java.util.Optional<LocalClientServerClient.Task> task;
                     try {
-                        task = client.nextTask(identity);
+                        // 两类任务使用独立端点；交替轮询避免同一最小时间片长期饿死另一队列。
+                        task = projectTurn ? client.nextProjectTask(identity) : client.nextTask(identity);
+                        projectTurn = !projectTurn;
                     } catch (LocalClientServerClient.ChallengeRateLimitedException limited) {
                         // 每次空轮询包含挑战和签名请求；限流发生在领取之前，可延迟后重新申请挑战。
                         System.err.println("设备请求过于频繁，稍后自动恢复连接");
@@ -132,8 +135,14 @@ public final class LocalClientApplication {
                         continue;
                     }
                     var current = task.orElseThrow();
-                    var outcome = executor.execute(current);
-                    client.reportTask(identity, current, outcome.state(), outcome.output(), outcome.error());
+                    var outcome = executor.execute(identity, current);
+                    if (current.category() != null && current.category().startsWith("PROJECT_")) {
+                        client.reportProjectTask(identity, current, outcome.state(),
+                                outcome.output(), outcome.error());
+                    } else {
+                        client.reportTask(identity, current, outcome.state(),
+                                outcome.output(), outcome.error());
+                    }
                 }
             }
             return 0;

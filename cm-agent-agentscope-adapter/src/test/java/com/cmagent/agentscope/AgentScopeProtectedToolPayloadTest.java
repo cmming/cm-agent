@@ -3,6 +3,7 @@ package com.cmagent.agentscope;
 import com.cmagent.api.PrincipalRef;
 import com.cmagent.core.domain.*;
 import com.cmagent.core.runtime.*;
+import com.cmagent.core.security.OperationAuthorizationMode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
@@ -151,6 +152,144 @@ class AgentScopeProtectedToolPayloadTest {
         assertThat(events.toString()).doesNotContain("PRIVATE_THINKING_BODY", "PRIVATE_TOOL_DELTA", "PRIVATE_TOOL_BODY");
         assertThat(result.assistantMessage().toString()).doesNotContain("PRIVATE_THINKING_BODY", "PRIVATE_TOOL_DELTA");
         assertThat(logs).doesNotContain("PRIVATE_THINKING_BODY", "PRIVATE_TOOL_DELTA", "PRIVATE_TOOL_BODY");
+    }
+
+    @Test void 已配对设备项目工具使用同一受保护载荷合同(CapturedOutput logs) {
+        UUID toolId = UUID.nameUUIDFromBytes(("cm-agent/client-project/v1/" + TENANT + "/READ")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var tool = new ToolDefinition(toolId, TENANT, "client_project_read_file", "设备项目读取",
+                ToolType.LOCAL, "{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}}}",
+                ToolRiskLevel.LOW, true, "client-project:READ", "tester", "tester");
+        var agent = new AgentDefinition(AGENT, TENANT, "测试Agent", "", "测试", MODEL,
+                "fixture-model", 0.2, 4, true, List.of(toolId), "tester", "tester");
+        var model = new ModelConfig(MODEL, TENANT, ModelProviderType.OPENAI_COMPATIBLE,
+                "测试模型", "https://example.invalid/v1", "fixture-model", true);
+        var principal = new PrincipalRef(TENANT, "owner", "测试", Set.of("agent:run"));
+        var binding = new ClientProjectBinding(TENANT, "owner", UUID.randomUUID(), AGENT,
+                CONVERSATION, RUN, UUID.randomUUID(), UUID.randomUUID(), "a".repeat(64), 1,
+                Instant.now());
+        var context = new ProjectRuntimeContext(binding, Set.of(toolId),
+                OperationAuthorizationMode.ASK_ON_EFFECT);
+        var request = new AgentRunRequest(RUN, TENANT, agent, model, principal, "测试输入",
+                List.of(tool), CONVERSATION, List.of(), Map.of(), new RunCancellation(), null, context);
+        var events = new CopyOnWriteArrayList<AgentProgressEvent>();
+        var bridge = new AgentScopeToolBridge(request, tool,
+                value -> ToolInvocationResult.succeededProtected("PRIVATE_CLIENT_BODY", "已读取"),
+                new ObjectMapper(), new AgentScopeRunGate(), events::add);
+
+        var result = bridge.callAsync(call("client_project_read_file", "PRIVATE_CLIENT_INPUT")).block();
+
+        assertThat(modelText(result)).isEqualTo("PRIVATE_CLIENT_BODY");
+        assertThat(bridge.records().getFirst().inputSummary())
+                .isEqualTo(AgentScopeToolBridge.PROTECTED_INPUT_SUMMARY);
+        assertThat(bridge.records().toString()).doesNotContain("PRIVATE_CLIENT_INPUT",
+                "PRIVATE_CLIENT_BODY");
+        assertThat(events.toString()).doesNotContain("PRIVATE_CLIENT_INPUT", "PRIVATE_CLIENT_BODY");
+        assertThat(logs).doesNotContain("PRIVATE_CLIENT_INPUT", "PRIVATE_CLIENT_BODY");
+    }
+
+    @Test void 客户端项目应用不因额外字段公开输入摘要() {
+        UUID toolId = UUID.nameUUIDFromBytes(("cm-agent/client-project/v1/" + TENANT + "/APPLY_CHANGE")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var tool = new ToolDefinition(toolId, TENANT, "client_project_apply_changes", "设备项目应用",
+                ToolType.LOCAL, "{\"type\":\"object\",\"properties\":{}}",
+                ToolRiskLevel.HIGH, true, "client-project:APPLY_CHANGE", "tester", "tester");
+        var agent = new AgentDefinition(AGENT, TENANT, "测试Agent", "", "测试", MODEL,
+                "fixture-model", 0.2, 4, true, List.of(toolId), "tester", "tester");
+        var model = new ModelConfig(MODEL, TENANT, ModelProviderType.OPENAI_COMPATIBLE,
+                "测试模型", "https://example.invalid/v1", "fixture-model", true);
+        var principal = new PrincipalRef(TENANT, "owner", "测试", Set.of("agent:run", "project:write"));
+        var binding = new ClientProjectBinding(TENANT, "owner", UUID.randomUUID(), AGENT,
+                CONVERSATION, RUN, UUID.randomUUID(), UUID.randomUUID(), "a".repeat(64), 1,
+                Instant.now());
+        var context = new ProjectRuntimeContext(binding, Set.of(toolId),
+                OperationAuthorizationMode.ASK_ON_EFFECT);
+        var request = new AgentRunRequest(RUN, TENANT, agent, model, principal, "测试输入",
+                List.of(tool), CONVERSATION, List.of(), Map.of(), new RunCancellation(), null, context);
+        Map<String,Object> arguments = Map.of("operationId", UUID.randomUUID().toString(),
+                "version", 1, "digest", "d".repeat(64), "content", "PRIVATE_PATCH");
+        var call = ToolCallParam.builder().toolUseBlock(ToolUseBlock.builder().id("tool-call")
+                .name(tool.name()).input(arguments).build()).input(arguments)
+                .runtimeContext(RuntimeContext.builder().sessionId(RUN.toString()).build()).build();
+        var bridge = new AgentScopeToolBridge(request, tool,
+                value -> ToolInvocationResult.succeededProtected("已完成", "安全摘要"),
+                new ObjectMapper(), new AgentScopeRunGate(), ignored -> { });
+
+        bridge.callAsync(call).block();
+
+        assertThat(bridge.records().getFirst().inputSummary())
+                .isEqualTo(AgentScopeToolBridge.PROTECTED_INPUT_SUMMARY)
+                .doesNotContain("PRIVATE_PATCH");
+        assertThat(bridge.records().toString()).doesNotContain("PRIVATE_PATCH");
+    }
+
+    @Test void 客户端项目应用仅公开审批定位字段() {
+        UUID toolId = UUID.nameUUIDFromBytes(("cm-agent/client-project/v1/" + TENANT + "/APPLY_CHANGE")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var tool = new ToolDefinition(toolId, TENANT, "client_project_apply_changes", "设备项目应用",
+                ToolType.LOCAL, "{\"type\":\"object\",\"properties\":{}}",
+                ToolRiskLevel.HIGH, true, "client-project:APPLY_CHANGE", "tester", "tester");
+        var agent = new AgentDefinition(AGENT, TENANT, "测试Agent", "", "测试", MODEL,
+                "fixture-model", 0.2, 4, true, List.of(toolId), "tester", "tester");
+        var model = new ModelConfig(MODEL, TENANT, ModelProviderType.OPENAI_COMPATIBLE,
+                "测试模型", "https://example.invalid/v1", "fixture-model", true);
+        var principal = new PrincipalRef(TENANT, "owner", "测试", Set.of("agent:run", "project:write"));
+        var binding = new ClientProjectBinding(TENANT, "owner", UUID.randomUUID(), AGENT,
+                CONVERSATION, RUN, UUID.randomUUID(), UUID.randomUUID(), "a".repeat(64), 1,
+                Instant.now());
+        var context = new ProjectRuntimeContext(binding, Set.of(toolId),
+                OperationAuthorizationMode.ASK_ON_EFFECT);
+        var request = new AgentRunRequest(RUN, TENANT, agent, model, principal, "测试输入",
+                List.of(tool), CONVERSATION, List.of(), Map.of(), new RunCancellation(), null, context);
+        String operationId = UUID.randomUUID().toString();
+        Map<String,Object> arguments = Map.of("operationId", operationId,
+                "version", 1, "digest", "d".repeat(64));
+        var call = ToolCallParam.builder().toolUseBlock(ToolUseBlock.builder().id("tool-call")
+                .name(tool.name()).input(arguments).build()).input(arguments)
+                .runtimeContext(RuntimeContext.builder().sessionId(RUN.toString()).build()).build();
+        var bridge = new AgentScopeToolBridge(request, tool,
+                value -> ToolInvocationResult.succeededProtected("已完成", "安全摘要"),
+                new ObjectMapper(), new AgentScopeRunGate(), ignored -> { });
+
+        bridge.callAsync(call).block();
+
+        assertThat(bridge.records().getFirst().inputSummary()).isEqualTo(
+                "项目操作 operationId=" + operationId + " version=1 digest=" + "d".repeat(64));
+    }
+
+    @Test void 客户端固定工具链启动仅公开命令审批定位字段() {
+        UUID toolId = UUID.nameUUIDFromBytes(("cm-agent/client-project/v1/" + TENANT + "/RUN_COMMAND")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var tool = new ToolDefinition(toolId, TENANT, "client_project_run_command", "设备项目命令",
+                ToolType.LOCAL, "{\"type\":\"object\",\"properties\":{}}",
+                ToolRiskLevel.HIGH, true, "client-project:RUN_COMMAND", "tester", "tester");
+        var agent = new AgentDefinition(AGENT, TENANT, "测试Agent", "", "测试", MODEL,
+                "fixture-model", 0.2, 4, true, List.of(toolId), "tester", "tester");
+        var model = new ModelConfig(MODEL, TENANT, ModelProviderType.OPENAI_COMPATIBLE,
+                "测试模型", "https://example.invalid/v1", "fixture-model", true);
+        var principal = new PrincipalRef(TENANT, "owner", "测试",
+                Set.of("agent:run", "project:execute"));
+        var binding = new ClientProjectBinding(TENANT, "owner", UUID.randomUUID(), AGENT,
+                CONVERSATION, RUN, UUID.randomUUID(), UUID.randomUUID(), "a".repeat(64), 1,
+                Instant.now());
+        var context = new ProjectRuntimeContext(binding, Set.of(toolId),
+                OperationAuthorizationMode.ASK_ON_EFFECT);
+        var request = new AgentRunRequest(RUN, TENANT, agent, model, principal, "测试输入",
+                List.of(tool), CONVERSATION, List.of(), Map.of(), new RunCancellation(), null, context);
+        String commandId = UUID.randomUUID().toString();
+        Map<String,Object> arguments = Map.of("operationId", commandId,
+                "version", 2, "digest", "d".repeat(64));
+        var call = ToolCallParam.builder().toolUseBlock(ToolUseBlock.builder().id("tool-call")
+                .name(tool.name()).input(arguments).build()).input(arguments)
+                .runtimeContext(RuntimeContext.builder().sessionId(RUN.toString()).build()).build();
+        var bridge = new AgentScopeToolBridge(request, tool,
+                value -> ToolInvocationResult.succeededProtected("已完成", "安全摘要"),
+                new ObjectMapper(), new AgentScopeRunGate(), ignored -> { });
+
+        bridge.callAsync(call).block();
+
+        assertThat(bridge.records().getFirst().inputSummary()).isEqualTo(
+                "项目命令 commandId=" + commandId + " version=2 digest=" + "d".repeat(64));
     }
 
     private static Msg message() {

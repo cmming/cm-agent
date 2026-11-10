@@ -286,9 +286,11 @@
         state.skillsPage?.dispose();
         state.sandboxPage?.dispose();
         state.projectsPage?.dispose();
+        state.clientProjectsPage?.dispose();
         state.skillsPage = null;
         state.sandboxPage = null;
         state.projectsPage = null;
+        state.clientProjectsPage = null;
     }
 
     function reportPageNavigationError(error) {
@@ -521,6 +523,12 @@
                         api, document, host: window, getSessionEpoch: () => sessionEpoch.capture()
                     });
                     await state.projectsPage.mount();
+                }
+                if (window.CmAgentClientProjects && !state.clientProjectsPage) {
+                    state.clientProjectsPage = window.CmAgentClientProjects.createClientProjectPage({
+                        api, document, host: window, getSessionEpoch: () => sessionEpoch.capture()
+                    });
+                    await state.clientProjectsPage.mount();
                 }
                 break;
             case "localClientPage":

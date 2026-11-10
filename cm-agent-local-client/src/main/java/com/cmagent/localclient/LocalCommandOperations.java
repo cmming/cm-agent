@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -33,6 +34,26 @@ final class LocalCommandOperations {
      * @throws IOException 进程未能启动；调用方应输出脱敏原因
      */
     CommandHandle start(List<String> arguments, Path directory, int outputLimit) throws IOException {
+        return start(arguments, directory, outputLimit, null);
+    }
+
+    /**
+     * 使用显式固定环境启动命令，不继承当前客户端进程的任意环境变量。
+     *
+     * @param arguments 固定程序及精确参数，不自动拼接 Shell
+     * @param directory 已核验的项目内绝对工作目录
+     * @param environment 完整受控环境；调用方不得传入未经审批的秘密值
+     * @param outputLimit 本次最多保留的输出字节数
+     * @return 持有已启动进程和输出读取资源的句柄
+     */
+    CommandHandle start(List<String> arguments, Path directory, Map<String, String> environment,
+            int outputLimit) throws IOException {
+        Objects.requireNonNull(environment, "命令环境不能为空");
+        return start(arguments, directory, outputLimit, environment);
+    }
+
+    private CommandHandle start(List<String> arguments, Path directory, int outputLimit,
+            Map<String, String> environment) throws IOException {
         Objects.requireNonNull(arguments, "命令参数不能为空");
         if (arguments.isEmpty() || arguments.size() > 128 || arguments.stream().anyMatch(Objects::isNull)
                 || arguments.getFirst().isBlank() || arguments.stream().anyMatch(value -> value.length() > 32_768)) {
@@ -44,8 +65,14 @@ final class LocalCommandOperations {
         if (outputLimit < 1 || outputLimit > MAX_OUTPUT_BYTES) {
             throw new IllegalArgumentException("命令输出上限无效");
         }
-        Process process = new ProcessBuilder(List.copyOf(arguments)).directory(directory.toFile())
-                .redirectErrorStream(true).start();
+        ProcessBuilder builder = new ProcessBuilder(List.copyOf(arguments)).directory(directory.toFile())
+                .redirectErrorStream(true);
+        if (environment != null) {
+            // 设备项目固定工具链必须自行声明运行环境和 PATH，不能隐式继承客户端启动环境。
+            builder.environment().clear();
+            builder.environment().putAll(environment);
+        }
+        Process process = builder.start();
         try {
             process.getOutputStream().close();
             return new CommandHandle(process, outputLimit);
@@ -64,10 +91,12 @@ final class LocalCommandOperations {
      * @param stopRequested 是否已登记尽力停止请求
      * @param output 已接收的有界输出，构造和访问时均复制
      * @param truncated 输出是否超出保留上限
+     * @param treeExited 本句柄已观察到的后代进程是否全部退出；根进程退出不能替代该证据
      * @param outputComplete 是否已读到输出流结束；根进程退出不保证此值为真
      */
     record CommandStatus(boolean exited, Integer exitCode, boolean stopRequested,
-                         byte[] output, boolean truncated, boolean outputComplete) {
+                         boolean treeExited, byte[] output, boolean truncated,
+                         boolean outputComplete) {
         CommandStatus {
             output = Objects.requireNonNull(output, "命令输出不能为空").clone();
         }
@@ -79,6 +108,9 @@ final class LocalCommandOperations {
         private final Process process;
         private final Capture capture;
         private final Thread reader;
+        /** 只保留本次根进程下已观察到的后代，便于根退出后继续等待或停止残留进程。 */
+        private final java.util.Set<ProcessHandle> observedDescendants =
+                java.util.concurrent.ConcurrentHashMap.newKeySet();
         private volatile boolean stopRequested;
 
         private CommandHandle(Process process, int limit) {
@@ -100,12 +132,16 @@ final class LocalCommandOperations {
             if (wait.isNegative() || wait.compareTo(Duration.ofMinutes(30)) > 0) {
                 throw new IllegalArgumentException("命令等待时间无效");
             }
+            observeDescendants();
             boolean exited = process.waitFor(wait.toNanos(), TimeUnit.NANOSECONDS);
             if (exited) {
                 // 派生进程可能仍持有管道；最多短暂等待，不能无限阻塞或伪称输出已完整。
                 reader.join(Duration.ofSeconds(1));
             }
-            return capture.status(exited, exited ? process.exitValue() : null, stopRequested);
+            observeDescendants();
+            boolean treeExited = observedDescendants.stream().noneMatch(ProcessHandle::isAlive);
+            return capture.status(exited, exited ? process.exitValue() : null, stopRequested,
+                    exited && treeExited);
         }
 
         /**
@@ -117,9 +153,16 @@ final class LocalCommandOperations {
         void requestStop() {
             stopRequested = true;
             // 只操作本次根进程可见的后代，不扫描或终止用户的其他进程。
-            List<ProcessHandle> descendants = process.descendants().toList();
+            observeDescendants();
+            List<ProcessHandle> descendants = observedDescendants.stream()
+                    .filter(ProcessHandle::isAlive).toList();
             descendants.reversed().forEach(ProcessHandle::destroyForcibly);
             process.destroyForcibly();
+        }
+
+        private void observeDescendants() {
+            process.descendants().forEach(observedDescendants::add);
+            observedDescendants.removeIf(value -> !value.isAlive());
         }
 
         private void drain(InputStream input) {
@@ -157,8 +200,10 @@ final class LocalCommandOperations {
 
         private synchronized void complete() { complete = true; }
 
-        private synchronized CommandStatus status(boolean exited, Integer exitCode, boolean stopRequested) {
-            return new CommandStatus(exited, exitCode, stopRequested, output.toByteArray(), truncated, complete);
+        private synchronized CommandStatus status(boolean exited, Integer exitCode,
+                boolean stopRequested, boolean treeExited) {
+            return new CommandStatus(exited, exitCode, stopRequested, treeExited,
+                    output.toByteArray(), truncated, complete);
         }
     }
 }

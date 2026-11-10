@@ -32,10 +32,24 @@ public class JdbcConversationRepository implements ConversationRepository {
             + " OR EXISTS (SELECT 1 FROM messages lm JOIN runs lr ON lr.tenant_id=lm.tenant_id AND lr.id=lm.run_id"
             + " WHERE lm.tenant_id=c.tenant_id AND lm.conversation_id=c.id AND (lr.workspace_protocol=4"
             + " OR EXISTS (SELECT 1 FROM local_project_runs lpr WHERE lpr.tenant_id=lr.tenant_id AND lpr.run_id=lr.id))))";
+    /** 已配对设备项目来源头或绑定任一存在都阻止回退旧列表。 */
+    private static final String CLIENT_PROJECT_SOURCE = "(c.workspace_protocol=5"
+            + " OR EXISTS (SELECT 1 FROM client_project_conversations cp WHERE cp.tenant_id=c.tenant_id"
+            + " AND cp.conversation_id=c.id)"
+            + " OR EXISTS (SELECT 1 FROM messages cm JOIN runs cr ON cr.tenant_id=cm.tenant_id AND cr.id=cm.run_id"
+            + " WHERE cm.tenant_id=c.tenant_id AND cm.conversation_id=c.id AND (cr.workspace_protocol=5"
+            + " OR EXISTS (SELECT 1 FROM client_project_runs cpr WHERE cpr.tenant_id=cr.tenant_id"
+            + " AND cpr.run_id=cr.id))))";
 
     @Override public boolean hasLocalProjectSource(UUID tenantId, UUID agentId, UUID conversationId) {
         return jdbcClient.sql("SELECT COUNT(*) FROM conversations c WHERE c.tenant_id=:tenant AND c.agent_id=:agent AND c.id=:id AND "
                 + LOCAL_PROJECT_SOURCE).param("tenant", tenantId.toString()).param("agent", agentId.toString())
+                .param("id", conversationId.toString()).query(Long.class).single() != 0;
+    }
+    @Override public boolean hasClientProjectSource(UUID tenantId, UUID agentId, UUID conversationId) {
+        return jdbcClient.sql("SELECT COUNT(*) FROM conversations c WHERE c.tenant_id=:tenant"
+                + " AND c.agent_id=:agent AND c.id=:id AND " + CLIENT_PROJECT_SOURCE)
+                .param("tenant", tenantId.toString()).param("agent", agentId.toString())
                 .param("id", conversationId.toString()).query(Long.class).single() != 0;
     }
     @Override public boolean supportsWorkspaceProtocol() { return true; }
@@ -46,7 +60,9 @@ public class JdbcConversationRepository implements ConversationRepository {
                 .param("tenant", tenantId.toString()).param("agent", agentId.toString()).param("id", conversationId.toString())
                 .query(Integer.class).optional().orElseThrow(() -> new NoSuchElementException("会话不存在"));
         // 项目协议4先由读取闸门明确拒绝；不能把已登记的新来源当未知数据绕回旧来源。
-        if (protocol != 0 && protocol != 3 && protocol != com.cmagent.core.domain.LocalProjectBinding.PROTOCOL)
+        if (protocol != 0 && protocol != 3
+                && protocol != com.cmagent.core.domain.LocalProjectBinding.PROTOCOL
+                && protocol != com.cmagent.core.domain.ClientProjectBinding.PROTOCOL)
             throw new IllegalStateException("会话来源见证不合法");
         return protocol;
     }
@@ -69,7 +85,7 @@ public class JdbcConversationRepository implements ConversationRepository {
         String creator = JdbcOwnerPredicate.equal(jdbcClient, "c.created_by", ":principal");
         var query = jdbcClient.sql("""
                 SELECT c.id,c.tenant_id,c.agent_id,c.title,c.created_by,c.created_at,c.updated_at FROM conversations c
-                WHERE c.tenant_id=:tenant AND c.agent_id=:agent AND c.workspace_protocol<>4
+                WHERE c.tenant_id=:tenant AND c.agent_id=:agent AND c.workspace_protocol NOT IN (4,5)
                 AND (c.workspace_protocol=0 OR
                 """ + creator + ") "
                 + """
@@ -80,7 +96,7 @@ public class JdbcConversationRepository implements ConversationRepository {
                 + " AND NOT EXISTS (SELECT 1 FROM messages m JOIN runs r ON r.tenant_id=m.tenant_id AND r.id=m.run_id"
                 + " WHERE m.tenant_id=c.tenant_id AND m.conversation_id=c.id AND r.workspace_protocol=3 AND NOT ("
                 + JdbcOwnerPredicate.equal(jdbcClient,"r.principal_id",":principal")+" AND "+creator+"))"
-                + " AND NOT " + LOCAL_PROJECT_SOURCE
+                + " AND NOT " + LOCAL_PROJECT_SOURCE + " AND NOT " + CLIENT_PROJECT_SOURCE
                 + (page.beforeUpdatedAt() == null ? "" : " AND (c.updated_at<:before OR (c.updated_at=:before AND c.id<:beforeId))")
                 + " ORDER BY c.updated_at DESC,c.id DESC LIMIT :limit")
                 .param("tenant", tenantId.toString()).param("agent", agentId.toString()).param("principal", principalId).param("limit", page.limit());

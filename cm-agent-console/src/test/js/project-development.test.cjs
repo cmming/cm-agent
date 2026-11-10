@@ -4,6 +4,9 @@ const reference = {operationId: "11111111-1111-4111-8111-111111111111", version:
 const summary = `项目操作 operationId=${reference.operationId} version=1 digest=${reference.digest}`;
 test("审批引用必须精确匹配，缺少版本或摘要的预览失败关闭", () => {
     assert.deepEqual(development.operationReference(summary), reference);
+    assert.deepEqual(development.operationReference(
+        `项目命令 commandId=${reference.operationId} version=1 digest=${reference.digest}`),
+        reference);
     for (const raw of [summary + "\n", summary + " extra", summary.replace("version=1", "version=0"), "operationId=x", ""]) assert.equal(development.operationReference(raw), null);
     assert.equal(development.matchesPreview(reference, {view: reference}), true);
     assert.equal(development.matchesPreview(reference, {...reference, digest: "b".repeat(64)}), false);

@@ -31,6 +31,8 @@ class LocalProjectRunCompletionTest {
     private final ToolGrantRepository grants=mock(ToolGrantRepository.class);
     private final RunPersistenceService persistence=mock(RunPersistenceService.class);
     private final LocalProjectRunService projects=mock(LocalProjectRunService.class);
+    private final ClientProjectRunService clientProjects=mock(ClientProjectRunService.class);
+    private final ClientProjectCommandService clientCommands=mock(ClientProjectCommandService.class);
     private final SkillRuntimeService skills=mock(SkillRuntimeService.class);
     private final AtomicReference<RunCancellation.Invocation> invocation=new AtomicReference<>();
     private final CountDownLatch entered=new CountDownLatch(1);
@@ -54,6 +56,12 @@ class LocalProjectRunCompletionTest {
                 new SensitiveDataRedactor(),mock(ErrorDiagnosticLogger.class),skills);
         ObjectProvider<LocalProjectRunService> provider=mock(ObjectProvider.class);
         when(provider.getIfAvailable()).thenReturn(projects);service.configureProjectRuns(provider);
+        ObjectProvider<ClientProjectRunService> clientProvider=mock(ObjectProvider.class);
+        when(clientProvider.getIfAvailable()).thenReturn(clientProjects);
+        service.configureClientProjectRuns(clientProvider);
+        ObjectProvider<ClientProjectCommandService> commandProvider=mock(ObjectProvider.class);
+        when(commandProvider.getIfAvailable()).thenReturn(clientCommands);
+        service.configureClientProjectCommands(commandProvider);
         control=service.controls().register(run,conversationId);
     }
 
@@ -117,6 +125,36 @@ class LocalProjectRunCompletionTest {
             assertTrue(entered.await(3,TimeUnit.SECONDS));
             assertEquals(RunStatus.SUCCEEDED,future.get(3,TimeUnit.SECONDS).run().status());
             verify(projects,never()).cleanup(any(),any());
+        } finally {release();executor.shutdownNow();}
+    }
+
+    @Test void 客户端命令屏障异步收口时Run返回运行中并保留停止句柄() throws Exception {
+        when(projects.prepare(eq(owner),eq(run),eq(conversationId),anyList(),eq(false)))
+                .thenReturn(null);
+        var clientBinding=new ClientProjectBinding(tenant,"owner",UUID.randomUUID(),agentId,
+                conversationId,runId,UUID.randomUUID(),UUID.randomUUID(),"0".repeat(64),1,started);
+        when(clientProjects.prepare(eq(owner),eq(run),eq(conversationId),anyList(),isNull(),eq(false)))
+                .thenReturn(new ProjectRuntimeContext(clientBinding,Set.of(),
+                        com.cmagent.core.security.OperationAuthorizationMode.ASK_ON_EFFECT));
+        var barrier=new CompletableFuture<ClientProjectCommandService.Outcome>();
+        when(clientCommands.awaitRunSettled(owner,run)).thenReturn(barrier);
+        runtimeReturns(success());
+        var finalized=new CompletableFuture<AgentRuntimeResult>();
+        var executor=Executors.newSingleThreadExecutor();
+        try {
+            var future=executor.submit(()->service.runPreparedAndFinalize(owner,agentId,run,
+                    "测试",conversationId,null,null,ignored->{},ignored->{},finish->{
+                        AgentRuntimeResult value=finish.get();finalized.complete(value);return value;
+                    }));
+            assertTrue(entered.await(3,TimeUnit.SECONDS));
+            invocation.get().close();
+            assertEquals(RunStatus.RUNNING,future.get(3,TimeUnit.SECONDS).run().status());
+            assertNotNull(service.controls().find(runId));
+            barrier.complete(ClientProjectCommandService.Outcome.passed());
+            assertEquals(RunStatus.SUCCEEDED,finalized.get(3,TimeUnit.SECONDS).run().status());
+            for(int attempt=0;attempt<40&&service.controls().find(runId)!=null;attempt++)
+                Thread.sleep(25);
+            assertNull(service.controls().find(runId));
         } finally {release();executor.shutdownNow();}
     }
 

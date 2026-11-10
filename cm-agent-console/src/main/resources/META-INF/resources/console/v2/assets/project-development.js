@@ -5,7 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
     "use strict";
     function operationReference(summary) {
-        const match = /^项目操作 operationId=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) version=([1-9][0-9]*) digest=([0-9a-f]{64})$/.exec(summary || "");
+        const match = /^项目(?:操作 operationId|命令 commandId)=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) version=([1-9][0-9]*) digest=([0-9a-f]{64})$/.exec(summary || "");
         return match && Number.isSafeInteger(Number(match[2])) ? {operationId: match[1], version: Number(match[2]), digest: match[3]} : null;
     }
     function matchesPreview(reference, preview) {

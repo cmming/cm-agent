@@ -19,6 +19,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -105,6 +106,29 @@ final class LocalClientServerClient implements AutoCloseable {
     }
 
     /**
+     * 领取一条已配对设备项目任务；与通用绝对路径任务使用独立端点。
+     *
+     * @param identity 已确认配对身份
+     * @return 有任务时的固定请求，否则为空
+     */
+    Optional<Task> nextProjectTask(DeviceIdentityStore.StoredIdentity identity)
+            throws IOException, InterruptedException, GeneralSecurityException {
+        byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+        URI endpoint = resolve(identityServer(identity),
+                "/api/local-client/bootstrap/project-tasks/next");
+        HttpResponse<String> response = signedPost(identity, endpoint, body,
+                Map.of("X-CM-Client-Project-Protocol",
+                        Integer.toString(com.cmagent.core.domain.ClientProjectBinding.PROTOCOL)));
+        if (response.statusCode() == 204) return Optional.empty();
+        if (response.statusCode() == 401) {
+            throw new ClientFailureException(
+                    "设备签名未通过、挑战已过期或设备已撤销，请在控制台核对设备和服务状态", null);
+        }
+        if (response.statusCode() != 200) throw new IOException("设备项目任务领取失败");
+        return Optional.of(decode(response.body(), Task.class, "设备项目任务响应无效"));
+    }
+
+    /**
      * 回报一条任务的终态。
      *
      * @param identity 已确认配对身份
@@ -140,7 +164,39 @@ final class LocalClientServerClient implements AutoCloseable {
                 "本机操作已执行，但结果回报未被接受；副作用可能已发生，请勿自动重试", null);
     }
 
+    /**
+     * 回报设备项目任务终态。
+     *
+     * @param identity 已确认配对身份
+     * @param task 本次领取任务
+     * @param state 成功、失败或未知
+     * @param output 成功结构化结果
+     * @param error 失败或未知安全原因
+     */
+    void reportProjectTask(DeviceIdentityStore.StoredIdentity identity, Task task,
+            String state, JsonNode output, String error)
+            throws IOException, InterruptedException, GeneralSecurityException {
+        if (state == null || !("SUCCEEDED".equals(state) || "FAILED".equals(state)
+                || "UNKNOWN".equals(state))) {
+            throw new IllegalArgumentException("设备项目任务终态无效");
+        }
+        byte[] body = json.writeValueAsBytes(new ResultPayload(state, task.version(), output, error));
+        URI endpoint = resolve(identityServer(identity),
+                "/api/local-client/bootstrap/project-tasks/" + task.operationId() + "/result");
+        HttpResponse<String> response = signedPost(identity, endpoint, body,
+                Map.of("X-CM-Client-Project-Protocol",
+                        Integer.toString(com.cmagent.core.domain.ClientProjectBinding.PROTOCOL)));
+        if (response.statusCode() != 204) throw new ClientFailureException(
+                "设备项目任务结果未被接受，请核对任务状态，勿自动重试", null);
+    }
+
     private HttpResponse<String> signedPost(DeviceIdentityStore.StoredIdentity identity, URI endpoint, byte[] body)
+            throws IOException, InterruptedException, GeneralSecurityException {
+        return signedPost(identity, endpoint, body, Map.of());
+    }
+
+    private HttpResponse<String> signedPost(DeviceIdentityStore.StoredIdentity identity, URI endpoint,
+            byte[] body, Map<String, String> extraHeaders)
             throws IOException, InterruptedException, GeneralSecurityException {
         Challenge challenge = challenge(identity, endpoint);
         var metadata = identity.metadata();
@@ -154,13 +210,14 @@ final class LocalClientServerClient implements AutoCloseable {
         } catch (IllegalArgumentException invalid) {
             throw new GeneralSecurityException("设备挑战格式无效", invalid);
         }
-        HttpRequest request = request(endpoint)
+        var builder = request(endpoint)
                 .header("Content-Type", "application/json")
                 .header(DEVICE_HEADER, metadata.deviceId().toString())
                 .header(CHALLENGE_HEADER, challenge.challengeId().toString())
                 .header(SIGNATURE_HEADER, Base64.getEncoder().encodeToString(signature))
-                .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-                .build();
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body));
+        extraHeaders.forEach(builder::header);
+        HttpRequest request = builder.build();
         return http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
     }
 

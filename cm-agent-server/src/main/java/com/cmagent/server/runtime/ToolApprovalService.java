@@ -22,6 +22,8 @@ import com.cmagent.core.repository.ConversationMessageRepository;
 import com.cmagent.core.repository.RuntimeCheckpointRepository;
 import com.cmagent.core.repository.RunRepository;
 import com.cmagent.core.repository.ToolApprovalRepository;
+import com.cmagent.core.repository.ClientProjectOperationRepository;
+import com.cmagent.core.domain.ClientProjectOperation;
 import com.cmagent.core.repository.SkillTrialRepository;
 import com.cmagent.core.domain.SkillTrial;
 import com.cmagent.core.domain.SkillTrialStatus;
@@ -61,6 +63,21 @@ public class ToolApprovalService {
     private WorkspaceImportAccess importAccess;
     @org.springframework.beans.factory.annotation.Autowired
     void configureImportAccess(WorkspaceImportAccess access) { this.importAccess = access; }
+    /** 客户端项目未启用时仓储为空；启用后所有批准提交仍要复核脱敏完整性。 */
+    private ClientProjectOperationRepository clientProjectOperations;
+    /** 命令审批仍以持久命令版本和完整计划摘要为权威证据。 */
+    private ClientProjectCommandService clientProjectCommands;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureClientProjectOperations(
+            org.springframework.beans.factory.ObjectProvider<ClientProjectOperationRepository> provider) {
+        clientProjectOperations = provider.getIfAvailable();
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureClientProjectCommands(
+            org.springframework.beans.factory.ObjectProvider<ClientProjectCommandService> provider) {
+        clientProjectCommands = provider.getIfAvailable();
+    }
     /**
      * 撤销同一 Run 的全部待审批并删除原发起人的检查点；调用方持有共享运行锁与短事务。
      * 包含已到期但尚未扫描的请求，不能因为查询过滤过期时间而留下可处理的 PENDING。
@@ -385,6 +402,7 @@ public class ToolApprovalService {
         if (acceptedExecution == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "审批状态已变化，请刷新后重试");
         }
+        boolean releaseExecution = true;
         try {
         ToolApprovalRequest decided = require(principal, agentId, conversationId, approvalId);
         decisionConsumer.accept(view(principal, decided));
@@ -437,6 +455,8 @@ public class ToolApprovalService {
                             return result;
                         }));
         }
+        // 恢复后进入客户端命令完成屏障时，执行句柄由异步终态回调释放，停止入口保持可达。
+        releaseExecution = runtimeResult.run().status() != RunStatus.RUNNING;
 
         ConversationMessage assistant = null;
         ToolApprovalView nextApproval = null;
@@ -461,7 +481,9 @@ public class ToolApprovalService {
             }
             throw failure;
         } finally {
-            runExecutionService.controls().release(current.runId(), acceptedExecution);
+            if (releaseExecution) {
+                runExecutionService.controls().release(current.runId(), acceptedExecution);
+            }
         }
     }
 
@@ -606,7 +628,57 @@ public class ToolApprovalService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "审批明细不完整或不属于当前请求");
             }
         }
+        validateClientProjectApprovals(request, decisions);
         return Map.copyOf(decisions);
+    }
+
+    /**
+     * 客户端项目应用只允许在原始计划版本一致且脱敏预览未掩盖差异时批准。
+     *
+     * <p>审批摘要是由宿主生成的展示信封，仓储仍是权威证据；不能只信任页面按钮状态。</p>
+     */
+    void validateClientProjectApprovals(ToolApprovalRequest request,
+            Map<UUID, ToolApprovalDecision> decisions) {
+        if (clientProjectOperations == null) return;
+        java.util.regex.Pattern reference = java.util.regex.Pattern.compile(
+                "^项目操作 operationId=([0-9a-f-]{36}) version=([1-9][0-9]*) digest=([0-9a-f]{64})$");
+        for (ToolApprovalItem item : request.items()) {
+            if (decisions.get(item.id()) != ToolApprovalDecision.APPROVE) continue;
+            if ("client_project_run_command".equals(item.toolName())) {
+                if (clientProjectCommands == null) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "设备项目命令服务未装配，不能批准");
+                }
+                try {
+                    clientProjectCommands.validateApproval(ToolApprovalDecision.APPROVE,
+                            request.tenantId(), request.requestedBy(), item.inputSummary());
+                } catch (IllegalArgumentException invalid) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "设备项目命令版本、摘要或状态已变化，不能批准");
+                }
+                continue;
+            }
+            if (!"client_project_apply_changes".equals(item.toolName())) continue;
+            var match = reference.matcher(item.inputSummary());
+            if (!match.matches()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "设备项目审批缺少可核验的操作编号、版本或摘要");
+            }
+            UUID operationId = UUID.fromString(match.group(1));
+            long version = Long.parseLong(match.group(2));
+            ClientProjectOperation operation = clientProjectOperations.find(
+                    request.tenantId(), request.requestedBy(), operationId).orElse(null);
+            if (operation == null || operation.state() != ClientProjectOperation.State.PROPOSED
+                    || operation.version() != version
+                    || !operation.planDigest().equals(match.group(3))) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "设备项目操作版本、摘要或状态已变化，不能批准");
+            }
+            if (!operation.displayExact()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "脱敏预览掩盖了实际文件差异，不能批准；请缩小变更范围或选择拒绝");
+            }
+        }
     }
 
     private static ToolApprovalStatus aggregate(java.util.Collection<ToolApprovalDecision> decisions) {

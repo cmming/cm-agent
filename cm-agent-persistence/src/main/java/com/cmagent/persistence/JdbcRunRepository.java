@@ -43,10 +43,23 @@ public class JdbcRunRepository implements RunRepository {
             + " OR EXISTS (SELECT 1 FROM messages pm JOIN runs pr ON pr.tenant_id=pm.tenant_id AND pr.id=pm.run_id"
             + " WHERE pm.tenant_id=lc.tenant_id AND pm.conversation_id=lc.id AND (pr.workspace_protocol=4"
             + " OR EXISTS (SELECT 1 FROM local_project_runs lpr WHERE lpr.tenant_id=pr.tenant_id AND lpr.run_id=pr.id))))))";
+    /** 已配对设备项目Run或派生会话任一存在都阻止普通运行列表旁路。 */
+    private static final String CLIENT_PROJECT_SOURCE = "(r.workspace_protocol=5"
+            + " OR EXISTS (SELECT 1 FROM client_project_runs cp WHERE cp.tenant_id=r.tenant_id AND cp.run_id=r.id)"
+            + " OR EXISTS (SELECT 1 FROM messages cm JOIN conversations cc ON cc.tenant_id=cm.tenant_id AND cc.id=cm.conversation_id"
+            + " WHERE cm.tenant_id=r.tenant_id AND cm.run_id=r.id AND (cc.workspace_protocol=5"
+            + " OR EXISTS (SELECT 1 FROM client_project_conversations cpc WHERE cpc.tenant_id=cc.tenant_id"
+            + " AND cpc.conversation_id=cc.id))))";
 
     @Override public boolean hasLocalProjectSource(UUID tenantId, UUID agentId, UUID runId) {
         return jdbcClient.sql("SELECT COUNT(*) FROM runs r WHERE r.tenant_id=:tenant AND r.agent_id=:agent AND r.id=:id AND "
                 + LOCAL_PROJECT_SOURCE).param("tenant", tenantId.toString()).param("agent", agentId.toString())
+                .param("id", runId.toString()).query(Long.class).single() != 0;
+    }
+    @Override public boolean hasClientProjectSource(UUID tenantId, UUID agentId, UUID runId) {
+        return jdbcClient.sql("SELECT COUNT(*) FROM runs r WHERE r.tenant_id=:tenant"
+                + " AND r.agent_id=:agent AND r.id=:id AND " + CLIENT_PROJECT_SOURCE)
+                .param("tenant", tenantId.toString()).param("agent", agentId.toString())
                 .param("id", runId.toString()).query(Long.class).single() != 0;
     }
     @Override public boolean supportsWorkspaceProtocol(){return true;}
@@ -58,7 +71,7 @@ public class JdbcRunRepository implements RunRepository {
         String bindingOwner = JdbcOwnerPredicate.equal(jdbcClient, "b.principal_id", ":principal");
         String creator = JdbcOwnerPredicate.equal(jdbcClient, "c.created_by", ":principal");
         var query = jdbcClient.sql("""
-                SELECT r.* FROM runs r WHERE r.tenant_id=:tenant AND r.agent_id=:agent AND r.run_kind='NORMAL' AND r.workspace_protocol<>4
+                SELECT r.* FROM runs r WHERE r.tenant_id=:tenant AND r.agent_id=:agent AND r.run_kind='NORMAL' AND r.workspace_protocol NOT IN (4,5)
                 AND (r.workspace_protocol=0 OR (
                 """+runOwner+"))"+"""
                 AND NOT EXISTS (SELECT 1 FROM run_workspace_selections s WHERE s.tenant_id=r.tenant_id AND s.agent_id=r.agent_id
@@ -77,7 +90,7 @@ public class JdbcRunRepository implements RunRepository {
                 + " WHERE cm.tenant_id=r.tenant_id AND cm.run_id=r.id AND pr.workspace_protocol=3 AND NOT ("
                 + JdbcOwnerPredicate.equal(jdbcClient,"pr.principal_id",":principal")+" AND "
                 + JdbcOwnerPredicate.equal(jdbcClient,"cc.created_by",":principal")+" AND "+runOwner+"))"
-                + " AND NOT " + LOCAL_PROJECT_SOURCE
+                + " AND NOT " + LOCAL_PROJECT_SOURCE + " AND NOT " + CLIENT_PROJECT_SOURCE
                 + (page.beforeStartedAt() == null ? "" : " AND (r.started_at<:before OR (r.started_at=:before AND r.id<:beforeId))")
                 + " ORDER BY r.started_at DESC,r.id DESC LIMIT :limit")
                 .param("tenant", tenantId.toString()).param("agent", agentId.toString()).param("principal", principalId).param("limit", page.limit());
@@ -144,7 +157,7 @@ public class JdbcRunRepository implements RunRepository {
     }
     /** 首次INSERT包含不可变见证，避免先暴露运行输入再补选择元数据的跨实例窗口。 */
     @Override public RunRecord saveWithWorkspaceProtocol(UUID tenantId, RunRecord run, int protocol) {
-        if (protocol != 0 && protocol != 3) throw new IllegalArgumentException("工作区运行协议不合法");
+        if (protocol != 0 && protocol != 3 && protocol != 5) throw new IllegalArgumentException("工作区运行协议不合法");
         Objects.requireNonNull(tenantId, "tenantId 不能为空");
         Objects.requireNonNull(run, "run 不能为空");
         if (!tenantId.equals(run.tenantId())) {
@@ -185,6 +198,7 @@ public class JdbcRunRepository implements RunRepository {
     /** 选择行丢失也不能公开已派生的标题或回答，依据长期Run见证与原创建者判定。 */
     @Override public boolean visibleConversationFromWorkspace(com.cmagent.core.domain.Conversation conversation,String principal) {
         if (new JdbcConversationRepository(jdbcClient).hasLocalProjectSource(conversation.tenantId(), conversation.agentId(), conversation.id())) return false;
+        if (new JdbcConversationRepository(jdbcClient).hasClientProjectSource(conversation.tenantId(), conversation.agentId(), conversation.id())) return false;
         String owner=JdbcOwnerPredicate.equal(jdbcClient,"r.principal_id",":principal");
         if(!conversation.createdBy().equals(principal)) owner="1=0";
         return jdbcClient.sql("SELECT COUNT(*) FROM messages m JOIN runs r ON r.tenant_id=m.tenant_id AND r.id=m.run_id"

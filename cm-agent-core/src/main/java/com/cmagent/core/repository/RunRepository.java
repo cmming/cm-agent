@@ -38,6 +38,8 @@ public interface RunRepository {
      * @return 是否有持久项目来源证据，不表示当前主体拥有读取或执行权限
      */
     default boolean hasLocalProjectSource(UUID tenantId, UUID agentId, UUID runId) { return false; }
+    /** 已配对设备项目Run来源见证；不能经普通运行列表旁路。 */
+    default boolean hasClientProjectSource(UUID tenantId, UUID agentId, UUID runId) { return false; }
     /** 使用原发起人和等待态快照原子恢复 RUNNING；停止先赢得竞争时返回 false，不能重放原 Run。 */
     default boolean resumeWaitingApproval(RunRecord snapshot) {
         throw new UnsupportedOperationException("当前仓储不支持原子审批恢复");

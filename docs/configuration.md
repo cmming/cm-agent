@@ -720,3 +720,42 @@ V26 新增 `local_project_roots`、`local_projects`、`local_project_conversatio
 本机客户端提示设备不可用时，先检查设备是否撤销以及服务端功能是否开放；已执行操作若无法回报，结果可能未知，不应自动重试。单轮本机确认方式只影响本机客户端固定工具，不改变普通业务工具的原审批要求。
 
 本机客户端空闲时两秒轮询一次；仅挑战请求返回 429 且任务尚未领取时延迟后重新申请挑战。结果回报失败仍可能已产生副作用，不自动重试。网络审批目标在摘要中显示 `<已脱敏>`，不得为空，原始 URL 只在当前 Run 交给模型并用于实际派发，不进入持久化消息、审批摘要、进度或日志。因此，显式选择本机客户端时，本轮当前输入会发送给配置的模型提供方；普通运行仍使用脱敏输入。
+
+### 已配对设备项目（文件变更与命令纵切）
+
+`cm-agent.client-projects.enabled` 默认关闭，并与 `cm-agent.local-projects.enabled` 独立。启用时必须同时满足：已启用 `cm-agent.local-client.enabled`、显式 `local`/`test` profile、`cm-agent.persistence.mode=jdbc`，且不得包含 `prod`、`production` 或 `supabase`。浏览器来源通过 `allowed-origins` 精确配置；非回环来源必须使用 HTTPS，并显式开启 `allow-non-loopback`。
+
+浏览器项目接口使用 `/api/client-projects`，要求认证 Cookie 和 `X-CM-Agent-Client-Project: 1`。设备任务使用独立的 `/api/local-client/bootstrap/project-tasks/*` 签名端点，并要求 `X-CM-Client-Project-Protocol: 5`；任务正文和结果在数据库中只保存认证加密值。客户端绝对路径只保存在当前 Windows 用户主目录的 `~/.cm-agent/client-project-roots`，操作回执只保存在 `~/.cm-agent/client-project-operations`，Server 仅保存 rootId、目录身份摘要和受限展示名。
+
+固定工具使用独立 ID 命名空间 `cm-agent/client-project/v1`。模型可见的只读与变更工具为 `client_project_list_files`、`client_project_read_file`、`client_project_search_files`、`client_project_propose_changes`、`client_project_apply_changes`、`client_project_propose_undo` 和 `client_project_change_status`；命令工具为 `client_project_list_toolchains`、`client_project_propose_command`、`client_project_run_command`、`client_project_command_status` 和 `client_project_cancel_command`。这些工具只允许匹配协议 5 的设备项目 Run，不复用 `project_*` 或通用 `local_client_*` 执行器。
+
+变更提案只形成脱敏预览和原文版本，不写文件；应用工具为 HIGH 风险，必须取得当前调用精确审批。批准前后端再次核对操作版本、摘要和 `displayExact`，脱敏掩盖实际差异时只能拒绝。执行任务会再次核对文件对象身份与 SHA-256，多文件部分成功保持 UNKNOWN，本机私有回执不会保存正文或绝对路径。
+
+命令只从目标电脑当前 OS 用户的显式配置读取：默认文件为 `~/.cm-agent/client-toolchains.json`，也可用 `-Dcm.agent.client.toolchains.path=<绝对路径>` 指向另一个普通文件。配置版本必须为 `1`，最多 32 个工具链；每项由稳定 `id`、受限 `displayName`、绝对 `executable`、`prefixArguments`、完整 `environment`、允许模型覆盖的 `allowedEnvironment` 和 `build` 标识组成。Server 和模型只看到逻辑 ID、展示名和程序文件名，不接收绝对可执行路径或基础环境值。
+
+```json
+{
+  "version": 1,
+  "toolchains": [
+    {
+      "id": "java-build-helper",
+      "displayName": "受控 Java 构建助手",
+      "executable": "C:\\可选目录\\Java\\bin\\java.exe",
+      "prefixArguments": ["-jar", "C:\\可选目录\\受控工具\\build-helper.jar"],
+      "environment": {
+        "PATH": "C:\\可选目录\\Java\\bin;C:\\可选目录\\Maven\\bin",
+        "JAVA_HOME": "C:\\可选目录\\Java",
+        "SystemRoot": "C:\\Windows"
+      },
+      "allowedEnvironment": ["JAVA_HOME"],
+      "build": true
+    }
+  ]
+}
+```
+
+示例中的路径只是占位符，应替换为管理员和用户共同核实的普通可执行文件，不能用未核实的 `.cmd`、Shell、脚本解释器或凭据替代安全配置。项目命令的环境由清单完整替换，不继承客户端启动环境；`cmd.exe`、PowerShell、WSL 和常见 Unix Shell 被拒绝，模型参数中疑似密码、Token、API Key 或凭据赋值在计划阶段拒绝。命令提案冻结构建工具版本定义、可执行文件 SHA-256、argv、项目相对工作目录、环境摘要和根目录主要构建配置摘要；批准后任一变化都拒绝启动。脚本内容、插件行为、临时下载依赖、子进程网络访问和外部服务不在完整冻结范围内。
+
+`cm-agent.client-projects.command-task-ttl` 限制单条计划、启动、状态和停止任务的完成期限，`command-barrier-timeout` 限制 Run 在模型结束后等待命令收敛的期限，两者都有生产上限。命令启动后的 Run 可在后台保持 `RUNNING`，但模型回答结束本身不会产生 `SUCCEEDED`。所有已启动命令明确成功、失败、取消或 UNKNOWN 后，Run 才能成功；可证明进程未创建的启动拒绝记为 `FAILED`，进程可能已经创建但无法确认时报 `UNKNOWN`。超时会先登记停止，再把未决命令收口为 UNKNOWN。停止任务不保证操作系统进程或外部副作用立即结束，重复停止只读取设备权威状态。`UNKNOWN` 人工确认只记录逻辑处置，不解除项目根隔离，也不允许重放命令。
+
+客户端命令回执保存在 `~/.cm-agent/client-project-commands`，只写入命令编号、rootId、计划摘要、状态、停止标记、退出码和更新时间，不保存 argv、环境、输出或绝对路径。客户端重启会把孤立的 `RUNNING`/`STOP_REQUESTED` 回执改记为 UNKNOWN；客户端正常退出会请求停止并等待有界进程树收口。根隔离仍以 Server 命令状态和客户端持久回执共同证明，Windows 注销、断电、已脱离进程树的后代及外部服务副作用仍须人工核对。

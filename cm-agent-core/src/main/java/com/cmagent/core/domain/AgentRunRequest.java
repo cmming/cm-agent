@@ -123,7 +123,7 @@ public record AgentRunRequest(
         }
         tools = List.copyOf(Objects.requireNonNull(tools, "tools 不能为空"));
         if (projectContext != null) {
-            var fixed = projectContext.binding();
+            ProjectBinding fixed = projectContext.sourceBinding();
             if (workspaceContext != null || !tenantId.equals(fixed.tenantId()) || !runId.equals(fixed.runId())
                     || !agent.id().equals(fixed.agentId()) || !Objects.equals(conversationId, fixed.conversationId())
                     || !principal.principalId().equals(fixed.ownerId())

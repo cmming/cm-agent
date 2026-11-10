@@ -20,9 +20,11 @@ import java.util.UUID;
  */
 public record LocalProjectBinding(UUID tenantId, String ownerId, UUID projectId, UUID agentId,
         UUID conversationId, UUID runId, UUID rootBindingId, String rootIdentity, String nodeId,
-        long projectVersion, Instant createdAt) {
+        long projectVersion, Instant createdAt) implements ProjectBinding {
     /** 项目专用来源见证；旧来源0和导入3保持原语义，旧实例必须拒绝不认识的4。 */
     public static final int PROTOCOL = 4;
+
+    @Override public int protocol() { return PROTOCOL; }
 
     public LocalProjectBinding {
         Objects.requireNonNull(tenantId); Objects.requireNonNull(projectId); Objects.requireNonNull(agentId);

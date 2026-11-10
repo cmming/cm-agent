@@ -30,7 +30,9 @@ public final class ToolOperationCategories {
     public static Optional<OperationCategory> category(ToolDefinition tool) {
         Objects.requireNonNull(tool, "工具定义不能为空");
         Optional<OperationCategory> localClient = localClient(tool);
-        return localClient.isPresent() ? localClient : localProject(tool);
+        if (localClient.isPresent()) return localClient;
+        Optional<OperationCategory> localProject = localProject(tool);
+        return localProject.isPresent() ? localProject : clientProject(tool);
     }
 
     private static Optional<OperationCategory> localClient(ToolDefinition tool) {
@@ -106,6 +108,50 @@ public final class ToolOperationCategories {
 
     private static ProjectKind project(String idName, ToolRiskLevel risk, OperationCategory category) {
         return new ProjectKind(idName, risk, category);
+    }
+
+    private static Optional<OperationCategory> clientProject(ToolDefinition tool) {
+        ProjectKind kind;
+        switch (tool.name()) {
+            case "client_project_list_files" ->
+                    kind = project("LIST", ToolRiskLevel.LOW, OperationCategory.READ_ONLY);
+            case "client_project_read_file" ->
+                    kind = project("READ", ToolRiskLevel.LOW, OperationCategory.READ_ONLY);
+            case "client_project_search_files" ->
+                    kind = project("SEARCH", ToolRiskLevel.LOW, OperationCategory.READ_ONLY);
+            case "client_project_propose_changes" ->
+                    kind = project("PROPOSE_CHANGE", ToolRiskLevel.MEDIUM, OperationCategory.READ_ONLY);
+            case "client_project_apply_changes" ->
+                    kind = project("APPLY_CHANGE", ToolRiskLevel.HIGH, OperationCategory.FILE_CHANGE);
+            case "client_project_propose_undo" ->
+                    kind = project("PROPOSE_UNDO", ToolRiskLevel.MEDIUM, OperationCategory.READ_ONLY);
+            case "client_project_change_status" ->
+                    kind = project("CHANGE_STATUS", ToolRiskLevel.LOW, OperationCategory.READ_ONLY);
+            case "client_project_list_toolchains" ->
+                    kind = project("LIST_TOOLCHAINS", ToolRiskLevel.LOW,
+                            OperationCategory.READ_ONLY);
+            case "client_project_propose_command" ->
+                    kind = project("PROPOSE_COMMAND", ToolRiskLevel.MEDIUM,
+                            OperationCategory.READ_ONLY);
+            case "client_project_run_command" ->
+                    kind = project("RUN_COMMAND", ToolRiskLevel.HIGH,
+                            OperationCategory.COMMAND);
+            case "client_project_command_status" ->
+                    kind = project("COMMAND_STATUS", ToolRiskLevel.LOW,
+                            OperationCategory.READ_ONLY);
+            case "client_project_cancel_command" ->
+                    kind = project("CANCEL_COMMAND", ToolRiskLevel.MEDIUM,
+                            OperationCategory.COMMAND);
+            default -> {
+                return Optional.empty();
+            }
+        }
+        UUID expected = UUID.nameUUIDFromBytes(("cm-agent/client-project/v1/" + tool.tenantId()
+                + "/" + kind.idName()).getBytes(StandardCharsets.UTF_8));
+        boolean exact = expected.equals(tool.id()) && tool.type() == ToolType.LOCAL
+                && tool.riskLevel() == kind.risk()
+                && ("client-project:" + kind.idName()).equals(tool.endpoint());
+        return exact ? Optional.of(kind.category()) : Optional.empty();
     }
 
     /**

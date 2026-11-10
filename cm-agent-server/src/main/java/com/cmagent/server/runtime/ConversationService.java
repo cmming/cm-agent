@@ -5,6 +5,8 @@ import com.cmagent.core.domain.AgentRuntimeResult;
 import com.cmagent.core.domain.AgentProgressEvent;
 import com.cmagent.core.domain.AgentTextDelta;
 import com.cmagent.core.domain.Conversation;
+import com.cmagent.core.domain.ClientProjectBinding;
+import com.cmagent.core.domain.LocalProjectBinding;
 import com.cmagent.core.domain.ConversationMessage;
 import com.cmagent.core.domain.ConversationMessageDraft;
 import com.cmagent.core.domain.ConversationPageRequest;
@@ -46,6 +48,12 @@ public class ConversationService {
     private LocalProjectRunService projectRuns;
     @org.springframework.beans.factory.annotation.Autowired
     void configureProjectRuns(org.springframework.beans.factory.ObjectProvider<LocalProjectRunService> provider) { projectRuns = provider.getIfAvailable(); }
+    /** 已配对设备项目来源与 Server 本机项目互斥装配使用。 */
+    private ClientProjectRunService clientProjectRuns;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureClientProjectRuns(org.springframework.beans.factory.ObjectProvider<ClientProjectRunService> provider) {
+        clientProjectRuns = provider.getIfAvailable();
+    }
     /** 仅Spring完整装配开启新来源闸门；旧手工装配仍被创建入口限制为旧模式。 */
     private WorkspaceImportAccess importAccess;
     @org.springframework.beans.factory.annotation.Autowired
@@ -179,7 +187,15 @@ public class ConversationService {
         var conversation = conversationRepository.findByTenantAndAgentAndId(
                         principal.tenantId(), agentId, conversationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "会话不存在"));
-        if (importAccess != null) importAccess.conversation(principal, conversation);
+        int protocol = conversationRepository.workspaceProtocol(principal.tenantId(), agentId, conversationId);
+        boolean clientSource = protocol == ClientProjectBinding.PROTOCOL
+                || conversationRepository.hasClientProjectSource(principal.tenantId(), agentId, conversationId);
+        if (!clientSource && importAccess != null) {
+            importAccess.conversation(principal, conversation);
+        }
+        if (clientProjectRuns != null && clientSource) {
+            clientProjectRuns.verifyConversation(principal, conversation);
+        }
         return conversation;
     }
 
@@ -189,10 +205,16 @@ public class ConversationService {
      */
     public void verifyProjectRequest(PrincipalRef principal, UUID agentId, UUID conversationId) {
         var conversation = conversationRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, conversationId).orElse(null);
-        if (conversation != null && (conversationRepository.workspaceProtocol(principal.tenantId(), agentId, conversationId) == com.cmagent.core.domain.LocalProjectBinding.PROTOCOL
-                ||conversationRepository.hasLocalProjectSource(principal.tenantId(),agentId,conversationId))) {
+        int protocol = conversation == null ? 0
+                : conversationRepository.workspaceProtocol(principal.tenantId(), agentId, conversationId);
+        if (conversation != null && (protocol == com.cmagent.core.domain.LocalProjectBinding.PROTOCOL
+                || conversationRepository.hasLocalProjectSource(principal.tenantId(), agentId, conversationId))) {
             if (importAccess == null) throw new IllegalStateException("当前服务不支持项目会话来源核验");
             importAccess.conversation(principal, conversation);
+        } else if (conversation != null && (protocol == ClientProjectBinding.PROTOCOL
+                || conversationRepository.hasClientProjectSource(principal.tenantId(), agentId, conversationId))) {
+            if (clientProjectRuns == null) throw new IllegalStateException("当前服务不支持设备项目会话来源核验");
+            clientProjectRuns.verifyConversation(principal, conversation);
         }
     }
 
@@ -336,17 +358,22 @@ public class ConversationService {
         UUID runId = UUID.randomUUID();
         UUID userMessageId = UUID.randomUUID();
         // 原生根I/O必须在短事务外预检；事务内仍锁定项目并固定来源，真实工具执行前会再次核验。
-        var project = projectRuns == null ? null : projectRuns.preflight(principal, conversation, runId);
-        if (localClient != null && project != null) {
+        LocalProjectBinding project = projectRuns == null ? null : projectRuns.preflight(principal, conversation, runId);
+        ClientProjectBinding clientProject = clientProjectRuns == null ? null
+                : clientProjectRuns.preflight(principal, conversation, runId);
+        if (project != null && clientProject != null)
+            throw new IllegalStateException("会话不能同时绑定两种项目来源");
+        if (localClient != null && (project != null || clientProject != null)) {
             throw new IllegalArgumentException("本机客户端授权不能与项目会话同时使用");
         }
-        if (projectAuthorizationMode != null && project == null) {
+        if (projectAuthorizationMode != null && project == null && clientProject == null) {
             throw new IllegalArgumentException("项目授权方式只能用于项目会话");
         }
         java.util.concurrent.atomic.AtomicReference<com.cmagent.core.security.OperationAuthorizationSnapshot>
                 localGrant = new java.util.concurrent.atomic.AtomicReference<>();
         StartedState started = executionService.controls().withConversation(conversationId, () -> inTransaction(() -> {
             if (project != null) projectRuns.lock(project);
+            if (clientProject != null) clientProjectRuns.lock(clientProject);
             // JDBC FOR UPDATE 与改绑共用同一行；不能只依赖单进程控制锁。
             conversationRepository.lock(principal.tenantId(), agentId, conversationId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "会话不存在"));
@@ -354,13 +381,18 @@ public class ConversationService {
                 throw new RunControlException(com.cmagent.api.ApiErrorCode.RUN_CONTROL_CONFLICT,
                         "当前会话仍有未结束运行，请先停止或核对运行状态");
             }
-            var workspace = localClient != null || project != null || workspaceSelections == null
+            var workspace = localClient != null || project != null || clientProject != null
+                    || workspaceSelections == null
                     ? null : workspaceSelections.forConversation(principal, conversation, runId);
             RunRecord run = workspace!=null && workspace.selection().mode()==com.cmagent.core.domain.WorkspaceSelection.Mode.IMPORTED
                     ? runPersistenceService.start(principal,agentId,safeInput,runId,com.cmagent.core.domain.RunKind.NORMAL,3)
+                    : clientProject != null
+                    ? runPersistenceService.start(principal,agentId,safeInput,runId,
+                            com.cmagent.core.domain.RunKind.NORMAL,ClientProjectBinding.PROTOCOL)
                     : runPersistenceService.start(principal,agentId,safeInput,runId);
             try {
             if (project != null) projectRuns.save(project);
+            if (clientProject != null) clientProjectRuns.save(clientProject);
             if (workspace != null) workspaceSelections.saveRun(workspace);
             ConversationMessage userMessage = messageRepository.append(principal.tenantId(),
                     new ConversationMessageDraft(
@@ -385,6 +417,7 @@ public class ConversationService {
             }
         }));
         var execution = executionService.controls().register(started.run(), conversationId);
+        boolean releaseExecution = true;
         try {
         startedConsumer.accept(new ConversationRunStarted(
                 conversationId, runId, started.userMessage().id()));
@@ -434,6 +467,9 @@ public class ConversationService {
                     }
                     return result;
                 }));
+        // RUNNING 是客户端命令完成屏障交给后台继续收口的显式信号；控制句柄必须保留到异步终态，
+        // 否则等待期间用户停止将得到“执行句柄不可达”，且终态可能与取消竞态。
+        releaseExecution = runtimeResult.run().status() != RunStatus.RUNNING;
         ConversationMessage assistantMessage = assistant.get();
         return new ConversationRunResult(
                 conversationId,
@@ -456,7 +492,7 @@ public class ConversationService {
             }
             throw failure;
         } finally {
-            executionService.controls().release(runId, execution);
+            if (releaseExecution) executionService.controls().release(runId, execution);
         }
     }
 
@@ -474,14 +510,18 @@ public class ConversationService {
 
     /** 查询会话内权威 Run；租户和 Agent 必须来自已认证上下文及已验证路由。 */
     public RunRecord run(PrincipalRef principal, UUID agentId, UUID conversationId, UUID runId) {
-        get(principal, agentId, conversationId);
+        Conversation conversation = get(principal, agentId, conversationId);
         if (messageRepository.listByRun(principal.tenantId(), conversationId, runId).stream()
                 .noneMatch(message -> message.role() == MessageRole.USER)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "运行不存在或不属于当前会话");
         }
         var run = runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, runId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "运行不存在"));
-        if (importAccess != null) importAccess.run(principal, run);
+        if (clientProjectRuns != null
+                && conversationRepository.workspaceProtocol(principal.tenantId(), agentId, conversationId)
+                    == ClientProjectBinding.PROTOCOL) {
+            clientProjectRuns.verifyResource(principal, run);
+        } else if (importAccess != null) importAccess.run(principal, run);
         return run;
     }
 
@@ -500,6 +540,9 @@ public class ConversationService {
     public com.cmagent.core.security.OperationAuthorizationMode projectAuthorizationMode(
             PrincipalRef principal, UUID agentId, UUID conversationId, UUID runId) {
         RunRecord run = run(principal, agentId, conversationId, runId);
+        int protocol = conversationRepository.workspaceProtocol(principal.tenantId(), agentId, conversationId);
+        if (protocol == ClientProjectBinding.PROTOCOL)
+            return clientProjectRuns == null ? null : clientProjectRuns.authorizationMode(principal, run);
         return projectRuns == null ? null : projectRuns.authorizationMode(principal, run);
     }
 
@@ -509,7 +552,12 @@ public class ConversationService {
         return messageRepository.activeRunCandidates(principal.tenantId(), conversationId).stream()
                 .map(id -> runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, id))
                 .flatMap(java.util.Optional::stream).filter(run -> run.status().isActive())
-                .peek(run -> { if (importAccess != null) importAccess.run(principal, run); })
+                .peek(run -> {
+                    int protocol = conversationRepository.workspaceProtocol(principal.tenantId(), agentId, conversationId);
+                    if (clientProjectRuns != null && protocol == ClientProjectBinding.PROTOCOL)
+                        clientProjectRuns.verifyResource(principal, run);
+                    else if (importAccess != null) importAccess.run(principal, run);
+                })
                 .sorted(java.util.Comparator.comparing(RunRecord::startedAt).reversed()).findFirst().orElse(null);
     }
 
@@ -520,7 +568,14 @@ public class ConversationService {
             if (!principal.tenantId().equals(message.tenantId())) throw new IllegalArgumentException("消息租户不一致");
             if (message.runId() != null && !statuses.containsKey(message.runId())) {
                 runRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, message.runId())
-                        .ifPresent(run -> { if (importAccess != null) importAccess.run(principal, run); statuses.put(run.id(), run.status()); });
+                        .ifPresent(run -> {
+                            int protocol = conversationRepository.workspaceProtocol(principal.tenantId(), agentId,
+                                    message.conversationId());
+                            if (clientProjectRuns != null && protocol == ClientProjectBinding.PROTOCOL)
+                                clientProjectRuns.verifyResource(principal, run);
+                            else if (importAccess != null) importAccess.run(principal, run);
+                            statuses.put(run.id(), run.status());
+                        });
             }
         }
         return java.util.Map.copyOf(statuses);

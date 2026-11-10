@@ -225,7 +225,8 @@ public class AgentScopeToolBridge extends ToolBase {
         String inputSummary = "输入无法序列化";
         try {
             String inputJson = objectMapper.writeValueAsString(input);
-            inputSummary = protectedInput() ? PROTECTED_INPUT_SUMMARY : displayPayload(inputJson);
+            inputSummary = protectedInput() ? protectedInputSummary(input, invocationToolName)
+                    : displayPayload(inputJson);
             progressConsumer.accept(AgentProgressEvent.toolCallStarted(
                     null, toolCallId, tool.name(), inputSummary));
             progressConsumer.accept(AgentProgressEvent.toolCallCompleted(null, toolCallId, tool.name()));
@@ -241,7 +242,8 @@ public class AgentScopeToolBridge extends ToolBase {
                     toolCallId,
                     tool.id(),
                     invocationToolName,
-                    inputJson
+                    inputJson,
+                    request.cancellation()
             ));
             Duration duration = elapsedSince(startedAt);
             if (result.success()) {
@@ -306,6 +308,37 @@ public class AgentScopeToolBridge extends ToolBase {
     /** 精确工具ID集合由宿主固定且AgentRunRequest校验归属，模型自报名称不能扩大或关闭保护。 */
     private boolean protectedInput() {
         return request.projectContext() != null && request.projectContext().protectedToolIds().contains(tool.id());
+    }
+
+    /**
+     * 受保护工具默认隐藏原始输入；仅文件应用和固定工具链启动允许公开审批定位字段。
+     *
+     * <p>operationId、version 和 digest 不含文件正文，页面据此请求专用预览；任何附加字段、
+     * 不同工具名或格式异常都会退回完全隐藏，不能借审批摘要泄漏模型补丁内容。</p>
+     */
+    private static String protectedInputSummary(Map<String, Object> input, String toolName) {
+        if (!("project_apply_changes".equals(toolName)
+                || "client_project_apply_changes".equals(toolName)
+                || "client_project_run_command".equals(toolName))
+                || !input.keySet().equals(Set.of("operationId", "version", "digest"))) {
+            return PROTECTED_INPUT_SUMMARY;
+        }
+        Object operation = input.get("operationId");
+        Object version = input.get("version");
+        Object digest = input.get("digest");
+        long versionValue;
+        if (!(operation instanceof String operationId
+                && operationId.matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"))
+                || !(version instanceof Number number && number.longValue() > 0
+                    && number.doubleValue() == number.longValue())
+                || !(digest instanceof String planDigest
+                    && planDigest.matches("[0-9a-f]{64}"))) {
+            return PROTECTED_INPUT_SUMMARY;
+        }
+        versionValue = ((Number) version).longValue();
+        return ("client_project_run_command".equals(toolName) ? "项目命令 commandId="
+                : "项目操作 operationId=") + operationId + " version="
+                + versionValue + " digest=" + planDigest;
     }
 
     /**

@@ -15,12 +15,28 @@ import java.util.Map;
 import java.util.Objects;
 
 /** 在签名任务已通过服务端授权后执行本机文件、网络和命令原语。 */
-final class LocalClientTaskExecutor {
+final class LocalClientTaskExecutor implements AutoCloseable {
     private final ObjectMapper json;
     private final LocalFileOperations files = new LocalFileOperations();
+    private final ClientProjectRootStore projectRoots;
+    private final ClientDirectoryPicker directoryPicker;
+    private final ClientProjectFileOperations projectFiles;
+    private final ClientProjectChangeOperations projectChanges;
+    private final ClientProjectCommandOperations projectCommands;
 
     LocalClientTaskExecutor(ObjectMapper json) {
+        this(json, ClientProjectRootStore.forCurrentUser(Objects.requireNonNull(json)),
+                new SwingClientDirectoryPicker());
+    }
+
+    LocalClientTaskExecutor(ObjectMapper json, ClientProjectRootStore projectRoots,
+            ClientDirectoryPicker directoryPicker) {
         this.json = Objects.requireNonNull(json);
+        this.projectRoots = Objects.requireNonNull(projectRoots);
+        this.directoryPicker = Objects.requireNonNull(directoryPicker);
+        this.projectFiles = new ClientProjectFileOperations(projectRoots, json);
+        this.projectChanges = new ClientProjectChangeOperations(projectRoots, json);
+        this.projectCommands = new ClientProjectCommandOperations(projectRoots, json);
     }
 
     /**
@@ -41,6 +57,134 @@ final class LocalClientTaskExecutor {
             case "COMMAND" -> command(task.request());
             default -> Outcome.failed("本机任务类别无效", json.createObjectNode());
         };
+    }
+
+    /**
+     * 执行普通或专用项目任务；项目选择必须匹配当前已配对设备。
+     *
+     * @param identity 当前签名设备身份
+     * @param task 已签名领取的任务
+     * @return 可签名回报的结果
+     */
+    Outcome execute(DeviceIdentityStore.StoredIdentity identity, LocalClientServerClient.Task task) {
+        Objects.requireNonNull(identity, "设备身份不能为空");
+        if (task.category() == null || !task.category().startsWith("PROJECT_")) {
+            return execute(task);
+        }
+        if (task.request() == null || !task.request().isObject()) {
+            return Outcome.failed("设备项目任务参数无效", json.createObjectNode());
+        }
+        try {
+            return switch (task.category()) {
+                case "PROJECT_SELECT_ROOT" -> selectRoot(identity, task);
+                case "PROJECT_READ_ONLY" -> projectReadOnly(identity, task);
+                case "PROJECT_CHANGE_PLAN" -> projectChangePlan(identity, task);
+                case "PROJECT_CHANGE_APPLY" -> projectChangeApply(identity, task);
+                case "PROJECT_LIST_TOOLCHAINS" -> projectToolchains(identity, task.request());
+                case "PROJECT_COMMAND_PLAN" -> projectCommandPlan(identity, task.request());
+                case "PROJECT_COMMAND_RUN" -> projectCommandRun(identity, task.request());
+                case "PROJECT_COMMAND_STATUS" -> projectCommandStatus(identity, task.request());
+                case "PROJECT_COMMAND_STOP" -> projectCommandStop(identity, task.request());
+                default -> Outcome.failed("设备项目任务类别无效", json.createObjectNode());
+            };
+        } catch (IOException | RuntimeException failure) {
+            return Outcome.failed("设备项目任务失败，请核对目录和设备状态", json.createObjectNode());
+        }
+    }
+
+    private Outcome selectRoot(DeviceIdentityStore.StoredIdentity identity,
+            LocalClientServerClient.Task task) throws IOException {
+        var selected = directoryPicker.choose(identity.metadata().deviceName());
+        if (selected.isEmpty()) {
+            return Outcome.failed("用户取消了项目文件夹选择", json.createObjectNode());
+        }
+        var binding = projectRoots.register(identity, task.operationId(), selected.orElseThrow());
+        ObjectNode output = json.createObjectNode();
+        output.put("rootId", binding.rootId().toString());
+        output.put("rootIdentity", binding.identity());
+        output.put("displayName", binding.displayName());
+        return Outcome.succeeded(output);
+    }
+
+    private Outcome projectReadOnly(DeviceIdentityStore.StoredIdentity identity,
+            LocalClientServerClient.Task task) throws IOException {
+        String kind = task.request().path("kind").asText("");
+        ObjectNode output = switch (kind) {
+            case "LIST" -> projectFiles.list(identity, task.request());
+            case "READ" -> projectFiles.read(identity, task.request());
+            case "SEARCH" -> projectFiles.search(identity, task.request());
+            default -> throw new IOException("设备项目只读任务种类无效");
+        };
+        return Outcome.succeeded(output);
+    }
+
+    private Outcome projectChangePlan(DeviceIdentityStore.StoredIdentity identity,
+            LocalClientServerClient.Task task) {
+        try {
+            return Outcome.succeeded(projectChanges.plan(identity, task.request()));
+        } catch (IOException | RuntimeException failure) {
+            return Outcome.failed("设备项目变更计划未通过本地核对", json.createObjectNode());
+        }
+    }
+
+    private Outcome projectChangeApply(DeviceIdentityStore.StoredIdentity identity,
+            LocalClientServerClient.Task task) {
+        try {
+            return Outcome.succeeded(projectChanges.apply(identity, task.request()));
+        } catch (ClientProjectChangeOperations.PossibleSideEffectException failure) {
+            return Outcome.unknown("设备项目变更结果未知，可能已有部分文件发生变化");
+        } catch (IOException | RuntimeException failure) {
+            return Outcome.failed("设备项目变更在写入前被拒绝", json.createObjectNode()
+                    .put("possibleSideEffects", false));
+        }
+    }
+
+    private Outcome projectCommandRun(DeviceIdentityStore.StoredIdentity identity,
+            JsonNode request) {
+        try {
+            return Outcome.succeeded(projectCommands.start(identity, request));
+        } catch (ClientProjectCommandOperations.PossibleSideEffectException failure) {
+            return Outcome.unknown("命令可能已经启动但无法确认，请核对设备和本地回执");
+        } catch (IOException | RuntimeException failure) {
+            return Outcome.failed("固定工具链命令在启动前被拒绝", json.createObjectNode()
+                    .put("possibleSideEffects", false));
+        }
+    }
+
+    private Outcome projectToolchains(DeviceIdentityStore.StoredIdentity identity,
+            JsonNode request) {
+        try {
+            return Outcome.succeeded(projectCommands.list(identity, request));
+        } catch (IOException | RuntimeException failure) {
+            return Outcome.failed("客户端固定工具链配置不可用", json.createObjectNode());
+        }
+    }
+
+    private Outcome projectCommandPlan(DeviceIdentityStore.StoredIdentity identity,
+            JsonNode request) {
+        try {
+            return Outcome.succeeded(projectCommands.plan(identity, request));
+        } catch (IOException | RuntimeException failure) {
+            return Outcome.failed("设备项目命令计划未通过本地核对", json.createObjectNode());
+        }
+    }
+
+    private Outcome projectCommandStatus(DeviceIdentityStore.StoredIdentity identity,
+            JsonNode request) {
+        try {
+            return Outcome.succeeded(projectCommands.status(identity, request));
+        } catch (IOException | RuntimeException failure) {
+            return Outcome.failed("设备项目命令状态不可用", json.createObjectNode());
+        }
+    }
+
+    private Outcome projectCommandStop(DeviceIdentityStore.StoredIdentity identity,
+            JsonNode request) {
+        try {
+            return Outcome.succeeded(projectCommands.stop(identity, request));
+        } catch (IOException | RuntimeException failure) {
+            return Outcome.failed("设备项目命令停止请求未送达", json.createObjectNode());
+        }
     }
 
     private Outcome readOrList(JsonNode input) {
@@ -225,6 +369,11 @@ final class LocalClientTaskExecutor {
             throw new IllegalArgumentException("载荷过大");
         }
         return value;
+    }
+
+    /** 客户端退出时先请求停止所有项目命令，并等待有界进程树收口。 */
+    @Override public void close() {
+        projectCommands.close();
     }
 
     /**

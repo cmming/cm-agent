@@ -178,9 +178,11 @@ test("v2入口均预载项目脚本样式且不将文件夹选择伪装为上传
             assert.doesNotMatch(html, /project-development\.js\?v=1\.1\.4/);
         } else {
             assert.match(html, /local-projects\.js\?v=1\.2\.0/);
-            assert.match(html, /project-development\.js\?v=1\.1\.4/);
+            assert.match(html, name === "projects.html"
+                ? /project-development\.js\?v=1\.1\.5/
+                : /project-development\.js\?v=1\.1\.4/);
         }
-        assert.match(html, /local-projects\.css\?v=1\.6\.2/);
+    assert.match(html, /local-projects\.css\?v=1\.7\.0/);
         if (name !== "login.html") assert.match(html, /href="\/console\/v2\/projects\.html"/);
     }
     const html = fs.readFileSync(path.join(base, "projects.html"), "utf8");

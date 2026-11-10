@@ -209,3 +209,7 @@ body[data-console-version="v2"] #projectsPage .project-tree-toolbar > div { flex
 @media (max-width: 760px) {
     body[data-console-version="v2"] #projectsPage .project-conversation-toolbar select { max-width: none; }
 }
+.project-source-switch{display:flex;gap:.5rem;align-items:center;margin:0 0 1rem}
+.project-source-switch .button[aria-pressed="true"]{border-color:var(--accent,#2864a8);background:var(--accent,#2864a8);color:#fff}
+#clientProjectDevice{min-width:14rem;max-width:100%}
+@media (max-width:640px){.project-source-switch{flex-wrap:wrap}#clientProjectDevice{width:100%}}

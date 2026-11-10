@@ -8,6 +8,7 @@ import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.runtime.LocalClientPairingService;
 import com.cmagent.server.runtime.LocalClientProofService;
 import com.cmagent.server.runtime.LocalClientOperationService;
+import com.cmagent.server.runtime.ClientProjectService;
 import com.cmagent.server.security.JwtService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -43,20 +44,34 @@ public class LocalClientController {
     static final String CHALLENGE_HEADER = "X-CM-Challenge-Id";
     /** 对实际方法和路径绑定的 Ed25519 签名请求头。 */
     static final String SIGNATURE_HEADER = "X-CM-Signature";
+    /** 协议 5 项目任务显式版本头，旧客户端不能把专用任务误当成通用设备操作。 */
+    static final String PROJECT_PROTOCOL_HEADER = "X-CM-Client-Project-Protocol";
     private final LocalClientPairingService pairings;
     private final LocalClientProofService proofs;
     private final LocalClientOperationService operations;
     private final PermissionEvaluator permissionEvaluator;
     private final AuditAppender audit;
+    /** 远端设备项目未启用时为空；普通设备任务不依赖该组件。 */
+    private final org.springframework.beans.factory.ObjectProvider<ClientProjectService> clientProjects;
 
+    /** 兼容仅验证普通设备合同的既有测试；生产装配使用包含可选项目服务的构造器。 */
     public LocalClientController(LocalClientPairingService pairings, LocalClientProofService proofs,
             LocalClientOperationService operations,
             PermissionEvaluator permissionEvaluator, AuditAppender audit) {
+        this(pairings, proofs, operations, permissionEvaluator, audit, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LocalClientController(LocalClientPairingService pairings, LocalClientProofService proofs,
+            LocalClientOperationService operations,
+            PermissionEvaluator permissionEvaluator, AuditAppender audit,
+            org.springframework.beans.factory.ObjectProvider<ClientProjectService> clientProjects) {
         this.pairings = pairings;
         this.proofs = proofs;
         this.operations = operations;
         this.permissionEvaluator = permissionEvaluator;
         this.audit = audit;
+        this.clientProjects = clientProjects;
     }
 
     /** 登记浏览器转交的已签名配对包，需要运行权限。 */
@@ -131,6 +146,36 @@ public class LocalClientController {
         return ResponseEntity.noContent().build();
     }
 
+    /** 签名设备领取远端项目任务；功能未装配时明确返回 404。 */
+    @PostMapping(value = "/bootstrap/project-tasks/next",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ClientProjectService.DeviceTaskView> nextProjectTask(
+            @RequestBody(required = false) byte[] body, HttpServletRequest request) {
+        requireProjectProtocol(request);
+        LocalClientDevice device = verifiedDevice(body, request);
+        ClientProjectService service = clientProjects == null ? null : clientProjects.getIfAvailable();
+        if (service == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "已配对设备项目功能未启用");
+        }
+        return service.claim(device).map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    /** 签名设备回报远端项目任务结果。 */
+    @PostMapping(value = "/bootstrap/project-tasks/{taskId}/result",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Void> projectTaskResult(@PathVariable("taskId") UUID taskId,
+            @RequestBody byte[] body, HttpServletRequest request) {
+        requireProjectProtocol(request);
+        LocalClientDevice device = verifiedDevice(body, request);
+        ClientProjectService service = clientProjects == null ? null : clientProjects.getIfAvailable();
+        if (service == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "已配对设备项目功能未启用");
+        }
+        service.complete(device, taskId, body);
+        return ResponseEntity.noContent().build();
+    }
+
     private LocalClientDevice verifiedDevice(byte[] body, HttpServletRequest request) {
         UUID deviceId = headerUuid(request, DEVICE_HEADER);
         UUID challengeId = headerUuid(request, CHALLENGE_HEADER);
@@ -147,6 +192,14 @@ public class LocalClientController {
             return UUID.fromString(value);
         } catch (IllegalArgumentException invalid) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "设备签名请求头无效");
+        }
+    }
+
+    private static void requireProjectProtocol(HttpServletRequest request) {
+        if (!Integer.toString(com.cmagent.core.domain.ClientProjectBinding.PROTOCOL)
+                .equals(request.getHeader(PROJECT_PROTOCOL_HEADER))) {
+            throw new ResponseStatusException(HttpStatus.UPGRADE_REQUIRED,
+                    "本机客户端版本过旧，请升级到支持设备项目协议 5 的版本");
         }
     }
 

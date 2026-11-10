@@ -48,9 +48,22 @@ public class RunExecutionService {
     /** 项目专用来源/工具快照，不覆盖旧参考资料合同。 */
     private LocalProjectRunService projectRuns;
     @Autowired void configureProjectRuns(org.springframework.beans.factory.ObjectProvider<LocalProjectRunService> provider) { projectRuns = provider.getIfAvailable(); }
+    /** 已配对设备项目只读运行来源。 */
+    private ClientProjectRunService clientProjectRuns;
+    @Autowired void configureClientProjectRuns(
+            org.springframework.beans.factory.ObjectProvider<ClientProjectRunService> provider) {
+        clientProjectRuns = provider.getIfAvailable();
+    }
+    /** 客户端项目命令完成屏障；未装配命令能力时保持空。 */
+    private ClientProjectCommandService clientProjectCommands;
+    @Autowired void configureClientProjectCommands(
+            org.springframework.beans.factory.ObjectProvider<ClientProjectCommandService> provider) {
+        clientProjectCommands = provider.getIfAvailable();
+    }
     /** 审批拒绝、停止或过期由审批服务收口时，也必须撤销项目 Run 快照并记录同一撤销审计。 */
     void cleanupEphemeralAuthorization(PrincipalRef principal, RunRecord run) {
         if (projectRuns != null) projectRuns.cleanup(principal, run);
+        if (clientProjectRuns != null) clientProjectRuns.cleanup(principal, run);
     }
     /** 所有会话、审批恢复与停止共享本实例的句柄和短锁，不提供跨实例命令路由。 */
     private final RunControlRegistry controls = new RunControlRegistry();
@@ -412,31 +425,41 @@ public class RunExecutionService {
         }
 
         AgentRuntimeResult runtimeEnvelope;
+        boolean[] clientCommands = {false};
         try {
             var project = projectRuns == null ? null : projectAuthorizationMode == null
                     ? projectRuns.prepare(principal, runningRun, conversationId, context.authorizedTools(),
                             approvalDecisions != null)
                     : projectRuns.prepare(principal, runningRun, conversationId, context.authorizedTools(),
                             projectAuthorizationMode, approvalDecisions != null);
-            boolean workspaceAttempted = project == null && localAuthorization == null && workspaceContexts != null;
+            if (project == null && clientProjectRuns != null) {
+                project = clientProjectRuns.prepare(principal, runningRun, conversationId,
+                        context.authorizedTools(), projectAuthorizationMode,
+                        approvalDecisions != null);
+            }
+            final com.cmagent.core.domain.ProjectRuntimeContext projectContext = project;
+            clientCommands[0] = projectContext != null && projectContext.binding() == null;
+            boolean workspaceAttempted = projectContext == null && localAuthorization == null && workspaceContexts != null;
             AgentRuntimeResult workspaceResult = null;
             RuntimeException primaryWorkspaceFailure = null;
             try {
                 var workspace = !workspaceAttempted ? null : workspaceContexts.prepare(principal, runningRun, approvalDecisions != null);
                 // 将完整运行上下文交给 Runtime；Runtime 内部可能继续发起受治理的工具调用。
-                var skills = project != null ? null : approvalDecisions == null
+                var skills = projectContext != null ? null : approvalDecisions == null
                         ? skillRuntimeService.prepare(principal, runningRun, selection)
                         : skillRuntimeService.restore(principal, runningRun);
                 if (skills != null) skillRuntimeService.verifyRequiredDependencies(skills, context.authorizedTools());
                 // 项目只开放固定目录内的显式授权工具；旧Run不会因安装项目目录而得到本机能力。
-                var runtimeTools = context.authorizedTools().stream().filter(tool -> project == null
-                        ? !LocalProjectToolCatalog.managed(principal.tenantId(), tool.id()) : project.protectedToolIds().contains(tool.id())).toList();
+                var runtimeTools = context.authorizedTools().stream().filter(tool -> projectContext == null
+                        ? !LocalProjectToolCatalog.managed(principal.tenantId(), tool.id())
+                            && !ClientProjectToolCatalog.managed(principal.tenantId(), tool.id())
+                        : projectContext.protectedToolIds().contains(tool.id())).toList();
                 AgentRunRequest runtimeRequest = new AgentRunRequest(
                         runningRun.id(), principal.tenantId(), context.agent(), context.modelConfig(), principal,
                         runtimeInput, runtimeTools, conversationId, skills == null ? List.of() : skills.versions(),
                         skills == null ? Map.of() : skills.dependencyResolutions(), controls.find(runningRun.id()) == null
                                 ? new com.cmagent.core.runtime.RunCancellation()
-                                : controls.find(runningRun.id()).cancellation(), workspace, project,
+                                : controls.find(runningRun.id()).cancellation(), workspace, projectContext,
                         localAuthorization
                 );
                 Consumer<AgentTextDelta> safeDelta = delta -> {
@@ -459,12 +482,14 @@ public class RunExecutionService {
                     // 项目命令返回的是异步启动状态，专属Job仍持有本Run的调用许可直到实际退出。
                     // 模型即使提前回答、再次ASK或抛错，也须在锁和数据库事务之外等待该许可释放，
                     // 否则Run会提前终结并释放停止句柄，使仍在执行的进程无法通过运行入口停止。
-                    if (project != null) runtimeRequest.cancellation().awaitQuiescence();
+                    if (projectContext != null) runtimeRequest.cancellation().awaitQuiescence();
                 }
                 if (workspace != null && workspaceResult.run().status() == com.cmagent.core.domain.RunStatus.WAITING_APPROVAL)
                     workspaceContexts.retain(runningRun, workspace);
-                if (project != null && workspaceResult.run().status() == com.cmagent.core.domain.RunStatus.WAITING_APPROVAL)
-                    projectRuns.retain(principal,runningRun,project);
+                if (projectContext != null && workspaceResult.run().status() == com.cmagent.core.domain.RunStatus.WAITING_APPROVAL) {
+                    if (projectContext.binding() != null) projectRuns.retain(principal, runningRun, projectContext);
+                    else clientProjectRuns.retain(principal, runningRun, projectContext);
+                }
             } catch (RuntimeException failure) {
                 primaryWorkspaceFailure = failure;
                 throw failure;
@@ -478,9 +503,14 @@ public class RunExecutionService {
                         throw cleanup;
                     }
                 }
-                if (project != null && (primaryWorkspaceFailure != null || workspaceResult == null
-                        || workspaceResult.run().status() != com.cmagent.core.domain.RunStatus.WAITING_APPROVAL))
-                    projectRuns.cleanup(principal, runningRun, project.authorizationMode());
+                if (projectContext != null && (primaryWorkspaceFailure != null || workspaceResult == null
+                        || workspaceResult.run().status() != com.cmagent.core.domain.RunStatus.WAITING_APPROVAL)) {
+                    if (projectContext.binding() != null) {
+                        projectRuns.cleanup(principal, runningRun, projectContext.authorizationMode());
+                    } else {
+                        clientProjectRuns.cleanup(principal, runningRun);
+                    }
+                }
             }
             runtimeEnvelope = workspaceResult;
         } catch (LocalProjectAccessException projectFailure) {
@@ -511,6 +541,10 @@ public class RunExecutionService {
             }
             throw skillFailure;
         } catch (RuntimeException runtimeFailure) {
+            if (clientCommands[0] && clientProjectCommands != null) {
+                clientProjectCommands.requestRunStop(principal.tenantId(),
+                        principal.principalId(), runningRun.id());
+            }
             if(runtimeFailure instanceof com.cmagent.core.runtime.ToolInvocationInfrastructureException
                     && runtimeFailure.getCause() instanceof LocalProjectAccessException projectFailure) {
                 // 适配器的致命门控保留此安全原因；诊断已由项目边界完成，响应必须沿用同一个编号。
@@ -544,9 +578,67 @@ public class RunExecutionService {
 
         AgentRuntimeResult envelope = runtimeEnvelope;
         ResolvedRunContext resolvedContext = context;
+        if (clientCommands[0] && clientProjectCommands != null) {
+            if (envelope.run().status() == com.cmagent.core.domain.RunStatus.SUCCEEDED) {
+                var barrier = clientProjectCommands.awaitRunSettled(principal, runningRun);
+                if (!barrier.isDone()) {
+                    final AgentRuntimeResult barrierEnvelope = envelope;
+                    final ResolvedRunContext barrierContext = resolvedContext;
+                    final RunRecord barrierRun = runningRun;
+                    barrier.whenComplete((outcome, failure) -> {
+                        AgentRuntimeResult settled = barrierEnvelope;
+                        if (failure != null || outcome == null || !outcome.settled()) {
+                            settled = failedCommandEnvelope(barrierRun, barrierEnvelope,
+                                    failure != null ? "设备项目命令完成屏障不可用"
+                                            : outcome.message());
+                        }
+                        AgentRuntimeResult finalSettled = settled;
+                        try {
+                            // 异步屏障仍须与停止、审批提交共用 Run 短锁，避免终态与取消交叉覆盖。
+                            controls.withRun(barrierRun.id(), () -> {
+                                try {
+                                    return finalizer.apply(() -> finalizeResult(principal,
+                                            barrierContext, barrierRun, finalSettled));
+                                } finally {
+                                    controls.release(barrierRun.id());
+                                }
+                            });
+                        } catch (RuntimeException completionFailure) {
+                            diagnosticLogger.error(new ErrorDiagnosticLogger.DiagnosticContext(
+                                    barrierRun.id().toString(), "CLIENT_PROJECT_COMMAND_BARRIER",
+                                    "CLIENT_PROJECT_COMMAND_BARRIER_FAILED",
+                                    principal.tenantId().toString(), principal.principalId(),
+                                    barrierContext.agent().id().toString(),
+                                    barrierRun.id().toString(), "-", "-", "RUN"),
+                                    completionFailure);
+                            try {
+                                persistenceService.completeFailure(principal, barrierRun);
+                            } catch (RuntimeException closeFailure) {
+                                completionFailure.addSuppressed(closeFailure);
+                            }
+                        }
+                    });
+                    AgentRunResult running = new AgentRunResult(runningRun.id(),
+                            com.cmagent.core.domain.RunStatus.RUNNING, "", List.of(),
+                            runningRun.startedAt(), null, "");
+                    return new AgentRuntimeResult(running, null);
+                }
+                var completed = barrier.join();
+                if (!completed.settled()) {
+                    envelope = failedCommandEnvelope(runningRun, envelope, completed.message());
+                }
+            } else if (envelope.run().status()
+                    != com.cmagent.core.domain.RunStatus.WAITING_APPROVAL) {
+                // 非成功终态也必须登记停止；Run 失败或拒绝不会释放仍在运行的远端命令。
+                clientProjectCommands.requestRunStop(principal.tenantId(),
+                        principal.principalId(), runningRun.id());
+            }
+        }
         // 停止与终态用同一短锁竞争，会话 finalizer 将消息/审批与 Run 收口放进同一数据库事务。
+        final AgentRuntimeResult finalEnvelope = envelope;
         return controls.withRun(runningRun.id(), () -> {
-            AgentRuntimeResult result = finalizer.apply(() -> finalizeResult(principal, resolvedContext, runningRun, envelope));
+            AgentRuntimeResult result = finalizer.apply(() -> finalizeResult(principal,
+                    resolvedContext, runningRun, finalEnvelope));
             // 等待审批必须在同一短锁内释放句柄，否则停止可能把已返回的片段误认作仍可中断执行。
             controls.release(runningRun.id());
             return result;
@@ -581,6 +673,15 @@ public class RunExecutionService {
         return new AgentRuntimeResult(
                 responseWithPersistentId(completedRun, runtimeResult),
                 redactMessage(runtimeEnvelope.assistantMessage()));
+    }
+
+    private static AgentRuntimeResult failedCommandEnvelope(RunRecord runningRun,
+            AgentRuntimeResult source, String message) {
+        AgentRunResult original = source.run();
+        AgentRunResult failed = new AgentRunResult(runningRun.id(),
+                com.cmagent.core.domain.RunStatus.FAILED, "", original.toolCalls(),
+                runningRun.startedAt(), java.time.Instant.now(), message);
+        return new AgentRuntimeResult(failed, null);
     }
 
     private ResolvedRunContext resolve(PrincipalRef principal, UUID agentId) {

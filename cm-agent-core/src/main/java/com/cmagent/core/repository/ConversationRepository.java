@@ -24,6 +24,13 @@ public interface ConversationRepository {
     default boolean hasLocalProjectSource(UUID tenantId, UUID agentId, UUID conversationId) { return false; }
 
     /**
+     * 已配对设备项目来源见证；用于头字段损坏时仍阻止回退普通会话列表。
+     */
+    default boolean hasClientProjectSource(UUID tenantId, UUID agentId, UUID conversationId) {
+        return false;
+    }
+
+    /**
      * 首次保存会话时原子固定当前来源头见证，不能在保存后另补写而暴露旧默认来源窗口。
      * @param tenantId 可信认证租户
      * @param conversation 已完成认证与归属检查的新会话

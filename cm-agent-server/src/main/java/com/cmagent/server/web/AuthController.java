@@ -8,6 +8,7 @@ import com.cmagent.server.security.CurrentUserResponse;
 import com.cmagent.server.security.LoginRequest;
 import com.cmagent.server.security.LoginResponse;
 import com.cmagent.server.config.LocalProjectProperties;
+import com.cmagent.server.config.ClientProjectProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -65,15 +66,28 @@ public class AuthController {
     private final AuditAppender auditAppender;
     /** 默认独立关闭；部署配置只影响当前bootstrap主体，不修改角色、数据库权限或Agent工具grant。 */
     private LocalProjectProperties localProjects=new LocalProjectProperties();
+    /** 已配对设备项目可在 Server 本机项目关闭时独立提供项目权限。 */
+    private ClientProjectProperties clientProjects=new ClientProjectProperties();
     /** 可信Spring环境再次限定local/test；不能靠客户端声明本机模式获得项目权限。 */
     private org.springframework.core.env.Environment environment;
 
     /** 保留既有构造器给独立认证测试；生产装配按配置显式选择项目权限，不引入原生组件依赖。 */
-    @org.springframework.beans.factory.annotation.Autowired
+    /** 既有测试入口；只配置 Server 本机项目。 */
     void configureLocalProjects(org.springframework.beans.factory.ObjectProvider<LocalProjectProperties> provider,
                                 org.springframework.core.env.Environment environment) {
-        this.localProjects=provider.getIfAvailable(LocalProjectProperties::new);this.environment=environment;
-        if(localProjects.isEnabled())projectLoginPermissions();
+        configureProjects(provider, null, environment);
+    }
+
+    /** 生产装配同时读取两种项目开关，但两者仍使用独立部署策略。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureProjects(org.springframework.beans.factory.ObjectProvider<LocalProjectProperties> localProvider,
+                           org.springframework.beans.factory.ObjectProvider<ClientProjectProperties> clientProvider,
+                           org.springframework.core.env.Environment environment) {
+        localProjects=localProvider.getIfAvailable(LocalProjectProperties::new);
+        clientProjects=clientProvider==null?new ClientProjectProperties()
+                :clientProvider.getIfAvailable(ClientProjectProperties::new);
+        this.environment=environment;
+        if(localProjects.isEnabled()||clientProjects.isEnabled())projectLoginPermissions();
     }
     /**
      * 创建 {@code AuthController} 实例并保存其运行所需依赖。
@@ -134,14 +148,18 @@ public class AuthController {
 
     /** 只在完整本机部署开启后追加显式项目权限；关闭、默认空列表均保持原固定登录权限集合。 */
     private List<String> projectLoginPermissions() {
-        if(!localProjects.isEnabled())return PERMISSIONS;
+        if(!localProjects.isEnabled()&&!clientProjects.isEnabled())return PERMISSIONS;
         localProjects.validate();
+        clientProjects.validate();
         var profiles=environment==null?List.<String>of():Arrays.asList(environment.getActiveProfiles());
         if(profiles.stream().noneMatch(value->"local".equalsIgnoreCase(value)||"test".equalsIgnoreCase(value))
                 ||profiles.stream().anyMatch(value->"prod".equalsIgnoreCase(value)||"production".equalsIgnoreCase(value)||"supabase".equalsIgnoreCase(value)))
             throw new IllegalStateException("本地项目bootstrap授权仅允许明确启用的local/test部署");
-        var permissions=new ArrayList<>(PERMISSIONS);permissions.addAll(localProjects.getBootstrapPermissions());
-        return List.copyOf(permissions);
+        var permissions=new ArrayList<>(PERMISSIONS);
+        if(localProjects.isEnabled())permissions.addAll(localProjects.getBootstrapPermissions());
+        if(clientProjects.isEnabled())permissions.addAll(List.of("project:read","project:manage",
+                "project:write","project:execute"));
+        return permissions.stream().distinct().toList();
     }
 
     /**

@@ -59,6 +59,9 @@ class MigrationTest {
             "local_project_roots", "local_projects", "local_project_conversations", "local_project_runs", "local_project_operations",
             "local_client_devices", "local_client_challenges", "local_client_run_grants",
             "local_client_pairing_sessions", "local_client_operations",
+            "client_projects", "client_project_operations", "client_project_commands",
+            "client_project_tasks",
+            "client_project_conversations", "client_project_runs",
             "skill_definitions",
             "skill_versions",
             "skill_resources",
@@ -144,15 +147,16 @@ class MigrationTest {
         assertThat(projectStage).isEqualTo(1);
         int localClientStage=CmAgentFlyway.configure(dataSource).target("27").load().migrate().migrationsExecuted;
         assertThat(localClientStage).isEqualTo(1);
-        int pairingOperationStage=CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
-        assertThat(pairingOperationStage).isEqualTo(1);
+        int latestStage=CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
+        // V28 继续交付设备操作，V29 增加协议 5 来源和五张客户端项目表。
+        assertThat(latestStage).isEqualTo(2);
 
         assertThat(firstStage).isEqualTo(12);
         assertThat(secondStage).isEqualTo(4);
         assertThat(passwordStage).isEqualTo(1);
         assertThat(JdbcClient.create(dataSource).sql("SELECT ssh_auth_type FROM skill_sandbox_endpoints WHERE id='90000000-0000-0000-0000-000000000020'")
                 .query(String.class).single()).isEqualTo("KEY");
-        assertSchemaContract(firstStage + secondStage + passwordStage + descriptionStage + checkpointStage + importStage + requestStage + witnessStage + projectStage + localClientStage + pairingOperationStage,
+        assertSchemaContract(firstStage + secondStage + passwordStage + descriptionStage + checkpointStage + importStage + requestStage + witnessStage + projectStage + localClientStage + latestStage,
                 jdbcUrl, username, password);
         assertThat(JdbcClient.create(dataSource).sql("""
                         SELECT skills_json FROM run_skill_snapshots
@@ -443,7 +447,7 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(28);
+        assertThat(migrationsExecuted).isEqualTo(29);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
@@ -466,6 +470,10 @@ class MigrationTest {
             }
             assertThat(columnComments(connection, "skill_load_records").get("status"))
                     .contains("沙箱资源准备", "不代表交付模型或脚本成功");
+            assertThat(columnComments(connection, "runs").get("workspace_protocol"))
+                    .contains("五", "已配对设备项目");
+            assertThat(columnComments(connection, "conversations").get("workspace_protocol"))
+                    .contains("五", "已配对设备项目");
             assertThat(indexNames(connection, "tool_definitions")).contains("idx_tool_definitions_tenant");
             assertThat(indexNames(connection, "tool_definitions")).contains("ux_tool_definitions_tenant_name");
             assertThat(indexNames(connection, "tool_definitions")).contains("idx_tool_definitions_tenant_deleted");
@@ -543,6 +551,30 @@ class MigrationTest {
                     "agent_definitions", "skill_definitions");
             assertThat(importedKeyTargets(connection, "run_skill_snapshots")).contains("runs");
             assertThat(importedKeyTargets(connection, "skill_load_records")).contains("runs");
+            assertThat(indexNames(connection, "client_projects")).contains("idx_client_projects_owner");
+            assertThat(indexNames(connection, "client_project_tasks"))
+                    .contains("idx_client_project_tasks_pending");
+            assertThat(indexNames(connection, "client_project_operations"))
+                    .contains("idx_client_project_operations_project");
+            assertThat(indexNames(connection, "client_project_commands")).contains(
+                    "idx_client_project_commands_run", "idx_client_project_commands_project");
+            assertThat(indexNames(connection, "client_project_tasks"))
+                    .contains("idx_client_project_tasks_command");
+            assertThat(indexNames(connection, "client_project_conversations"))
+                    .contains("idx_client_project_conversations_project");
+            assertThat(importedKeyTargets(connection, "client_projects"))
+                    .contains("tenants", "local_client_devices");
+            assertThat(importedKeyTargets(connection, "client_project_operations")).contains(
+                    "client_projects", "conversations", "runs", "client_project_operations");
+            assertThat(importedKeyTargets(connection, "client_project_tasks")).contains(
+                    "local_client_devices", "client_projects", "runs", "conversations",
+                    "client_project_operations", "client_project_commands");
+            assertThat(importedKeyTargets(connection, "client_project_commands")).contains(
+                    "client_projects", "conversations", "runs");
+            assertThat(importedKeyTargets(connection, "client_project_conversations"))
+                    .contains("client_projects", "local_client_devices");
+            assertThat(importedKeyTargets(connection, "client_project_runs")).contains(
+                    "client_project_conversations", "client_projects", "local_client_devices");
         } catch (SQLException e) {
             throw new AssertionError("验证迁移后的 schema 失败", e);
         }

@@ -16,6 +16,7 @@ import java.util.UUID;
  * @param toolId 被调用工具的标识
  * @param toolName 模型请求调用的工具名称，须与 toolId 对应定义一致
  * @param inputJson 序列化后的工具输入 JSON
+ * @param cancellation 当前 Run 协作式停止信号；旧调用为空
  */
 public record ToolInvocationRequest(
         UUID tenantId,
@@ -25,7 +26,8 @@ public record ToolInvocationRequest(
         String toolCallId,
         UUID toolId,
         String toolName,
-        String inputJson
+        String inputJson,
+        RunCancellation cancellation
 ) {
 
     /**
@@ -62,5 +64,12 @@ public record ToolInvocationRequest(
         if (!tenantId.equals(principal.tenantId())) {
             throw new IllegalArgumentException("调用主体不属于当前租户");
         }
+    }
+
+    /** 兼容不携带运行停止信号的旧调用点。 */
+    public ToolInvocationRequest(UUID tenantId, UUID agentId, PrincipalRef principal,
+            UUID runId, String toolCallId, UUID toolId, String toolName, String inputJson) {
+        this(tenantId, agentId, principal, runId, toolCallId, toolId, toolName, inputJson,
+                null);
     }
 }
