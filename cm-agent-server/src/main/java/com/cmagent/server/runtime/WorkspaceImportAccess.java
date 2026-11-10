@@ -19,6 +19,12 @@ public final class WorkspaceImportAccess {
     private LocalProjectResourceAccess projects;
     @org.springframework.beans.factory.annotation.Autowired
     void configureProjects(org.springframework.beans.factory.ObjectProvider<LocalProjectResourceAccess> provider) { projects = provider.getIfAvailable(); }
+    /** 协议 5 必须走设备项目的来源/主体闸门；功能关闭时拒绝，不能回退导入资料可见性。 */
+    private ClientProjectRunService clientProjects;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureClientProjects(org.springframework.beans.factory.ObjectProvider<ClientProjectRunService> provider) {
+        clientProjects = provider.getIfAvailable();
+    }
     /** 长期来源元数据，不能用当前catalog猜测私有性。 */
     private final WorkspaceSelectionRepository selections;
     /** 可信会话及Run关联。 */
@@ -40,6 +46,12 @@ public final class WorkspaceImportAccess {
     /** 只接收仓储核实的会话，用户输入不能构造可信归属。 */
     public void conversation(PrincipalRef principal, Conversation value) {
         if (!principal.tenantId().equals(value.tenantId())) denied(principal, value.id());
+        if (conversations.workspaceProtocol(value.tenantId(), value.agentId(), value.id()) == ClientProjectBinding.PROTOCOL
+                || conversations.hasClientProjectSource(value.tenantId(), value.agentId(), value.id())) {
+            if (clientProjects == null) denied(principal, value.id());
+            clientProjects.verifyConversation(principal, value);
+            return;
+        }
         // 头字段不是唯一来源证据；损坏或降为0/3仍交项目闸门，后者要求头与固定绑定完全一致。
         if (conversations.workspaceProtocol(value.tenantId(),value.agentId(),value.id())==LocalProjectBinding.PROTOCOL
                 || conversations.hasLocalProjectSource(value.tenantId(), value.agentId(), value.id())) {
@@ -59,6 +71,12 @@ public final class WorkspaceImportAccess {
     /** 同时校验固定Run来源及派生会话，避免通过运行详情/技能记录入口旁路。 */
     public void run(PrincipalRef principal, RunRecord value) {
         if (!principal.tenantId().equals(value.tenantId())) denied(principal, value.id());
+        if (runs.workspaceProtocol(value.tenantId(), value.agentId(), value.id()) == ClientProjectBinding.PROTOCOL
+                || runs.hasClientProjectSource(value.tenantId(), value.agentId(), value.id())) {
+            if (clientProjects == null) denied(principal, value.id());
+            clientProjects.verifyResource(principal, value);
+            return;
+        }
         if (runs.workspaceProtocol(value.tenantId(),value.agentId(),value.id())==LocalProjectBinding.PROTOCOL
                 || runs.hasLocalProjectSource(value.tenantId(), value.agentId(), value.id())) {
             if (projects == null) denied(principal, value.id());
@@ -66,6 +84,10 @@ public final class WorkspaceImportAccess {
             return;
         }
         var conversation = conversations.findByRun(principal.tenantId(), value.id()).orElse(null);
+        // 会话已固定为设备项目却缺失 Run 见证时，不能经普通历史或审批入口读取半创建的 Run。
+        if (conversation != null && (conversations.workspaceProtocol(conversation.tenantId(), conversation.agentId(), conversation.id()) == ClientProjectBinding.PROTOCOL
+                || conversations.hasClientProjectSource(conversation.tenantId(), conversation.agentId(), conversation.id())))
+            denied(principal, value.id());
         if (conversation!=null && (conversations.workspaceProtocol(conversation.tenantId(),conversation.agentId(),conversation.id())==LocalProjectBinding.PROTOCOL
                 || conversations.hasLocalProjectSource(conversation.tenantId(), conversation.agentId(), conversation.id())))
             denied(principal, value.id());

@@ -93,11 +93,11 @@
             if (!valid()) throw new Error("项目工作区已离开，请返回后重试。");
             const controller = new AbortController();
             controllers.add(controller);
-            const clientBoundary = url.startsWith("/api/client-projects") ? boundary : {};
             try {
                 return await api.request(url, {
                     ...options,
-                    headers: {...options.headers, ...clientBoundary},
+                    // 消息、审批和 Run 沿用通用路由，仍须携带设备项目行动头，后端另按持久来源校验。
+                    headers: {...options.headers, ...boundary},
                     signal: controller.signal
                 });
             } finally {

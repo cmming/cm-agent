@@ -33,6 +33,13 @@ public final class ClientProjectRunService {
     private final TransactionTemplate transaction;
     private final Clock clock;
     private final ClientProjectReadSnapshots snapshots;
+    /** HTTP 派生入口同样要求精确来源和专用行动头；内部异步调用仍只使用持久来源与可信主体。 */
+    private ClientProjectRequestBoundary boundary;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureBoundary(org.springframework.beans.factory.ObjectProvider<ClientProjectRequestBoundary> provider) {
+        boundary = provider.getIfAvailable();
+    }
 
     ClientProjectRunService(RunRepository runs, ClientProjectRepository projects,
             ClientProjectBindingRepository bindings, AgentDefinitionRepository agents,
@@ -88,6 +95,7 @@ public final class ClientProjectRunService {
 
     /** HTTP 消息/审批入口在读取派生资源前验证固定项目来源仍一致。 */
     void verifyConversation(PrincipalRef principal, Conversation conversation) {
+        requireBrowserRequest(principal, conversation.id());
         if (conversations.workspaceProtocol(principal.tenantId(), conversation.agentId(),
                 conversation.id()) != ClientProjectBinding.PROTOCOL) {
             throw reject(principal, conversation.id(), "CLIENT_PROJECT_BINDING_CORRUPT", 409,
@@ -209,6 +217,7 @@ public final class ClientProjectRunService {
     }
 
     void verifyResource(PrincipalRef principal, RunRecord run) {
+        requireBrowserRequest(principal, run.id());
         var binding = bindings.run(principal.tenantId(), principal.principalId(), run.id())
                 .orElseThrow(() -> reject(principal, run.id(), "CLIENT_PROJECT_BINDING_MISSING",
                         409, "设备项目Run来源绑定缺失"));
@@ -311,6 +320,15 @@ public final class ClientProjectRunService {
                     "CLIENT_PROJECT_AGENT_TOOL_GRANT", "TOOL", tool.id().toString(),
                     "SUCCEEDED", "project=" + projectId + " agent=" + agentId
                             + " tool=" + tool.name());
+        }
+    }
+
+    private void requireBrowserRequest(PrincipalRef principal, UUID resourceId) {
+        if (org.springframework.web.context.request.RequestContextHolder.getRequestAttributes()
+                instanceof org.springframework.web.context.request.ServletRequestAttributes attributes
+                && (boundary == null || !boundary.permits(attributes.getRequest()))) {
+            throw reject(principal, resourceId, "CLIENT_PROJECT_REQUEST_REQUIRED", 403,
+                    "请从已配置的设备项目控制台读取项目资源");
         }
     }
 

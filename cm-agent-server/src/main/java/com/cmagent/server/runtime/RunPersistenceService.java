@@ -151,11 +151,14 @@ public class RunPersistenceService {
      * @param input 已受控输入
      * @param runId 服务端生成的Run标识
      * @param kind 运行类型
-     * @param workspaceProtocol 仅服务端来源选择可决定，0旧来源、3本机导入
+     * @param workspaceProtocol 仅服务端来源选择可决定，0旧来源、3本机导入、5已配对设备项目
      * @return 已持久化运行，见证与首次记录原子写入
      */
     public RunRecord start(PrincipalRef principal,UUID agentId,String input,UUID runId,RunKind kind,int workspaceProtocol) {
-        if(workspaceProtocol!=0 && workspaceProtocol!=3)throw new IllegalArgumentException("工作区运行协议不合法");
+        // 协议由已校验的服务端来源选择，必须在首次 INSERT 写入，不能先创建公开 Run 再补项目绑定。
+        if(workspaceProtocol!=0 && workspaceProtocol!=3
+                && workspaceProtocol!=com.cmagent.core.domain.ClientProjectBinding.PROTOCOL)
+            throw new IllegalArgumentException("工作区运行协议不合法");
         Objects.requireNonNull(principal, "principal 不能为空");
         Objects.requireNonNull(agentId, "agentId 不能为空");
         Objects.requireNonNull(runId, "runId 不能为空");

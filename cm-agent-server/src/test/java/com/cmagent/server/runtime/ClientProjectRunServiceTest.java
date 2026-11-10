@@ -25,6 +25,47 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class ClientProjectRunServiceTest {
+    @Test void 通用消息和Run入口仍要求设备项目专用请求头() {
+        var properties = new com.cmagent.server.config.ClientProjectProperties();
+        properties.setEnabled(true);
+        properties.setAllowedOrigins(java.util.List.of("http://127.0.0.1:8080"));
+        var boundary = new ClientProjectRequestBoundary(properties);
+        var service = new ClientProjectRunService(mock(RunRepository.class), mock(ClientProjectRepository.class),
+                mock(ClientProjectBindingRepository.class), mock(AgentDefinitionRepository.class),
+                mock(ConversationRepository.class), mock(ToolGrantRepository.class), mock(ClientProjectToolCatalog.class),
+                new DefaultPermissionEvaluator(), mock(AuditAppender.class), mock(TransactionTemplate.class),
+                java.time.Clock.systemUTC(), mock(ClientProjectReadSnapshots.class));
+        service.configureBoundary(new org.springframework.beans.factory.support.StaticListableBeanFactory(
+                java.util.Map.of("boundary", boundary)).getBeanProvider(ClientProjectRequestBoundary.class));
+        UUID tenant = UUID.randomUUID(), agent = UUID.randomUUID();
+        var principal = new PrincipalRef(tenant, "owner", "测试", Set.of());
+        var conversation = new Conversation(UUID.randomUUID(), tenant, agent, "设备项目", "owner",
+                Instant.now(), Instant.now());
+        var run = com.cmagent.core.domain.RunRecord.create(UUID.randomUUID(), tenant, agent, "owner", "", Instant.now());
+        var request = new org.springframework.mock.web.MockHttpServletRequest();
+        request.setRemoteAddr("127.0.0.1");
+        request.setLocalAddr("127.0.0.1");
+        request.addHeader("Host", "127.0.0.1:8080");
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(request));
+        try {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.verifyConversation(principal, conversation))
+                    .isInstanceOfSatisfying(LocalProjectAccessException.class, failure -> {
+                        assertThat(failure.status()).isEqualTo(403);
+                        assertThat(failure.errorCode()).isEqualTo("CLIENT_PROJECT_REQUEST_REQUIRED");
+                        assertThat(failure.errorId()).isNotBlank();
+                    });
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.verifyResource(principal, run))
+                    .isInstanceOf(LocalProjectAccessException.class);
+            request.addHeader("X-CM-Agent-Client-Project", "1");
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.verifyConversation(principal, conversation))
+                    .isInstanceOfSatisfying(LocalProjectAccessException.class,
+                            failure -> assertThat(failure.errorCode()).isEqualTo("CLIENT_PROJECT_BINDING_CORRUPT"));
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+    }
+
     @Test void 新会话响应丢失后可按原请求编号恢复而不重复创建() {
         UUID tenant = UUID.randomUUID(), projectId = UUID.randomUUID();
         UUID agentId = UUID.randomUUID(), requestId = UUID.randomUUID();

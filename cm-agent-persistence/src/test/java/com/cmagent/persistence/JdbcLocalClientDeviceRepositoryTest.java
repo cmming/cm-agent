@@ -5,6 +5,10 @@ import com.cmagent.core.domain.LocalClientDevice;
 import com.cmagent.core.domain.LocalClientOperation;
 import com.cmagent.core.domain.LocalClientPairing;
 import com.cmagent.core.domain.Conversation;
+import com.cmagent.core.domain.ClientProject;
+import com.cmagent.core.domain.ClientProjectBinding;
+import com.cmagent.core.domain.ClientProjectCommand;
+import com.cmagent.core.domain.ClientProjectTask;
 import com.cmagent.core.domain.ConversationMessageDraft;
 import com.cmagent.core.domain.MessageContentBlock;
 import com.cmagent.core.domain.MessageRole;
@@ -98,6 +102,7 @@ class JdbcLocalClientDeviceRepositoryTest {
 
         UUID model = UUID.randomUUID(), agent = UUID.randomUUID();
         seedAgent(jdbc, tenant, model, agent, now);
+        verifyClientProjectCommands(jdbc, transaction, device, agent, now);
         var conversation = new Conversation(UUID.randomUUID(), tenant, agent, "设备授权会话", "Owner", now, now);
         new JdbcConversationRepository(jdbc).save(tenant, conversation);
         var run = createConversationRun(jdbc, transaction, tenant, agent, conversation.id(), now);
@@ -243,6 +248,80 @@ class JdbcLocalClientDeviceRepositoryTest {
                 releaseTransaction.countDown();
             }
         }
+    }
+
+    /** 复用测试独占数据库验证协议 5 的首次来源、任务唯一领取、命令 CAS 与未知状态隔离。 */
+    private void verifyClientProjectCommands(JdbcClient jdbc, TransactionTemplate transaction,
+            LocalClientDevice device, UUID agent, Instant now) throws Exception {
+        UUID tenant = device.tenantId(), projectId = UUID.randomUUID(), rootId = UUID.randomUUID();
+        var projects = new JdbcClientProjectRepository(jdbc, transaction);
+        var bindings = new JdbcClientProjectBindingRepository(jdbc, transaction);
+        var commands = new JdbcClientProjectCommandRepository(jdbc, transaction);
+        var tasks = new JdbcClientProjectTaskRepository(jdbc, transaction);
+        var project = new ClientProject(projectId, tenant, "Owner", device.id(), rootId,
+                "a".repeat(64), "命令验收项目", ClientProject.State.ACTIVE, 1, now, now);
+        assertThat(projects.insert(project)).isTrue();
+        assertThat(projects.find(tenant, "owner", projectId)).isEmpty();
+        assertThat(projects.find(UUID.randomUUID(), "Owner", projectId)).isEmpty();
+        var conversation = new Conversation(UUID.randomUUID(), tenant, agent, "设备项目", "Owner", now, now);
+        var conversationRows = new JdbcConversationRepository(jdbc);
+        conversationRows.save(tenant, conversation);
+        assertThat(bindings.insertConversation(new ClientProjectBinding(tenant, "Owner", projectId,
+                agent, conversation.id(), null, device.id(), rootId, project.rootIdentity(), 1, now))).isTrue();
+        assertThat(conversationRows.workspaceProtocol(tenant, agent, conversation.id())).isEqualTo(5);
+        assertThat(bindings.conversation(tenant, "owner", conversation.id())).isEmpty();
+        var run = RunRecord.create(UUID.randomUUID(), tenant, agent, "Owner", "命令验收", now);
+        var runRows = new JdbcRunRepository(jdbc);
+        runRows.saveWithWorkspaceProtocol(tenant, run, 5);
+        new JdbcConversationMessageRepository(jdbc, new ObjectMapper(), transaction).append(tenant,
+                new ConversationMessageDraft(UUID.randomUUID(), tenant, conversation.id(), MessageRole.USER,
+                        "测试", List.of(MessageContentBlock.text("命令验收")), run.id(), now));
+        assertThat(bindings.insertRun(new ClientProjectBinding(tenant, "Owner", projectId, agent,
+                conversation.id(), run.id(), device.id(), rootId, project.rootIdentity(), 1, now))).isTrue();
+        assertThat(runRows.workspaceProtocol(tenant, agent, run.id())).isEqualTo(5);
+        assertThat(bindings.run(tenant, "owner", run.id())).isEmpty();
+        var proposed = new ClientProjectCommand(UUID.randomUUID(), tenant, "Owner", projectId, agent,
+                conversation.id(), run.id(), "b".repeat(64), "c".repeat(64), true,
+                "合成加密清单", "", false, false, null, ClientProjectCommand.State.PROPOSED,
+                false, 0, 1, now, now);
+        assertThat(commands.insert(proposed)).isTrue();
+        assertThat(commands.find(tenant, "owner", proposed.id())).isEmpty();
+        assertThat(commands.find(UUID.randomUUID(), "Owner", proposed.id())).isEmpty();
+        var queued = proposed.update(ClientProjectCommand.State.QUEUED, false, null, false, false, "", 0, now);
+        var start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var first = pool.submit(() -> { start.await(); return commands.update(tenant, "Owner", proposed.id(), 1, queued).isPresent(); });
+            var second = pool.submit(() -> { start.await(); return commands.update(tenant, "Owner", proposed.id(), 1, queued).isPresent(); });
+            start.countDown();
+            assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(true, false);
+        }
+        var task = new ClientProjectTask(UUID.randomUUID(), tenant, "Owner", device.id(), projectId,
+                run.id(), agent, conversation.id(), null, proposed.id(), ClientProjectTask.Kind.RUN_COMMAND,
+                "合成加密请求", ClientProjectTask.State.PENDING, "", "", now, now.plusSeconds(60), null, null, 1);
+        assertThat(tasks.insert(task)).isTrue();
+        assertThat(tasks.claimNext(tenant, "owner", device.id(), now)).isEmpty();
+        assertThat(tasks.claimNext(UUID.randomUUID(), "Owner", device.id(), now)).isEmpty();
+        var claimed = tasks.claimNext(tenant, "Owner", device.id(), now).orElseThrow();
+        assertThat(claimed.commandId()).isEqualTo(proposed.id());
+        assertThat(tasks.claimNext(tenant, "Owner", device.id(), now)).isEmpty();
+        assertThat(tasks.complete(tenant, "Owner", device.id(), task.id(), 1,
+                ClientProjectTask.State.SUCCEEDED, "合成加密结果", "", now)).isFalse();
+        assertThat(tasks.complete(tenant, "Owner", device.id(), task.id(), claimed.version(),
+                ClientProjectTask.State.SUCCEEDED, "合成加密结果", "", now)).isTrue();
+        assertThat(tasks.complete(tenant, "Owner", device.id(), task.id(), claimed.version(),
+                ClientProjectTask.State.SUCCEEDED, "合成加密结果", "", now)).isFalse();
+        var stopped = queued.update(ClientProjectCommand.State.STOP_REQUESTED, true, null, false, false, "", 0, now);
+        assertThat(commands.update(tenant, "Owner", proposed.id(), queued.version(), stopped)).contains(stopped);
+        assertThat(commands.expireUnsettled(tenant, "Owner", run.id(), now.plusSeconds(1), now.plusSeconds(2))).isEqualTo(1);
+        var unknown = commands.find(tenant, "Owner", proposed.id()).orElseThrow();
+        assertThat(unknown.state()).isEqualTo(ClientProjectCommand.State.UNKNOWN);
+        assertThat(commands.hasUnsettledForProject(tenant, "Owner", projectId)).isTrue();
+        assertThat(commands.listUnsettledForRun(tenant, "owner", run.id())).isEmpty();
+        var completed = unknown.update(ClientProjectCommand.State.SUCCEEDED, true, 0, false, true,
+                "合成加密输出", 1, now.plusSeconds(3));
+        assertThat(commands.update(tenant, "Owner", proposed.id(), unknown.version(), completed)).contains(completed);
+        assertThat(commands.hasUnsettledForProject(tenant, "Owner", projectId)).isFalse();
     }
 
     private static LocalClientChallenge challenge(LocalClientDevice device, Instant now) {

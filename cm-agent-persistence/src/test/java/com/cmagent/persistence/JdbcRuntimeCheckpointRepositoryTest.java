@@ -19,7 +19,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
-/** 验证 V19 升级至当前 V25 的数据保留，以及大密文的插入、更新与租户隔离；不连接部署数据库。 */
+/** 验证 V19 升级至当前迁移集的数据保留，以及大密文的插入、更新与租户隔离；不连接部署数据库。 */
 @Testcontainers
 class JdbcRuntimeCheckpointRepositoryTest {
     /** 测试类独占的 PostgreSQL，由 Testcontainers 创建和回收。 */
@@ -72,8 +72,11 @@ class JdbcRuntimeCheckpointRepositoryTest {
         }
         assertThat(repository.find(tenant, previous.userId(), previous.sessionId(), previous.stateKey()))
                 .contains(previous);
-        // 保留旧检查点升级合同；新增V26后，V20至V26共七个后续版本。
-        assertThat(CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted).isEqualTo(7);
+        // 验证升级前已解析出的全部待执行版本，避免新增合法迁移后固定数量断言掩盖真正的数据保留验收。
+        var upgrade = CmAgentFlyway.configure(dataSource).load();
+        int pending = upgrade.info().pending().length;
+        assertThat(pending).isGreaterThan(0);
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(pending);
         assertThat(repository.find(tenant, previous.userId(), previous.sessionId(), previous.stateKey()))
                 .contains(previous);
         // 同一槽更新不会替换 ID 或创建时间；新的状态槽走 INSERT，同样必须完整保存较大载荷。

@@ -98,6 +98,44 @@ test("能力关闭时只探测固定入口且不加载设备或文件", async ()
     page.dispose();
 });
 
+test("设备项目经通用消息审批和Run路由时仍携带专用行动头", async () => {
+    const previousOption = global.Option;
+    global.Option = class { constructor(label, value) { this.label = label; this.value = value; } };
+    const document = dom(), calls = [];
+    const conversation = {id: "conversation", agentId: "agent", title: "验收"};
+    const page = projects.createClientProjectPage({document, host: host(), getSessionEpoch: () => 1,
+        api: {request: async (url, options) => {
+            calls.push([url, options]);
+            if (url.endsWith("/capabilities")) return {enabled: true};
+            if (url === "/api/local-client/devices") return [{deviceId: "device", state: "ACTIVE"}];
+            if (url.startsWith("/api/client-projects?")) return [{id: "project", deviceId: "device", state: "ACTIVE"}];
+            if (url === "/api/agents") return [{id: "agent", name: "验收", enabled: true}];
+            if (url.includes("/conversations?")) return [conversation];
+            if (url.endsWith("/queries")) return {requestId: "query", expiresAt: "2099-01-01T00:00:00Z"};
+            if (url.includes("/queries/")) return {requestId: "query", state: "SUCCEEDED", output: {entries: []}};
+            if (url.endsWith("/active-run")) return null;
+            if (url.endsWith("/messages") && options.method === "POST") return {run: {id: "run", status: "SUCCEEDED", finishedAt: "2026-11-10T00:00:00Z"}};
+            return {items: []};
+        }}});
+    try {
+        await page.mount();
+        await document.getElementById("clientProjectList").children[0].events.click();
+        await document.getElementById("clientProjectConversationList").children[0].events.click();
+        document.getElementById("clientProjectChatInput").value = "验收输入";
+        await document.getElementById("clientProjectChatForm").events.submit({preventDefault() {}});
+        const derived = calls.filter(([url]) => url.startsWith("/api/agents/agent/conversations/"));
+        assert.ok(derived.some(([url, options]) => url.endsWith("/messages") && options.method === "POST"));
+        assert.ok(derived.some(([url]) => url.endsWith("/approvals")));
+        assert.ok(derived.some(([url]) => url.endsWith("/active-run")));
+        for (const [, options] of derived) assert.equal(options.headers["X-CM-Agent-Client-Project"], "1");
+        assert.equal(document.getElementById("clientProjectChatSend").disabled, false);
+    } finally {
+        page.dispose();
+        if (previousOption === undefined) delete global.Option;
+        else global.Option = previousOption;
+    }
+});
+
 function dom() {
     class Node {
         constructor() {

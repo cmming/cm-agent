@@ -166,4 +166,15 @@ class RunPersistenceServiceTest {
         assertThat(created.kind()).isEqualTo(RunKind.TEST);
         assertThat(detail.run().kind()).isEqualTo(RunKind.TEST);
     }
+
+    @Test
+    void 设备项目首次保存Run时原子写入协议五且拒绝未知协议() {
+        when(runRepository.saveWithWorkspaceProtocol(eq(TENANT_ID), any(), eq(5)))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+        var created = service.start(principal, AGENT_ID, "设备项目命令", RUN_ID, RunKind.NORMAL, 5);
+        assertThat(created.status()).isEqualTo(RunStatus.RUNNING);
+        verify(runRepository).saveWithWorkspaceProtocol(eq(TENANT_ID), any(), eq(5));
+        assertThatThrownBy(() -> service.start(principal, AGENT_ID, "", RUN_ID, RunKind.NORMAL, 6))
+                .isInstanceOf(IllegalArgumentException.class).hasMessage("工作区运行协议不合法");
+    }
 }
