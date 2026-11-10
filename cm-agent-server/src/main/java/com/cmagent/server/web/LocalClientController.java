@@ -153,6 +153,12 @@ public class LocalClientController {
             @RequestBody(required = false) byte[] body, HttpServletRequest request) {
         requireProjectProtocol(request);
         LocalClientDevice device = verifiedDevice(body, request);
+        // 能力声明必须包含在已验签正文中；未签名的请求头不能证明旧客户端会执行本地确认和超时。
+        if (!java.util.Arrays.equals(body, "{\"selectionProtocol\":1}"
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+            throw new ResponseStatusException(HttpStatus.UPGRADE_REQUIRED,
+                    "请升级本机客户端以支持目录选择确认与超时");
+        }
         ClientProjectService service = clientProjects == null ? null : clientProjects.getIfAvailable();
         if (service == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "已配对设备项目功能未启用");

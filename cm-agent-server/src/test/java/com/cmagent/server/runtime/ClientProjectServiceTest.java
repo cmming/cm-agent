@@ -97,6 +97,7 @@ class ClientProjectServiceTest {
         var claimed = service.claim(device).orElseThrow();
         assertThat(claimed.category()).isEqualTo("PROJECT_SELECT_ROOT");
         assertThat(claimed.request().path("kind").asText()).isEqualTo("SELECT_ROOT");
+        assertThat(claimed.request().path("expiresAt").asText()).isEqualTo(now.plusSeconds(60).toString());
         assertThat(claimed.request().toString()).doesNotContain("C:\\\\");
     }
 

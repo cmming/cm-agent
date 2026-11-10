@@ -83,7 +83,7 @@ final class ClientProjectRootStore {
                 }
                 Path registered = Path.of(existing.path()).toAbsolutePath().normalize();
                 if (existing.identity().equals(identityDigest) || overlaps(canonical, registered)) {
-                    throw new IOException("该目录与已登记项目根相同或互相包含，请先使用原项目");
+                    throw new RootConflictException();
                 }
             }
             String displayName = canonical.getFileName() == null
@@ -100,6 +100,11 @@ final class ClientProjectRootStore {
             writeRegistry(new Registry(VERSION, List.copyOf(next)));
             return binding;
         }
+    }
+
+    /** 根冲突是可预期的拒绝，不能向服务端或日志暴露本机路径。 */
+    static final class RootConflictException extends IOException {
+        RootConflictException() { super("该目录与已登记项目根相同或互相包含，请先使用原项目"); }
     }
 
     /**

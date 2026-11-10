@@ -226,8 +226,13 @@ public final class ClientProjectService {
                 case STOP_COMMAND -> "PROJECT_COMMAND_STOP";
                 default -> "PROJECT_READ_ONLY";
             };
-            return Optional.of(new DeviceTaskView(current.id(), category,
-                    current.version(), decrypt(current.encryptedRequest(), device, current.id())));
+            JsonNode request = decrypt(current.encryptedRequest(), device, current.id());
+            if (current.kind() == ClientProjectTask.Kind.SELECT_ROOT) {
+                if (!(request instanceof ObjectNode selection)) throw new IllegalStateException("选择任务参数无效");
+                // 截止时间来自服务端持久化任务而非浏览器；客户端据此关闭窗口并拒绝迟到登记。
+                selection.put("expiresAt", current.expiresAt().toString());
+            }
+            return Optional.of(new DeviceTaskView(current.id(), category, current.version(), request));
         } catch (RuntimeException failure) {
             try {
                 tasks.close(device.tenantId(), device.ownerId(), device.id(), current.id(),

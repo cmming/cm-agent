@@ -116,38 +116,75 @@ public final class LocalClientApplication {
             try (var executor = new LocalClientTaskExecutor(json);
                  var client = new LocalClientServerClient(json, new SecureRandom())) {
                 System.out.println("本机客户端已启动，设备标识：" + identity.metadata().deviceId());
-                boolean projectTurn = true;
-                while (running.get()) {
-                    java.util.Optional<LocalClientServerClient.Task> task;
-                    try {
-                        // 两类任务使用独立端点；交替轮询避免同一最小时间片长期饿死另一队列。
-                        task = projectTurn ? client.nextProjectTask(identity) : client.nextTask(identity);
-                        projectTurn = !projectTurn;
-                    } catch (LocalClientServerClient.ChallengeRateLimitedException limited) {
-                        // 每次空轮询包含挑战和签名请求；限流发生在领取之前，可延迟后重新申请挑战。
-                        System.err.println("设备请求过于频繁，稍后自动恢复连接");
-                        Thread.sleep(Duration.ofSeconds(5));
-                        continue;
-                    }
-                    if (task.isEmpty()) {
-                        // 留出每分钟的请求预算给任务结果回报，避免空闲轮询占满服务端额度。
-                        Thread.sleep(Duration.ofSeconds(2));
-                        continue;
-                    }
-                    var current = task.orElseThrow();
-                    var outcome = executor.execute(identity, current);
-                    if (current.category() != null && current.category().startsWith("PROJECT_")) {
-                        client.reportProjectTask(identity, current, outcome.state(),
-                                outcome.output(), outcome.error());
-                    } else {
-                        client.reportTask(identity, current, outcome.state(),
-                                outcome.output(), outcome.error());
-                    }
-                }
+                consumeTasks(identity, executor, client, running);
             }
             return 0;
         } finally {
             Arrays.fill(password, '\0');
+        }
+    }
+
+    /**
+     * 持有执行器期间持续领取任务；连接中断不销毁受管进程，也不重放不确定的领取或回执。
+     * @param identity 当前已配对设备身份
+     * @param executor 当前进程独占的操作执行器，由调用方关闭
+     * @param client 签名通信客户端，由调用方关闭
+     * @param running 客户端生命周期标志
+     * @throws Exception 身份拒绝、中断或安全异常继续交给启动边界处理
+     */
+    static void consumeTasks(DeviceIdentityStore.StoredIdentity identity, LocalClientTaskExecutor executor,
+            LocalClientServerClient client, AtomicBoolean running) throws Exception {
+        boolean projectTurn = true;
+        while (running.get()) {
+            java.util.Optional<LocalClientServerClient.Task> task;
+            try {
+                // 两类任务使用独立端点；交替轮询避免同一最小时间片长期饿死另一队列。
+                task = projectTurn ? client.nextProjectTask(identity) : client.nextTask(identity);
+                projectTurn = !projectTurn;
+            } catch (LocalClientServerClient.ChallengeRateLimitedException limited) {
+                // 每次空轮询包含挑战和签名请求；限流发生在领取之前，可延迟后重新申请挑战。
+                System.err.println("设备请求过于频繁，稍后自动恢复连接");
+                Thread.sleep(Duration.ofSeconds(5));
+                continue;
+            } catch (LocalClientServerClient.ClientFailureException rejected) {
+                // 身份、协议或设备被拒绝不是可安全推断的网络故障，交给调用方处理。
+                throw rejected;
+            } catch (java.io.IOException unavailable) {
+                // 领取响应可能丢失；不重发原请求或执行未收到的任务，仅延迟领取后续任务。
+                System.err.println("设备连接暂不可用；原领取结果可能未知，稍后继续轮询");
+                Thread.sleep(Duration.ofSeconds(5));
+                continue;
+            }
+            if (task.isEmpty()) {
+                // 留出每分钟的请求预算给任务结果回报，避免空闲轮询占满服务端额度。
+                Thread.sleep(Duration.ofSeconds(2));
+                continue;
+            }
+            var current = task.orElseThrow();
+            var outcome = executor.execute(identity, current);
+            if (current.category() != null && current.category().startsWith("PROJECT_")) {
+                try {
+                    client.reportProjectTask(identity, current, outcome.state(),
+                            outcome.output(), outcome.error());
+                } catch (LocalClientServerClient.ProjectResultRejectedException rejected) {
+                    // 回执被拒绝后只继续处理新任务，绝不重放原操作或猜测服务端状态。
+                    System.err.println(rejected.getMessage());
+                } catch (LocalClientServerClient.ClientFailureException rejected) {
+                    throw rejected;
+                } catch (java.io.IOException unavailable) {
+                    // 结果可能已送达；保留本机回执并继续轮询，不重发或再次执行原任务。
+                    System.err.println("设备项目结果未确认，请核对原任务；不会自动重发");
+                }
+            } else {
+                try {
+                    client.reportTask(identity, current, outcome.state(),
+                            outcome.output(), outcome.error());
+                } catch (LocalClientServerClient.ClientFailureException failure) {
+                    if (!(failure.getCause() instanceof java.io.IOException)) throw failure;
+                    // 通用操作的副作用也可能已经发生；只保留未知提示，不重发结果或执行。
+                    System.err.println("本机操作结果未确认，请核对原任务；不会自动重发");
+                }
+            }
         }
     }
 

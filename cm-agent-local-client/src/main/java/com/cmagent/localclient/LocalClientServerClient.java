@@ -101,7 +101,8 @@ final class LocalClientServerClient implements AutoCloseable {
             // 撤销也可能发生在签发挑战后；签名无效与挑战过期同样返回 401，不能误断言已撤销。
             throw new ClientFailureException("设备签名未通过、挑战已过期或设备已撤销，请在控制台核对设备和服务状态", null);
         }
-        if (response.statusCode() != 200) throw new IOException("本机任务领取失败");
+        if (response.statusCode() >= 500) throw new IOException("本机任务服务暂不可用");
+        if (response.statusCode() != 200) throw new ClientFailureException("本机任务领取被拒绝，请核对设备状态", null);
         return Optional.of(decode(response.body(), Task.class, "本机任务响应无效"));
     }
 
@@ -113,7 +114,7 @@ final class LocalClientServerClient implements AutoCloseable {
      */
     Optional<Task> nextProjectTask(DeviceIdentityStore.StoredIdentity identity)
             throws IOException, InterruptedException, GeneralSecurityException {
-        byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+        byte[] body = "{\"selectionProtocol\":1}".getBytes(StandardCharsets.UTF_8);
         URI endpoint = resolve(identityServer(identity),
                 "/api/local-client/bootstrap/project-tasks/next");
         HttpResponse<String> response = signedPost(identity, endpoint, body,
@@ -124,7 +125,8 @@ final class LocalClientServerClient implements AutoCloseable {
             throw new ClientFailureException(
                     "设备签名未通过、挑战已过期或设备已撤销，请在控制台核对设备和服务状态", null);
         }
-        if (response.statusCode() != 200) throw new IOException("设备项目任务领取失败");
+        if (response.statusCode() >= 500) throw new IOException("设备项目任务服务暂不可用");
+        if (response.statusCode() != 200) throw new ClientFailureException("设备项目任务领取被拒绝，请核对客户端版本和设备状态", null);
         return Optional.of(decode(response.body(), Task.class, "设备项目任务响应无效"));
     }
 
@@ -190,8 +192,15 @@ final class LocalClientServerClient implements AutoCloseable {
         HttpResponse<String> response = signedPost(identity, endpoint, body,
                 Map.of("X-CM-Client-Project-Protocol",
                         Integer.toString(com.cmagent.core.domain.ClientProjectBinding.PROTOCOL)));
+        if (response.statusCode() == 400 || response.statusCode() == 409
+                || response.statusCode() == 410 || response.statusCode() == 422
+                || response.statusCode() == 429) {
+            // 结果可能已过期或被并发关闭；只停止回报该任务，不能重发或重复执行。
+            throw new ProjectResultRejectedException(response.statusCode());
+        }
+        if (response.statusCode() >= 500) throw new IOException("设备项目结果服务暂不可用");
         if (response.statusCode() != 204) throw new ClientFailureException(
-                "设备项目任务结果未被接受，请核对任务状态，勿自动重试", null);
+                "设备项目任务结果未被接受（HTTP " + response.statusCode() + "），请核对任务状态，勿自动重试", null);
     }
 
     private HttpResponse<String> signedPost(DeviceIdentityStore.StoredIdentity identity, URI endpoint, byte[] body)
@@ -324,6 +333,11 @@ final class LocalClientServerClient implements AutoCloseable {
     /** 服务端无法识别设备或未开放设备协议；调用方必须提示用户核对而不自动重配。 */
     static class ClientFailureException extends IOException {
         ClientFailureException(String message, Throwable cause) { super(message, cause); }
+    }
+
+    /** 项目任务的迟到或冲突回执不能重发，但不应永久占住客户端轮询。 */
+    static final class ProjectResultRejectedException extends IOException {
+        ProjectResultRejectedException(int status) { super("设备项目结果未被接受（HTTP " + status + "），请在控制台核对原请求"); }
     }
 
     /** 挑战端点限流发生在任务领取之前；仅此阶段允许调用方有界延后重试。 */

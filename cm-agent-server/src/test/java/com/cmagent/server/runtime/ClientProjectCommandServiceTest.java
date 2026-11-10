@@ -49,6 +49,55 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ClientProjectCommandServiceTest {
+    @Test void 终态仅允许领取状态任务不允许重新启动或停止() {
+        UUID id = UUID.randomUUID(), device = UUID.randomUUID();
+        var command = command(id, "a".repeat(64), 2, ClientProjectCommand.State.CANCELLED, now);
+        when(commands.find(tenant, owner, id)).thenReturn(Optional.of(command));
+        var service = service();
+        for (var kind : List.of(ClientProjectTask.Kind.COMMAND_STATUS,
+                ClientProjectTask.Kind.STOP_COMMAND, ClientProjectTask.Kind.RUN_COMMAND)) {
+            var task = new ClientProjectTask(UUID.randomUUID(), tenant, owner, device,
+                    command.projectId(), command.runId(), command.agentId(), command.conversationId(),
+                    null, id, kind, "encrypted-request", ClientProjectTask.State.DISPATCHED,
+                    "", "", now, now.plusSeconds(60), now, null, 2);
+            assertThat(service.claimable(task)).isEqualTo(kind == ClientProjectTask.Kind.COMMAND_STATUS);
+        }
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"SUCCEEDED,0", "FAILED,1", "CANCELLED,1"})
+    void 重启后的终态回执保留服务端输出且采用设备退出码(String state, int exitCode) throws Exception {
+        var cipher = new ModelCredentialCipher(new javax.crypto.spec.SecretKeySpec(new byte[32], "AES"));
+        String priorOutput = cipher.encrypt("{\"stdout\":\"已核验输出\",\"stderr\":\"\"}");
+        UUID commandId = UUID.randomUUID(), project = UUID.randomUUID(), run = UUID.randomUUID();
+        UUID agent = UUID.randomUUID(), conversation = UUID.randomUUID(), deviceId = UUID.randomUUID();
+        var running = new ClientProjectCommand(commandId, tenant, owner, project, agent, conversation,
+                run, "a".repeat(64), "b".repeat(64), true, "encrypted-plan", priorOutput,
+                true, false, null, ClientProjectCommand.State.RUNNING, false, 8, 3, now, now);
+        var task = new ClientProjectTask(UUID.randomUUID(), tenant, owner, deviceId, project, run,
+                agent, conversation, null, commandId, ClientProjectTask.Kind.COMMAND_STATUS,
+                "encrypted-request", ClientProjectTask.State.DISPATCHED, "", "", now,
+                now.plusSeconds(60), now, null, 2);
+        when(commands.lock(tenant, owner, commandId)).thenReturn(Optional.of(running));
+        when(commands.update(eq(tenant), eq(owner), eq(commandId), eq(3L), any()))
+                .thenAnswer(call -> Optional.of(call.getArgument(4)));
+        when(tasks.complete(any(), any(), any(), any(), anyLong(), any(), any(), any(), any())).thenReturn(true);
+        var keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        var device = new LocalClientDevice(deviceId, tenant, owner, "设备", LocalClientDevice.Platform.WINDOWS,
+                Base64.getEncoder().encodeToString(keys.getPublic().getEncoded()), LocalClientDevice.State.ACTIVE,
+                1, now, now);
+        var payload = new ObjectMapper().createObjectNode().put("state", state).put("sequence", 0)
+                .put("exitCode", exitCode).put("stopRequested", "CANCELLED".equals(state))
+                .put("outputAvailable", false).put("stdoutBase64", "").put("stderrBase64", "");
+        service().completeSuccess(device, task, payload, now);
+        var captured = ArgumentCaptor.forClass(ClientProjectCommand.class);
+        verify(commands).update(eq(tenant), eq(owner), eq(commandId), eq(3L), captured.capture());
+        assertThat(captured.getValue().state()).isEqualTo(ClientProjectCommand.State.valueOf(state));
+        assertThat(captured.getValue().sequence()).isEqualTo(8);
+        assertThat(captured.getValue().encryptedOutput()).isEqualTo(priorOutput);
+        assertThat(captured.getValue().exitCode()).isEqualTo(exitCode);
+    }
+
     @Test void 重启后的无输出未知回执保留服务端序号和已有输出() throws Exception {
         var cipher = new ModelCredentialCipher(new javax.crypto.spec.SecretKeySpec(new byte[32], "AES"));
         String priorOutput = cipher.encrypt("{\"stdout\":\"已核验输出\",\"stderr\":\"\"}");
@@ -185,7 +234,10 @@ class ClientProjectCommandServiceTest {
         assertThat(outcome.settled()).isFalse();
     }
 
-    @Test void 重复停止只转入状态核对而不生成第二个停止任务() throws Exception {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = ClientProjectCommand.State.class,
+            names = {"STOP_REQUESTED", "SUCCEEDED", "FAILED", "CANCELLED"})
+    void 重复停止只转入状态核对而不生成第二个停止任务(ClientProjectCommand.State state) throws Exception {
         UUID projectId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         UUID commandId = UUID.randomUUID();
@@ -199,8 +251,8 @@ class ClientProjectCommandServiceTest {
                 binding.rootIdentity(), "项目", ClientProject.State.ACTIVE, 1, now, now);
         ClientProjectCommand stopping = new ClientProjectCommand(commandId, tenant, owner,
                 projectId, binding.agentId(), binding.conversationId(), runId, digest,
-                "c".repeat(64), true, "encrypted-plan", "", false, false, null,
-                ClientProjectCommand.State.STOP_REQUESTED, true, 0, 3, now, now);
+                "c".repeat(64), true, "encrypted-plan", "", false, false,
+                state == ClientProjectCommand.State.SUCCEEDED ? 0 : null, state, true, 0, 3, now, now);
         var keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         LocalClientDevice device = new LocalClientDevice(deviceId, tenant, owner, "设备",
                 LocalClientDevice.Platform.WINDOWS,
@@ -218,6 +270,7 @@ class ClientProjectCommandServiceTest {
                 Set.of("project:read", "project:execute")), projectId, commandId);
 
         assertThat(task.kind()).isEqualTo("COMMAND_STATUS");
+        verify(commands, never()).update(any(), any(), any(), anyLong(), any());
     }
 
     @Test void 启动前已确认失败的命令收口为FAILED而不是UNKNOWN() throws Exception {

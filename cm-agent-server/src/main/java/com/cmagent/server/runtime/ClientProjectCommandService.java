@@ -192,6 +192,14 @@ public final class ClientProjectCommandService implements AutoCloseable {
             Source source = source(principal, binding, true);
             ClientProjectCommand current = commands.lock(principal.tenantId(),
                     principal.principalId(), commandId).orElseThrow();
+            if (Set.of(ClientProjectCommand.State.SUCCEEDED, ClientProjectCommand.State.FAILED,
+                    ClientProjectCommand.State.CANCELLED).contains(current.state())) {
+                // 终态后的重复停止只查询设备回执，不再派发停止或改变已确认的命令状态。
+                return view(commandTask(source.project(), binding, commandId,
+                        ClientProjectTask.Kind.COMMAND_STATUS,
+                        commandRequest(binding, current, "COMMAND_STATUS"),
+                        "CLIENT_PROJECT_COMMAND_STOP_STATUS"));
+            }
             if (!current.state().unsettled()) {
                 throw new IllegalStateException("命令已经终态，请刷新状态");
             }
@@ -420,9 +428,13 @@ public final class ClientProjectCommandService implements AutoCloseable {
                 task.commandId()).orElse(null);
         if (command == null || !command.projectId().equals(task.projectId())
                 || !command.runId().equals(task.runId())) return false;
-        return task.kind() == ClientProjectTask.Kind.RUN_COMMAND
-                ? command.state() == ClientProjectCommand.State.QUEUED
-                : command.state().unsettled();
+        return switch (task.kind()) {
+            case RUN_COMMAND -> command.state() == ClientProjectCommand.State.QUEUED;
+            // 终态只保留受限状态查询；不能把它放宽为重新启动或再次停止许可。
+            case COMMAND_STATUS -> command.state() != ClientProjectCommand.State.PROPOSED;
+            case STOP_COMMAND -> command.state().unsettled();
+            default -> false;
+        };
     }
 
     void validateApproval(ToolApprovalDecision decision, UUID tenantId, String owner,
@@ -588,14 +600,16 @@ public final class ClientProjectCommandService implements AutoCloseable {
                 .put("stdout", safe(stdout)).put("stderr", safe(stderr)).toString());
         boolean recoveredReceipt = (task.kind() == ClientProjectTask.Kind.COMMAND_STATUS
                 || task.kind() == ClientProjectTask.Kind.STOP_COMMAND)
-                && observed == ClientProjectCommand.State.UNKNOWN && sequence == 0
-                && !available && exit == null && stdout.isEmpty() && stderr.isEmpty();
+                && Set.of(ClientProjectCommand.State.UNKNOWN, ClientProjectCommand.State.SUCCEEDED,
+                        ClientProjectCommand.State.FAILED, ClientProjectCommand.State.CANCELLED).contains(observed)
+                && sequence == 0 && !available && stdout.isEmpty() && stderr.isEmpty()
+                && (observed != ClientProjectCommand.State.UNKNOWN || exit == null);
         if (recoveredReceipt) {
-            // 重启后的私有回执不持有输出或输出序号；只证明结果未知，不能回退已收集输出或伪称进程退出。
+            // 重启后的私有回执不持有输出或序号；保留服务端已核验输出，终态和退出码仍来自设备回执。
             sequence = command.sequence();
             available = command.outputAvailable();
             truncated = command.truncated();
-            exit = command.exitCode();
+            if (observed == ClientProjectCommand.State.UNKNOWN) exit = command.exitCode();
             outputJson = command.encryptedOutput();
             if (available) {
                 JsonNode prior = decrypt(outputJson);

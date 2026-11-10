@@ -98,6 +98,35 @@ test("能力关闭时只探测固定入口且不加载设备或文件", async ()
     page.dispose();
 });
 
+test("设备选择等待时展示同一请求编号供本机核对", async () => {
+    const previousOption = global.Option;
+    global.Option = class { constructor(label, value) { this.label = label; this.value = value; } };
+    const document = dom();
+    let finishStatus;
+    const page = projects.createClientProjectPage({document, host: host(), getSessionEpoch: () => 1,
+        api: {request: async (url) => {
+            if (url.endsWith("/capabilities")) return {enabled: true};
+            if (url === "/api/local-client/devices") return [{deviceId: "device", state: "ACTIVE"}];
+            if (url.startsWith("/api/client-projects?")) return [];
+            if (url === "/api/agents") return [];
+            if (url.endsWith("/selections")) return {requestId: "request-1", expiresAt: "2099-01-01T00:00:00Z"};
+            if (url.includes("/selections/")) return new Promise(resolve => { finishStatus = resolve; });
+            return {items: []};
+        }}});
+    try {
+        await page.mount();
+        document.getElementById("clientProjectDevice").value = "device";
+        const pending = document.getElementById("clientProjectAddBtn").events.click();
+        for (let i = 0; i < 5 && !finishStatus; i++) await Promise.resolve();
+        assert.match(document.getElementById("clientProjectPageStatus").textContent, /request-1/);
+        finishStatus({requestId: "request-1", state: "FAILED", error: "取消"});
+        await pending;
+    } finally {
+        page.dispose();
+        global.Option = previousOption;
+    }
+});
+
 test("设备项目经通用消息审批和Run路由时仍携带专用行动头", async () => {
     const previousOption = global.Option;
     global.Option = class { constructor(label, value) { this.label = label; this.value = value; } };

@@ -27,7 +27,7 @@ final class LocalClientTaskExecutor implements AutoCloseable {
 
     LocalClientTaskExecutor(ObjectMapper json) {
         this(json, ClientProjectRootStore.forCurrentUser(Objects.requireNonNull(json)),
-                new SwingClientDirectoryPicker());
+                new TimedClientDirectoryPicker(new WindowsInteractiveDirectoryPicker()));
     }
 
     LocalClientTaskExecutor(ObjectMapper json, ClientProjectRootStore projectRoots,
@@ -89,22 +89,60 @@ final class LocalClientTaskExecutor implements AutoCloseable {
                 default -> Outcome.failed("设备项目任务类别无效", json.createObjectNode());
             };
         } catch (IOException | RuntimeException failure) {
+            if ("PROJECT_SELECT_ROOT".equals(task.category())) {
+                String errorId = UUID.randomUUID().toString();
+                boolean conflict = failure instanceof ClientProjectRootStore.RootConflictException;
+                boolean expired = failure instanceof SelectionExpiredException;
+                String errorCode = conflict ? "CLIENT_PROJECT_ROOT_CONFLICT" : expired
+                        ? "CLIENT_PROJECT_SELECTION_EXPIRED" : "CLIENT_PROJECT_SELECTION_FAILED";
+                // 仅使用已配对身份和服务端任务标识；异常原文可能含本机路径或凭据，不能记录。
+                System.err.printf("%s errorId=%s operation=client_project_select errorCode=%s tenantId=%s resourceType=CLIENT_PROJECT_TASK resourceId=%s%n",
+                        conflict || expired ? "WARN" : "ERROR", errorId, errorCode, identity.metadata().tenantId(), task.taskId());
+                if (!conflict && !expired) {
+                    var sanitized = new IllegalStateException("本机目录选择失败，异常内容已脱敏");
+                    sanitized.setStackTrace(failure.getStackTrace());
+                    sanitized.printStackTrace(System.err);
+                }
+                String reason = conflict ? "所选目录与已登记项目相同或互相包含，请使用原项目"
+                        : expired ? "目录选择请求已过期，请在控制台核对原请求"
+                        : "本机目录选择失败，请核对窗口、目录权限和客户端状态";
+                return Outcome.failed(reason + "（错误码：" + errorCode + "，错误编号：" + errorId + "）",
+                        json.createObjectNode());
+            }
             return Outcome.failed("设备项目任务失败，请核对目录和设备状态", json.createObjectNode());
         }
     }
 
     private Outcome selectRoot(DeviceIdentityStore.StoredIdentity identity,
             LocalClientServerClient.Task task) throws IOException {
-        var selected = directoryPicker.choose(identity.metadata().deviceName());
+        UUID registrationId = task.taskId();
+        java.time.Instant deadline;
+        try {
+            deadline = java.time.Instant.parse(task.request().path("expiresAt").asText());
+        } catch (java.time.DateTimeException invalid) {
+            throw new IOException("选择任务期限无效");
+        }
+        if (!deadline.isAfter(java.time.Instant.now())) throw new SelectionExpiredException();
+        if (registrationId == null || deadline.isAfter(java.time.Instant.now().plusSeconds(300))) {
+            throw new IOException("选择任务标识或期限无效");
+        }
+        String origin;
+        try {
+            var server = java.net.URI.create(identity.metadata().serverUrl());
+            // 仅展示配对来源的协议、主机和端口，不回显 URI 中可能存在的用户信息。
+            origin = new java.net.URI(server.getScheme(), null, server.getHost(), server.getPort(),
+                    null, null, null).toASCIIString();
+        } catch (java.net.URISyntaxException | IllegalArgumentException invalid) {
+            throw new IOException("配对服务端来源无效");
+        }
+        String deviceName = identity.metadata().deviceName().replaceAll("[\\p{Cc}\\p{Cf}]", "?");
+        var selected = directoryPicker.choose(new ClientDirectoryPicker.Request(
+                deviceName, origin, registrationId, deadline));
         if (selected.isEmpty()) {
             return Outcome.failed("用户取消了项目文件夹选择", json.createObjectNode());
         }
-        // 浏览器目录选择任务的业务 operationId 为空，幂等登记必须使用服务端下发的一次性 taskId；
-        // 兼容旧构造器生成的无 taskId 测试任务时才回退到 operationId。
-        UUID registrationId = task.taskId() == null ? task.operationId() : task.taskId();
-        if (registrationId == null) {
-            throw new IOException("设备项目任务标识无效");
-        }
+        // 迟到结果不得产生本地根绑定；任务编号必须是服务端派发的一次性标识。
+        if (!deadline.isAfter(java.time.Instant.now())) throw new SelectionExpiredException();
         var binding = projectRoots.register(identity, registrationId, selected.orElseThrow());
         ObjectNode output = json.createObjectNode();
         output.put("rootId", binding.rootId().toString());
@@ -112,6 +150,9 @@ final class LocalClientTaskExecutor implements AutoCloseable {
         output.put("displayName", binding.displayName());
         return Outcome.succeeded(output);
     }
+
+    /** 已过期的选择请求是受控拒绝，不再登记根或再次弹窗。 */
+    private static final class SelectionExpiredException extends IOException { }
 
     private Outcome projectReadOnly(DeviceIdentityStore.StoredIdentity identity,
             LocalClientServerClient.Task task) throws IOException {

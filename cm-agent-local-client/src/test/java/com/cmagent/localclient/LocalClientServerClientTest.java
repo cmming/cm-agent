@@ -20,6 +20,7 @@ class LocalClientServerClientTest {
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         var nextPath = new java.util.concurrent.atomic.AtomicReference<String>();
         var protocol = new java.util.concurrent.atomic.AtomicReference<String>();
+        var capability = new java.util.concurrent.atomic.AtomicReference<String>();
         server.createContext("/api/local-client/bootstrap/challenges", exchange -> {
             byte[] body = ("{\"challengeId\":\"" + UUID.randomUUID() + "\",\"nonce\":\""
                     + java.util.Base64.getEncoder().encodeToString(new byte[32]) + "\"}")
@@ -31,6 +32,7 @@ class LocalClientServerClientTest {
         server.createContext("/api/local-client/bootstrap/project-tasks/next", exchange -> {
             nextPath.set(exchange.getRequestURI().getPath());
             protocol.set(exchange.getRequestHeaders().getFirst("X-CM-Client-Project-Protocol"));
+            capability.set(new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
             exchange.sendResponseHeaders(204, -1);
             exchange.close();
         });
@@ -45,6 +47,7 @@ class LocalClientServerClientTest {
             assertThat(client.nextProjectTask(identity)).isEmpty();
             assertThat(nextPath.get()).isEqualTo("/api/local-client/bootstrap/project-tasks/next");
             assertThat(protocol.get()).isEqualTo("5");
+            assertThat(capability.get()).isEqualTo("{\"selectionProtocol\":1}");
         } finally {
             server.stop(0);
         }
@@ -55,6 +58,7 @@ class LocalClientServerClientTest {
             throws Exception {
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         var resultPath = new java.util.concurrent.atomic.AtomicReference<String>();
+        var resultStatus = new AtomicInteger(204);
         server.createContext("/api/local-client/bootstrap/challenges", exchange -> {
             byte[] body = ("{\"challengeId\":\"" + UUID.randomUUID() + "\",\"nonce\":\""
                     + java.util.Base64.getEncoder().encodeToString(new byte[32]) + "\"}")
@@ -75,7 +79,7 @@ class LocalClientServerClientTest {
         });
         server.createContext("/api/local-client/bootstrap/project-tasks/" + taskId + "/result", exchange -> {
             resultPath.set(exchange.getRequestURI().getPath());
-            exchange.sendResponseHeaders(204, -1);
+            exchange.sendResponseHeaders(resultStatus.get(), -1);
             exchange.close();
         });
         server.start();
@@ -93,6 +97,11 @@ class LocalClientServerClientTest {
                     new ObjectMapper().createObjectNode(), "");
             assertThat(resultPath.get())
                     .isEqualTo("/api/local-client/bootstrap/project-tasks/" + taskId + "/result");
+            resultStatus.set(409);
+            var confirmed = identity;
+            assertThatThrownBy(() -> client.reportProjectTask(confirmed, task, "FAILED",
+                    new ObjectMapper().createObjectNode(), ""))
+                    .isInstanceOf(LocalClientServerClient.ProjectResultRejectedException.class);
         } finally {
             server.stop(0);
         }

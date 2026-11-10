@@ -229,6 +229,8 @@
                 method: "POST",
                 body: JSON.stringify({requestId, deviceId})
             });
+            if (task?.requestId !== requestId) throw new Error("设备选择任务编号不匹配。");
+            status("clientProjectPageStatus", `请在目标电脑核对请求编号 ${requestId}，然后确认选择文件夹。`);
             const result = await waitForTask({
                 request, task, host, valid,
                 statusPath: id => `/api/client-projects/selections/${encodeURIComponent(id)}`
