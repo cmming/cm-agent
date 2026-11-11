@@ -51,7 +51,7 @@ public final class LocalClientApplication {
         return switch (arguments[0]) {
             case "pair" -> pair(parse(arguments));
             case "run" -> runLoop(parse(arguments));
-            case "init-fence-store" -> initializeFenceStore(store(parse(arguments)));
+            case "init-fence-store" -> initializeFenceStore(stateDirectory(parse(arguments)));
             case "status" -> status();
             case "help", "--help", "-h" -> {
                 usage();
@@ -69,7 +69,9 @@ public final class LocalClientApplication {
         String name = required(options, "name");
         var platform = currentPlatform();
         var store = store(options);
-        char[] password = store.usesSystemStore() ? new char[0] : readPassword("设置本机身份口令：", true);
+        char[] password = store.usesSystemStore() ? new char[0]
+                : readPassword("设置本机身份口令：", true,
+                    Boolean.parseBoolean(options.get("password-stdin")));
         try {
             var identity = store.create(server, name, platform, password);
             var json = new ObjectMapper();
@@ -87,7 +89,7 @@ public final class LocalClientApplication {
                     }
                     if ("CONFIRMED".equals(status.state())) {
                         store.confirm(identity, status.deviceId(), status.tenantId(), status.ownerId());
-                        initializeFenceStore(store);
+                        initializeFenceStore(store.stateDirectory());
                         System.out.println("配对完成，设备标识：" + status.deviceId());
                         return 0;
                     }
@@ -107,7 +109,9 @@ public final class LocalClientApplication {
 
     private static int runLoop(java.util.Map<String, String> options) throws Exception {
         var store = store(options);
-        char[] password = store.usesSystemStore() ? new char[0] : readPassword("输入本机身份口令：", false);
+        char[] password = store.usesSystemStore() ? new char[0]
+                : readPassword("输入本机身份口令：", false,
+                    Boolean.parseBoolean(options.get("password-stdin")));
         try {
             var identity = store.load(password);
             if (identity.metadata().deviceId() == null) {
@@ -225,8 +229,8 @@ public final class LocalClientApplication {
         }
     }
 
-    private static int initializeFenceStore(DeviceIdentityStore store) throws java.io.IOException {
-        var journal = new ClientProjectFenceJournal(store.stateDirectory().resolve(FENCE_FILE));
+    private static int initializeFenceStore(Path directory) throws java.io.IOException {
+        var journal = new ClientProjectFenceJournal(directory.resolve(FENCE_FILE));
         journal.initializeStore();
         System.out.println("设备项目运行代次见证已初始化");
         return 0;
@@ -234,7 +238,8 @@ public final class LocalClientApplication {
 
     private static int status() throws Exception {
         var store = DeviceIdentityStore.forCurrentUser();
-        char[] password = store.usesSystemStore() ? new char[0] : readPassword("输入本机身份口令：", false);
+        char[] password = store.usesSystemStore() ? new char[0]
+                : readPassword("输入本机身份口令：", false, false);
         try {
             var identity = store.load(password);
             var metadata = identity.metadata();
@@ -249,10 +254,25 @@ public final class LocalClientApplication {
     }
 
     private static DeviceIdentityStore store(java.util.Map<String, String> options) {
+        String backend = options.get("credential-backend");
+        if (backend == null) backend = options.get("state-dir") == null ? "system" : "password";
+        if (!("system".equals(backend) || "password".equals(backend))) {
+            throw new IllegalArgumentException("--credential-backend 只能是 system 或 password");
+        }
+        Path directory = stateDirectory(options);
+        if ("password".equals(backend)) {
+            return new DeviceIdentityStore(directory, new ObjectMapper(), new SecureRandom(), Optional.empty());
+        }
+        if (options.get("state-dir") == null) return DeviceIdentityStore.forCurrentUser();
+        throw new IllegalArgumentException("自定义状态目录必须显式选择 password 凭据后端");
+    }
+
+    private static Path stateDirectory(java.util.Map<String, String> options) {
         String configured = options.get("state-dir");
-        if (configured == null) return DeviceIdentityStore.forCurrentUser();
-        return new DeviceIdentityStore(Path.of(configured).toAbsolutePath().normalize(),
-                new ObjectMapper(), new SecureRandom(), Optional.empty());
+        return configured == null
+                ? Path.of(System.getProperty("user.home", "")).toAbsolutePath().normalize()
+                    .resolve(".cm-agent").resolve("local-client")
+                : Path.of(configured).toAbsolutePath().normalize();
     }
 
     private static com.cmagent.core.domain.LocalClientDevice.Platform currentPlatform() {
@@ -263,7 +283,9 @@ public final class LocalClientApplication {
         throw new IllegalStateException("当前操作系统不受支持");
     }
 
-    private static char[] readPassword(String prompt, boolean confirmationRequired) {
+    private static char[] readPassword(String prompt, boolean confirmationRequired,
+            boolean standardInput) throws java.io.IOException {
+        if (standardInput) return readPasswordFromStandardInput(confirmationRequired);
         Console console = System.console();
         if (console == null) throw new IllegalStateException("当前终端不能安全读取口令");
         char[] first = console.readPassword(prompt);
@@ -279,10 +301,26 @@ public final class LocalClientApplication {
         }
     }
 
+    /** 仅供受控自动化通过标准输入提供口令；参数、环境变量和日志均不承载秘密。 */
+    private static char[] readPasswordFromStandardInput(boolean confirmationRequired) throws java.io.IOException {
+        var reader = new java.io.BufferedReader(new java.io.InputStreamReader(
+                System.in, java.nio.charset.StandardCharsets.UTF_8));
+        String first = reader.readLine();
+        if (first == null || first.isEmpty()) throw new IllegalArgumentException("口令不能为空");
+        if (!confirmationRequired) return first.toCharArray();
+        String confirmation = reader.readLine();
+        if (!first.equals(confirmation)) throw new IllegalArgumentException("两次口令不一致");
+        return first.toCharArray();
+    }
+
     private static java.util.Map<String, String> parse(String[] arguments) {
         java.util.Map<String, String> options = new java.util.HashMap<>();
         for (int index = 1; index < arguments.length; index++) {
             String argument = arguments[index];
+            if ("--password-stdin".equals(argument)) {
+                options.put("password-stdin", "true");
+                continue;
+            }
             if (!argument.startsWith("--") || index + 1 >= arguments.length) {
                 throw new IllegalArgumentException("参数格式无效");
             }
@@ -305,8 +343,8 @@ public final class LocalClientApplication {
     private static void usage() {
         System.out.println("""
                 CM Agent 本机客户端
-                  pair --server <URL> --name <设备名称> [--state-dir <目录>]
-                  run [--state-dir <目录>]
+                  pair --server <URL> --name <设备名称> [--state-dir <目录>] [--credential-backend system|password] [--password-stdin]
+                  run [--state-dir <目录>] [--credential-backend system|password] [--password-stdin]
                   init-fence-store [--state-dir <目录>]
                   status
                 """);

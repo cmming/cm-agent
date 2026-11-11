@@ -73,6 +73,7 @@ class ClientProjectRunRecoveryServiceTest {
         when(run.status()).thenReturn(RunStatus.RUNNING);
         when(runs.findByTenantAndAgentAndId(tenant, agentId, runId)).thenReturn(Optional.of(run));
         when(runs.failClientProjectRecovered(run, NOW)).thenReturn(true);
+        when(ownership.closeCurrent(tenant, owner, runId, identity.instanceId())).thenReturn(true);
         doAnswer(call -> ((org.springframework.transaction.support.TransactionCallback<?>) call.getArgument(0))
                 .doInTransaction(mock(org.springframework.transaction.TransactionStatus.class)))
                 .when(transaction).execute(any());
@@ -88,6 +89,7 @@ class ClientProjectRunRecoveryServiceTest {
         verify(ownership).takeOverForRecovery(tenant, owner, runId, 1, identity.instanceId(),
                 Duration.ofSeconds(30));
         verify(runs).failClientProjectRecovered(run, NOW);
+        verify(ownership).closeCurrent(tenant, owner, runId, identity.instanceId());
         verify(audit).appendControlled(tenant, "system:client-project-recovery",
                 "CLIENT_PROJECT_RUN_RECOVERY_ACK", "CLIENT_PROJECT_RUN", runId.toString(),
                 "FAILED", "epoch=2");

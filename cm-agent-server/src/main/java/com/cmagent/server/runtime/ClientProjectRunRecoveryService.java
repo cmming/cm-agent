@@ -162,6 +162,12 @@ public final class ClientProjectRunRecoveryService {
         if (!runs.failClientProjectRecovered(run, now)) {
             throw new IllegalStateException("恢复 Run 终态竞争失败");
         }
+        // Run 已进入终态时必须同步关闭本代恢复归属；否则租期到期后会被再次接管，
+        // 生成没有业务意义的后续代次。关闭失败应回滚整个 Run 收口事务。
+        if (!ownership.closeCurrent(candidate.tenantId(), candidate.ownerId(),
+                candidate.runId(), identity.instanceId())) {
+            throw new IllegalStateException("恢复 Run 归属无法关闭");
+        }
         audit.appendControlled(candidate.tenantId(), "system:client-project-recovery",
                 "CLIENT_PROJECT_RUN_RECOVERY_ACK", "CLIENT_PROJECT_RUN",
                 candidate.runId().toString(), "FAILED", "epoch=" + candidate.epoch());

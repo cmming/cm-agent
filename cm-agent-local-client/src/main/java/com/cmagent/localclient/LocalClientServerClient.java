@@ -421,7 +421,9 @@ final class LocalClientServerClient implements AutoCloseable {
 
         /** @return 是否包含运行代次字段 */
         boolean fencedProjectTask() {
-            return runId != null || rootId != null || epoch != null || fencePhase != null;
+            // 服务端对非运行级设备任务按协议显式返回 epoch=0；零表示没有代次，
+            // 不能因 Jackson 为该字段构造了 Long 对象就误判为运行级任务。
+            return runId != null || rootId != null || epoch != null && epoch > 0 || fencePhase != null;
         }
 
         /** 运行级任务必须完整携带 Run、根、正代次和允许阶段。 */

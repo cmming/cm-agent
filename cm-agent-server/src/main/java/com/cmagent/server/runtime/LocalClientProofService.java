@@ -57,7 +57,7 @@ public class LocalClientProofService {
      * @return 挑战公开字段和随机值 Base64 编码
      */
     public ChallengeView challenge(UUID deviceId, String source) {
-        rate(source);
+        rate(deviceId, source);
         LocalClientDevice device = devices.findAnyById(deviceId).orElse(null);
         if (device == null || device.state() != LocalClientDevice.State.ACTIVE) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "设备不存在或已撤销");
@@ -88,7 +88,7 @@ public class LocalClientProofService {
      */
     public LocalClientDevice verifyAndConsume(UUID deviceId, UUID challengeId, String signatureBase64,
             String method, String target, byte[] body, String source) {
-        rate(source);
+        rate(deviceId, source);
         LocalClientDevice device = devices.findAnyById(deviceId).orElse(null);
         if (device == null || device.state() != LocalClientDevice.State.ACTIVE) {
             throw denied();
@@ -127,10 +127,17 @@ public class LocalClientProofService {
         }
     }
 
-    /** 固定窗口限制仅约束匿名挑战和签名端点，不替代设备密钥验证。 */
-    private void rate(String source) {
+    /**
+     * 固定窗口限制仅约束匿名挑战和签名端点，不替代设备密钥验证。
+     *
+     * <p>同一来源可能有多台合法设备；若只按 IP 计数，多设备正常轮询会共同耗尽预算。
+     * 分桶键因此同时包含请求中的设备标识和服务端观测来源，既隔离设备预算，也防止伪造
+     * 多个不存在设备标识绕过来源洪泛保护；设备是否存在仍由后续数据库查询验证。</p>
+     */
+    private void rate(UUID deviceId, String source) {
         long now = clock.millis();
-        String key = source == null || source.isBlank() ? "unknown" : source;
+        String observedSource = source == null || source.isBlank() ? "unknown" : source;
+        String key = observedSource + "|" + Objects.requireNonNull(deviceId);
         rates.compute(key, (ignored, current) -> {
             if (current == null || now - current.startedAtMillis >= RATE_WINDOW_MILLIS) {
                 return new RateWindow(now, 1);

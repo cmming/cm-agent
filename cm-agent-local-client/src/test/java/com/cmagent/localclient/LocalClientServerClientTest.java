@@ -232,6 +232,16 @@ class LocalClientServerClientTest {
         }
     }
 
+    @Test
+    void 非运行级项目任务显式携带零代次时仍可执行() {
+        var task = new LocalClientServerClient.Task(UUID.randomUUID(), null,
+                "PROJECT_SELECT_ROOT", 1, new ObjectMapper().createObjectNode(),
+                null, null, 0L, null);
+
+        org.assertj.core.api.Assertions.assertThat(task.fencedProjectTask()).isFalse();
+        org.assertj.core.api.Assertions.assertThatCode(task::requireValidFence).doesNotThrowAnyException();
+    }
+
     @Test void 项目任务端点先返回代次确认要求(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory)
             throws Exception {
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);

@@ -657,6 +657,19 @@ class JdbcLocalClientDeviceRepositoryTest {
                 .isEqualTo(ClientProjectTask.State.CANCELLED);
         assertThat(tasks.findForOwner(tenant, "Owner", fencedDispatched.id()).orElseThrow().state())
                 .isEqualTo(ClientProjectTask.State.UNKNOWN);
+        // Run 终态后，即使恢复归属尚未关闭，也不能再被心跳、过期扫描或设备握手重新激活。
+        var runRepository = new JdbcRunRepository(jdbc);
+        var authoritativeRun = runRepository.findByTenantAndAgentAndId(tenant, agent, run.id())
+                .orElseThrow();
+        assertThat(runRepository.failClientProjectRecovered(authoritativeRun, now.plusSeconds(1))).isTrue();
+        assertThat(recoveryRepository.findExpired(10))
+                .noneMatch(candidate -> candidate.runId().equals(run.id()));
+        assertThat(recoveryRepository.findAcknowledgedRecovering(recovered.instanceId(), 10))
+                .noneMatch(candidate -> candidate.runId().equals(run.id()));
+        assertThat(acknowledgements.awaitingCurrent(device)).isEmpty();
+        assertThat(recoveryRepository.renewInstance(recovered.instanceId(), Duration.ofSeconds(20))).isZero();
+        assertThat(transaction.<Boolean>execute(status -> ownership.closeCurrent(
+                tenant, "Owner", run.id(), recovered.instanceId()))).isTrue();
     }
 
     /** 数据库时间、锁等待和代次竞争均在双方言的真实事务中验证。 */

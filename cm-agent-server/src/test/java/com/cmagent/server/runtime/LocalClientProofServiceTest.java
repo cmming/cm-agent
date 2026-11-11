@@ -84,4 +84,34 @@ class LocalClientProofServiceTest {
                 Base64.getEncoder().encodeToString(signature), "POST", "/path-a", new byte[]{2}, "127.0.0.1"))
                 .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
     }
+
+    @Test
+    void 同源多设备使用独立限流预算() throws Exception {
+        var pair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        var repository = new InMemoryLocalClientAuthorizationRepository();
+        UUID tenant = UUID.randomUUID();
+        Instant now = Instant.parse("2026-11-02T00:00:00Z");
+        var first = new LocalClientDevice(UUID.randomUUID(), tenant, "owner", "设备一",
+                LocalClientDevice.Platform.WINDOWS,
+                Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()),
+                LocalClientDevice.State.ACTIVE, 1, now, now);
+        var second = new LocalClientDevice(UUID.randomUUID(), tenant, "owner", "设备二",
+                LocalClientDevice.Platform.WINDOWS,
+                Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()),
+                LocalClientDevice.State.ACTIVE, 1, now, now);
+        repository.insert(first);
+        repository.insert(second);
+        var properties = new LocalClientProperties();
+        properties.setEnabled(true);
+        properties.setAudience("https://agent.example.test");
+        var service = new LocalClientProofService(repository, properties,
+                Clock.fixed(now.plusSeconds(1), ZoneOffset.UTC));
+
+        for (int count = 0; count < 120; count++) {
+            service.challenge(first.id(), "127.0.0.1");
+        }
+        assertThatThrownBy(() -> service.challenge(first.id(), "127.0.0.1"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        assertThat(service.challenge(second.id(), "127.0.0.1").challengeId()).isNotNull();
+    }
 }
