@@ -7,6 +7,7 @@
 - **旧客户端无见证通过：** Run `e8662979-6744-46e8-8152-37f11395e2b2` 在缺少本机见证时只收到代次要求，数据库确认数保持 0，工具链任务保持 `PENDING` 且未领取。修补后客户端以退出码 1 停止轮询，并提示先执行 `init-fence-store`；迁移前不领取或执行项目任务。
 - **真实多实例竞争通过：** Run `cef6c8b3-2abb-4258-88dc-5b48f30fa6ec` 原归属实例 `3e4f10d7-00bb-491a-a5a6-5d213375d5e3`。两个真实 Server 同时在线时强制租约过期，MySQL 通用日志记录多个连接竞争，最终 `8444` 实例 `1191db8a-3f60-43a7-a542-48a9a8523e39` 取得代次 2 `RECOVERING`；设备确认代次 2 后 Run 为 `FAILED`、命令为 `UNKNOWN`、归属 `CLOSED`，没有重放命令。
 - **可操作性修复：** 缺见证原先仅显示“握手暂不可用”。新增类型化 `MissingWitnessException`，客户端停止轮询并明确提示显式初始化；相关过期注释同步修正，`ClientProjectFenceJournalTest` 增至 5 项。
+- **双库与本机门禁：** Rocky 容器 `maven:3.9.9-eclipse-temurin-21` 对齐提交 `ce84c3c` 后，`MigrationTest` 3/3、`JdbcLocalClientDeviceRepositoryTest` 2/2、`ClientProjectFenceJournalTest` 5/5、`LocalClientReconnectTest` 2/2，均无失败或跳过；业务提交已推送。
 - **剩余边界：** 真实交互式 Windows 注销、物理关机/拔电、完整原生目录窗口、设备撤销全矩阵、远端受信 TLS 和外部进程脱离 Job 树仍未闭合，不以强制终止或单元测试替代。
 
 ## R4 历史收口：T19 可信代次与安全恢复（2026-11-11）

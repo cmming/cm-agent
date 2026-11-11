@@ -7,6 +7,7 @@
 - 真实客户端重启：命令 `525ff639-c6bc-4e12-9459-c839499580de` 启动后强杀客户端 `45772`，同 Job 的 `node.exe` `19684` 同步消失；重启 PID `40480` 后持久命令日志转 `UNKNOWN`，后续状态任务成功回报且命令保持隔离。
 - 旧客户端无见证：Run `e8662979-6744-46e8-8152-37f11395e2b2`、任务 `228a519e-1719-4e61-a5c7-7ddcc9354ac0` 保持未领取，代次确认数为 0；修补后的客户端退出并给出显式初始化命令。
 - 双实例竞争：Run `cef6c8b3-2abb-4258-88dc-5b48f30fa6ec` 由实例 `3e4f10d7-00bb-491a-a5a6-5d213375d5e3` 持有；强制过期后，`8444` 实例 `1191db8a-3f60-43a7-a542-48a9a8523e39` 赢得 `RECOVERING` 代次 2，设备确认后 Run `FAILED`、命令 `UNKNOWN`、归属 `CLOSED`。
+- Rocky 对齐提交 `ce84c3c` 的数据库与客户端门禁：`MigrationTest` 3/3、`JdbcLocalClientDeviceRepositoryTest` 2/2、`ClientProjectFenceJournalTest` 5/5、`LocalClientReconnectTest` 2/2，均无失败或跳过。
 - **平台边界：** 强制终止证明了 Job Object 在进程句柄被系统关闭时收口子进程；未在本轮日志中执行真实交互式 Windows 注销或物理掉电，T9/T17 整体仍保持进行中。
 
 ## R4 历史实际交付：T19 可信代次与安全恢复（2026-11-11）

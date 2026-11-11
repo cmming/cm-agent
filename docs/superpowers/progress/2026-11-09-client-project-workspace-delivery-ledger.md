@@ -7,7 +7,9 @@
 - **旧客户端无见证：** Run `e8662979-6744-46e8-8152-37f11395e2b2`；代次确认数 `0`，任务 `228a519e-1719-4e61-a5c7-7ddcc9354ac0` 为 `PENDING` 且 `claimed_at=NULL`。修补客户端退出码 1，显示显式 `init-fence-store` 指引。
 - **真实双实例竞争：** 在 `8443` PID `9964`、`8444` PID `4732` 同时监听时，MySQL 通用日志记录线程 `24619/24620/24623` 对同一归属的竞争。原实例 `3e4f10d7-...` 变为 `8444` 实例 `1191db8a-...` 的代次 2；`8444` 日志记录 Run `cef6c8b3-...` 在 epoch 2 安全收口，命令保持 `UNKNOWN`。
 - **强制终止与断电边界：** Windows Job Object 在客户端进程句柄关闭时结束受管 node，覆盖非优雅崩溃和会话终止后的资源回收。真实交互式 Windows 注销、物理关机/拔电仍未执行，不能以本账本替代，T9/T17 综合状态仍为进行中。
-- **本机测试（R5 中间结果）：** JDK 21/Maven 3.9.4 执行 `ClientProjectFenceJournalTest,LocalClientReconnectTest` 退出码 0；`cm-agent-local-client` 完整 `package` 退出码 0。Rocky 双库结果、最终提交与推送在后续收口中补齐。
+- **本机测试：** JDK 21/Maven 3.9.4 执行 `ClientProjectFenceJournalTest,LocalClientReconnectTest,ClientProjectFenceServiceTest,ClientProjectRunRecoveryServiceTest,LocalClientFenceControllerTest` 退出码 0；`cm-agent-local-client` 完整 `package` 退出码 0。
+- **Rocky 双库与客户端：** 提交 `ce84c3c` 在 `maven:3.9.9-eclipse-temurin-21` 中通过：PostgreSQL 16.14/MySQL 8.4 的 `MigrationTest` 3/3、`JdbcLocalClientDeviceRepositoryTest` 2/2；`ClientProjectFenceJournalTest` 5/5、`LocalClientReconnectTest` 2/2；均 0 errors/failures/skipped。
+- **Git：** 业务、发布说明与首轮 R5 文档提交 `ce84c3c` 已推送至 `origin/master`；双库结果回填后的文档收口提交随最终记录更新。
 
 ## R4 历史 T19 收口账本（2026-11-11）
 
