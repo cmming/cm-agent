@@ -9,7 +9,7 @@
 - **强制终止与断电边界：** Windows Job Object 在客户端进程句柄关闭时结束受管 node，覆盖非优雅崩溃和会话终止后的资源回收。真实交互式 Windows 注销、物理关机/拔电仍未执行，不能以本账本替代，T9/T17 综合状态仍为进行中。
 - **本机测试：** JDK 21/Maven 3.9.4 执行 `ClientProjectFenceJournalTest,LocalClientReconnectTest,ClientProjectFenceServiceTest,ClientProjectRunRecoveryServiceTest,LocalClientFenceControllerTest` 退出码 0；`cm-agent-local-client` 完整 `package` 退出码 0。
 - **Rocky 双库与客户端：** 提交 `ce84c3c` 在 `maven:3.9.9-eclipse-temurin-21` 中通过：PostgreSQL 16.14/MySQL 8.4 的 `MigrationTest` 3/3、`JdbcLocalClientDeviceRepositoryTest` 2/2；`ClientProjectFenceJournalTest` 5/5、`LocalClientReconnectTest` 2/2；均 0 errors/failures/skipped。
-- **Git：** 业务、发布说明与首轮 R5 文档提交 `ce84c3c` 已推送至 `origin/master`；双库结果回填后的文档收口提交随最终记录更新。
+- **Git：** 业务、发布说明与首轮 R5 文档提交 `ce84c3c` 已推送；双库结果回填文档提交 `a0266ac` 也已推送至 `origin/master`。
 
 ## R4 历史 T19 收口账本（2026-11-11）
 
