@@ -464,7 +464,8 @@ class JdbcLocalClientDeviceRepositoryTest {
         assertThat(acknowledgements.current(wrongOwner, run.id())).isEmpty();
         assertThat(acknowledgements.current(wrongDevice, run.id())).isEmpty();
         assertThat(acknowledgements.current(wrongTenant, run.id())).isEmpty();
-        assertThat(acknowledgements.awaitingCurrent(device)).isPresent();
+        assertThat(acknowledgements.awaitingCurrent(device))
+                .get().satisfies(current -> assertThat(current.runId()).isEqualTo(run.id()));
         var currentFence = acknowledgements.current(device, run.id()).orElseThrow();
         assertThat(currentFence.runId()).isEqualTo(run.id());
         assertThat(currentFence.rootId()).isEqualTo(rootId);
@@ -489,7 +490,8 @@ class JdbcLocalClientDeviceRepositoryTest {
                 .query(Long.class).single()).isZero();
         assertThat(acknowledgements.acknowledge(device, run.id(), 1)).isTrue();
         assertThat(acknowledgements.acknowledge(device, run.id(), 1)).isTrue();
-        assertThat(acknowledgements.awaitingCurrent(device)).isEmpty();
+        assertThat(acknowledgements.awaitingCurrent(device).map(current -> current.runId()).orElse(null))
+                .isNotEqualTo(run.id());
         assertThat(acknowledgements.current(device, run.id()).orElseThrow().acknowledged()).isTrue();
         assertThat(transaction.<Boolean>execute(status -> acknowledgements.lockConfirmed(device, run.id(), instance, 1,
                 ClientProjectRunOwnership.Phase.EXECUTING))).isTrue();

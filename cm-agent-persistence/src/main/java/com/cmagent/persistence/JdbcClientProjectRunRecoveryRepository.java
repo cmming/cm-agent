@@ -49,7 +49,7 @@ public final class JdbcClientProjectRunRecoveryRepository {
                 + " JOIN runs r ON r.tenant_id=o.tenant_id AND r.id=o.run_id AND r.agent_id=b.agent_id"
                 + " WHERE o.phase IN ('EXECUTING','RECOVERING') AND o.expires_at<=:now"
                 + " AND r.workspace_protocol=5 AND r.run_kind='NORMAL'"
-                + " AND r.status IN ('RUNNING','WAITING_APPROVAL','CANCELLING')"
+                + " AND (o.phase='RECOVERING' OR r.status IN ('RUNNING','WAITING_APPROVAL','CANCELLING'))"
                 + " ORDER BY o.expires_at,o.tenant_id,o.run_id LIMIT :limit")
                 .param("now", Timestamp.from(now)).param("limit", limit)
                 .query(this::map).list();
@@ -98,7 +98,7 @@ public final class JdbcClientProjectRunRecoveryRepository {
                     + " JOIN runs r ON r.tenant_id=o.tenant_id AND r.id=o.run_id AND r.agent_id=b.agent_id"
                     + " WHERE o.instance_id=:instance AND o.phase IN ('EXECUTING','RECOVERING')"
                     + " AND o.expires_at>:now AND r.workspace_protocol=5 AND r.run_kind='NORMAL'"
-                    + " AND r.status IN ('RUNNING','WAITING_APPROVAL','CANCELLING')"
+                    + " AND (o.phase='RECOVERING' OR r.status IN ('RUNNING','WAITING_APPROVAL','CANCELLING'))"
                     + " FOR UPDATE")
                     .param("instance", instanceId.toString()).param("now", Timestamp.from(now))
                     .query(this::map).list();
