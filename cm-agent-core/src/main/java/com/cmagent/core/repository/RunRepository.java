@@ -18,6 +18,8 @@ import java.util.UUID;
 public interface RunRepository {
     /** 冷启动只描述执行结果未知，不声称已停止原进程或撤销原文件副作用。 */
     String INTERRUPTED_FAILURE_MESSAGE = "执行器已重建，原执行结果无法确认，请核对本机操作";
+    /** 设备项目恢复已确认新代次，但旧外部任务只被隔离而未证明成功。 */
+    String CLIENT_PROJECT_RECOVERY_FAILURE_MESSAGE = "设备项目原执行实例已失联，外部任务已隔离；请核对设备命令和文件变更";
     /**
      * 项目冷启动专用CAS，不能使用complete的CANCELLING转CANCELLED语义冒充确认停止。
      * @param snapshot 来自可信仓储的NORMAL/协议4、RUNNING或CANCELLING快照
@@ -26,6 +28,16 @@ public interface RunRepository {
      */
     default boolean failInterrupted(RunRecord snapshot, Instant finishedAt) {
         throw new UnsupportedOperationException("当前运行仓储未实现失联执行CAS");
+    }
+    /**
+     * 设备确认恢复代次后收口协议 5 Run，不修改设备任务或命令的 UNKNOWN 状态。
+     *
+     * @param snapshot 可信仓储读取且仍活动的协议 5 Run
+     * @param finishedAt 服务端收口时间
+     * @return tenant、agent、owner、origin、protocol、status、startedAt 仍一致时 true
+     */
+    default boolean failClientProjectRecovered(RunRecord snapshot, Instant finishedAt) {
+        throw new UnsupportedOperationException("当前运行仓储未实现设备项目恢复收口");
     }
     /** @return 是否实现首次原子来源见证；旧嵌入仓储不得仅声明支持却忽略协议 */
     default boolean supportsWorkspaceProtocol(){return false;}

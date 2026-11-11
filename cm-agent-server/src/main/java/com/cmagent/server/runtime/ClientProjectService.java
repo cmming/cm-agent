@@ -53,6 +53,8 @@ public final class ClientProjectService {
     private final Clock clock;
     /** 命令服务由独立配置提供；文件纵切未启用命令时保持为空。 */
     private ClientProjectCommandService clientProjectCommands;
+    /** 生产设备项目启用后固定可信代次领取；旧测试装配为空。 */
+    private final ClientProjectTaskFencing fencing;
 
     @org.springframework.beans.factory.annotation.Autowired
     void configureClientProjectCommands(
@@ -66,6 +68,21 @@ public final class ClientProjectService {
             ErrorDiagnosticLogger diagnostics, ModelCredentialCipher cipher, SensitiveDataRedactor redactor,
             ObjectMapper json, TransactionTemplate transaction, ClientProjectProperties properties,
             Clock clock) {
+        this(projects, operations, tasks, devices, permissions, audit, diagnostics, cipher, redactor,
+                json, transaction, properties, clock, null);
+    }
+
+    /**
+     * 生产构造器在普通任务通道前增加持久代次确认与领取。
+     *
+     * @param fencing 已验签设备代次门禁；为空只供旧测试合同
+     */
+    public ClientProjectService(ClientProjectRepository projects,
+            ClientProjectOperationRepository operations, ClientProjectTaskRepository tasks,
+            LocalClientDeviceRepository devices, PermissionEvaluator permissions, AuditAppender audit,
+            ErrorDiagnosticLogger diagnostics, ModelCredentialCipher cipher, SensitiveDataRedactor redactor,
+            ObjectMapper json, TransactionTemplate transaction, ClientProjectProperties properties,
+            Clock clock, ClientProjectTaskFencing fencing) {
         this.projects = Objects.requireNonNull(projects);
         this.operations = Objects.requireNonNull(operations);
         this.tasks = Objects.requireNonNull(tasks);
@@ -79,6 +96,7 @@ public final class ClientProjectService {
         this.transaction = Objects.requireNonNull(transaction);
         this.properties = Objects.requireNonNull(properties);
         this.clock = Objects.requireNonNull(clock);
+        this.fencing = fencing;
     }
 
     /** 浏览器为指定设备登记根目录选择任务。 */
@@ -162,11 +180,30 @@ public final class ClientProjectService {
         closeTask(task, state, redactor.redact(reason), clock.instant());
     }
 
-    /** 设备签名领取一条固定项目任务并返回经认证加密保护的请求 JSON。 */
-    public Optional<DeviceTaskView> claim(LocalClientDevice device) {
-        if (device.state() != LocalClientDevice.State.ACTIVE) return Optional.empty();
+    /**
+     * 设备签名领取一条固定项目任务，或返回必须先持久确认的运行代次。
+     *
+     * @param device 已通过签名挑战验证的设备
+     * @return 任务、代次确认要求或空；三种结果互斥
+     */
+    public ClaimDecision claim(LocalClientDevice device) {
+        if (device.state() != LocalClientDevice.State.ACTIVE) return new ClaimDecision(null, null);
+        if (fencing != null) {
+            var awaiting = fencing.awaiting(device);
+            if (awaiting.isPresent()) {
+                var fence = awaiting.orElseThrow();
+                record(device.tenantId(), device.ownerId(), fence.runId(),
+                        "CLIENT_PROJECT_FENCE_REQUIRED", "PENDING");
+                return new ClaimDecision(null, fence);
+            }
+            var fenced = fencing.claim(device, claim -> deviceTask(device, claim.task(),
+                    claim.epoch(), claim.phase().name()));
+            if (fenced.isPresent()) {
+                return new ClaimDecision(fenced.orElseThrow(), null);
+            }
+        }
         var task = tasks.claimNext(device.tenantId(), device.ownerId(), device.id(), clock.instant());
-        if (task.isEmpty()) return Optional.empty();
+        if (task.isEmpty()) return new ClaimDecision(null, null);
         var current = task.orElseThrow();
         if (current.projectId() != null) {
             var project = projects.find(device.tenantId(), device.ownerId(), current.projectId()).orElse(null);
@@ -179,7 +216,7 @@ public final class ClientProjectService {
                 } catch (RuntimeException ignored) {
                     // 任务保持 DISPATCHED 也不会返回正文；后续只能由权威状态对账。
                 }
-                return Optional.empty();
+                return new ClaimDecision(null, null);
             }
             if (current.kind() == ClientProjectTask.Kind.APPLY_CHANGE) {
                 ClientProjectOperation operation = operations.find(device.tenantId(),
@@ -196,7 +233,7 @@ public final class ClientProjectService {
                     } catch (RuntimeException ignored) {
                         // 不返回任何变更正文；残留 DISPATCHED 只能由权威状态对账。
                     }
-                    return Optional.empty();
+                    return new ClaimDecision(null, null);
                 }
             }
             if (current.commandId() != null && clientProjectCommands != null
@@ -209,30 +246,21 @@ public final class ClientProjectService {
                 } catch (RuntimeException ignored) {
                     // 不返回任何命令清单；残留任务只能由权威状态对账。
                 }
-                return Optional.empty();
+                return new ClaimDecision(null, null);
             }
         }
         try {
             record(device.tenantId(), device.ownerId(), current.id(),
                     "CLIENT_PROJECT_TASK_DISPATCH", "DISPATCHED");
-            String category = switch (current.kind()) {
-                case SELECT_ROOT -> "PROJECT_SELECT_ROOT";
-                case PLAN_CHANGE -> "PROJECT_CHANGE_PLAN";
-                case APPLY_CHANGE -> "PROJECT_CHANGE_APPLY";
-                case LIST_TOOLCHAINS -> "PROJECT_LIST_TOOLCHAINS";
-                case PLAN_COMMAND -> "PROJECT_COMMAND_PLAN";
-                case RUN_COMMAND -> "PROJECT_COMMAND_RUN";
-                case COMMAND_STATUS -> "PROJECT_COMMAND_STATUS";
-                case STOP_COMMAND -> "PROJECT_COMMAND_STOP";
-                default -> "PROJECT_READ_ONLY";
-            };
+            String category = category(current.kind());
             JsonNode request = decrypt(current.encryptedRequest(), device, current.id());
             if (current.kind() == ClientProjectTask.Kind.SELECT_ROOT) {
                 if (!(request instanceof ObjectNode selection)) throw new IllegalStateException("选择任务参数无效");
                 // 截止时间来自服务端持久化任务而非浏览器；客户端据此关闭窗口并拒绝迟到登记。
                 selection.put("expiresAt", current.expiresAt().toString());
             }
-            return Optional.of(new DeviceTaskView(current.id(), category, current.version(), request));
+            return new ClaimDecision(new DeviceTaskView(current.id(), category, current.version(), request,
+                    null, null, 0, null), null);
         } catch (RuntimeException failure) {
             try {
                 tasks.close(device.tenantId(), device.ownerId(), device.id(), current.id(),
@@ -243,6 +271,42 @@ public final class ClientProjectService {
             }
             throw failure;
         }
+    }
+
+    private DeviceTaskView deviceTask(LocalClientDevice device, ClientProjectTask current,
+            long epoch, String phase) {
+        try {
+            record(device.tenantId(), device.ownerId(), current.id(),
+                    "CLIENT_PROJECT_TASK_DISPATCH", "DISPATCHED");
+            JsonNode request = decrypt(current.encryptedRequest(), device, current.id());
+            if (current.runId() == null || !request.path("rootId").isTextual()) {
+                throw new IllegalStateException("带栅栏任务缺少运行或根身份");
+            }
+            UUID rootId = UUID.fromString(request.path("rootId").asText());
+            if (current.commandId() != null && clientProjectCommands != null
+                    && !clientProjectCommands.claimable(current)) {
+                throw new IllegalStateException("命令许可或状态已失效");
+            }
+            return new DeviceTaskView(current.id(), category(current.kind()), current.version(),
+                    request, current.runId(), rootId, epoch, phase);
+        } catch (RuntimeException failure) {
+            // 已条件领取的任务不能退回可重试状态；保持 DISPATCHED 供恢复扫描转 UNKNOWN。
+            throw failure;
+        }
+    }
+
+    private static String category(ClientProjectTask.Kind kind) {
+        return switch (kind) {
+            case SELECT_ROOT -> "PROJECT_SELECT_ROOT";
+            case PLAN_CHANGE -> "PROJECT_CHANGE_PLAN";
+            case APPLY_CHANGE -> "PROJECT_CHANGE_APPLY";
+            case LIST_TOOLCHAINS -> "PROJECT_LIST_TOOLCHAINS";
+            case PLAN_COMMAND -> "PROJECT_COMMAND_PLAN";
+            case RUN_COMMAND -> "PROJECT_COMMAND_RUN";
+            case COMMAND_STATUS -> "PROJECT_COMMAND_STATUS";
+            case STOP_COMMAND -> "PROJECT_COMMAND_STOP";
+            default -> "PROJECT_READ_ONLY";
+        };
     }
 
     /**
@@ -284,8 +348,8 @@ public final class ClientProjectService {
                                 "设备项目任务结果无效或过大");
                     }
                     JsonNode safeOutput = redactResult(task.kind(), payload.output());
-                    boolean saved = tasks.complete(device.tenantId(), device.ownerId(), device.id(),
-                            task.id(), task.version(), ClientProjectTask.State.SUCCEEDED,
+                    boolean saved = tasks.completeForDevice(device, task.id(),
+                            task.version(), ClientProjectTask.State.SUCCEEDED,
                             encrypt(safeOutput), "", now);
                     if (!saved) throw stale(device, task.id());
                     record(device.tenantId(), device.ownerId(), task.id(),
@@ -328,7 +392,7 @@ public final class ClientProjectService {
                         operation.version(), operationState, now).orElseThrow(
                                 () -> new IllegalStateException("应用失败状态无法保存"));
             }
-            if (!tasks.complete(device.tenantId(), device.ownerId(), device.id(), task.id(),
+            if (!tasks.completeForDevice(device, task.id(),
                     task.version(), finalState, "", finalError, now)) {
                 throw stale(device, task.id());
             }
@@ -685,7 +749,7 @@ public final class ClientProjectService {
             if (!operations.insert(operation)) {
                 throw new IllegalStateException("设备项目变更操作无法登记");
             }
-            if (!tasks.complete(device.tenantId(), device.ownerId(), device.id(), task.id(),
+            if (!tasks.completeForDevice(device, task.id(),
                     task.version(), ClientProjectTask.State.SUCCEEDED, encrypt(result),
                     "", now)) {
                 throw stale(device, task.id());
@@ -742,7 +806,7 @@ public final class ClientProjectService {
             operations.advance(operation.tenantId(), operation.ownerId(), operation.id(),
                     operation.version(), ClientProjectOperation.State.SUCCEEDED, now)
                     .orElseThrow(() -> new IllegalStateException("变更成功状态无法保存"));
-            if (!tasks.complete(device.tenantId(), device.ownerId(), device.id(), task.id(),
+            if (!tasks.completeForDevice(device, task.id(),
                     task.version(), ClientProjectTask.State.SUCCEEDED, encrypt(result),
                     "", now)) {
                 throw stale(device, task.id());
@@ -784,7 +848,7 @@ public final class ClientProjectService {
                         "同一目录身份已绑定到其他客户端根标识");
             }
             ObjectNode result = json.createObjectNode().put("projectId", project.id().toString());
-            if (!tasks.complete(device.tenantId(), device.ownerId(), device.id(), task.id(),
+            if (!tasks.completeForDevice(device, task.id(),
                     task.version(), ClientProjectTask.State.SUCCEEDED, encrypt(result), "", now)) {
                 throw stale(device, task.id());
             }
@@ -1189,12 +1253,43 @@ public final class ClientProjectService {
     public record TaskStatusView(UUID requestId, String kind, String state, String error,
             JsonNode output, ProjectView project) { }
 
-    /** 设备任务响应，类别和请求均由 Server 固定。 */
-    public record DeviceTaskView(UUID taskId, String category, long version, JsonNode request) {
+    /**
+     * 设备任务响应，类别和请求均由 Server 固定；运行任务同时携带必须核对的代次。
+     *
+     * @param taskId 任务标识
+     * @param category 固定任务类别
+     * @param version 任务版本
+     * @param request 服务端生成的请求
+     * @param runId 绑定的 Run；非运行级查询为空
+     * @param rootId 绑定的客户端根；非运行级查询为空
+     * @param epoch 绑定的防护代次；非运行级查询为 0
+     * @param fencePhase 执行或受限恢复阶段；非运行级查询为空
+     */
+    public record DeviceTaskView(UUID taskId, String category, long version, JsonNode request,
+            UUID runId, UUID rootId, long epoch, String fencePhase) {
         public DeviceTaskView {
             Objects.requireNonNull(taskId);
             Objects.requireNonNull(category);
             Objects.requireNonNull(request);
+            if (runId == null != (rootId == null) || runId == null && epoch != 0
+                    || runId != null && (epoch < 1 || fencePhase == null
+                        || !("EXECUTING".equals(fencePhase) || "RECOVERING".equals(fencePhase)))) {
+                throw new IllegalArgumentException("设备任务代次元数据不合法");
+            }
+        }
+    }
+
+    /**
+     * 设备领取结果：任务或必须先确认的代次二选一，两者均空表示暂时无任务。
+     *
+     * @param task 可直接执行的任务
+     * @param fence 客户端必须先持久确认的代次
+     */
+    public record ClaimDecision(DeviceTaskView task, ClientProjectFenceService.FenceView fence) {
+        public ClaimDecision {
+            if (task != null && fence != null) {
+                throw new IllegalArgumentException("任务和代次确认不能同时返回");
+            }
         }
     }
 

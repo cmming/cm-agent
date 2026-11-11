@@ -82,6 +82,9 @@ final class DeviceIdentityStore {
     /** @return 当前环境是否可使用系统凭据存储 */
     boolean usesSystemStore() { return systemStore != null; }
 
+    /** @return 当前身份及其私有状态文件的绝对目录 */
+    Path stateDirectory() { return directory; }
+
     /**
      * 创建新的设备密钥及待配对元数据。
      *

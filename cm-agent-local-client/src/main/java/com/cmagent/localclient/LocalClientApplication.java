@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 的外部操作。</p>
  */
 public final class LocalClientApplication {
+    private static final String FENCE_FILE = "client-project-fence.log";
     private LocalClientApplication() { }
 
     /** @param arguments 固定子命令和参数 */
@@ -50,6 +51,7 @@ public final class LocalClientApplication {
         return switch (arguments[0]) {
             case "pair" -> pair(parse(arguments));
             case "run" -> runLoop(parse(arguments));
+            case "init-fence-store" -> initializeFenceStore(store(parse(arguments)));
             case "status" -> status();
             case "help", "--help", "-h" -> {
                 usage();
@@ -85,6 +87,7 @@ public final class LocalClientApplication {
                     }
                     if ("CONFIRMED".equals(status.state())) {
                         store.confirm(identity, status.deviceId(), status.tenantId(), status.ownerId());
+                        initializeFenceStore(store);
                         System.out.println("配对完成，设备标识：" + status.deviceId());
                         return 0;
                     }
@@ -115,8 +118,11 @@ public final class LocalClientApplication {
             Runtime.getRuntime().addShutdownHook(new Thread(() -> running.set(false), "cm-agent-local-client-shutdown"));
             try (var executor = new LocalClientTaskExecutor(json);
                  var client = new LocalClientServerClient(json, new SecureRandom())) {
+                var handshake = new ClientProjectFenceHandshake(client,
+                        ClientProjectRootStore.forCurrentUser(json),
+                        new ClientProjectFenceJournal(store.stateDirectory().resolve(FENCE_FILE)));
                 System.out.println("本机客户端已启动，设备标识：" + identity.metadata().deviceId());
-                consumeTasks(identity, executor, client, running);
+                consumeTasks(identity, executor, client, running, handshake);
             }
             return 0;
         } finally {
@@ -134,13 +140,36 @@ public final class LocalClientApplication {
      */
     static void consumeTasks(DeviceIdentityStore.StoredIdentity identity, LocalClientTaskExecutor executor,
             LocalClientServerClient client, AtomicBoolean running) throws Exception {
+        consumeTasks(identity, executor, client, running, null);
+    }
+
+    /**
+     * 持有执行器期间持续领取任务，并在每个运行级任务执行前核对持久代次。
+     *
+     * @param handshake 已初始化见证的服务端代次握手；为空只供旧测试装配
+     */
+    static void consumeTasks(DeviceIdentityStore.StoredIdentity identity, LocalClientTaskExecutor executor,
+            LocalClientServerClient client, AtomicBoolean running, ClientProjectFenceHandshake handshake)
+            throws Exception {
         boolean projectTurn = true;
         while (running.get()) {
             java.util.Optional<LocalClientServerClient.Task> task;
             try {
                 // 两类任务使用独立端点；交替轮询避免同一最小时间片长期饿死另一队列。
-                task = projectTurn ? client.nextProjectTask(identity) : client.nextTask(identity);
-                projectTurn = !projectTurn;
+                try {
+                    task = projectTurn ? client.nextProjectTask(identity) : client.nextTask(identity);
+                    projectTurn = !projectTurn;
+                } catch (LocalClientServerClient.FenceRequiredException required) {
+                    if (handshake == null) throw required;
+                    try {
+                        handshake.synchronize(identity, required.runId());
+                    } catch (java.io.IOException unavailable) {
+                        // 代次读取或确认响应可能丢失；本机见证已先落盘，重新核对后再继续。
+                        System.err.println("设备运行代次握手暂不可用；稍后重新核对，不会执行任务");
+                        Thread.sleep(Duration.ofSeconds(5));
+                    }
+                    continue;
+                }
             } catch (LocalClientServerClient.ChallengeRateLimitedException limited) {
                 // 每次空轮询包含挑战和签名请求；限流发生在领取之前，可延迟后重新申请挑战。
                 System.err.println("设备请求过于频繁，稍后自动恢复连接");
@@ -161,7 +190,15 @@ public final class LocalClientApplication {
                 continue;
             }
             var current = task.orElseThrow();
-            var outcome = executor.execute(identity, current);
+            current.requireValidFence();
+            if (current.fencedProjectTask() && handshake == null) {
+                throw new LocalClientServerClient.ClientFailureException(
+                        "设备项目任务缺少本机代次见证，请使用已初始化状态目录重启客户端", null);
+            }
+            var outcome = current.fencedProjectTask()
+                    ? handshake.executeTask(identity, current.runId(), current.rootId(), current.epoch(),
+                            current.fencePhase(), current.category(), () -> executor.execute(identity, current))
+                    : executor.execute(identity, current);
             if (current.category() != null && current.category().startsWith("PROJECT_")) {
                 try {
                     client.reportProjectTask(identity, current, outcome.state(),
@@ -186,6 +223,13 @@ public final class LocalClientApplication {
                 }
             }
         }
+    }
+
+    private static int initializeFenceStore(DeviceIdentityStore store) throws java.io.IOException {
+        var journal = new ClientProjectFenceJournal(store.stateDirectory().resolve(FENCE_FILE));
+        journal.initializeStore();
+        System.out.println("设备项目运行代次见证已初始化");
+        return 0;
     }
 
     private static int status() throws Exception {
@@ -263,6 +307,7 @@ public final class LocalClientApplication {
                 CM Agent 本机客户端
                   pair --server <URL> --name <设备名称> [--state-dir <目录>]
                   run [--state-dir <目录>]
+                  init-fence-store [--state-dir <目录>]
                   status
                 """);
     }

@@ -7,6 +7,7 @@ import com.cmagent.core.security.OperationAuthorizationMode;
 import com.cmagent.core.security.PermissionEvaluator;
 import com.cmagent.server.audit.AuditAppender;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -33,6 +34,10 @@ public final class ClientProjectRunService {
     private final TransactionTemplate transaction;
     private final Clock clock;
     private final ClientProjectReadSnapshots snapshots;
+    /** 生产装配时在 Run、来源和首代归属的同一事务内建立执行许可。 */
+    private final ClientProjectRunOwnershipRepository ownership;
+    private final ClientProjectRuntimeIdentity runtimeIdentity;
+    private final Duration ownershipLease;
     /** HTTP 派生入口同样要求精确来源和专用行动头；内部异步调用仍只使用持久来源与可信主体。 */
     private ClientProjectRequestBoundary boundary;
 
@@ -47,6 +52,24 @@ public final class ClientProjectRunService {
             ClientProjectToolCatalog catalog, PermissionEvaluator permissions,
             AuditAppender audit, TransactionTemplate transaction, Clock clock,
             ClientProjectReadSnapshots snapshots) {
+        this(runs, projects, bindings, agents, conversations, grants, catalog, permissions,
+                audit, transaction, clock, snapshots, null, null, null);
+    }
+
+    /**
+     * 生产构造器固定当前实例和租期，使协议 5 Run 来源与首代归属不可分离。
+     *
+     * @param ownership Run 执行归属仓储
+     * @param runtimeIdentity 当前 Server 进程随机身份
+     * @param ownershipLease 一秒至五分钟的首代租期
+     */
+    ClientProjectRunService(RunRepository runs, ClientProjectRepository projects,
+            ClientProjectBindingRepository bindings, AgentDefinitionRepository agents,
+            ConversationRepository conversations, ToolGrantRepository grants,
+            ClientProjectToolCatalog catalog, PermissionEvaluator permissions,
+            AuditAppender audit, TransactionTemplate transaction, Clock clock,
+            ClientProjectReadSnapshots snapshots, ClientProjectRunOwnershipRepository ownership,
+            ClientProjectRuntimeIdentity runtimeIdentity, Duration ownershipLease) {
         this.runs = runs;
         this.projects = projects;
         this.bindings = bindings;
@@ -59,6 +82,9 @@ public final class ClientProjectRunService {
         this.transaction = transaction;
         this.clock = clock;
         this.snapshots = snapshots;
+        this.ownership = ownership;
+        this.runtimeIdentity = runtimeIdentity;
+        this.ownershipLease = ownershipLease;
     }
 
     /** 在短事务外验证会话来源；返回带当前 Run 的固定绑定。 */
@@ -146,6 +172,10 @@ public final class ClientProjectRunService {
         }
         snapshots.initialize(new PrincipalRef(binding.tenantId(), binding.ownerId(),
                 binding.ownerId(), Set.of()), binding);
+        if (ownership != null && runtimeIdentity != null && ownershipLease != null
+                && ownership.insertInitial(binding, runtimeIdentity.instanceId(), ownershipLease).isEmpty()) {
+            throw new IllegalStateException("设备项目Run首代执行归属无法原子保存");
+        }
     }
 
     /** @return 当前Run匹配的设备项目和只读工具集合；普通Run为空 */

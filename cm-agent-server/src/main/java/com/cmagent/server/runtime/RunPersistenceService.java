@@ -54,6 +54,7 @@ public class RunPersistenceService {
     RunRecord requestCancellation(PrincipalRef principal, RunRecord snapshot) {
         java.util.function.Supplier<RunRecord> operation = () -> {
             if (transactionTemplate == null) auditStop(principal, snapshot, "CANCELLING", "本轮停止请求已接受");
+            requireClientProjectOwnership(snapshot);
             if (!runRepository.requestCancellation(snapshot)) {
                 throw new org.springframework.web.server.ResponseStatusException(HttpStatus.CONFLICT, "运行状态已变化，请刷新后核对");
             }
@@ -82,6 +83,13 @@ public class RunPersistenceService {
     /** Spring 在服务投入使用前完成装配，避免扩大旧构造器调用方范围。 */
     @Autowired
     void configureArtifacts(SkillArtifactService artifacts) { this.artifacts=artifacts; }
+    /** JDBC 设备项目启用时保护 Run 状态写入并收口持久归属。 */
+    private ClientProjectRunRecoveryService clientProjectRecovery;
+    @Autowired
+    void configureClientProjectRecovery(
+            org.springframework.beans.factory.ObjectProvider<ClientProjectRunRecoveryService> provider) {
+        clientProjectRecovery = provider.getIfAvailable();
+    }
 
     @Autowired
     /**
@@ -220,6 +228,7 @@ public class RunPersistenceService {
             return waiting;
         }
         return requireResult(transactionTemplate.execute(status -> {
+            requireClientProjectOwnership(runningRun);
             RunRecord waiting = runningRun.status() == RunStatus.WAITING_APPROVAL ? runningRun
                     : runRepository.waitForApproval(principal.tenantId(), runningRun.id());
             toolCallRepository.saveAll(principal.tenantId(), new RunToolCallBatch(principal.tenantId(), toolCalls));
@@ -271,12 +280,14 @@ public class RunPersistenceService {
             }
             final String persistedError = errorMessage;
             RunRecord completedRow = requireResult(transactionTemplate.execute(transactionStatus -> {
+                requireClientProjectOwnership(runningRun);
                 RunRecord row = runRepository.complete(
                         principal.tenantId(), runningRun.id(), status, output, persistedError, finishedAt
                 );
                 toolCallRepository.saveAll(principal.tenantId(), new RunToolCallBatch(principal.tenantId(), toolCalls));
                 appendAudit(principal, row, status, completionMessage(status));
                 if(artifacts!=null)artifacts.finalizeRun(row);
+                if (clientProjectRecovery != null) clientProjectRecovery.closeAfterTerminal(row);
                 return row;
             }));
             log.info("Agent 运行完成。runId={}, tenantId={}, agentId={}, status={}, toolCallCount={}", completedRow.id(), completedRow.tenantId(), completedRow.agentId(), status, toolCalls.size());
@@ -312,10 +323,16 @@ public class RunPersistenceService {
             return failed;
         }
         return requireResult(transactionTemplate.execute(transactionStatus -> {
+            requireClientProjectOwnership(runningRun);
             RunRecord failed=runRepository.complete(principal.tenantId(),runningRun.id(),RunStatus.FAILED,"",CONTROLLED_FAILURE,finishedAt);
             if(artifacts!=null)artifacts.finalizeRun(failed);
+            if (clientProjectRecovery != null) clientProjectRecovery.closeAfterTerminal(failed);
             return failed;
         }));
+    }
+
+    private void requireClientProjectOwnership(RunRecord run) {
+        if (clientProjectRecovery != null) clientProjectRecovery.requireCurrentOwnership(run);
     }
 
     /**

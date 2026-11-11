@@ -31,6 +31,21 @@ public class JdbcRunRepository implements RunRepository {
                 .param("tenant", snapshot.tenantId().toString()).param("run", snapshot.id().toString()).param("agent", snapshot.agentId().toString())
                 .param("owner", snapshot.principalId()).param("status", snapshot.status().name()).param("started", Timestamp.from(snapshot.startedAt())).update() == 1;
     }
+    /** 设备确认恢复代次后才收口协议 5 Run；未知外部副作用继续由任务/命令记录隔离。 */
+    @Override public boolean failClientProjectRecovered(RunRecord snapshot, Instant finishedAt) {
+        if (snapshot.kind() != RunKind.NORMAL || !snapshot.status().isActive()) return false;
+        Instant end = finishedAt.isBefore(snapshot.startedAt()) ? snapshot.startedAt() : finishedAt;
+        return jdbcClient.sql("UPDATE runs SET status='FAILED',error_message=:reason,finished_at=:finished"
+                + " WHERE tenant_id=:tenant AND id=:run AND agent_id=:agent AND "
+                + JdbcOwnerPredicate.equal(jdbcClient, "principal_id", ":owner")
+                + " AND run_kind='NORMAL' AND workspace_protocol=5 AND status=:status AND started_at=:started")
+                .param("reason", RunRepository.CLIENT_PROJECT_RECOVERY_FAILURE_MESSAGE)
+                .param("finished", Timestamp.from(end))
+                .param("tenant", snapshot.tenantId().toString()).param("run", snapshot.id().toString())
+                .param("agent", snapshot.agentId().toString()).param("owner", snapshot.principalId())
+                .param("status", snapshot.status().name()).param("started", Timestamp.from(snapshot.startedAt()))
+                .update() == 1;
+    }
     /**
      * 固定别名 r 的项目安全见证，独立于可损坏的来源头；所有派生关联保持 tenant 一致。
      * 已有本机绑定即使 owner/Agent 字段不一致也不能退回旧列表；实际可见性由上层项目闸门核验。
@@ -186,6 +201,10 @@ public class JdbcRunRepository implements RunRepository {
                 .param("finishedAt", run.finishedAt() == null ? null : Timestamp.from(run.finishedAt()))
                 .param("workspaceProtocol", protocol)
                 .update();
+        if (protocol == 5 && run.kind() == RunKind.NORMAL && run.status() == RunStatus.RUNNING) {
+            // 只有同一事务中刚插入的运行才能建立首代归属；历史失联 Run 不能补造执行许可。
+            ClientProjectRunCreationWitness.inserted(run);
+        }
         return run;
     }
     /** 来源见证独立于选择/检查点；丢失Run不能伪装成旧记录。 */

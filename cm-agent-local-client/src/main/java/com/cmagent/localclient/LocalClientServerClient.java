@@ -38,14 +38,18 @@ final class LocalClientServerClient implements AutoCloseable {
     private static final String SIGNATURE_HEADER = "X-CM-Signature";
     private final ObjectMapper json;
     private final SecureRandom random;
-    private final HttpClient http = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .followRedirects(HttpClient.Redirect.NEVER)
-            .build();
+    private final HttpClient http;
 
     LocalClientServerClient(ObjectMapper json, SecureRandom random) {
+        this(json, random, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
+                .followRedirects(HttpClient.Redirect.NEVER).build());
+    }
+
+    /** 同包测试可注入具有测试 CA 的客户端；生产构造使用 JVM 默认信任校验并禁止重定向。 */
+    LocalClientServerClient(ObjectMapper json, SecureRandom random, HttpClient http) {
         this.json = Objects.requireNonNull(json);
         this.random = Objects.requireNonNull(random);
+        this.http = Objects.requireNonNull(http);
     }
 
     /**
@@ -114,13 +118,20 @@ final class LocalClientServerClient implements AutoCloseable {
      */
     Optional<Task> nextProjectTask(DeviceIdentityStore.StoredIdentity identity)
             throws IOException, InterruptedException, GeneralSecurityException {
-        byte[] body = "{\"selectionProtocol\":1}".getBytes(StandardCharsets.UTF_8);
+        byte[] body = "{\"selectionProtocol\":1,\"fenceProtocol\":1}".getBytes(StandardCharsets.UTF_8);
         URI endpoint = resolve(identityServer(identity),
                 "/api/local-client/bootstrap/project-tasks/next");
         HttpResponse<String> response = signedPost(identity, endpoint, body,
                 Map.of("X-CM-Client-Project-Protocol",
                         Integer.toString(com.cmagent.core.domain.ClientProjectBinding.PROTOCOL)));
         if (response.statusCode() == 204) return Optional.empty();
+        if (response.statusCode() == 202) {
+            FenceView fence = decode(response.body(), FenceView.class, "设备代次提示无效");
+            if (fence.runId() == null || fence.rootId() == null || fence.acknowledged() == null) {
+                throw new ClientFailureException("设备代次提示无效", null);
+            }
+            throw new FenceRequiredException(fence.runId());
+        }
         if (response.statusCode() == 401) {
             throw new ClientFailureException(
                     "设备签名未通过、挑战已过期或设备已撤销，请在控制台核对设备和服务状态", null);
@@ -201,6 +212,82 @@ final class LocalClientServerClient implements AutoCloseable {
         if (response.statusCode() >= 500) throw new IOException("设备项目结果服务暂不可用");
         if (response.statusCode() != 204) throw new ClientFailureException(
                 "设备项目任务结果未被接受（HTTP " + response.statusCode() + "），请核对任务状态，勿自动重试", null);
+    }
+
+    /**
+     * 将已经在本机安全落盘的代次以设备签名确认；调用方不得在落盘前调用。
+     *
+     * <p>新代次握手只接受 HTTPS 和配对时固定的服务端来源。设备请求签名只能证明客户端身份，
+     * 因此不能像旧本机测试协议那样接受回环 HTTP 的未认证服务端响应。本方法尚未接入轮询循环。</p>
+     * @param identity 已配对设备身份
+     * @param runId 已固定来源的运行标识
+     * @param epoch 已持久落盘的代次
+     * @throws IOException 传输、认证或服务端拒绝时抛出，不代表本机记录未写入
+     * @throws InterruptedException 线程中断时抛出
+     * @throws GeneralSecurityException 设备签名失败时抛出
+     */
+    void acknowledgeProjectFence(DeviceIdentityStore.StoredIdentity identity, UUID runId, long epoch)
+            throws IOException, InterruptedException, GeneralSecurityException {
+        Objects.requireNonNull(identity); Objects.requireNonNull(runId);
+        if (epoch < 1) throw new IllegalArgumentException("设备代次无效");
+        URI origin = requireFenceHttps(identityServer(identity));
+        if (http.followRedirects() != HttpClient.Redirect.NEVER)
+            throw new ClientFailureException("设备代次握手禁止重定向", null);
+        URI endpoint = resolve(origin, "/api/local-client/bootstrap/project-runs/" + runId + "/fence-ack");
+        byte[] body = ("{\"epoch\":" + epoch + "}").getBytes(StandardCharsets.US_ASCII);
+        HttpResponse<String> response = signedPost(identity, endpoint, body,
+                Map.of("X-CM-Client-Project-Protocol",
+                        Integer.toString(com.cmagent.core.domain.ClientProjectBinding.PROTOCOL)));
+        if (!response.uri().equals(endpoint) || response.sslSession().isEmpty())
+            throw new ClientFailureException("设备代次握手的服务端身份不可验证", null);
+        if (response.statusCode() >= 500) throw new IOException("设备代次确认服务暂不可用");
+        if (response.statusCode() != 204) throw new ClientFailureException(
+                "设备代次确认被拒绝，请核对运行和设备状态", null);
+    }
+
+    /**
+     * 以签名请求从可信 HTTPS 服务端读取运行代次，结果仍须由本机根注册和日志复核。
+     * @param identity 已配对设备身份
+     * @param runId 已知目标运行
+     * @return 服务端给出的有效阶段、代次及不透明根身份
+     * @throws IOException 网络、服务端身份或响应无效时抛出
+     * @throws InterruptedException 等待被中断时抛出
+     * @throws GeneralSecurityException 设备签名失败时抛出
+     */
+    FenceView currentProjectFence(DeviceIdentityStore.StoredIdentity identity, UUID runId)
+            throws IOException, InterruptedException, GeneralSecurityException {
+        Objects.requireNonNull(identity); Objects.requireNonNull(runId);
+        URI origin = requireFenceHttps(identityServer(identity));
+        if (http.followRedirects() != HttpClient.Redirect.NEVER)
+            throw new ClientFailureException("设备代次握手禁止重定向", null);
+        URI endpoint = resolve(origin, "/api/local-client/bootstrap/project-runs/" + runId + "/fence-current");
+        HttpResponse<String> response = signedPost(identity, endpoint,
+                "{\"fenceProtocol\":1}".getBytes(StandardCharsets.US_ASCII),
+                Map.of("X-CM-Client-Project-Protocol",
+                        Integer.toString(com.cmagent.core.domain.ClientProjectBinding.PROTOCOL)));
+        if (!response.uri().equals(endpoint) || response.sslSession().isEmpty())
+            throw new ClientFailureException("设备代次握手的服务端身份不可验证", null);
+        if (response.statusCode() >= 500) throw new IOException("设备代次读取服务暂不可用");
+        if (response.statusCode() != 200) throw new ClientFailureException("设备运行代次不可用，请核对运行和设备状态", null);
+        FenceView view = decode(response.body(), FenceView.class, "设备代次响应无效");
+        if (!runId.equals(view.runId()) || view.rootId() == null || view.rootIdentity() == null
+                || !view.rootIdentity().matches("[0-9a-f]{64}") || view.epoch() < 1
+                || view.acknowledged() == null
+                || !("EXECUTING".equals(view.phase()) || "RECOVERING".equals(view.phase()))) {
+            throw new ClientFailureException("设备代次响应无效", null);
+        }
+        return view;
+    }
+
+    /** 代次协议必须认证服务端；拒绝明文回环、用户信息和可改变来源的附加 URI 部分。 */
+    static URI requireFenceHttps(URI origin) throws IOException {
+        if (origin == null || !"https".equalsIgnoreCase(origin.getScheme()) || origin.getHost() == null
+                || origin.getRawUserInfo() != null || origin.getRawQuery() != null || origin.getRawFragment() != null
+                || origin.getPort() < -1 || origin.getPort() == 0 || origin.getPort() > 65535
+                || origin.getRawPath() != null && !origin.getRawPath().isEmpty() && !"/".equals(origin.getRawPath())) {
+            throw new ClientFailureException("设备代次握手需要可信 HTTPS 服务端来源", null);
+        }
+        return origin;
     }
 
     private HttpResponse<String> signedPost(DeviceIdentityStore.StoredIdentity identity, URI endpoint, byte[] body)
@@ -320,12 +407,35 @@ final class LocalClientServerClient implements AutoCloseable {
      * @param version 领取时的条件版本
      * @param request 已由服务端约束并加密传输的任务请求
      */
-    record Task(UUID taskId, UUID operationId, String category, long version, JsonNode request) {
+    record Task(UUID taskId, UUID operationId, String category, long version, JsonNode request,
+            UUID runId, UUID rootId, Long epoch, String fencePhase) {
+        /** 兼容既有项目任务测试和未携带栅栏的旧响应夹具。 */
+        Task(UUID taskId, UUID operationId, String category, long version, JsonNode request) {
+            this(taskId, operationId, category, version, request, null, null, null, null);
+        }
+
         /** 兼容不包含项目任务标识的通用本机操作响应。 */
         Task(UUID operationId, String category, long version, JsonNode request) {
-            this(null, operationId, category, version, request);
+            this(null, operationId, category, version, request, null, null, null, null);
+        }
+
+        /** @return 是否包含运行代次字段 */
+        boolean fencedProjectTask() {
+            return runId != null || rootId != null || epoch != null || fencePhase != null;
+        }
+
+        /** 运行级任务必须完整携带 Run、根、正代次和允许阶段。 */
+        void requireValidFence() {
+            if (!fencedProjectTask()) return;
+            if (runId == null || rootId == null || epoch == null || epoch < 1
+                    || !("EXECUTING".equals(fencePhase) || "RECOVERING".equals(fencePhase))) {
+                throw new IllegalArgumentException("运行任务代次元数据无效");
+            }
         }
     }
+
+    /** @param runId 运行标识 @param rootId 设备根标识 @param rootIdentity 根身份摘要 @param epoch 防护代次 @param phase 当前阶段 @param acknowledged 设备是否已确认 */
+    record FenceView(UUID runId, UUID rootId, String rootIdentity, long epoch, String phase, Boolean acknowledged) { }
 
     private record ChallengeRequest(UUID deviceId) { }
     private record ResultPayload(String state, long expectedVersion, JsonNode output, String error) { }
@@ -338,6 +448,17 @@ final class LocalClientServerClient implements AutoCloseable {
     /** 项目任务的迟到或冲突回执不能重发，但不应永久占住客户端轮询。 */
     static final class ProjectResultRejectedException extends IOException {
         ProjectResultRejectedException(int status) { super("设备项目结果未被接受（HTTP " + status + "），请在控制台核对原请求"); }
+    }
+
+    /** 服务端要求客户端先落盘并确认运行代次，确认成功后重新领取即可。 */
+    static final class FenceRequiredException extends IOException {
+        private final UUID runId;
+        FenceRequiredException(UUID runId) {
+            super("设备项目需要先确认运行代次");
+            this.runId = runId;
+        }
+
+        UUID runId() { return runId; }
     }
 
     /** 挑战端点限流发生在任务领取之前；仅此阶段允许调用方有界延后重试。 */

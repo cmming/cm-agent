@@ -356,7 +356,7 @@ public final class ClientProjectCommandService implements AutoCloseable {
                     || output.toString().length() > MAX_COMMAND_BYTES) {
                 throw new IllegalArgumentException("工具链清单无效或过大");
             }
-            if (!tasks.complete(device.tenantId(), device.ownerId(), device.id(), task.id(),
+            if (!tasks.completeForDevice(device, task.id(),
                     task.version(), ClientProjectTask.State.SUCCEEDED, encrypt(output), "", now)) {
                 throw new IllegalStateException("工具链清单任务终态无法保存");
             }
@@ -390,7 +390,7 @@ public final class ClientProjectCommandService implements AutoCloseable {
                                             () -> new IllegalStateException("命令失败状态无法保存"));
                         });
             }
-            if (!tasks.complete(device.tenantId(), device.ownerId(), device.id(), task.id(),
+            if (!tasks.completeForDevice(device, task.id(),
                     task.version(), state, "", safeError, now)) {
                 throw new IllegalStateException("命令任务终态无法保存");
             }
@@ -565,7 +565,7 @@ public final class ClientProjectCommandService implements AutoCloseable {
         result.set("preview", output.path("preview").deepCopy());
         inTransaction(() -> {
             if (!commands.insert(command)) throw new IllegalStateException("命令计划无法保存");
-            if (!tasks.complete(device.tenantId(), device.ownerId(), device.id(), task.id(),
+            if (!tasks.completeForDevice(device, task.id(),
                     task.version(), ClientProjectTask.State.SUCCEEDED, encrypt(result), "", now)) {
                 throw new IllegalStateException("命令计划任务终态无法保存");
             }
@@ -639,7 +639,7 @@ public final class ClientProjectCommandService implements AutoCloseable {
                         command.version(), next).orElseThrow(
                                 () -> new IllegalStateException("命令状态版本已变化"));
             }
-            if (!tasks.complete(device.tenantId(), device.ownerId(), device.id(), task.id(),
+            if (!tasks.completeForDevice(device, task.id(),
                     task.version(), ClientProjectTask.State.SUCCEEDED, encrypt(result), "", now)) {
                 throw new IllegalStateException("命令状态任务终态无法保存");
             }

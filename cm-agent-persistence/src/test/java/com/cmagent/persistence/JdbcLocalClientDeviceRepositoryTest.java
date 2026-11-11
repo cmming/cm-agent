@@ -7,21 +7,26 @@ import com.cmagent.core.domain.LocalClientPairing;
 import com.cmagent.core.domain.Conversation;
 import com.cmagent.core.domain.ClientProject;
 import com.cmagent.core.domain.ClientProjectBinding;
+import com.cmagent.core.domain.ClientProjectRunOwnership;
 import com.cmagent.core.domain.ClientProjectCommand;
+import com.cmagent.core.domain.ClientProjectOperation;
 import com.cmagent.core.domain.ClientProjectTask;
 import com.cmagent.core.domain.ConversationMessageDraft;
 import com.cmagent.core.domain.MessageContentBlock;
 import com.cmagent.core.domain.MessageRole;
 import com.cmagent.core.domain.RunRecord;
+import com.cmagent.core.audit.AuditEvent;
 import com.cmagent.core.security.OperationAuthorizationMode;
 import com.cmagent.core.security.OperationAuthorizationSnapshot;
 import com.cmagent.core.security.OperationCategory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.security.KeyPairGenerator;
 import java.time.Instant;
+import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -50,11 +55,33 @@ class JdbcLocalClientDeviceRepositoryTest {
     @Test void PostgreSQL设备隔离撤销和挑战单次消费() throws Exception { verify(POSTGRES); }
     @Test void MySQL设备隔离撤销和挑战单次消费() throws Exception { verify(MYSQL); }
 
+    private static javax.sql.DataSource dataSource(TransactionTemplate transaction) {
+        return java.util.Objects.requireNonNull(
+                ((DataSourceTransactionManager) transaction.getTransactionManager()).getDataSource());
+    }
+
+    private static boolean insertFenced(TransactionTemplate transaction,
+            JdbcClientProjectFencedTaskWriter writer, ClientProjectTask task, UUID instance, long epoch) {
+        return Boolean.TRUE.equals(transaction.execute(status -> writer.insert(task, instance, epoch)));
+    }
+
     private void verify(JdbcDatabaseContainer<?> database) throws Exception {
         var source = new DriverManagerDataSource(database.getJdbcUrl(), database.getUsername(), database.getPassword());
         CmAgentFlyway.configure(source).load().migrate();
         var jdbc = JdbcClient.create(source);
         var transaction = new TransactionTemplate(new DataSourceTransactionManager(source));
+        // 相同连接参数也不能证明两个数据源共享事务资源，必须拒绝错误装配。
+        var otherSource = new DriverManagerDataSource(database.getJdbcUrl(), database.getUsername(), database.getPassword());
+        assertThatThrownBy(() -> new JdbcClientProjectRunOwnershipRepository(otherSource, transaction))
+                .isInstanceOf(IllegalArgumentException.class);
+        var ownershipGuard = new JdbcClientProjectRunOwnershipRepository(source, transaction);
+        var otherTransaction = new TransactionTemplate(new DataSourceTransactionManager(otherSource));
+        otherTransaction.executeWithoutResult(status -> {
+            jdbc.sql("SELECT 1").query(Integer.class).single();
+            assertThatThrownBy(() -> ownershipGuard.lockExecution(UUID.randomUUID(), "Owner",
+                    UUID.randomUUID(), UUID.randomUUID(), 1))
+                    .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
+        });
         var devices = new JdbcLocalClientDeviceRepository(jdbc, transaction);
         UUID tenant = UUID.randomUUID();
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
@@ -272,12 +299,67 @@ class JdbcLocalClientDeviceRepositoryTest {
         assertThat(bindings.conversation(tenant, "owner", conversation.id())).isEmpty();
         var run = RunRecord.create(UUID.randomUUID(), tenant, agent, "Owner", "命令验收", now);
         var runRows = new JdbcRunRepository(jdbc);
-        runRows.saveWithWorkspaceProtocol(tenant, run, 5);
-        new JdbcConversationMessageRepository(jdbc, new ObjectMapper(), transaction).append(tenant,
-                new ConversationMessageDraft(UUID.randomUUID(), tenant, conversation.id(), MessageRole.USER,
-                        "测试", List.of(MessageContentBlock.text("命令验收")), run.id(), now));
-        assertThat(bindings.insertRun(new ClientProjectBinding(tenant, "Owner", projectId, agent,
-                conversation.id(), run.id(), device.id(), rootId, project.rootIdentity(), 1, now))).isTrue();
+        var runBinding = new ClientProjectBinding(tenant, "Owner", projectId, agent,
+                conversation.id(), run.id(), device.id(), rootId, project.rootIdentity(), 1, now);
+        UUID instance = UUID.randomUUID();
+        var ownership = new JdbcClientProjectRunOwnershipRepository(dataSource(transaction), transaction);
+        var firstOwnership = transaction.execute(status -> {
+            runRows.saveWithWorkspaceProtocol(tenant, run, 5);
+            new JdbcConversationMessageRepository(jdbc, new ObjectMapper(), transaction).append(tenant,
+                    new ConversationMessageDraft(UUID.randomUUID(), tenant, conversation.id(), MessageRole.USER,
+                            "测试", List.of(MessageContentBlock.text("命令验收")), run.id(), now));
+            assertThat(bindings.insertRun(runBinding)).isTrue();
+            return ownership.insertInitial(runBinding, instance, Duration.ofSeconds(5)).orElseThrow();
+        });
+        var fencedWriter = new JdbcClientProjectFencedTaskWriter(ownership);
+        var fencedTask = new ClientProjectTask(UUID.randomUUID(), tenant, "Owner", device.id(), projectId,
+                run.id(), agent, conversation.id(), null, null, ClientProjectTask.Kind.PLAN_CHANGE,
+                "密文", ClientProjectTask.State.PENDING, "", "", now, now.plusSeconds(60), null, null, 1);
+        assertThatThrownBy(() -> fencedWriter.insert(fencedTask, instance, 1)).isInstanceOf(IllegalStateException.class);
+        assertThat(insertFenced(transaction, fencedWriter, fencedTask, UUID.randomUUID(), 1)).isFalse();
+        assertThat(insertFenced(transaction, fencedWriter, fencedTask, instance, 2)).isFalse();
+        assertThat(tasks.findForOwner(tenant, "Owner", fencedTask.id())).isEmpty();
+        var otherOwnerTask = new ClientProjectTask(UUID.randomUUID(), tenant, "owner", device.id(), projectId,
+                run.id(), agent, conversation.id(), null, null, ClientProjectTask.Kind.PLAN_CHANGE,
+                "密文", ClientProjectTask.State.PENDING, "", "", now, now.plusSeconds(60), null, null, 1);
+        var otherTenantTask = new ClientProjectTask(UUID.randomUUID(), UUID.randomUUID(), "Owner", device.id(), projectId,
+                run.id(), agent, conversation.id(), null, null, ClientProjectTask.Kind.PLAN_CHANGE,
+                "密文", ClientProjectTask.State.PENDING, "", "", now, now.plusSeconds(60), null, null, 1);
+        assertThat(insertFenced(transaction, fencedWriter, otherOwnerTask, instance, 1)).isFalse();
+        assertThat(insertFenced(transaction, fencedWriter, otherTenantTask, instance, 1)).isFalse();
+        var mismatchedTask = new ClientProjectTask(UUID.randomUUID(), tenant, "Owner", device.id(), UUID.randomUUID(),
+                run.id(), agent, conversation.id(), null, null, ClientProjectTask.Kind.PLAN_CHANGE,
+                "密文", ClientProjectTask.State.PENDING, "", "", now, now.plusSeconds(60), null, null, 1);
+        assertThat(insertFenced(transaction, fencedWriter, mismatchedTask, instance, 1)).isFalse();
+        transaction.executeWithoutResult(status -> {
+            assertThat(fencedWriter.insert(fencedTask, instance, 1)).isTrue();
+            status.setRollbackOnly();
+        });
+        assertThat(tasks.findForOwner(tenant, "Owner", fencedTask.id())).isEmpty();
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM client_project_task_fences WHERE tenant_id=:tenant AND task_id=:task")
+                .param("tenant", tenant.toString()).param("task", fencedTask.id().toString())
+                .query(Long.class).single()).isZero();
+        assertThat(insertFenced(transaction, fencedWriter, fencedTask, instance, 1)).isTrue();
+        assertThat(jdbc.sql("SELECT epoch FROM client_project_task_fences WHERE tenant_id=:tenant AND task_id=:task")
+                .param("tenant", tenant.toString()).param("task", fencedTask.id().toString())
+                .query(Long.class).single()).isEqualTo(1L);
+        assertThat(tasks.claimNext(tenant, "Owner", device.id(), now)).isEmpty();
+        assertThat(tasks.claimNext(tenant, "Owner", device.id(), now.plusSeconds(61))).isEmpty();
+        assertThat(tasks.findForOwner(tenant, "Owner", fencedTask.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectTask.State.PENDING);
+        assertThat(tasks.close(tenant, "Owner", device.id(), fencedTask.id(), 1,
+                ClientProjectTask.State.CANCELLED, "测试关闭", now)).isFalse();
+        verifyRunOwnership(jdbc, transaction, runBinding, instance, firstOwnership);
+        assertThat(tasks.findForOwner(tenant, "Owner", fencedTask.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectTask.State.CANCELLED);
+        // 升级前已单独提交的 RUNNING 来源没有创建事务见证，不能补造首代执行权。
+        var legacyRun = RunRecord.create(UUID.randomUUID(), tenant, agent, "Owner", "历史运行", now);
+        runRows.saveWithWorkspaceProtocol(tenant, legacyRun, 5);
+        var legacyBinding = new ClientProjectBinding(tenant, "Owner", projectId, agent,
+                conversation.id(), legacyRun.id(), device.id(), rootId, project.rootIdentity(), 1, now);
+        assertThat(bindings.insertRun(legacyBinding)).isTrue();
+        assertThat(transaction.<Optional<ClientProjectRunOwnership>>execute(status ->
+                ownership.insertInitial(legacyBinding, UUID.randomUUID(), Duration.ofSeconds(5)))).isEmpty();
         assertThat(runRows.workspaceProtocol(tenant, agent, run.id())).isEqualTo(5);
         assertThat(bindings.run(tenant, "owner", run.id())).isEmpty();
         var proposed = new ClientProjectCommand(UUID.randomUUID(), tenant, "Owner", projectId, agent,
@@ -327,6 +409,334 @@ class JdbcLocalClientDeviceRepositoryTest {
         assertThat(commands.update(tenant, "Owner", proposed.id(), unknown.version(), completed)).contains(completed);
         assertThat(commands.find(tenant, "Owner", proposed.id())).contains(completed);
         assertThat(commands.hasUnsettledForProject(tenant, "Owner", projectId)).isFalse();
+        verifyRecoveryIsolation(jdbc, transaction, device, agent, now);
+    }
+
+    /** 验证隔离与审计回调失败一起回滚，成功时保留未知副作用。 */
+    private void verifyRecoveryIsolation(JdbcClient jdbc, TransactionTemplate transaction,
+            LocalClientDevice device, UUID agent, Instant now) throws Exception {
+        UUID tenant = device.tenantId(), projectId = UUID.randomUUID(), rootId = UUID.randomUUID();
+        var projects = new JdbcClientProjectRepository(jdbc, transaction);
+        var bindings = new JdbcClientProjectBindingRepository(jdbc, transaction);
+        var commands = new JdbcClientProjectCommandRepository(jdbc, transaction);
+        var operations = new JdbcClientProjectOperationRepository(jdbc, transaction);
+        var tasks = new JdbcClientProjectTaskRepository(jdbc, transaction);
+        var ownership = new JdbcClientProjectRunOwnershipRepository(dataSource(transaction), transaction);
+        UUID instance = UUID.randomUUID();
+        var productionTasks = new JdbcClientProjectTaskRepository(jdbc, transaction, ownership, instance);
+        var recoveryRepository = new JdbcClientProjectRunRecoveryRepository(jdbc, transaction);
+        var isolation = new JdbcClientProjectRunIsolation(ownership);
+        var project = new ClientProject(projectId, tenant, "Owner", device.id(), rootId,
+                "d".repeat(64), "恢复隔离项目", ClientProject.State.ACTIVE, 1, now, now);
+        assertThat(projects.insert(project)).isTrue();
+        var conversation = new Conversation(UUID.randomUUID(), tenant, agent, "恢复隔离", "Owner", now, now);
+        new JdbcConversationRepository(jdbc).save(tenant, conversation);
+        assertThat(bindings.insertConversation(new ClientProjectBinding(tenant, "Owner", projectId,
+                agent, conversation.id(), null, device.id(), rootId, project.rootIdentity(), 1, now))).isTrue();
+        var run = RunRecord.create(UUID.randomUUID(), tenant, agent, "Owner", "恢复隔离", now);
+        var binding = new ClientProjectBinding(tenant, "Owner", projectId, agent, conversation.id(),
+                run.id(), device.id(), rootId, project.rootIdentity(), 1, now);
+        transaction.executeWithoutResult(status -> {
+            new JdbcRunRepository(jdbc).saveWithWorkspaceProtocol(tenant, run, 5);
+            assertThat(bindings.insertRun(binding)).isTrue();
+            assertThat(ownership.insertInitial(binding, instance, Duration.ofSeconds(8))).isPresent();
+        });
+        var acknowledgements = new JdbcClientProjectFenceAcknowledgements(ownership);
+        var reader = new JdbcClientProjectFencedTaskReader(ownership);
+        var fencedDispatched = new ClientProjectTask(UUID.randomUUID(), tenant, "Owner", device.id(), projectId,
+                run.id(), agent, conversation.id(), null, null, ClientProjectTask.Kind.PLAN_CHANGE,
+                "密文", ClientProjectTask.State.PENDING, "", "", now, now.plusSeconds(60), null, null, 1);
+        assertThat(insertFenced(transaction, new JdbcClientProjectFencedTaskWriter(ownership),
+                fencedDispatched, instance, 1)).isTrue();
+        assertThatThrownBy(() -> reader.claim(device)).isInstanceOf(IllegalStateException.class);
+        assertThat(transaction.<Optional<JdbcClientProjectFencedTaskReader.Claim>>execute(status -> reader.claim(device)))
+                .isEmpty();
+        assertThatThrownBy(() -> acknowledgements.lockConfirmed(device, run.id(), instance, 1,
+                ClientProjectRunOwnership.Phase.EXECUTING)).isInstanceOf(IllegalStateException.class);
+        assertThat(transaction.<Boolean>execute(status -> acknowledgements.lockConfirmed(device, run.id(), instance, 1,
+                ClientProjectRunOwnership.Phase.EXECUTING))).isFalse();
+        var wrongOwner = new LocalClientDevice(device.id(), tenant, "owner", device.displayName(),
+                device.platform(), device.publicKey(), device.state(), device.version(), device.createdAt(), device.updatedAt());
+        var wrongDevice = new LocalClientDevice(UUID.randomUUID(), tenant, "Owner", device.displayName(),
+                device.platform(), device.publicKey(), device.state(), device.version(), device.createdAt(), device.updatedAt());
+        var wrongTenant = new LocalClientDevice(device.id(), UUID.randomUUID(), "Owner", device.displayName(),
+                device.platform(), device.publicKey(), device.state(), device.version(), device.createdAt(), device.updatedAt());
+        assertThat(acknowledgements.current(wrongOwner, run.id())).isEmpty();
+        assertThat(acknowledgements.current(wrongDevice, run.id())).isEmpty();
+        assertThat(acknowledgements.current(wrongTenant, run.id())).isEmpty();
+        assertThat(acknowledgements.awaitingCurrent(device)).isPresent();
+        var currentFence = acknowledgements.current(device, run.id()).orElseThrow();
+        assertThat(currentFence.runId()).isEqualTo(run.id());
+        assertThat(currentFence.rootId()).isEqualTo(rootId);
+        assertThat(currentFence.rootIdentity()).isEqualTo(project.rootIdentity());
+        assertThat(currentFence.epoch()).isEqualTo(1);
+        assertThat(currentFence.phase()).isEqualTo(ClientProjectRunOwnership.Phase.EXECUTING);
+        assertThat(currentFence.acknowledged()).isFalse();
+        assertThat(acknowledgements.acknowledge(wrongOwner, run.id(), 1)).isFalse();
+        assertThat(acknowledgements.acknowledge(wrongDevice, run.id(), 1)).isFalse();
+        assertThat(acknowledgements.acknowledge(wrongTenant, run.id(), 1)).isFalse();
+        assertThat(acknowledgements.acknowledge(device, run.id(), 2)).isFalse();
+        transaction.executeWithoutResult(status -> {
+            assertThat(acknowledgements.acknowledge(device, run.id(), 1)).isTrue();
+            status.setRollbackOnly();
+        });
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM client_project_run_fence_acknowledgements"
+                + " WHERE tenant_id=:tenant AND run_id=:run").param("tenant", tenant.toString())
+                .param("run", run.id().toString()).query(Long.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM audit_events WHERE tenant_id=:tenant"
+                + " AND resource_id=:run AND event_type='CLIENT_PROJECT_FENCE_ACK'")
+                .param("tenant", tenant.toString()).param("run", run.id().toString())
+                .query(Long.class).single()).isZero();
+        assertThat(acknowledgements.acknowledge(device, run.id(), 1)).isTrue();
+        assertThat(acknowledgements.acknowledge(device, run.id(), 1)).isTrue();
+        assertThat(acknowledgements.awaitingCurrent(device)).isEmpty();
+        assertThat(acknowledgements.current(device, run.id()).orElseThrow().acknowledged()).isTrue();
+        assertThat(transaction.<Boolean>execute(status -> acknowledgements.lockConfirmed(device, run.id(), instance, 1,
+                ClientProjectRunOwnership.Phase.EXECUTING))).isTrue();
+        assertThat(transaction.<Boolean>execute(status -> acknowledgements.lockConfirmed(device, run.id(), UUID.randomUUID(), 1,
+                ClientProjectRunOwnership.Phase.EXECUTING))).isFalse();
+        assertThat(transaction.<Boolean>execute(status -> acknowledgements.lockConfirmed(device, run.id(), instance, 1,
+                ClientProjectRunOwnership.Phase.RECOVERING))).isFalse();
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM client_project_run_fence_acknowledgements"
+                + " WHERE tenant_id=:tenant AND run_id=:run").param("tenant", tenant.toString())
+                .param("run", run.id().toString()).query(Long.class).single()).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM audit_events WHERE tenant_id=:tenant"
+                + " AND resource_id=:run AND event_type='CLIENT_PROJECT_FENCE_ACK'")
+                .param("tenant", tenant.toString()).param("run", run.id().toString())
+                .query(Long.class).single()).isEqualTo(1);
+        var unrelatedProject = new ClientProject(UUID.randomUUID(), tenant, "Owner", device.id(), UUID.randomUUID(),
+                "e".repeat(64), "来源核对项目", ClientProject.State.ACTIVE, 1, now, now);
+        assertThat(projects.insert(unrelatedProject)).isTrue();
+        // 模拟任务来源被错误修改；单靠任务代次相同不能允许跨项目派发。
+        jdbc.sql("UPDATE client_project_tasks SET project_id=:project WHERE tenant_id=:tenant AND id=:task")
+                .param("project", unrelatedProject.id().toString()).param("tenant", tenant.toString())
+                .param("task", fencedDispatched.id().toString()).update();
+        assertThat(transaction.<Optional<JdbcClientProjectFencedTaskReader.Claim>>execute(status -> reader.claim(device)))
+                .isEmpty();
+        jdbc.sql("UPDATE client_project_tasks SET project_id=:project WHERE tenant_id=:tenant AND id=:task")
+                .param("project", projectId.toString()).param("tenant", tenant.toString())
+                .param("task", fencedDispatched.id().toString()).update();
+        transaction.executeWithoutResult(status -> {
+            assertThat(reader.claim(device)).isPresent();
+            status.setRollbackOnly();
+        });
+        assertThat(tasks.findForOwner(tenant, "Owner", fencedDispatched.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectTask.State.PENDING);
+        var claimStart = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var first = pool.submit(() -> { claimStart.await(); return transaction.execute(status -> reader.claim(device)); });
+            var second = pool.submit(() -> { claimStart.await(); return transaction.execute(status -> reader.claim(device)); });
+            claimStart.countDown();
+            var claims = List.of(first.get(8, TimeUnit.SECONDS), second.get(8, TimeUnit.SECONDS));
+            assertThat(claims.stream().filter(Optional::isPresent)).hasSize(1);
+            var claim = claims.stream().flatMap(Optional::stream).findFirst().orElseThrow();
+            assertThat(claim.task().id()).isEqualTo(fencedDispatched.id());
+            assertThat(claim.epoch()).isEqualTo(1);
+            assertThat(claim.instanceId()).isEqualTo(instance);
+        }
+        var fencedPending = new ClientProjectTask(UUID.randomUUID(), tenant, "Owner", device.id(), projectId,
+                run.id(), agent, conversation.id(), null, null, ClientProjectTask.Kind.PLAN_CHANGE,
+                "密文", ClientProjectTask.State.PENDING, "", "", now, now.plusSeconds(60), null, null, 1);
+        assertThat(insertFenced(transaction, new JdbcClientProjectFencedTaskWriter(ownership),
+                fencedPending, instance, 1)).isTrue();
+        // 新领取入口已条件派发；旧回报入口不携带代次，不能推进该任务。
+        assertThat(tasks.complete(tenant, "Owner", device.id(), fencedDispatched.id(), 2,
+                ClientProjectTask.State.SUCCEEDED, "密文", "", now)).isFalse();
+        assertThat(tasks.close(tenant, "Owner", device.id(), fencedDispatched.id(), 2,
+                ClientProjectTask.State.UNKNOWN, "测试", now)).isFalse();
+        assertThatThrownBy(() -> reader.complete(device, fencedDispatched.id(), 2,
+                ClientProjectTask.State.SUCCEEDED, "密文", "")).isInstanceOf(IllegalStateException.class);
+        assertThat(transaction.<Boolean>execute(status -> reader.complete(wrongOwner, fencedDispatched.id(), 2,
+                ClientProjectTask.State.SUCCEEDED, "密文", ""))).isFalse();
+        assertThat(transaction.<Boolean>execute(status -> reader.complete(device, fencedDispatched.id(), 3,
+                ClientProjectTask.State.SUCCEEDED, "密文", ""))).isFalse();
+        transaction.executeWithoutResult(status -> {
+            assertThat(productionTasks.completeForDevice(device, fencedDispatched.id(), 2,
+                    ClientProjectTask.State.SUCCEEDED, "密文", "", now)).isTrue();
+            status.setRollbackOnly();
+        });
+        assertThat(tasks.findForOwner(tenant, "Owner", fencedDispatched.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectTask.State.DISPATCHED);
+        var proposed = new ClientProjectCommand(UUID.randomUUID(), tenant, "Owner", projectId, agent,
+                conversation.id(), run.id(), "b".repeat(64), "c".repeat(64), true, "密文", "",
+                false, false, null, ClientProjectCommand.State.PROPOSED, false, 0, 1, now, now);
+        assertThat(commands.insert(proposed)).isTrue();
+        var queued = proposed.update(ClientProjectCommand.State.QUEUED, false, null, false, false, "", 0, now);
+        assertThat(commands.update(tenant, "Owner", proposed.id(), 1, queued)).isPresent();
+        var running = queued.update(ClientProjectCommand.State.RUNNING, false, null, false, false, "", 0, now);
+        assertThat(commands.update(tenant, "Owner", proposed.id(), 2, running)).isPresent();
+        var operation = new ClientProjectOperation(UUID.randomUUID(), tenant, "Owner", projectId, agent,
+                conversation.id(), run.id(), null, "a".repeat(64), "b".repeat(64), true, "密文",
+                ClientProjectOperation.State.PROPOSED, 1, now, now);
+        assertThat(operations.insert(operation)).isTrue();
+        assertThat(operations.advance(tenant, "Owner", operation.id(), 1,
+                ClientProjectOperation.State.APPLYING, now)).isPresent();
+        var dispatched = new ClientProjectTask(UUID.randomUUID(), tenant, "Owner", device.id(), projectId,
+                run.id(), agent, conversation.id(), null, proposed.id(), ClientProjectTask.Kind.RUN_COMMAND,
+                "密文", ClientProjectTask.State.PENDING, "", "", now, now.plusSeconds(60), null, null, 1);
+        assertThat(tasks.insert(dispatched)).isTrue();
+        assertThat(tasks.claimNext(tenant, "Owner", device.id(), now)).isPresent();
+        var pending = new ClientProjectTask(UUID.randomUUID(), tenant, "Owner", device.id(), projectId,
+                run.id(), agent, conversation.id(), null, null, ClientProjectTask.Kind.PLAN_CHANGE,
+                "密文", ClientProjectTask.State.PENDING, "", "", now, now.plusSeconds(60), null, null, 1);
+        assertThat(tasks.insert(pending)).isTrue();
+        var audit = new JdbcAuditEventRepository(jdbc, transaction);
+        UUID auditId = UUID.randomUUID();
+        var auditEvent = new AuditEvent(auditId, tenant, "Owner", "CLIENT_PROJECT_RUN_RECOVERY",
+                "CLIENT_PROJECT_RUN", run.id().toString(), "RECOVERING", "隔离验证", now);
+        audit.append(auditEvent);
+        Thread.sleep(8300);
+        assertThat(recoveryRepository.findExpired(10))
+                .anySatisfy(candidate -> assertThat(candidate.runId()).isEqualTo(run.id()));
+        var failingBarrier = new JdbcClientProjectRunOwnershipRepository(dataSource(transaction), transaction,
+                (previous, next) -> {
+                    isolation.quarantine(previous, next);
+                    throw new IllegalStateException("合成审计失败");
+                });
+        assertThatThrownBy(() -> failingBarrier.takeOverForRecovery(tenant, "Owner", run.id(), 1,
+                UUID.randomUUID(), Duration.ofSeconds(20))).isInstanceOf(IllegalStateException.class);
+        assertThat(commands.find(tenant, "Owner", proposed.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectCommand.State.RUNNING);
+        assertThat(operations.find(tenant, "Owner", operation.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectOperation.State.APPLYING);
+        assertThat(tasks.findForOwner(tenant, "Owner", dispatched.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectTask.State.DISPATCHED);
+        assertThat(tasks.findForOwner(tenant, "Owner", fencedPending.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectTask.State.PENDING);
+        // 审计唯一键冲突由真实 JDBC 抛出，验证它与隔离写入处于同一事务。
+        var failingAudit = new JdbcClientProjectRunOwnershipRepository(dataSource(transaction), transaction,
+                (previous, next) -> {
+                    isolation.quarantine(previous, next);
+                    audit.append(auditEvent);
+                });
+        assertThatThrownBy(() -> failingAudit.takeOverForRecovery(tenant, "Owner", run.id(), 1,
+                UUID.randomUUID(), Duration.ofSeconds(20))).isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertThat(commands.find(tenant, "Owner", proposed.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectCommand.State.RUNNING);
+        assertThat(operations.find(tenant, "Owner", operation.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectOperation.State.APPLYING);
+        assertThat(tasks.findForOwner(tenant, "Owner", dispatched.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectTask.State.DISPATCHED);
+        assertThat(tasks.findForOwner(tenant, "Owner", fencedPending.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectTask.State.PENDING);
+        var recovered = ownership.takeOverForRecovery(tenant, "Owner", run.id(), 1,
+                UUID.randomUUID(), Duration.ofSeconds(20))
+                .orElseThrow();
+        assertThat(recovered.epoch()).isEqualTo(2);
+        assertThat(acknowledgements.current(device, run.id()).orElseThrow().phase())
+                .isEqualTo(ClientProjectRunOwnership.Phase.RECOVERING);
+        assertThat(acknowledgements.current(device, run.id()).orElseThrow().acknowledged()).isFalse();
+        assertThat(acknowledgements.acknowledge(device, run.id(), 1)).isFalse();
+        assertThat(transaction.<Boolean>execute(status -> acknowledgements.lockConfirmed(device, run.id(),
+                recovered.instanceId(), 2, ClientProjectRunOwnership.Phase.RECOVERING))).isFalse();
+        assertThat(acknowledgements.acknowledge(device, run.id(), 2)).isTrue();
+        assertThat(acknowledgements.acknowledge(device, run.id(), 2)).isTrue();
+        assertThat(recoveryRepository.findAcknowledgedRecovering(recovered.instanceId(), 10))
+                .anySatisfy(candidate -> assertThat(candidate.runId()).isEqualTo(run.id()));
+        assertThat(transaction.<Boolean>execute(status -> reader.complete(device, fencedDispatched.id(), 2,
+                ClientProjectTask.State.SUCCEEDED, "密文", ""))).isFalse();
+        assertThat(transaction.<Boolean>execute(status -> acknowledgements.lockConfirmed(device, run.id(),
+                recovered.instanceId(), 2, ClientProjectRunOwnership.Phase.RECOVERING))).isTrue();
+        assertThat(audit.listByTenant(tenant, 100)).anyMatch(event -> !event.id().equals(auditId)
+                && event.eventType().equals("CLIENT_PROJECT_RUN_RECOVERY")
+                && event.principalId().equals("system:client-project-recovery")
+                && event.resourceId().equals(run.id().toString())
+                && event.message().contains("epoch=2") && event.message().contains("commands=1")
+                && event.message().contains("operations=1") && event.message().contains("tasks=4"));
+        assertThat(commands.find(tenant, "Owner", proposed.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectCommand.State.UNKNOWN);
+        assertThat(operations.find(tenant, "Owner", operation.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectOperation.State.UNKNOWN);
+        assertThat(tasks.findForOwner(tenant, "Owner", dispatched.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectTask.State.UNKNOWN);
+        assertThat(tasks.findForOwner(tenant, "Owner", pending.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectTask.State.CANCELLED);
+        assertThat(tasks.findForOwner(tenant, "Owner", fencedPending.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectTask.State.CANCELLED);
+        assertThat(tasks.findForOwner(tenant, "Owner", fencedDispatched.id()).orElseThrow().state())
+                .isEqualTo(ClientProjectTask.State.UNKNOWN);
+    }
+
+    /** 数据库时间、锁等待和代次竞争均在双方言的真实事务中验证。 */
+    private void verifyRunOwnership(JdbcClient jdbc, TransactionTemplate transaction,
+            ClientProjectBinding binding, UUID instance, ClientProjectRunOwnership first) throws Exception {
+        var ownership = new JdbcClientProjectRunOwnershipRepository(dataSource(transaction), transaction);
+        assertThatThrownBy(() -> ownership.lockExecution(binding.tenantId(), "Owner",
+                binding.runId(), instance, 1)).isInstanceOf(IllegalStateException.class);
+        assertThat(first.epoch()).isEqualTo(1);
+        assertThat(transaction.<Optional<ClientProjectRunOwnership>>execute(status -> ownership.insertInitial(binding, UUID.randomUUID(),
+                Duration.ofSeconds(2)))).isEmpty();
+        assertThat(transaction.<Optional<ClientProjectRunOwnership>>execute(status -> ownership.lockExecution(binding.tenantId(), "owner",
+                binding.runId(), instance, 1))).isEmpty();
+        assertThat(transaction.<Optional<ClientProjectRunOwnership>>execute(status -> ownership.lockExecution(UUID.randomUUID(), "Owner",
+                binding.runId(), instance, 1))).isEmpty();
+        assertThat(transaction.<Optional<ClientProjectRunOwnership>>execute(status -> ownership.lockExecution(binding.tenantId(), "Owner",
+                binding.runId(), instance, 1))).isPresent();
+        assertThat(transaction.<Optional<ClientProjectRunOwnership>>execute(status -> ownership.renew(binding.tenantId(),
+                "Owner", binding.runId(), UUID.randomUUID(), 1, Duration.ofSeconds(6)))).isEmpty();
+        assertThat(transaction.<Optional<ClientProjectRunOwnership>>execute(status -> ownership.renew(binding.tenantId(),
+                "Owner", binding.runId(), instance, 2, Duration.ofSeconds(6)))).isEmpty();
+        var renewed = transaction.execute(status -> ownership.renew(binding.tenantId(), "Owner",
+                binding.runId(), instance, 1, Duration.ofSeconds(6)).orElseThrow());
+        assertThat(renewed.expiresAt()).isAfter(first.expiresAt());
+        assertThat(transaction.<Optional<ClientProjectRunOwnership>>execute(status -> ownership.takeOverForRecovery(binding.tenantId(),
+                "Owner", binding.runId(), 1, UUID.randomUUID(), Duration.ofSeconds(2)))).isEmpty();
+
+        var locked = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var holder = pool.submit(() -> transaction.execute(status -> {
+                assertThat(ownership.lockExecution(binding.tenantId(), "Owner", binding.runId(),
+                        instance, 1)).isPresent();
+                locked.countDown();
+                try { if (!release.await(8, TimeUnit.SECONDS)) throw new IllegalStateException("测试锁未释放"); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException(interrupted); }
+                return true;
+            }));
+            try {
+                assertThat(locked.await(5, TimeUnit.SECONDS)).isTrue();
+                var waiting = pool.submit(() -> transaction.execute(status -> ownership.lockExecution(
+                        binding.tenantId(), "Owner", binding.runId(), instance, 1)));
+                // 等锁跨越租期，不能把 PostgreSQL 事务开始时间当成当前数据库时间。
+                Thread.sleep(6300);
+                release.countDown();
+                assertThat(holder.get(5, TimeUnit.SECONDS)).isTrue();
+                assertThat(waiting.get(5, TimeUnit.SECONDS)).isEmpty();
+            } finally { release.countDown(); }
+        }
+
+        // 同包注入失败屏障只用于验证事务回滚；公开构造器固定使用真实隔离与审计。
+        var failingOwnership = new JdbcClientProjectRunOwnershipRepository(dataSource(transaction), transaction,
+                (old, next) -> {
+                    throw new IllegalStateException("合成隔离审计失败");
+                });
+        assertThatThrownBy(() -> failingOwnership.takeOverForRecovery(binding.tenantId(), "Owner", binding.runId(),
+                1, UUID.randomUUID(), Duration.ofSeconds(5))).isInstanceOf(IllegalStateException.class);
+        var rollbackInstance = UUID.randomUUID();
+        transaction.executeWithoutResult(status -> {
+            assertThat(ownership.takeOverForRecovery(binding.tenantId(), "Owner", binding.runId(),
+                    1, rollbackInstance, Duration.ofSeconds(5))).isPresent();
+            status.setRollbackOnly();
+        });
+        var start = new CountDownLatch(1);
+        UUID nextA = UUID.randomUUID(), nextB = UUID.randomUUID();
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var a = pool.submit(() -> { start.await(); return transaction.execute(status ->
+                    ownership.takeOverForRecovery(binding.tenantId(), "Owner", binding.runId(), 1,
+                            nextA, Duration.ofSeconds(10))); });
+            var b = pool.submit(() -> { start.await(); return transaction.execute(status ->
+                    ownership.takeOverForRecovery(binding.tenantId(), "Owner", binding.runId(), 1,
+                            nextB, Duration.ofSeconds(10))); });
+            start.countDown();
+            var results = List.of(a.get(8, TimeUnit.SECONDS), b.get(8, TimeUnit.SECONDS));
+            assertThat(results.stream().filter(Optional::isPresent)).hasSize(1);
+            var winner = results.stream().flatMap(Optional::stream).findFirst().orElseThrow();
+            assertThat(winner.epoch()).isEqualTo(2);
+            assertThat(transaction.<Optional<ClientProjectRunOwnership>>execute(status -> ownership.lockRecovery(binding.tenantId(), "Owner",
+                    binding.runId(), winner.instanceId(), 2))).isPresent();
+            assertThat(transaction.<Optional<ClientProjectRunOwnership>>execute(status -> ownership.lockExecution(binding.tenantId(), "Owner",
+                    binding.runId(), instance, 1))).isEmpty();
+        }
     }
 
     private static LocalClientChallenge challenge(LocalClientDevice device, Instant now) {

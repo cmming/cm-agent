@@ -4,6 +4,7 @@ import com.cmagent.core.repository.LocalClientDeviceRepository;
 import com.cmagent.core.repository.ClientProjectRepository;
 import com.cmagent.core.repository.ClientProjectTaskRepository;
 import com.cmagent.core.repository.ClientProjectBindingRepository;
+import com.cmagent.core.repository.ClientProjectRunOwnershipRepository;
 import com.cmagent.core.repository.ClientProjectOperationRepository;
 import com.cmagent.core.repository.ClientProjectCommandRepository;
 import com.cmagent.core.repository.RunRepository;
@@ -15,6 +16,10 @@ import com.cmagent.persistence.JdbcClientProjectTaskRepository;
 import com.cmagent.persistence.JdbcClientProjectBindingRepository;
 import com.cmagent.persistence.JdbcClientProjectOperationRepository;
 import com.cmagent.persistence.JdbcClientProjectCommandRepository;
+import com.cmagent.persistence.JdbcClientProjectRunOwnershipRepository;
+import com.cmagent.persistence.JdbcClientProjectFenceAcknowledgements;
+import com.cmagent.persistence.JdbcClientProjectFencedTaskReader;
+import com.cmagent.persistence.JdbcClientProjectRunRecoveryRepository;
 import com.cmagent.server.audit.AuditAppender;
 import com.cmagent.server.config.ClientProjectProperties;
 import com.cmagent.server.config.LocalClientProperties;
@@ -61,14 +66,62 @@ public class ClientProjectConfiguration {
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnProperty(prefix = "cm-agent.client-projects", name = "enabled", havingValue = "true")
     static class Enabled {
+        @Bean JdbcClientProjectRunOwnershipRepository clientProjectRunOwnershipRepository(
+                javax.sql.DataSource dataSource, TransactionTemplate transaction) {
+            return new JdbcClientProjectRunOwnershipRepository(dataSource, transaction);
+        }
+
+        @Bean ClientProjectRuntimeIdentity clientProjectRuntimeIdentity() {
+            return ClientProjectRuntimeIdentity.random();
+        }
+
+        @Bean JdbcClientProjectFenceAcknowledgements clientProjectFenceAcknowledgements(
+                JdbcClientProjectRunOwnershipRepository ownership) {
+            return new JdbcClientProjectFenceAcknowledgements(ownership);
+        }
+
+        @Bean JdbcClientProjectFencedTaskReader clientProjectFencedTaskReader(
+                JdbcClientProjectRunOwnershipRepository ownership, ClientProjectRuntimeIdentity identity) {
+            return new JdbcClientProjectFencedTaskReader(ownership, identity.instanceId());
+        }
+
+        @Bean JdbcClientProjectRunRecoveryRepository clientProjectRunRecoveryRepository(
+                JdbcClient jdbc, TransactionTemplate transaction) {
+            return new JdbcClientProjectRunRecoveryRepository(jdbc, transaction);
+        }
+
+        @Bean ClientProjectTaskFencing clientProjectTaskFencing(
+                JdbcClientProjectFenceAcknowledgements acknowledgements,
+                JdbcClientProjectFencedTaskReader reader, TransactionTemplate transaction) {
+            return new ClientProjectTaskFencing(acknowledgements, reader, transaction);
+        }
+
+        @Bean ClientProjectFenceService clientProjectFenceService(
+                JdbcClientProjectFenceAcknowledgements acknowledgements, AuditAppender audit,
+                ErrorDiagnosticLogger diagnostics) {
+            return new ClientProjectFenceService(acknowledgements, audit, diagnostics);
+        }
+
+        @Bean ClientProjectRunRecoveryService clientProjectRunRecoveryService(
+                JdbcClientProjectRunOwnershipRepository ownership,
+                JdbcClientProjectRunRecoveryRepository recovery,
+                ClientProjectBindingRepository bindings, RunRepository runs,
+                ClientProjectRuntimeIdentity identity, TransactionTemplate transaction,
+                AuditAppender audit, ErrorDiagnosticLogger diagnostics,
+                ClientProjectProperties properties) {
+            return new ClientProjectRunRecoveryService(ownership, recovery, bindings, runs, identity,
+                    transaction, audit, diagnostics, Clock.systemUTC(), properties);
+        }
+
         @Bean ClientProjectRepository clientProjectRepository(JdbcClient jdbc,
                 TransactionTemplate transaction) {
             return new JdbcClientProjectRepository(jdbc, transaction);
         }
 
         @Bean ClientProjectTaskRepository clientProjectTaskRepository(JdbcClient jdbc,
-                TransactionTemplate transaction) {
-            return new JdbcClientProjectTaskRepository(jdbc, transaction);
+                TransactionTemplate transaction, JdbcClientProjectRunOwnershipRepository ownership,
+                ClientProjectRuntimeIdentity identity) {
+            return new JdbcClientProjectTaskRepository(jdbc, transaction, ownership, identity.instanceId());
         }
 
         @Bean ClientProjectOperationRepository clientProjectOperationRepository(JdbcClient jdbc,
@@ -97,9 +150,10 @@ public class ClientProjectConfiguration {
                 PermissionEvaluator permissions, AuditAppender audit,
                 ErrorDiagnosticLogger diagnostics, ModelCredentialCipher cipher,
                 SensitiveDataRedactor redactor, ObjectMapper json,
-                TransactionTemplate transaction, ClientProjectProperties properties) {
+                TransactionTemplate transaction, ClientProjectProperties properties,
+                ClientProjectTaskFencing fencing) {
             return new ClientProjectService(projects, operations, tasks, devices, permissions, audit,
-                    diagnostics, cipher, redactor, json, transaction, properties, Clock.systemUTC());
+                    diagnostics, cipher, redactor, json, transaction, properties, Clock.systemUTC(), fencing);
         }
 
         @Bean ClientProjectToolCatalog clientProjectToolCatalog(ToolDefinitionRepository tools,
@@ -152,10 +206,11 @@ public class ClientProjectConfiguration {
                 com.cmagent.core.repository.ToolGrantRepository grants,
                 ClientProjectToolCatalog catalog, PermissionEvaluator permissions,
                 AuditAppender audit, TransactionTemplate transaction,
-                ClientProjectReadSnapshots snapshots) {
+                ClientProjectReadSnapshots snapshots, ClientProjectRunOwnershipRepository ownership,
+                ClientProjectRuntimeIdentity identity, ClientProjectProperties properties) {
             return new ClientProjectRunService(runs, projects, bindings, agents, conversations,
                     grants, catalog, permissions, audit, transaction, Clock.systemUTC(),
-                    snapshots);
+                    snapshots, ownership, identity, properties.getOwnershipLease());
         }
     }
 }

@@ -94,7 +94,7 @@ class ClientProjectServiceTest {
                 now, now.plusSeconds(60), now, null, 2);
         when(tasks.claimNext(tenant, principal.principalId(), device.id(), now))
                 .thenReturn(Optional.of(dispatched));
-        var claimed = service.claim(device).orElseThrow();
+        var claimed = service.claim(device).task();
         assertThat(claimed.category()).isEqualTo("PROJECT_SELECT_ROOT");
         assertThat(claimed.request().path("kind").asText()).isEqualTo("SELECT_ROOT");
         assertThat(claimed.request().path("expiresAt").asText()).isEqualTo(now.plusSeconds(60).toString());
@@ -115,8 +115,8 @@ class ClientProjectServiceTest {
         when(projects.findByRoot(tenant, principal.principalId(), device.id(), rootIdentity))
                 .thenReturn(Optional.empty());
         when(projects.insert(any())).thenReturn(true);
-        when(tasks.complete(eq(tenant), eq(principal.principalId()), eq(device.id()),
-                eq(taskId), eq(2L), eq(ClientProjectTask.State.SUCCEEDED), any(), eq(""),
+        when(tasks.completeForDevice(eq(device), eq(taskId), eq(2L),
+                eq(ClientProjectTask.State.SUCCEEDED), any(), eq(""),
                 eq(now))).thenReturn(true);
         var output = json.createObjectNode().put("rootId", clientRootId.toString())
                 .put("rootIdentity", rootIdentity).put("displayName", "项目");
@@ -148,8 +148,8 @@ class ClientProjectServiceTest {
         when(tasks.find(tenant, principal.principalId(), device.id(), taskId))
                 .thenReturn(Optional.of(task));
         when(operations.insert(any())).thenReturn(true);
-        when(tasks.complete(eq(tenant), eq(principal.principalId()), eq(device.id()),
-                eq(taskId), eq(2L), eq(ClientProjectTask.State.SUCCEEDED), any(), eq(""),
+        when(tasks.completeForDevice(eq(device), eq(taskId), eq(2L),
+                eq(ClientProjectTask.State.SUCCEEDED), any(), eq(""),
                 eq(now))).thenReturn(true);
         var output = json.createObjectNode();
         var change = output.putArray("changes").addObject().put("kind", "REPLACE_FILE")

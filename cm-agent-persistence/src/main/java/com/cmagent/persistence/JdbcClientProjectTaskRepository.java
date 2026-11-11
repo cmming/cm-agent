@@ -19,14 +19,34 @@ public final class JdbcClientProjectTaskRepository implements ClientProjectTaskR
     private final JdbcClient jdbc;
     private final TransactionTemplate transaction;
     private final String owner;
+    private final JdbcClientProjectFencedTaskWriter fencedWriter;
+    private final JdbcClientProjectFencedTaskReader fencedReader;
 
     public JdbcClientProjectTaskRepository(JdbcClient jdbc, TransactionTemplate transaction) {
+        this(jdbc, transaction, null, null);
+    }
+
+    /**
+     * 配置生产任务仓储的持久代次边界。
+     *
+     * @param jdbc 项目任务数据访问入口
+     * @param transaction 与同一数据源绑定的事务模板
+     * @param ownership Run 归属仓储；为空只供旧仓储测试或迁移兼容
+     * @param runtimeInstanceId 当前 Server 随机实例
+     */
+    public JdbcClientProjectTaskRepository(JdbcClient jdbc, TransactionTemplate transaction,
+            JdbcClientProjectRunOwnershipRepository ownership, UUID runtimeInstanceId) {
         this.jdbc = Objects.requireNonNull(jdbc);
         this.transaction = Objects.requireNonNull(transaction);
         this.owner = JdbcOwnerPredicate.equal(jdbc, "owner_id", ":owner");
+        this.fencedWriter = ownership == null ? null
+                : new JdbcClientProjectFencedTaskWriter(ownership, runtimeInstanceId);
+        this.fencedReader = ownership == null ? null
+                : new JdbcClientProjectFencedTaskReader(ownership, runtimeInstanceId);
     }
 
     @Override public boolean insert(ClientProjectTask task) {
+        if (task.runId() != null && fencedWriter != null) return fencedWriter.insert(task);
         return insertRow(task);
     }
 
@@ -113,7 +133,8 @@ public final class JdbcClientProjectTaskRepository implements ClientProjectTaskR
         return jdbc.sql("UPDATE client_project_tasks SET state=CASE"
                 + " WHEN state='PENDING' THEN 'CANCELLED' ELSE 'UNKNOWN' END,"
                 + "completed_at=:now,version=version+1 WHERE tenant_id=:tenant"
-                + " AND command_id=:command AND state IN ('PENDING','DISPATCHED') AND " + owner)
+                + " AND command_id=:command AND state IN ('PENDING','DISPATCHED') AND " + owner
+                + " AND id NOT IN (SELECT task_id FROM client_project_task_fences WHERE tenant_id=:tenant)")
                 .param("now", Timestamp.from(now)).param("tenant", tenantId.toString())
                 .param("command", commandId.toString()).param("owner", ownerId).update();
     }
@@ -122,9 +143,13 @@ public final class JdbcClientProjectTaskRepository implements ClientProjectTaskR
             UUID deviceId, Instant now) {
         return transaction.execute(status -> {
             expirePending(tenantId, ownerId, deviceId, now);
-            var task = jdbc.sql("SELECT * FROM client_project_tasks WHERE tenant_id=:tenant"
-                    + " AND device_id=:device AND state='PENDING' AND expires_at>:now AND " + owner
-                    + " ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED")
+            // 旧领取协议不携带代次，必须跳过有栅栏的任务，直到可信设备握手接入新入口。
+            var task = jdbc.sql("SELECT t.* FROM client_project_tasks t WHERE t.tenant_id=:tenant"
+                    + " AND t.device_id=:device AND t.state='PENDING' AND t.expires_at>:now AND "
+                    + JdbcOwnerPredicate.equal(jdbc, "t.owner_id", ":owner")
+                    + " AND NOT EXISTS (SELECT 1 FROM client_project_task_fences f"
+                    + " WHERE f.tenant_id=t.tenant_id AND f.task_id=t.id)"
+                    + " ORDER BY t.created_at,t.id LIMIT 1 FOR UPDATE SKIP LOCKED")
                     .param("tenant", tenantId.toString()).param("device", deviceId.toString())
                     .param("now", Timestamp.from(now)).param("owner", ownerId)
                     .query(this::map).optional();
@@ -154,14 +179,41 @@ public final class JdbcClientProjectTaskRepository implements ClientProjectTaskR
                 && state != ClientProjectTask.State.UNKNOWN) {
             throw new IllegalArgumentException("任务终态无效");
         }
+        if (fencedReader != null && fencedReader.isFenced(tenantId, taskId)) {
+            return closeForDeviceInternal(tenantId, ownerId, deviceId, taskId, expectedVersion,
+                    state, safeError, now);
+        }
+        // 无栅栏的旧回执只能推进旧任务，不能借用新协议设备确认。
         return jdbc.sql("UPDATE client_project_tasks SET state=:state,encrypted_result=:result,"
                 + "safe_error=:error,completed_at=:now,version=version+1 WHERE tenant_id=:tenant"
-                + " AND id=:id AND device_id=:device AND state='DISPATCHED' AND version=:version AND " + owner)
+                + " AND id=:id AND device_id=:device AND state='DISPATCHED' AND version=:version AND " + owner
+                + " AND id NOT IN (SELECT task_id FROM client_project_task_fences WHERE tenant_id=:tenant)")
                 .param("state", state.name()).param("result", encryptedResult == null ? "" : encryptedResult)
                 .param("error", safeError == null ? "" : safeError).param("now", Timestamp.from(now))
                 .param("tenant", tenantId.toString()).param("id", taskId.toString())
                 .param("device", deviceId.toString()).param("version", expectedVersion)
                 .param("owner", ownerId).update() == 1;
+    }
+
+    private boolean closeForDeviceInternal(UUID tenantId, String ownerId, UUID deviceId,
+            UUID taskId, long expectedVersion, ClientProjectTask.State state, String safeError,
+            Instant now) {
+        var task = find(tenantId, ownerId, deviceId, taskId).orElse(null);
+        if (task == null || task.version() != expectedVersion) return false;
+        return Boolean.TRUE.equals(transaction.execute(status ->
+                fencedReader.closeInternal(task, state, safeError, now)));
+    }
+
+    @Override public boolean completeForDevice(com.cmagent.core.domain.LocalClientDevice device,
+            UUID taskId, long expectedVersion, ClientProjectTask.State state, String encryptedResult,
+            String safeError, Instant now) {
+        Objects.requireNonNull(device);
+        if (fencedReader != null && fencedReader.isFenced(device.tenantId(), taskId)) {
+            return Boolean.TRUE.equals(transaction.execute(status -> fencedReader.complete(
+                    device, taskId, expectedVersion, state, encryptedResult, safeError)));
+        }
+        return complete(device.tenantId(), device.ownerId(), device.id(), taskId,
+                expectedVersion, state, encryptedResult, safeError, now);
     }
 
     @Override public boolean close(UUID tenantId, String ownerId, UUID deviceId, UUID taskId,
@@ -170,10 +222,12 @@ public final class JdbcClientProjectTaskRepository implements ClientProjectTaskR
                 && state != ClientProjectTask.State.CANCELLED) {
             throw new IllegalArgumentException("任务关闭状态无效");
         }
+        if (fencedReader != null && fencedReader.isFenced(tenantId, taskId)) return false;
         return jdbc.sql("UPDATE client_project_tasks SET state=:state,safe_error=:error,"
                 + "completed_at=:now,version=version+1 WHERE tenant_id=:tenant AND id=:id"
                 + " AND device_id=:device AND state IN ('PENDING','DISPATCHED')"
-                + " AND version=:version AND " + owner)
+                + " AND version=:version AND " + owner
+                + " AND id NOT IN (SELECT task_id FROM client_project_task_fences WHERE tenant_id=:tenant)")
                 .param("state", state.name()).param("error", safeError == null ? "" : safeError)
                 .param("now", Timestamp.from(now)).param("tenant", tenantId.toString())
                 .param("id", taskId.toString()).param("device", deviceId.toString())
@@ -185,7 +239,8 @@ public final class JdbcClientProjectTaskRepository implements ClientProjectTaskR
                 + "updated_at=:now WHERE tenant_id=:tenant AND state='QUEUED' AND " + owner
                 + " AND id IN (SELECT command_id FROM client_project_tasks WHERE tenant_id=:tenant"
                 + " AND device_id=:device AND kind='RUN_COMMAND' AND state='PENDING'"
-                + " AND expires_at<=:now AND command_id IS NOT NULL AND " + owner + ")")
+                + " AND expires_at<=:now AND command_id IS NOT NULL"
+                + " AND id NOT IN (SELECT task_id FROM client_project_task_fences WHERE tenant_id=:tenant) AND " + owner + ")")
                 .param("now", Timestamp.from(now)).param("tenant", tenantId.toString())
                 .param("device", deviceId.toString()).param("owner", ownerId).update();
         jdbc.sql("UPDATE client_project_commands SET state='UNKNOWN',version=version+1,"
@@ -194,19 +249,21 @@ public final class JdbcClientProjectTaskRepository implements ClientProjectTaskR
                 + " AND id IN (SELECT command_id FROM client_project_tasks WHERE tenant_id=:tenant"
                 + " AND device_id=:device AND kind IN ('COMMAND_STATUS','STOP_COMMAND')"
                 + " AND state='PENDING' AND expires_at<=:now AND command_id IS NOT NULL AND "
-                + owner + ")")
+                + owner + " AND id NOT IN (SELECT task_id FROM client_project_task_fences WHERE tenant_id=:tenant))")
                 .param("now", Timestamp.from(now)).param("tenant", tenantId.toString())
                 .param("device", deviceId.toString()).param("owner", ownerId).update();
         jdbc.sql("UPDATE client_project_operations SET state='CANCELLED',version=version+1,"
                 + "updated_at=:now WHERE tenant_id=:tenant AND state='APPLYING' AND " + owner
                 + " AND id IN (SELECT operation_id FROM client_project_tasks WHERE tenant_id=:tenant"
                 + " AND device_id=:device AND state='PENDING' AND expires_at<=:now"
-                + " AND operation_id IS NOT NULL AND " + owner + ")")
+                + " AND operation_id IS NOT NULL AND " + owner
+                + " AND id NOT IN (SELECT task_id FROM client_project_task_fences WHERE tenant_id=:tenant))")
                 .param("now", Timestamp.from(now)).param("tenant", tenantId.toString())
                 .param("device", deviceId.toString()).param("owner", ownerId).update();
         jdbc.sql("UPDATE client_project_tasks SET state='CANCELLED',completed_at=:now,version=version+1"
                 + " WHERE tenant_id=:tenant AND device_id=:device AND state='PENDING'"
-                + " AND expires_at<=:now AND " + owner)
+                + " AND expires_at<=:now AND " + owner
+                + " AND id NOT IN (SELECT task_id FROM client_project_task_fences WHERE tenant_id=:tenant)")
                 .param("now", Timestamp.from(now)).param("tenant", tenantId.toString())
                 .param("device", deviceId.toString()).param("owner", ownerId).update();
     }

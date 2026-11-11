@@ -9,7 +9,6 @@ import com.cmagent.server.runtime.LocalClientPairingService;
 import com.cmagent.server.runtime.LocalClientProofService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -31,7 +30,7 @@ class LocalClientSelectionCapabilityTest {
         ObjectProvider<ClientProjectService> provider = mock(ObjectProvider.class);
         var service = mock(ClientProjectService.class);
         when(provider.getIfAvailable()).thenReturn(service);
-        when(service.claim(device)).thenReturn(Optional.empty());
+        when(service.claim(device)).thenReturn(new ClientProjectService.ClaimDecision(null, null));
         var controller = new LocalClientController(mock(LocalClientPairingService.class), proofs,
                 mock(LocalClientOperationService.class), mock(PermissionEvaluator.class),
                 mock(AuditAppender.class), provider);
@@ -48,7 +47,7 @@ class LocalClientSelectionCapabilityTest {
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         error -> assertThat(error.getStatusCode().value()).isEqualTo(426));
         verify(service, never()).claim(any());
-        byte[] supported = "{\"selectionProtocol\":1}".getBytes(StandardCharsets.UTF_8);
+        byte[] supported = "{\"selectionProtocol\":1,\"fenceProtocol\":1}".getBytes(StandardCharsets.UTF_8);
         assertThat(controller.nextProjectTask(supported, request).getStatusCode().value()).isEqualTo(204);
         verify(proofs).verifyAndConsume(any(), any(), anyString(), anyString(), anyString(), eq(supported), anyString());
         verify(service).claim(device);

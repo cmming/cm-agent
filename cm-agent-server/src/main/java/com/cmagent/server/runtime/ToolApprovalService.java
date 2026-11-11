@@ -375,6 +375,7 @@ public class ToolApprovalService {
             if (run.status() != RunStatus.WAITING_APPROVAL) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "运行已停止或结束，不能恢复审批");
             }
+            runExecutionService.requireClientProjectOwnership(run);
             boolean decided = approvalRepository.decide(
                     principal.tenantId(), agentId, conversationId, approvalId, expectedVersion, status,
                     decisions, principal.principalId(), principal.displayName(), now);

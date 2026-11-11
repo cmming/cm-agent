@@ -60,6 +60,20 @@ public class RunExecutionService {
             org.springframework.beans.factory.ObjectProvider<ClientProjectCommandService> provider) {
         clientProjectCommands = provider.getIfAvailable();
     }
+    /** 审批恢复等跨层入口复用的持久执行归属门禁。 */
+    private ClientProjectRunRecoveryService clientProjectRecovery;
+    @Autowired void configureClientProjectRecovery(
+            org.springframework.beans.factory.ObjectProvider<ClientProjectRunRecoveryService> provider) {
+        clientProjectRecovery = provider.getIfAvailable();
+    }
+    /**
+     * 在调用方事务内核对设备项目 Run 仍归当前代次所有；普通 Run 不受影响。
+     *
+     * @param run 可信仓储读取的 Run
+     */
+    void requireClientProjectOwnership(RunRecord run) {
+        if (clientProjectRecovery != null) clientProjectRecovery.requireCurrentOwnership(run);
+    }
     /** 审批拒绝、停止或过期由审批服务收口时，也必须撤销项目 Run 快照并记录同一撤销审计。 */
     void cleanupEphemeralAuthorization(PrincipalRef principal, RunRecord run) {
         if (!principal.tenantId().equals(run.tenantId())) throw new SecurityException("运行清理租户不匹配");

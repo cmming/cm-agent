@@ -81,7 +81,7 @@ class ClientProjectCommandServiceTest {
         when(commands.lock(tenant, owner, commandId)).thenReturn(Optional.of(running));
         when(commands.update(eq(tenant), eq(owner), eq(commandId), eq(3L), any()))
                 .thenAnswer(call -> Optional.of(call.getArgument(4)));
-        when(tasks.complete(any(), any(), any(), any(), anyLong(), any(), any(), any(), any())).thenReturn(true);
+        when(tasks.completeForDevice(any(), any(), anyLong(), any(), any(), any(), any())).thenReturn(true);
         var keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         var device = new LocalClientDevice(deviceId, tenant, owner, "设备", LocalClientDevice.Platform.WINDOWS,
                 Base64.getEncoder().encodeToString(keys.getPublic().getEncoded()), LocalClientDevice.State.ACTIVE,
@@ -113,7 +113,7 @@ class ClientProjectCommandServiceTest {
         when(commands.lock(tenant, owner, commandId)).thenReturn(Optional.of(running));
         when(commands.update(eq(tenant), eq(owner), eq(commandId), eq(3L), any()))
                 .thenAnswer(call -> Optional.of(call.getArgument(4)));
-        when(tasks.complete(any(), any(), any(), any(), anyLong(), any(), any(), any(), any())).thenReturn(true);
+        when(tasks.completeForDevice(any(), any(), anyLong(), any(), any(), any(), any())).thenReturn(true);
         var keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         var device = new LocalClientDevice(deviceId, tenant, owner, "设备", LocalClientDevice.Platform.WINDOWS,
                 Base64.getEncoder().encodeToString(keys.getPublic().getEncoded()), LocalClientDevice.State.ACTIVE,
@@ -292,8 +292,8 @@ class ClientProjectCommandServiceTest {
         when(commands.lock(tenant, owner, commandId)).thenReturn(Optional.of(queued));
         when(commands.update(eq(tenant), eq(owner), eq(commandId), eq(2L), any()))
                 .thenAnswer(call -> Optional.of(call.getArgument(4)));
-        when(tasks.complete(tenant, owner, deviceId, launched.id(), 2,
-                ClientProjectTask.State.FAILED, "", "工具链不可用", now)).thenReturn(true);
+        when(tasks.completeForDevice(any(), eq(launched.id()), eq(2L),
+                eq(ClientProjectTask.State.FAILED), eq(""), eq("工具链不可用"), eq(now))).thenReturn(true);
         var keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         LocalClientDevice device = new LocalClientDevice(deviceId, tenant, owner, "设备",
                 LocalClientDevice.Platform.WINDOWS,
@@ -330,7 +330,7 @@ class ClientProjectCommandServiceTest {
         output.set("manifest", manifest);
         output.set("preview", preview);
         when(commands.insert(any())).thenReturn(true);
-        when(tasks.complete(any(), any(), any(), any(), anyLong(), any(), any(), any(), any()))
+        when(tasks.completeForDevice(any(), any(), anyLong(), any(), any(), any(), any()))
                 .thenReturn(true);
         var keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         LocalClientDevice device = new LocalClientDevice(deviceId, tenant, owner, "设备",
@@ -341,7 +341,7 @@ class ClientProjectCommandServiceTest {
         service().completeSuccess(device, planning, output, now);
 
         verify(commands).insert(any(ClientProjectCommand.class));
-        verify(tasks).complete(any(), any(), any(), any(), anyLong(), any(), any(), any(), any());
+        verify(tasks).completeForDevice(any(), any(), anyLong(), any(), any(), any(), any());
     }
 
     @Test void 设备退出证据原子推进命令与状态任务终态() throws Exception {
@@ -364,7 +364,7 @@ class ClientProjectCommandServiceTest {
         when(commands.lock(tenant, owner, commandId)).thenReturn(Optional.of(running));
         when(commands.update(eq(tenant), eq(owner), eq(commandId), eq(3L), any()))
                 .thenAnswer(call -> Optional.of(call.getArgument(4)));
-        when(tasks.complete(any(), any(), any(), any(), anyLong(), any(), any(), any(), any()))
+        when(tasks.completeForDevice(any(), any(), anyLong(), any(), any(), any(), any()))
                 .thenReturn(true);
         var payload = new ObjectMapper().createObjectNode().put("state", "SUCCEEDED")
                 .put("sequence", 1).put("exitCode", 0).put("truncated", false)
@@ -379,7 +379,7 @@ class ClientProjectCommandServiceTest {
         service().completeSuccess(device, observing, payload, now);
 
         verify(commands).update(eq(tenant), eq(owner), eq(commandId), eq(3L), any());
-        verify(tasks).complete(any(), any(), any(), any(), anyLong(), any(), any(), any(), any());
+        verify(tasks).completeForDevice(any(), any(), anyLong(), any(), any(), any(), any());
     }
 
     @Test void 已终态命令可重复查询但不重复推进命令版本() throws Exception {
@@ -399,7 +399,7 @@ class ClientProjectCommandServiceTest {
                 ClientProjectTask.State.DISPATCHED, "", "", now, now.plusSeconds(60),
                 now, null, 2);
         when(commands.lock(tenant, owner, commandId)).thenReturn(Optional.of(completed));
-        when(tasks.complete(any(), any(), any(), any(), anyLong(), any(), any(), any(), any()))
+        when(tasks.completeForDevice(any(), any(), anyLong(), any(), any(), any(), any()))
                 .thenReturn(true);
         var payload = new ObjectMapper().createObjectNode().put("state", "SUCCEEDED")
                 .put("sequence", 1).put("exitCode", 0).put("truncated", false)
@@ -414,7 +414,7 @@ class ClientProjectCommandServiceTest {
         service().completeSuccess(device, observing, payload, now);
 
         verify(commands, never()).update(eq(tenant), eq(owner), eq(commandId), anyLong(), any());
-        verify(tasks).complete(any(), any(), any(), any(), anyLong(), any(), any(), any(), any());
+        verify(tasks).completeForDevice(any(), any(), anyLong(), any(), any(), any(), any());
     }
 
     private ClientProjectCommandService service() {

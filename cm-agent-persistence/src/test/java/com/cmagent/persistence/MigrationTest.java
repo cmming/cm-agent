@@ -61,7 +61,8 @@ class MigrationTest {
             "local_client_pairing_sessions", "local_client_operations",
             "client_projects", "client_project_operations", "client_project_commands",
             "client_project_tasks",
-            "client_project_conversations", "client_project_runs",
+            "client_project_conversations", "client_project_runs", "client_project_run_ownership", "client_project_task_fences",
+            "client_project_run_fence_acknowledgements",
             "skill_definitions",
             "skill_versions",
             "skill_resources",
@@ -148,8 +149,8 @@ class MigrationTest {
         int localClientStage=CmAgentFlyway.configure(dataSource).target("27").load().migrate().migrationsExecuted;
         assertThat(localClientStage).isEqualTo(1);
         int latestStage=CmAgentFlyway.configure(dataSource).load().migrate().migrationsExecuted;
-        // V28 继续交付设备操作，V29 增加协议 5 来源和五张客户端项目表。
-        assertThat(latestStage).isEqualTo(2);
+        // V28/V29 建立设备项目，V30/V31 增加尚未接线的运行归属和任务代次表。
+        assertThat(latestStage).isEqualTo(4);
 
         assertThat(firstStage).isEqualTo(12);
         assertThat(secondStage).isEqualTo(4);
@@ -447,7 +448,7 @@ class MigrationTest {
     }
 
     private static void assertSchemaContract(int migrationsExecuted, String jdbcUrl, String username, String password) {
-        assertThat(migrationsExecuted).isEqualTo(29);
+        assertThat(migrationsExecuted).isEqualTo(31);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertThat(tableNames(connection)).containsAll(REQUIRED_TABLES);
@@ -575,6 +576,12 @@ class MigrationTest {
                     .contains("client_projects", "local_client_devices");
             assertThat(importedKeyTargets(connection, "client_project_runs")).contains(
                     "client_project_conversations", "client_projects", "local_client_devices");
+            assertThat(importedKeyTargets(connection, "client_project_run_ownership"))
+                    .contains("client_project_runs");
+            assertThat(importedKeyTargets(connection, "client_project_task_fences"))
+                    .contains("client_project_tasks", "client_project_run_ownership");
+            assertThat(importedKeyTargets(connection, "client_project_run_fence_acknowledgements"))
+                    .contains("client_project_run_ownership", "local_client_devices");
         } catch (SQLException e) {
             throw new AssertionError("验证迁移后的 schema 失败", e);
         }

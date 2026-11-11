@@ -9,6 +9,7 @@ import com.cmagent.server.runtime.LocalClientPairingService;
 import com.cmagent.server.runtime.LocalClientProofService;
 import com.cmagent.server.runtime.LocalClientOperationService;
 import com.cmagent.server.runtime.ClientProjectService;
+import com.cmagent.server.runtime.ClientProjectFenceService;
 import com.cmagent.server.security.JwtService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -53,6 +54,13 @@ public class LocalClientController {
     private final AuditAppender audit;
     /** 远端设备项目未启用时为空；普通设备任务不依赖该组件。 */
     private final org.springframework.beans.factory.ObjectProvider<ClientProjectService> clientProjects;
+    private org.springframework.beans.factory.ObjectProvider<ClientProjectFenceService> fenceServices;
+
+    /** 握手服务仅在设备项目启用时存在；未装配时不会退回普通设备通道。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureFenceServices(org.springframework.beans.factory.ObjectProvider<ClientProjectFenceService> provider) {
+        fenceServices = provider;
+    }
 
     /** 兼容仅验证普通设备合同的既有测试；生产装配使用包含可选项目服务的构造器。 */
     public LocalClientController(LocalClientPairingService pairings, LocalClientProofService proofs,
@@ -149,22 +157,28 @@ public class LocalClientController {
     /** 签名设备领取远端项目任务；功能未装配时明确返回 404。 */
     @PostMapping(value = "/bootstrap/project-tasks/next",
             consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ClientProjectService.DeviceTaskView> nextProjectTask(
+    public ResponseEntity<?> nextProjectTask(
             @RequestBody(required = false) byte[] body, HttpServletRequest request) {
         requireProjectProtocol(request);
         LocalClientDevice device = verifiedDevice(body, request);
         // 能力声明必须包含在已验签正文中；未签名的请求头不能证明旧客户端会执行本地确认和超时。
-        if (!java.util.Arrays.equals(body, "{\"selectionProtocol\":1}"
+        if (!java.util.Arrays.equals(body, "{\"selectionProtocol\":1,\"fenceProtocol\":1}"
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
             throw new ResponseStatusException(HttpStatus.UPGRADE_REQUIRED,
-                    "请升级本机客户端以支持目录选择确认与超时");
+                    "请升级本机客户端以支持目录选择确认、超时和运行代次握手");
         }
         ClientProjectService service = clientProjects == null ? null : clientProjects.getIfAvailable();
         if (service == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "已配对设备项目功能未启用");
         }
-        return service.claim(device).map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.noContent().build());
+        ClientProjectService.ClaimDecision decision = service.claim(device);
+        if (decision.task() != null) return ResponseEntity.ok(decision.task());
+        if (decision.fence() != null) {
+            return ResponseEntity.status(HttpStatus.ACCEPTED)
+                    .cacheControl(org.springframework.http.CacheControl.noStore())
+                    .body(decision.fence());
+        }
+        return ResponseEntity.noContent().build();
     }
 
     /** 签名设备回报远端项目任务结果。 */
@@ -180,6 +194,44 @@ public class LocalClientController {
         }
         service.complete(device, taskId, body);
         return ResponseEntity.noContent().build();
+    }
+
+    /** 仅接受已签名的严格代次正文；主体和设备来自验签结果，不采用正文提供的身份。 */
+    @PostMapping(value = "/bootstrap/project-runs/{runId}/fence-ack", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Void> acknowledgeProjectFence(@PathVariable("runId") UUID runId,
+            @RequestBody byte[] body, HttpServletRequest request) {
+        requireProjectProtocol(request);
+        LocalClientDevice device = verifiedDevice(body, request);
+        long epoch = fenceEpoch(body);
+        ClientProjectFenceService service = fenceServices == null ? null : fenceServices.getIfAvailable();
+        if (service == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "设备项目代次功能未启用");
+        service.acknowledge(device, runId, epoch);
+        return ResponseEntity.noContent().cacheControl(org.springframework.http.CacheControl.noStore()).build();
+    }
+
+    /** 仅已签名声明支持新握手的设备可读取当前代次；响应不得缓存。 */
+    @PostMapping(value = "/bootstrap/project-runs/{runId}/fence-current", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ClientProjectFenceService.FenceView> currentProjectFence(
+            @PathVariable("runId") UUID runId, @RequestBody byte[] body, HttpServletRequest request) {
+        requireProjectProtocol(request);
+        LocalClientDevice device = verifiedDevice(body, request);
+        if (!java.util.Arrays.equals(body, "{\"fenceProtocol\":1}".getBytes(java.nio.charset.StandardCharsets.US_ASCII)))
+            throw new ResponseStatusException(HttpStatus.UPGRADE_REQUIRED, "请升级本机客户端以支持运行代次握手");
+        ClientProjectFenceService service = fenceServices == null ? null : fenceServices.getIfAvailable();
+        if (service == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "设备项目代次功能未启用");
+        return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore()).body(service.current(device, runId));
+    }
+
+    private static long fenceEpoch(byte[] body) {
+        if (body == null || body.length > 32) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "设备代次请求无效");
+        String value = new String(body, java.nio.charset.StandardCharsets.US_ASCII);
+        if (!value.matches("\\{\\\"epoch\\\":[1-9][0-9]{0,18}\\}"))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "设备代次请求无效");
+        try {
+            return Long.parseLong(value.substring(9, value.length() - 1));
+        } catch (NumberFormatException invalid) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "设备代次请求无效");
+        }
     }
 
     private LocalClientDevice verifiedDevice(byte[] body, HttpServletRequest request) {

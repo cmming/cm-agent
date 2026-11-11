@@ -1,6 +1,7 @@
 package com.cmagent.core.repository;
 
 import com.cmagent.core.domain.ClientProjectTask;
+import com.cmagent.core.domain.LocalClientDevice;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,6 +61,27 @@ public interface ClientProjectTaskRepository {
     boolean complete(UUID tenantId, String ownerId, UUID deviceId, UUID taskId,
             long expectedVersion, ClientProjectTask.State state, String encryptedResult,
             String safeError, Instant now);
+
+    /**
+     * 使用已经通过设备签名验证的完整设备上下文完成设备回报。
+     *
+     * <p>旧仓储默认沿用标识分包入口；实现持久代次时覆盖本方法，必须在同一事务核对设备、来源、
+     * 租期、当前代次与设备确认。调用方不得从请求体自行构造 {@code device}。</p>
+     *
+     * @param device 已验签设备
+     * @param taskId 任务标识
+     * @param expectedVersion 设备签名回报的版本
+     * @param state 成功、失败或未知
+     * @param encryptedResult 认证加密结果
+     * @param safeError 已脱敏错误
+     * @param now 服务端时间
+     * @return 条件更新成功时 true
+     */
+    default boolean completeForDevice(LocalClientDevice device, UUID taskId, long expectedVersion,
+            ClientProjectTask.State state, String encryptedResult, String safeError, Instant now) {
+        return complete(device.tenantId(), device.ownerId(), device.id(), taskId,
+                expectedVersion, state, encryptedResult, safeError, now);
+    }
 
     /** 将未领取任务取消或将已领取任务标为未知，不自动重派。 */
     boolean close(UUID tenantId, String ownerId, UUID deviceId, UUID taskId,

@@ -29,6 +29,10 @@ public final class ClientProjectProperties {
     private Duration commandTaskTtl = Duration.ofMinutes(35);
     /** 模型结束后等待设备命令收敛的独立屏障期限，不占用 Web 请求线程。 */
     private Duration commandBarrierTimeout = Duration.ofMinutes(5);
+    /** 当前 Server 实例持有设备项目 Run 的数据库租期。 */
+    private Duration ownershipLease = Duration.ofSeconds(30);
+    /** 租约心跳、过期接管和恢复确认扫描间隔。 */
+    private Duration recoveryScanInterval = Duration.ofSeconds(5);
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -48,6 +52,10 @@ public final class ClientProjectProperties {
     public void setCommandTaskTtl(Duration value) { commandTaskTtl = value; }
     public Duration getCommandBarrierTimeout() { return commandBarrierTimeout; }
     public void setCommandBarrierTimeout(Duration value) { commandBarrierTimeout = value; }
+    public Duration getOwnershipLease() { return ownershipLease; }
+    public void setOwnershipLease(Duration value) { ownershipLease = value; }
+    public Duration getRecoveryScanInterval() { return recoveryScanInterval; }
+    public void setRecoveryScanInterval(Duration value) { recoveryScanInterval = value; }
 
     /**
      * 在功能启用时验证精确来源和短期期限；失败信息不包含客户端目录或凭据。
@@ -79,6 +87,15 @@ public final class ClientProjectProperties {
         positive(statusRetention, "status-retention", Duration.ofHours(1));
         positive(commandTaskTtl, "command-task-ttl", Duration.ofMinutes(40));
         positive(commandBarrierTimeout, "command-barrier-timeout", Duration.ofMinutes(30));
+        if (ownershipLease == null || ownershipLease.compareTo(Duration.ofSeconds(1)) < 0
+                || ownershipLease.compareTo(Duration.ofMinutes(5)) > 0) {
+            throw new IllegalStateException("cm-agent.client-projects.ownership-lease 必须在一秒至五分钟内");
+        }
+        if (recoveryScanInterval == null || recoveryScanInterval.compareTo(Duration.ofSeconds(1)) < 0
+                || recoveryScanInterval.compareTo(ownershipLease) >= 0) {
+            throw new IllegalStateException(
+                    "cm-agent.client-projects.recovery-scan-interval 必须至少一秒且短于 ownership-lease");
+        }
     }
 
     private static void positive(Duration value, String name, Duration maximum) {
