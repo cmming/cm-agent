@@ -167,6 +167,11 @@ public final class LocalClientApplication {
                     if (handshake == null) throw required;
                     try {
                         handshake.synchronize(identity, required.runId());
+                    } catch (ClientProjectFenceJournal.MissingWitnessException missing) {
+                        // 缺失见证无法通过继续轮询自愈；退出并提示显式初始化，避免空耗请求预算。
+                        throw new LocalClientServerClient.ClientFailureException(
+                                "设备项目运行代次见证缺失；请停止客户端并运行 init-fence-store 后再重启，"
+                                        + "迁移前不会领取或执行项目任务", missing);
                     } catch (java.io.IOException unavailable) {
                         // 代次读取或确认响应可能丢失；本机见证已先落盘，重新核对后再继续。
                         System.err.println("设备运行代次握手暂不可用；稍后重新核对，不会执行任务");

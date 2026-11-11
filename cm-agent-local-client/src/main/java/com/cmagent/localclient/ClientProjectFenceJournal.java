@@ -18,7 +18,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * 客户端项目 Run 代次的追加式本机见证；当前组件尚未接入设备协议。
+ * 客户端项目 Run 代次的追加式本机见证，供设备轮询和恢复握手在执行任务前复核。
  *
  * <p>调用方只能使用认证后的服务端任务和已验证设备根构造键。初始化存储是显式操作，
  * 正常读取绝不自动创建丢失文件；不完整记录、格式错误或代次跳跃均拒绝。跨进程文件锁
@@ -63,7 +63,10 @@ final class ClientProjectFenceJournal {
         locked((channel, epochs) -> {
             State current = epochs.get(key);
             if (Objects.equals(current, new State(1, "EXECUTING"))) return null;
-            if (current != null || !allowCreate) throw new IOException("运行代次见证缺失或已变化");
+            if (current == null && !allowCreate) {
+                throw new MissingWitnessException("运行代次见证缺失，不能自动重建首代");
+            }
+            if (current != null) throw new IOException("运行代次见证已变化");
             append(channel, key, 1, "EXECUTING");
             return null;
         });
@@ -131,6 +134,9 @@ final class ClientProjectFenceJournal {
 
     private <T> T locked(LockedAction<T> action) throws IOException {
         synchronized (JVM_LOCK) {
+            if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+                throw new MissingWitnessException("运行代次见证文件不存在");
+            }
             if (Files.isSymbolicLink(file) || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
                 throw new IOException("运行代次见证缺失或不安全");
             }
@@ -216,6 +222,15 @@ final class ClientProjectFenceJournal {
             if (serverDigest == null || !serverDigest.matches("[0-9a-f]{64}"))
                 throw new IllegalArgumentException("服务端身份摘要无效");
         }
+    }
+
+    /**
+     * 本机见证文件或指定 Run 的持久记录缺失。
+     *
+     * <p>该异常只用于让客户端转换为固定的可操作提示；消息不包含见证路径、项目绝对路径或设备密钥。</p>
+     */
+    static final class MissingWitnessException extends IOException {
+        MissingWitnessException(String message) { super(message); }
     }
 
     /** @param <T> 持锁动作返回类型 */

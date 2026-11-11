@@ -13,9 +13,9 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 /**
  * 在数据库短事务内登记已验签设备的运行代次确认及严格审计。
  *
- * <p>调用方必须先验证设备签名、一次性挑战和包含本机持久化确认的完整请求体；
- * 客户端提交的租户、主体、实例和阶段不能作为可信来源。本组件尚未连接 HTTP 协议，
- * 单独的数据库确认不能证明本机进程已停止或旧副作用没有发生。</p>
+ * <p>HTTP 边界必须先验证设备签名、一次性挑战和包含本机持久化确认的完整请求体；
+ * 客户端提交的租户、主体、实例和阶段不能作为可信来源。数据库确认只能证明设备已持久
+ * 记录当前代次，不能证明本机进程已停止或旧副作用没有发生。</p>
  */
 public final class JdbcClientProjectFenceAcknowledgements {
     private final JdbcClientProjectRunOwnershipRepository ownership;

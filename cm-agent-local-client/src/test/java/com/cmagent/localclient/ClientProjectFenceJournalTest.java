@@ -51,8 +51,18 @@ public class ClientProjectFenceJournalTest {
         assertThatThrownBy(() -> journal.execute(key, 1, () -> "bad")).isInstanceOf(java.io.IOException.class);
         assertThatThrownBy(() -> journal.advance(key, 1, 2)).isInstanceOf(java.io.IOException.class);
         Files.delete(path);
-        assertThatThrownBy(() -> journal.execute(key, 1, () -> "bad")).isInstanceOf(java.io.IOException.class);
-        assertThatThrownBy(() -> journal.advance(key, 1, 2)).isInstanceOf(java.io.IOException.class);
+        assertThatThrownBy(() -> journal.execute(key, 1, () -> "bad"))
+                .isInstanceOf(ClientProjectFenceJournal.MissingWitnessException.class);
+        assertThatThrownBy(() -> journal.advance(key, 1, 2))
+                .isInstanceOf(ClientProjectFenceJournal.MissingWitnessException.class);
+    }
+
+    @Test void 已确认首代缺少本机记录时不能自动迁移() throws Exception {
+        var journal = new ClientProjectFenceJournal(directory.resolve("fence"));
+        journal.initializeStore();
+        assertThatThrownBy(() -> journal.initializeRun(key, false))
+                .isInstanceOf(ClientProjectFenceJournal.MissingWitnessException.class)
+                .hasMessageNotContaining(key.rootId().toString());
     }
 
     @Test void 恢复确认等待旧代次同步动作退出且随后旧代次被拒绝() throws Exception {

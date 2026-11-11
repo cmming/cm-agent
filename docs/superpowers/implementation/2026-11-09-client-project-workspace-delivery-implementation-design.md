@@ -1,6 +1,15 @@
 # 本机客户端项目工作区实施说明
 
-## R4 实际交付：T19 可信代次与安全恢复（2026-11-11）
+## R5 实际交付：T9/T17 平台恢复续验（2026-11-11）
+
+- `ClientProjectFenceJournal` 新增固定安全的 `MissingWitnessException`，区分文件或指定 Run 记录缺失与一般损坏；`LocalClientApplication` 对缺失见证停止轮询并提示先执行 `init-fence-store`。异常和提示均不包含见证路径、项目路径或设备密钥。
+- `ClientProjectFenceHandshake`、`LocalClientServerClient`、`JdbcClientProjectFencedTaskReader/Writer` 与 `JdbcClientProjectFenceAcknowledgements` 中 R4 后已过时的“尚未接入”说明已同步为真实接线状态。
+- 真实客户端重启：命令 `525ff639-c6bc-4e12-9459-c839499580de` 启动后强杀客户端 `45772`，同 Job 的 `node.exe` `19684` 同步消失；重启 PID `40480` 后持久命令日志转 `UNKNOWN`，后续状态任务成功回报且命令保持隔离。
+- 旧客户端无见证：Run `e8662979-6744-46e8-8152-37f11395e2b2`、任务 `228a519e-1719-4e61-a5c7-7ddcc9354ac0` 保持未领取，代次确认数为 0；修补后的客户端退出并给出显式初始化命令。
+- 双实例竞争：Run `cef6c8b3-2abb-4258-88dc-5b48f30fa6ec` 由实例 `3e4f10d7-00bb-491a-a5a6-5d213375d5e3` 持有；强制过期后，`8444` 实例 `1191db8a-3f60-43a7-a542-48a9a8523e39` 赢得 `RECOVERING` 代次 2，设备确认后 Run `FAILED`、命令 `UNKNOWN`、归属 `CLOSED`。
+- **平台边界：** 强制终止证明了 Job Object 在进程句柄被系统关闭时收口子进程；未在本轮日志中执行真实交互式 Windows 注销或物理掉电，T9/T17 整体仍保持进行中。
+
+## R4 历史实际交付：T19 可信代次与安全恢复（2026-11-11）
 
 - `LocalClientServerClient.Task#fencedProjectTask` 将 `epoch=0` 视为项目级任务；`LocalClientServerClientTest` 新增服务端真实响应形态回归，运行级正代次校验未放宽。
 - `ClientProjectService` 在未确认代次时返回 `202 FenceView`，确认后通过 `ClientProjectTaskFencing` 与 `JdbcClientProjectFencedTaskReader` 在同一事务领取任务；`ClientProjectFenceService` 与 Controller 只接受签名、无重定向、带协议头的当前代次/确认请求。
@@ -72,7 +81,7 @@
 - T19（当时待做，依赖 T3/T17）：为设备项目 Run 建立可信、可过期的持久实例归属与单调防护代次；领取、状态推进、外部副作用许可和恢复事务须共享可验证栅栏。仅在证明旧执行已失效且复核任务/命令时收敛，已有未知副作用继续隔离，不凭空内存缺失或客户端声明判定；跨实例竞争、迟到许可、审批恢复、审计失败回滚及 MySQL/PostgreSQL 双库测试必须覆盖。旧版没有归属见证的 Run 不得被新逻辑猜测为已停。
 - 本轮代码、运维与发布说明已修改；提交前需审查暂存区，仅提交本任务范围。旧客户端需先停用并排空已领取选择任务，再同步升级；Server 回退不能作为绕过确认的方式。
 
-日期：2026-11-09；当前修订 R4（2026-11-11）；mode=default；业务代码提交 `9fff872`，文档随本轮同步提交。
+日期：2026-11-09；当前修订 R5（2026-11-11）；mode=default；R4 业务代码提交 `9fff872`，R5 代码与文档随本轮同步提交。
 
 ## R3 续验结果（历史，2026-11-10）
 

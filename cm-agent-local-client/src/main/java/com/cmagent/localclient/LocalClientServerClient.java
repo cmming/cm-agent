@@ -218,7 +218,8 @@ final class LocalClientServerClient implements AutoCloseable {
      * 将已经在本机安全落盘的代次以设备签名确认；调用方不得在落盘前调用。
      *
      * <p>新代次握手只接受 HTTPS 和配对时固定的服务端来源。设备请求签名只能证明客户端身份，
-     * 因此不能像旧本机测试协议那样接受回环 HTTP 的未认证服务端响应。本方法尚未接入轮询循环。</p>
+     * 因此不能像旧本机测试协议那样接受回环 HTTP 的未认证服务端响应。轮询循环在服务端
+     * 返回代次要求后先调用本机持久握手，再由本方法提交设备确认。</p>
      * @param identity 已配对设备身份
      * @param runId 已固定来源的运行标识
      * @param epoch 已持久落盘的代次

@@ -10,9 +10,9 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 /**
  * 在运行归属行锁内原子保存设备任务与固定代次。
  *
- * <p>本组件尚未替代既有派发入口，也不能阻止未使用本入口的旧任务领取；接线前还必须
- * 完成领取和客户端握手栅栏。调用方必须来自可信运行上下文，不能采用浏览器、模型或
- * 设备提交的实例与代次。任一插入失败由共同事务回滚，不留下无代次任务。</p>
+ * <p>生产任务仓储通过本组件写入带代次任务，旧领取入口会跳过这些任务，新领取入口还须
+ * 设备确认同一代次。调用方必须来自可信运行上下文，不能采用浏览器、模型或设备提交的
+ * 实例与代次。任一插入失败由共同事务回滚，不留下无代次任务。</p>
  */
 public final class JdbcClientProjectFencedTaskWriter {
     private final JdbcClientProjectRunOwnershipRepository ownership;

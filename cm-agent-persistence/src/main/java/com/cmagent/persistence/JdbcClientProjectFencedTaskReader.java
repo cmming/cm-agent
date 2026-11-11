@@ -13,8 +13,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 /**
  * 仅领取已由可信设备确认执行代次的项目任务。
  *
- * <p>该入口尚未连接设备协议。调用方必须先验证设备签名，并在同一事务完成派发审计；
- * 客户端还必须在执行前核对可信服务端和本地代次，数据库领取不能撤销已经发出的任务。</p>
+ * <p>设备签名任务协议通过该入口领取，并要求客户端已确认当前归属代次。客户端还必须在
+ * 执行前核对可信服务端和本地代次，数据库领取不能撤销已经发出的任务。</p>
  */
 public final class JdbcClientProjectFencedTaskReader {
     private final JdbcClientProjectRunOwnershipRepository ownership;
