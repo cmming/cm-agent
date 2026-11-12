@@ -10,7 +10,8 @@
 - **Run：** `测试Qwen`，会话 `82f59826-4578-4d46-8573-ba029f81637c`，Run `50067d93-d8f9-433f-bce1-ed7ed3c2bc6f`，仅授权 `NETWORK`/`FULL_ACCESS`。`local_client_network` 状态 `SUCCEEDED`、authorized=true，操作 `02dba526-73c9-4d45-afcc-1fd72670bf86`，结果 HTTP 200、`{"status":"UP"}`。
 - **审计：** 最近审计页匹配到 `LOCAL_CLIENT_PAIRING_CREATE/PENDING`、`LOCAL_CLIENT_PAIRING_CONFIRM/ACTIVE`、`LOCAL_CLIENT_OPERATION_QUEUE/PENDING`、`LOCAL_CLIENT_OPERATION_DISPATCH/DISPATCHED`、`LOCAL_CLIENT_OPERATION_COMPLETE/SUCCEEDED`、`AGENT_RUN/RUNNING` 与 `SUCCEEDED`。
 - **测试：** Server `LocalClientPropertiesTest,LocalClientProofServiceTest,LocalClientPairingHttpIntegrationTest` 7/7；`cm-agent-local-client,cm-agent-console -am test` 中本地客户端 59/59、控制台 16/16；失败、错误、跳过均为 0。
-- **清理：** Rocky 客户端 PID `4152168` 已正常停止，`run2.err` 为 0 字节，随机口令文件已安全删除。Server 保持运行于 8080；没有提交或推送。
+- **清理：** Rocky 客户端 PID `4152168` 已正常停止，`run2.err` 为 0 字节，随机口令文件已安全删除。Server 保持运行于 8080。
+- **Git：** R7 代码、测试、发布说明与六份工作包主提交为 `744bae5`；账本回填后推送。
 
 ## R6 历史 T20 HTTP/HTTPS 可选来源账本（2026-11-12）
 
@@ -108,7 +109,7 @@
 - T19（当时待做，依赖 T3/T17）：为设备项目 Run 建立可信、可过期的持久实例归属与单调防护代次；领取、状态推进、外部副作用许可和恢复事务须共享可验证栅栏。仅在证明旧执行已失效且复核任务/命令时收敛，已有未知副作用继续隔离，不凭空内存缺失或客户端声明判定；跨实例竞争、迟到许可、审批恢复、审计失败回滚及 MySQL/PostgreSQL 双库测试必须覆盖。旧版没有归属见证的 Run 不得被新逻辑猜测为已停。
 - 本轮代码、运维与发布说明已修改；提交前需审查暂存区，仅提交本任务范围。旧客户端需先停用并排空已领取选择任务，再同步升级；Server 回退不能作为绕过确认的方式。
 
-日期：2026-11-09；当前修订 R7（2026-11-12）；mode=default；R4 业务代码提交 `9fff872`，R5/R6 已收口，R7 尚未提交、推送。
+日期：2026-11-09；当前修订 R7（2026-11-12）；mode=default；R4 业务代码提交 `9fff872`，R5/R6 已收口，R7 主提交 `744bae5`。
 
 ## R3 续验结果（历史，2026-11-10）
 
