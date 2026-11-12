@@ -12,7 +12,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * 将可信 HTTPS 服务端代次、本机根身份和持久见证组合为受限握手。
+ * 将配对时固定的 HTTP/HTTPS 服务端代次、本机根身份和持久见证组合为受限握手。
  *
  * <p>设备轮询在服务端返回代次要求时通过本组件同步；调用方必须先显式建立受保护的见证
  * 文件。已被服务端确认的首代若缺失本机见证，不能自动重建。执行时在本机文件锁内重新查询
@@ -23,7 +23,11 @@ final class ClientProjectFenceHandshake {
     private final ClientProjectFenceJournal journal;
     private final RootVerifier roots;
 
-    /** @param client 使用默认可信 TLS 的设备连接 @param roots 当前用户的根登记 @param journal 已显式建立的代次见证 */
+    /**
+     * @param client 使用 JVM 默认 TLS 校验的设备连接
+     * @param roots 当前用户的根登记
+     * @param journal 已显式建立的代次见证
+     */
     ClientProjectFenceHandshake(LocalClientServerClient client, ClientProjectRootStore roots,
             ClientProjectFenceJournal journal) {
         this(client, (identity, rootId) -> roots.verify(identity, rootId).identity(), journal);
@@ -146,9 +150,10 @@ final class ClientProjectFenceHandshake {
         Objects.requireNonNull(identity); Objects.requireNonNull(rootId); Objects.requireNonNull(runId);
         var metadata = identity.metadata();
         if (metadata.tenantId() == null || metadata.deviceId() == null) throw new IOException("设备尚未配对");
-        URI origin = LocalClientServerClient.requireFenceHttps(URI.create(metadata.serverUrl()));
-        int port = origin.getPort() == -1 ? 443 : origin.getPort();
-        String canonical = "https|" + origin.getHost().toLowerCase(Locale.ROOT) + "|" + port;
+        URI origin = LocalClientServerClient.requireFenceOrigin(URI.create(metadata.serverUrl()));
+        String scheme = origin.getScheme().toLowerCase(Locale.ROOT);
+        int port = origin.getPort() == -1 ? ("https".equals(scheme) ? 443 : 80) : origin.getPort();
+        String canonical = scheme + "|" + origin.getHost().toLowerCase(Locale.ROOT) + "|" + port;
         try {
             String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                     .digest(canonical.getBytes(StandardCharsets.US_ASCII)));

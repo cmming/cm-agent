@@ -44,11 +44,11 @@
                     <div class="panel-heading"><div><h2 id="localClientPairHeading">连接新电脑</h2><p>在要执行操作的电脑上准备客户端，浏览器可以在另一台电脑使用。</p></div></div>
                     <div class="local-client-setup" aria-label="首次连接步骤">
                         <ol>
-                            <li><strong>准备客户端</strong><p>在构建电脑使用 JDK 21 和 Maven 3.9+ 构建 <code>cm-agent-local-client</code> 模块，然后把生成的 <code>-all.jar</code> 复制到目标电脑。目标电脑只需 JDK 21，不需要 Maven、源码或其他依赖目录。服务端需在隔离测试环境启用本机客户端功能，远程访问需使用已配置的 HTTPS 地址。</p>
+                            <li><strong>准备客户端</strong><p>在构建电脑使用 JDK 21 和 Maven 3.9+ 构建 <code>cm-agent-local-client</code> 模块，然后把生成的 <code>-all.jar</code> 复制到目标电脑。目标电脑只需 JDK 21，不需要 Maven、源码或其他依赖目录。服务端需在隔离测试环境启用本机客户端功能；客户端使用部署中显式配置并允许的 HTTP 或 HTTPS 服务地址。</p>
                                 <details><summary>查看源码构建命令</summary><p>在项目源码根目录运行：</p><pre tabindex="0" aria-label="构建命令"><code>mvn -pl cm-agent-local-client -am -DskipTests package</code></pre><p>可执行文件位于 <code>cm-agent-local-client/target/cm-agent-local-client-0.1.0-SNAPSHOT-all.jar</code>；版本号变化时按构建输出替换。</p></details>
                             </li>
                             <li><strong>生成配对包</strong><p>在目标电脑的交互式终端运行下面的配对命令，将服务端地址和设备名称换成实际值。保留终端打开，按提示设置本机身份口令（如需要），复制完整 JSON。</p>
-                                <details open><summary>配对命令</summary><pre tabindex="0" aria-label="配对命令"><code>java -jar cm-agent-local-client-0.1.0-SNAPSHOT-all.jar pair --server https://服务端地址 --name 设备名称</code></pre><p>Windows、Linux 和 macOS 使用相同命令。本机同机测试可使用服务端已配置且允许的回环地址；不要将 <code>localhost</code> 当作另一台电脑的服务端地址。</p></details>
+                                <details open><summary>配对命令</summary><pre tabindex="0" aria-label="配对命令"><code>java -jar cm-agent-local-client-0.1.0-SNAPSHOT-all.jar pair --server http://服务端地址:端口 --name 设备名称</code></pre><p>Windows、Linux 和 macOS 使用相同命令。HTTP/HTTPS 地址必须与部署配置及允许来源完全一致；使用 HTTPS 时仍由 JVM 校验服务器证书和主机名。不要将 <code>localhost</code> 当作另一台电脑的服务端地址。</p></details>
                             </li>
                             <li><strong>核对并确认配对</strong><p>将 JSON 粘贴到下方，核对设备名称和平台属于目标电脑，再确认配对。浏览器确认后，回到客户端终端等待“配对完成”；服务端显示已登记不代表客户端已完成或在线。</p></li>
                             <li><strong>启动客户端并选择单轮授权</strong><p>配对完成后，在目标电脑运行以下命令并保持客户端运行。然后到<a href="/console/v2/chat.html">会话聊天</a>选择设备、本轮允许的能力和确认方式，再发送任务。</p>

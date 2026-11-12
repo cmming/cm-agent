@@ -56,6 +56,17 @@ class DeviceIdentityStoreTest {
         Arrays.fill(password, '\0');
     }
 
+    @Test
+    void 远端HTTP服务端来源可以由显式配置持久化() throws Exception {
+        var store = new DeviceIdentityStore(directory, new ObjectMapper(), new SecureRandom(), Optional.empty());
+        char[] password = "remote-http-test-password".toCharArray();
+        var created = store.create(URI.create("http://192.168.0.159:8080"), "局域网验收机",
+                LocalClientDevice.Platform.WINDOWS, password);
+
+        assertThat(created.metadata().serverUrl()).isEqualTo("http://192.168.0.159:8080");
+        Arrays.fill(password, '\0');
+    }
+
     private static final class MemoryCredentialStore implements SystemCredentialStore {
         private final Map<String, byte[]> values = new HashMap<>();
         @Override public String create(byte[] secret) {

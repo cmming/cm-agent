@@ -15,7 +15,7 @@ import java.time.Duration;
 public final class LocalClientProperties {
     /** 是否启用本机客户端配对和签名任务通道。 */
     private boolean enabled;
-    /** 服务端对外规范来源，例如 https://agent.example.com。 */
+    /** 服务端对外规范来源，例如 http://agent.example.com:8080 或 https://agent.example.com。 */
     private String audience = "http://127.0.0.1:8080";
     /** 浏览器确认配对的最长时限。 */
     private Duration pairingTtl = Duration.ofMinutes(10);
@@ -60,13 +60,14 @@ public final class LocalClientProperties {
         } catch (IllegalArgumentException failure) {
             throw new IllegalStateException("cm-agent.local-client.audience 不是有效 URI", failure);
         }
+        // 非回环 HTTP 仅作为部署显式选择的传输方式；audience 仍必须来自固定配置而非请求 Host，
+        // 以继续阻止 Host 头伪造。HTTP 本身不提供响应机密性和真实性，部署方须限制可信内网边界。
         if (!parsed.isAbsolute() || parsed.getHost() == null
-                || !("http".equals(parsed.getScheme()) || "https".equals(parsed.getScheme()))
+                || !("http".equalsIgnoreCase(parsed.getScheme()) || "https".equalsIgnoreCase(parsed.getScheme()))
+                || parsed.getRawUserInfo() != null
+                || parsed.getRawPath() != null && !parsed.getRawPath().isEmpty() && !"/".equals(parsed.getRawPath())
                 || parsed.getQuery() != null || parsed.getFragment() != null) {
             throw new IllegalStateException("cm-agent.local-client.audience 必须是 HTTP/HTTPS 规范来源");
-        }
-        if ("http".equals(parsed.getScheme()) && !isLoopback(parsed.getHost())) {
-            throw new IllegalStateException("非回环本机客户端通道必须使用 HTTPS");
         }
         positive(pairingTtl, "pairing-ttl", Duration.ofMinutes(30));
         positive(challengeTtl, "challenge-ttl", Duration.ofMinutes(2));
@@ -80,8 +81,4 @@ public final class LocalClientProperties {
         }
     }
 
-    private static boolean isLoopback(String host) {
-        return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "::1".equals(host)
-                || "[::1]".equals(host);
-    }
 }

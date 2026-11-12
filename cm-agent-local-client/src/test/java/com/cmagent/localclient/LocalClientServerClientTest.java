@@ -14,25 +14,42 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LocalClientServerClientTest {
-    @Test void 代次握手拒绝明文回环和带用户信息的来源() throws Exception {
-        assertThatThrownBy(() -> LocalClientServerClient.requireFenceHttps(URI.create("http://127.0.0.1:8080")))
-                .isInstanceOf(LocalClientServerClient.ClientFailureException.class);
-        assertThatThrownBy(() -> LocalClientServerClient.requireFenceHttps(URI.create("https://user:secret@example.test")))
+    @Test void 代次握手接受HTTP和HTTPS并拒绝用户信息与附加路径() throws Exception {
+        assertThat(LocalClientServerClient.requireFenceOrigin(URI.create("http://192.168.0.159:8080")))
+                .isEqualTo(URI.create("http://192.168.0.159:8080"));
+        assertThatThrownBy(() -> LocalClientServerClient.requireFenceOrigin(URI.create("https://user:secret@example.test")))
                 .isInstanceOf(LocalClientServerClient.ClientFailureException.class)
                 .satisfies(failure -> assertThat(failure.getMessage()).doesNotContain("secret"));
-        assertThatThrownBy(() -> LocalClientServerClient.requireFenceHttps(URI.create("https://example.test/path")))
+        assertThatThrownBy(() -> LocalClientServerClient.requireFenceOrigin(URI.create("https://example.test/path")))
                 .isInstanceOf(LocalClientServerClient.ClientFailureException.class);
-        assertThat(LocalClientServerClient.requireFenceHttps(URI.create("https://example.test:8443")))
+        assertThat(LocalClientServerClient.requireFenceOrigin(URI.create("https://example.test:8443")))
                 .isEqualTo(URI.create("https://example.test:8443"));
     }
 
-    @Test void 明文来源不能申请代次确认挑战(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory)
+    @Test void 明文来源可以申请并提交代次确认(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory)
             throws Exception {
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         var challenges = new AtomicInteger();
+        var acknowledgements = new AtomicInteger();
+        UUID challenge = UUID.randomUUID();
+        byte[] nonce = new byte[32];
+        new SecureRandom().nextBytes(nonce);
         server.createContext("/api/local-client/bootstrap/challenges", exchange -> {
             challenges.incrementAndGet();
-            exchange.sendResponseHeaders(500, -1);
+            byte[] body = ("{\"challengeId\":\"" + challenge + "\",\"nonce\":\""
+                    + java.util.Base64.getEncoder().encodeToString(nonce) + "\"}")
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.createContext("/api/local-client/bootstrap/project-runs/", exchange -> {
+            if (!exchange.getRequestURI().getPath().endsWith("/fence-ack")) {
+                exchange.sendResponseHeaders(404, -1);
+            } else {
+                acknowledgements.incrementAndGet();
+                exchange.sendResponseHeaders(204, -1);
+            }
             exchange.close();
         });
         server.start();
@@ -43,10 +60,9 @@ class LocalClientServerClientTest {
                     "测试机", com.cmagent.core.domain.LocalClientDevice.Platform.WINDOWS,
                     "fixture-pass".toCharArray());
             var identity = store.confirm(created, UUID.randomUUID(), UUID.randomUUID(), "owner");
-            assertThatThrownBy(() -> client.acknowledgeProjectFence(identity, UUID.randomUUID(), 1))
-                    .isInstanceOf(LocalClientServerClient.ClientFailureException.class)
-                    .hasMessageContaining("HTTPS");
-            assertThat(challenges).hasValue(0);
+            client.acknowledgeProjectFence(identity, UUID.randomUUID(), 1);
+            assertThat(challenges).hasValue(1);
+            assertThat(acknowledgements).hasValue(1);
         } finally { server.stop(0); }
     }
 
@@ -227,6 +243,37 @@ class LocalClientServerClientTest {
             assertThat(nextPath.get()).isEqualTo("/api/local-client/bootstrap/project-tasks/next");
             assertThat(protocol.get()).isEqualTo("5");
             assertThat(capability.get()).isEqualTo("{\"selectionProtocol\":1,\"fenceProtocol\":1}");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void 设备项目未启用时项目端点返回404仍继续通用轮询(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory)
+            throws Exception {
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/local-client/bootstrap/challenges", exchange -> {
+            byte[] body = ("{\"challengeId\":\"" + UUID.randomUUID() + "\",\"nonce\":\""
+                    + java.util.Base64.getEncoder().encodeToString(new byte[32]) + "\"}")
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.createContext("/api/local-client/bootstrap/project-tasks/next", exchange -> {
+            exchange.sendResponseHeaders(404, -1);
+            exchange.close();
+        });
+        server.start();
+        try (var client = new LocalClientServerClient(new ObjectMapper(), new SecureRandom())) {
+            var store = new DeviceIdentityStore(directory, new ObjectMapper(), new SecureRandom(),
+                    java.util.Optional.empty());
+            var identity = store.create(URI.create("http://127.0.0.1:" + server.getAddress().getPort()),
+                    "测试机", com.cmagent.core.domain.LocalClientDevice.Platform.WINDOWS,
+                    "fixture-pass".toCharArray());
+            identity = store.confirm(identity, UUID.randomUUID(), UUID.randomUUID(), "owner");
+
+            assertThat(client.nextProjectTask(identity)).isEmpty();
         } finally {
             server.stop(0);
         }

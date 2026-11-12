@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * CM Agent 本机客户端命令行入口。
  *
  * <p>示例：
- * {@code pair --server https://agent.example.com --name workstation} 生成一次性配对包；
+ * {@code pair --server http://agent.example.com:8080 --name workstation} 生成一次性配对包；
  * 用户把输出 JSON 粘贴到已登录的控制台并确认后，进程保存设备标识。
  * {@code run} 以设备私钥签名的短轮询领取本机操作。客户端不自动提权，也不会在断线后重放已领取
  * 的外部操作。</p>

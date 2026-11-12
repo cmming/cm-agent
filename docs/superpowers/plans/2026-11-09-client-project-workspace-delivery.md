@@ -1,6 +1,25 @@
 # 本机客户端项目工作区实施计划
 
-## R5 已完成顺序与后续边界（2026-11-11）
+## R7 已完成顺序与验证（2026-11-12）
+
+1. 从 Rocky 验证 `http://192.168.0.159:8080/actuator/health` 返回 200，确认 Windows 入站 HTTP 与 `0.0.0.0`/双栈监听可用。
+2. 重新打包含可选 HTTP 的 Linux 客户端 JAR，在 Rocky `/tmp/cm-agent-http-e2e-20261112` 使用独立状态目录、JDK 21 和随机口令生成新配对包。
+3. 管理员会话提交配对包并确认设备；首次签名轮询暴露 audience 不一致，服务端仍拒绝非回环 HTTP。
+4. 移除 Server 非回环 HTTP 配置门禁并补规范来源测试；用 `CM_AGENT_LOCAL_CLIENT_AUDIENCE=http://192.168.0.159:8080` 受控重启同配置 `mysql,local` Server。
+5. 第二次轮询暴露可选设备项目端点 `404` 被客户端放大为致命拒绝；客户端改为继续通用任务轮询并补合同测试。
+6. 创建独立会话，使用 `测试Qwen` 和 `FULL_ACCESS`、仅 `NETWORK` 能力发送最小请求；确认 `local_client_network` 领取、执行、回报和 Run 成功。
+7. 核对审计事件、停止 Rocky 客户端并删除随机口令；运行 Server 定向测试、完整客户端/控制台测试和文档一致性检查。
+
+## R6 历史已完成顺序与验证（2026-11-12）
+
+1. 用 CodeGraph 核对 `DeviceIdentityStore.validateServer`、`LocalClientServerClient` 的代次请求与 `ClientProjectFenceHandshake` 来源摘要调用链。
+2. 删除远端 HTTP 拒绝和 `requireFenceHttps` 协议门禁，改为验证规范 HTTP/HTTPS 来源；HTTPS 响应仍要求证书验证后的 TLS 会话。
+3. 将见证来源摘要扩展为实际 scheme、主机和默认端口，避免 HTTP 与 HTTPS 混用持久记录。
+4. 更新控制台本机客户端说明和配对命令，明确 HTTP/HTTPS 均为可选，并声明 HTTPS 的 JVM 证书校验不关闭。
+5. 增加远端 HTTP 身份持久化、HTTP 代次挑战/确认、用户信息与附加路径拒绝测试，保留原真实 TLS 测试。
+6. 验证顺序：定向 `DeviceIdentityStoreTest,LocalClientServerClientTest` → `cm-agent-local-client,cm-agent-console -am test` → 差异检查与六份文档一致性检查。
+
+## R5 历史已完成顺序与后续边界（2026-11-11）
 
 1. 复曝旧配对状态并删除本机见证副本，确认真实 Server 只返回代次要求、数据库无确认且任务不被领取。
 2. 将缺见证从通用网络失败拆成类型化异常；客户端停止轮询并提示显式运行 `init-fence-store`，补单测防止自动迁移。
@@ -82,7 +101,7 @@
 - T19（当时待做，依赖 T3/T17）：为设备项目 Run 建立可信、可过期的持久实例归属与单调防护代次；领取、状态推进、外部副作用许可和恢复事务须共享可验证栅栏。仅在证明旧执行已失效且复核任务/命令时收敛，已有未知副作用继续隔离，不凭空内存缺失或客户端声明判定；跨实例竞争、迟到许可、审批恢复、审计失败回滚及 MySQL/PostgreSQL 双库测试必须覆盖。旧版没有归属见证的 Run 不得被新逻辑猜测为已停。
 - 本轮代码、运维与发布说明已修改；提交前需审查暂存区，仅提交本任务范围。旧客户端需先停用并排空已领取选择任务，再同步升级；Server 回退不能作为绕过确认的方式。
 
-日期：2026-11-09；当前修订 R5（2026-11-11）；mode=default。任务编号与[清单](../checklists/2026-11-09-client-project-workspace-delivery-checklist.md)一致。R2 追加只读门禁和文件变更纵切；R3 收口固定工具链、Run 完成屏障和停止/对账；R4 完成 T19 代次握手、恢复隔离与 Windows/双库验收；R5 续验 T9/T17 的客户端重启、无见证、双实例竞争与强制终止路径。
+日期：2026-11-09；当前修订 R7（2026-11-12）；mode=default。任务编号与[清单](../checklists/2026-11-09-client-project-workspace-delivery-checklist.md)一致。R2 追加只读门禁和文件变更纵切；R3 收口固定工具链、Run 完成屏障和停止/对账；R4 完成 T19 代次握手、恢复隔离与 Windows/双库验收；R5 续验 T9/T17 平台恢复路径；R6 解除强制 HTTPS，R7 完成 Rocky HTTP 真实闭环。
 
 ## R3 续验结果（历史，2026-11-10）
 

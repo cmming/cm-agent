@@ -1,6 +1,29 @@
 # 本机客户端项目工作区实施账本
 
-## R5 T9/T17 续验账本（2026-11-11）
+## R7 T21 Rocky HTTP 真实闭环账本（2026-11-12）
+
+- **修订基线：** HEAD `ec09a00`；mode=default。追加 T21，T0–T20 历史证据保持。
+- **链路前置：** Rocky `curl http://192.168.0.159:8080/actuator/health` 返回 `200 {"status":"UP"}`；Windows 监听为 `[::]:8080`，PID `26768`。
+- **配对：** Rocky JDK `21.0.11`、fat JAR SHA-256 `6ecebb46304e8e24d8706e0e0ff3aec9e61b843202fa94347b78551ff40ee3ed`，新状态目录 `/tmp/cm-agent-http-e2e-20261112/state`。配对 `23f2f03b-778d-44e3-90d6-091edfdbb772` 确认后设备为 `541802a1-67cd-48ed-b3ec-f951b972cc18`。
+- **问题 1：** 首次签名轮询因 Server 默认 audience 为 `http://127.0.0.1:8080`，与 Rocky 身份来源 `http://192.168.0.159:8080` 不一致而返回 401；同时 `LocalClientProperties` 仍拒绝非回环 HTTP。已取消该传输协议硬门禁并增加来源规范测试，以显式 audience 重启 Server。
+- **问题 2：** 第二次轮询因设备项目未启用，专用端点 404 被客户端放大为致命拒绝。已改为将 404 视为可选项目队列为空，继续通用操作轮询并补合同测试。
+- **Run：** `测试Qwen`，会话 `82f59826-4578-4d46-8573-ba029f81637c`，Run `50067d93-d8f9-433f-bce1-ed7ed3c2bc6f`，仅授权 `NETWORK`/`FULL_ACCESS`。`local_client_network` 状态 `SUCCEEDED`、authorized=true，操作 `02dba526-73c9-4d45-afcc-1fd72670bf86`，结果 HTTP 200、`{"status":"UP"}`。
+- **审计：** 最近审计页匹配到 `LOCAL_CLIENT_PAIRING_CREATE/PENDING`、`LOCAL_CLIENT_PAIRING_CONFIRM/ACTIVE`、`LOCAL_CLIENT_OPERATION_QUEUE/PENDING`、`LOCAL_CLIENT_OPERATION_DISPATCH/DISPATCHED`、`LOCAL_CLIENT_OPERATION_COMPLETE/SUCCEEDED`、`AGENT_RUN/RUNNING` 与 `SUCCEEDED`。
+- **测试：** Server `LocalClientPropertiesTest,LocalClientProofServiceTest,LocalClientPairingHttpIntegrationTest` 7/7；`cm-agent-local-client,cm-agent-console -am test` 中本地客户端 59/59、控制台 16/16；失败、错误、跳过均为 0。
+- **清理：** Rocky 客户端 PID `4152168` 已正常停止，`run2.err` 为 0 字节，随机口令文件已安全删除。Server 保持运行于 8080；没有提交或推送。
+
+## R6 历史 T20 HTTP/HTTPS 可选来源账本（2026-11-12）
+
+- **修订基线：** HEAD `ec09a00`；mode=default。复用原六份实施工作包，追加 T20；T0–T19 历史状态和编号不变。
+- **代码范围：** `DeviceIdentityStore`、`LocalClientServerClient`、`ClientProjectFenceHandshake`、对应两项测试和 `local-client.html`。无关的 `application*.yml`、`.impeccable/`、`.gitignore`、`.workbuddy/` 保持不动。
+- **调整：** 删除远端 HTTP 拒绝和代次 HTTPS 强制；保留规范来源、禁止重定向、设备签名、根身份、本地见证及 Host/Origin 门禁。见证摘要纳入 scheme 和默认端口。
+- **本机定向验证：** JDK 21.0.11、Maven 3.9.4，`mvn -q -pl cm-agent-local-client -am -Dtest=DeviceIdentityStoreTest,LocalClientServerClientTest -Dsurefire.failIfNoSpecifiedTests=false test` 退出码 0；两项测试类合计 12/12，失败、错误、跳过均为 0。
+- **本机模块验证：** `mvn -q -pl cm-agent-local-client,cm-agent-console -am test` 退出码 0；本地客户端 58/58、控制台 16/16，失败、错误、跳过均为 0。输出中的目录选择错误为既有负向夹具日志，Surefire 最终成功。
+- **中间失败与修复：** 首次全量测试发现 `ClientProjectRootStoreTest.确认窗口只显示规范服务端来源及无控制字符的设备名` 因本轮额外收紧身份存储 userinfo 而失败。该收紧超出“取消 HTTPS 强制”范围，已撤回；userinfo 继续由代次握手原有校验拒绝，之后全量模块测试通过。
+- **未验证：** 尚无 Rocky 到 Windows 的真实远端 HTTP 配对和任务闭环证据；HTTP 响应可由中间人读取或篡改的部署风险未通过 TLS 消除。
+- **Git：** 未提交、未推送。
+
+## R5 历史 T9/T17 续验账本（2026-11-11）
 
 - **修订基线：** HEAD `8e1190f`；mode=default。R5 复用原六份工作包，不新增任务编号；T9/T17 保持进行中，移出项无。
 - **客户端进程重启：** Run `d6244d86-4e3f-43ca-a173-22074189d225`，命令 `525ff639-c6bc-4e12-9459-c839499580de`。客户端 PID `45772` 与受管 node PID `19684` 在强制终止后均不存在；重启 PID `40480` 后命令为 `UNKNOWN`，未重放。
@@ -85,7 +108,7 @@
 - T19（当时待做，依赖 T3/T17）：为设备项目 Run 建立可信、可过期的持久实例归属与单调防护代次；领取、状态推进、外部副作用许可和恢复事务须共享可验证栅栏。仅在证明旧执行已失效且复核任务/命令时收敛，已有未知副作用继续隔离，不凭空内存缺失或客户端声明判定；跨实例竞争、迟到许可、审批恢复、审计失败回滚及 MySQL/PostgreSQL 双库测试必须覆盖。旧版没有归属见证的 Run 不得被新逻辑猜测为已停。
 - 本轮代码、运维与发布说明已修改；提交前需审查暂存区，仅提交本任务范围。旧客户端需先停用并排空已领取选择任务，再同步升级；Server 回退不能作为绕过确认的方式。
 
-日期：2026-11-09；当前修订 R5（2026-11-11）；mode=default；R4 业务代码提交 `9fff872`，R5 提交与推送状态以最终 Git 记录为准。
+日期：2026-11-09；当前修订 R7（2026-11-12）；mode=default；R4 业务代码提交 `9fff872`，R5/R6 已收口，R7 尚未提交、推送。
 
 ## R3 续验结果（历史，2026-11-10）
 
@@ -131,6 +154,8 @@
 | T17 | 进行中 | 仅提案 Run 成功、命令成功 Run 成功、停止后 Run 不成功、客户端强制重启后的 UNKNOWN、双实例代次 2 安全接管与不重放均有真实证据；实际 Windows 注销/物理掉电仍待独立会话验收 |
 | T18 | 进行中 | 长期来源历史与运行快照分离、微秒往返和轮询交互回归通过；真实重启后原会话/回执读取通过；完整离线/撤销/归档浏览器矩阵待验 |
 | T19 | 本轮完成 | 提交 `9fff872`：可信代次握手、任务派发门禁、恢复隔离和终态归属关闭已接线；Rocky PostgreSQL/MySQL 与真实 Windows Server 重启通过，Run `e8eef87f-962d-49a9-8f1b-9be10ae7e0d5` 安全收敛且无重放。历史 Run `ccbb3f7f-fac6-4472-97e0-02e2ff47894d` 仍保持原状态，不补造见证 |
+| T20 | 完成 | 客户端来源改为可选 HTTP/HTTPS；定向与模块测试通过。真实 Rocky/Windows HTTP 闭环和 HTTPS 生产网关部署未在本轮执行 |
+| T21 | 完成 | Rocky 通过 HTTP 完成新配对、签名任务领取和 `local_client_network` Run；Server/客户端定向及模块测试通过。非回环 HTTP 部署风险仍由内网与来源限制承担 |
 
 ## R1 历史验证
 

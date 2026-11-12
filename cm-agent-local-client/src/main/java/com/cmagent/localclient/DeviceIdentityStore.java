@@ -262,14 +262,10 @@ final class DeviceIdentityStore {
 
     private static void validateServer(URI uri) {
         if (uri == null || !uri.isAbsolute() || uri.getHost() == null
-                || !("http".equals(uri.getScheme()) || "https".equals(uri.getScheme()))
+                || !("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
                 || (uri.getPath() != null && !uri.getPath().isEmpty() && !"/".equals(uri.getPath()))
                 || uri.getQuery() != null || uri.getFragment() != null) {
             throw new IllegalArgumentException("服务端来源必须是 HTTP 或 HTTPS 规范来源");
-        }
-        if ("http".equals(uri.getScheme()) && !("localhost".equalsIgnoreCase(uri.getHost())
-                || "127.0.0.1".equals(uri.getHost()) || "::1".equals(uri.getHost()))) {
-            throw new IllegalArgumentException("远端本机客户端通道必须使用 HTTPS");
         }
     }
 

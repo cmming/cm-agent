@@ -1,6 +1,26 @@
 # 本机客户端项目工作区实施说明
 
-## R5 实际交付：T9/T17 平台恢复续验（2026-11-11）
+## R7 实际交付：T21 Rocky 经 HTTP 真实闭环（2026-11-12）
+
+- `LocalClientProperties` 取消“非回环 HTTP audience 必须 HTTPS”的校验，保留固定 audience、无 userinfo、无附加路径、无查询/片段等规范来源要求；新增 `LocalClientPropertiesTest` 覆盖 HTTP/HTTPS 成功及危险来源拒绝。
+- `LocalClientServerClient.nextProjectTask` 将设备项目端点 `404` 解释为空队列，允许通用本机客户端在设备项目功能关闭时继续轮询；`LocalClientServerClientTest` 增加对应合同。
+- Rocky 使用 JDK 21.0.11 和本次重新构建的 fat JAR；Server 以 `mysql,local` profile、8080 HTTP、显式 audience `http://192.168.0.159:8080` 运行。
+- 新设备 `541802a1-67cd-48ed-b3ec-f951b972cc18` 经配对 `23f2f03b-778d-44e3-90d6-091edfdbb772` 确认。简单 Run `50067d93-d8f9-433f-bce1-ed7ed3c2bc6f` 调用 `local_client_network` 一次，操作 `02dba526-73c9-4d45-afcc-1fd72670bf86` 成功，健康端点为 HTTP 200/`{"status":"UP"}`。
+- 审计包含 `LOCAL_CLIENT_PAIRING_CREATE`、`LOCAL_CLIENT_PAIRING_CONFIRM`、`LOCAL_CLIENT_OPERATION_QUEUE/DISPATCH/COMPLETE` 和 `AGENT_RUN` 成功记录。
+- 客户端进程已停止，随机口令文件已删除；设备、Run、操作和审计记录保留。Server 仍运行且监听 `::8080`。
+- 验证：Server 定向 7/7、本地客户端 59/59、控制台 16/16，失败、错误、跳过均为 0。
+
+## R6 历史实际交付：T20 服务端来源可选 HTTP/HTTPS（2026-11-12）
+
+- `DeviceIdentityStore` 删除远端 HTTP 硬拒绝，继续限定服务端为无用户信息、查询、片段和附加路径的 HTTP/HTTPS 规范来源。
+- `LocalClientServerClient` 将 `requireFenceHttps` 替换为 `requireFenceOrigin`；HTTP 可签发代次挑战、读取当前代次并提交签名确认。HTTPS 响应仍要求 SSL 会话，JVM 默认证书链与主机名校验没有关闭。
+- `ClientProjectFenceHandshake` 的见证来源摘要改为包含 scheme、规范主机和有效端口，HTTP 默认 80、HTTPS 默认 443。
+- `local-client.html` 删除远端必须 HTTPS 的说明，配对示例改为 HTTP，并说明 HTTP/HTTPS 都必须与部署配置完全一致、HTTPS 仍校验证书。
+- `DeviceIdentityStoreTest` 新增远端 HTTP 来源持久化；`LocalClientServerClientTest` 新增 HTTP 代次挑战/确认，并保留真实本地 TLS 与不可信证书拒绝测试。
+- 本机验证：JDK 21.0.11、Maven 3.9.4 下定向测试退出码 0；`cm-agent-local-client,cm-agent-console -am test` 退出码 0。测试日志中的目录选择失败为预期错误分支夹具，Maven 最终结果为成功。
+- **未覆盖：** 尚未使用 Rocky 对真实远端 HTTP 服务端完成配对和任务闭环；HTTP 下服务端响应机密性与真实性的部署风险保留。
+
+## R5 历史实际交付：T9/T17 平台恢复续验（2026-11-11）
 
 - `ClientProjectFenceJournal` 新增固定安全的 `MissingWitnessException`，区分文件或指定 Run 记录缺失与一般损坏；`LocalClientApplication` 对缺失见证停止轮询并提示先执行 `init-fence-store`。异常和提示均不包含见证路径、项目路径或设备密钥。
 - `ClientProjectFenceHandshake`、`LocalClientServerClient`、`JdbcClientProjectFencedTaskReader/Writer` 与 `JdbcClientProjectFenceAcknowledgements` 中 R4 后已过时的“尚未接入”说明已同步为真实接线状态。
@@ -82,7 +102,7 @@
 - T19（当时待做，依赖 T3/T17）：为设备项目 Run 建立可信、可过期的持久实例归属与单调防护代次；领取、状态推进、外部副作用许可和恢复事务须共享可验证栅栏。仅在证明旧执行已失效且复核任务/命令时收敛，已有未知副作用继续隔离，不凭空内存缺失或客户端声明判定；跨实例竞争、迟到许可、审批恢复、审计失败回滚及 MySQL/PostgreSQL 双库测试必须覆盖。旧版没有归属见证的 Run 不得被新逻辑猜测为已停。
 - 本轮代码、运维与发布说明已修改；提交前需审查暂存区，仅提交本任务范围。旧客户端需先停用并排空已领取选择任务，再同步升级；Server 回退不能作为绕过确认的方式。
 
-日期：2026-11-09；当前修订 R5（2026-11-11）；mode=default；R4 业务代码提交 `9fff872`，R5 代码与文档随本轮同步提交。
+日期：2026-11-09；当前修订 R7（2026-11-12）；mode=default；R4 业务代码提交 `9fff872`，R5/R6 已收口，R7 代码、真实验收与文档尚未提交。
 
 ## R3 续验结果（历史，2026-11-10）
 

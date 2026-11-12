@@ -125,6 +125,8 @@ final class LocalClientServerClient implements AutoCloseable {
                 Map.of("X-CM-Client-Project-Protocol",
                         Integer.toString(com.cmagent.core.domain.ClientProjectBinding.PROTOCOL)));
         if (response.statusCode() == 204) return Optional.empty();
+        // 通用本机客户端与设备项目是两个独立开关；项目端点未装配时不能阻止通用任务轮询。
+        if (response.statusCode() == 404) return Optional.empty();
         if (response.statusCode() == 202) {
             FenceView fence = decode(response.body(), FenceView.class, "设备代次提示无效");
             if (fence.runId() == null || fence.rootId() == null || fence.acknowledged() == null) {
@@ -217,9 +219,10 @@ final class LocalClientServerClient implements AutoCloseable {
     /**
      * 将已经在本机安全落盘的代次以设备签名确认；调用方不得在落盘前调用。
      *
-     * <p>新代次握手只接受 HTTPS 和配对时固定的服务端来源。设备请求签名只能证明客户端身份，
-     * 因此不能像旧本机测试协议那样接受回环 HTTP 的未认证服务端响应。轮询循环在服务端
-     * 返回代次要求后先调用本机持久握手，再由本方法提交设备确认。</p>
+     * <p>代次握手只接受配对时固定的 HTTP/HTTPS 规范来源和禁止重定向。HTTPS 继续使用
+     * JVM 默认证书链与主机名校验；HTTP 仅绑定到已配对来源，并依靠设备签名、本地根登记和
+     * 持久代次见证限制误用。轮询循环在服务端返回代次要求后先调用本机持久握手，再由本方法
+     * 提交设备确认。</p>
      * @param identity 已配对设备身份
      * @param runId 已固定来源的运行标识
      * @param epoch 已持久落盘的代次
@@ -231,7 +234,7 @@ final class LocalClientServerClient implements AutoCloseable {
             throws IOException, InterruptedException, GeneralSecurityException {
         Objects.requireNonNull(identity); Objects.requireNonNull(runId);
         if (epoch < 1) throw new IllegalArgumentException("设备代次无效");
-        URI origin = requireFenceHttps(identityServer(identity));
+        URI origin = requireFenceOrigin(identityServer(identity));
         if (http.followRedirects() != HttpClient.Redirect.NEVER)
             throw new ClientFailureException("设备代次握手禁止重定向", null);
         URI endpoint = resolve(origin, "/api/local-client/bootstrap/project-runs/" + runId + "/fence-ack");
@@ -239,15 +242,14 @@ final class LocalClientServerClient implements AutoCloseable {
         HttpResponse<String> response = signedPost(identity, endpoint, body,
                 Map.of("X-CM-Client-Project-Protocol",
                         Integer.toString(com.cmagent.core.domain.ClientProjectBinding.PROTOCOL)));
-        if (!response.uri().equals(endpoint) || response.sslSession().isEmpty())
-            throw new ClientFailureException("设备代次握手的服务端身份不可验证", null);
+        requireExpectedResponse(origin, endpoint, response);
         if (response.statusCode() >= 500) throw new IOException("设备代次确认服务暂不可用");
         if (response.statusCode() != 204) throw new ClientFailureException(
                 "设备代次确认被拒绝，请核对运行和设备状态", null);
     }
 
     /**
-     * 以签名请求从可信 HTTPS 服务端读取运行代次，结果仍须由本机根注册和日志复核。
+     * 以签名请求从配对时固定的 HTTP/HTTPS 服务端读取运行代次，结果仍须由本机根注册和日志复核。
      * @param identity 已配对设备身份
      * @param runId 已知目标运行
      * @return 服务端给出的有效阶段、代次及不透明根身份
@@ -258,7 +260,7 @@ final class LocalClientServerClient implements AutoCloseable {
     FenceView currentProjectFence(DeviceIdentityStore.StoredIdentity identity, UUID runId)
             throws IOException, InterruptedException, GeneralSecurityException {
         Objects.requireNonNull(identity); Objects.requireNonNull(runId);
-        URI origin = requireFenceHttps(identityServer(identity));
+        URI origin = requireFenceOrigin(identityServer(identity));
         if (http.followRedirects() != HttpClient.Redirect.NEVER)
             throw new ClientFailureException("设备代次握手禁止重定向", null);
         URI endpoint = resolve(origin, "/api/local-client/bootstrap/project-runs/" + runId + "/fence-current");
@@ -266,8 +268,7 @@ final class LocalClientServerClient implements AutoCloseable {
                 "{\"fenceProtocol\":1}".getBytes(StandardCharsets.US_ASCII),
                 Map.of("X-CM-Client-Project-Protocol",
                         Integer.toString(com.cmagent.core.domain.ClientProjectBinding.PROTOCOL)));
-        if (!response.uri().equals(endpoint) || response.sslSession().isEmpty())
-            throw new ClientFailureException("设备代次握手的服务端身份不可验证", null);
+        requireExpectedResponse(origin, endpoint, response);
         if (response.statusCode() >= 500) throw new IOException("设备代次读取服务暂不可用");
         if (response.statusCode() != 200) throw new ClientFailureException("设备运行代次不可用，请核对运行和设备状态", null);
         FenceView view = decode(response.body(), FenceView.class, "设备代次响应无效");
@@ -280,15 +281,33 @@ final class LocalClientServerClient implements AutoCloseable {
         return view;
     }
 
-    /** 代次协议必须认证服务端；拒绝明文回环、用户信息和可改变来源的附加 URI 部分。 */
-    static URI requireFenceHttps(URI origin) throws IOException {
-        if (origin == null || !"https".equalsIgnoreCase(origin.getScheme()) || origin.getHost() == null
+    /** 代次协议接受 HTTP/HTTPS 规范来源；拒绝用户信息和可改变来源的附加 URI 部分。 */
+    static URI requireFenceOrigin(URI origin) throws IOException {
+        if (origin == null || origin.getHost() == null
+                || !("http".equalsIgnoreCase(origin.getScheme()) || "https".equalsIgnoreCase(origin.getScheme()))
                 || origin.getRawUserInfo() != null || origin.getRawQuery() != null || origin.getRawFragment() != null
                 || origin.getPort() < -1 || origin.getPort() == 0 || origin.getPort() > 65535
                 || origin.getRawPath() != null && !origin.getRawPath().isEmpty() && !"/".equals(origin.getRawPath())) {
-            throw new ClientFailureException("设备代次握手需要可信 HTTPS 服务端来源", null);
+            throw new ClientFailureException("设备代次握手需要配对的 HTTP 或 HTTPS 服务端来源", null);
         }
         return origin;
+    }
+
+    /**
+     * 防止客户端跟随重定向或把明文响应误当成 TLS 响应。
+     *
+     * <p>HTTPS 的证书链和主机名验证由注入的 {@link HttpClient} 在发送阶段完成；这里再要求
+     * 成功响应对应同一 HTTPS 地址并带有 SSL 会话。HTTP 不产生 SSL 会话，只校验配对来源
+     * 派生出的精确端点，避免把取消 TLS 强制误解为允许关闭 HTTPS 证书校验。</p>
+     */
+    private static void requireExpectedResponse(URI origin, URI endpoint, HttpResponse<?> response)
+            throws ClientFailureException {
+        if (!response.uri().equals(endpoint)) {
+            throw new ClientFailureException("设备代次握手响应来源不匹配", null);
+        }
+        if ("https".equalsIgnoreCase(origin.getScheme()) && response.sslSession().isEmpty()) {
+            throw new ClientFailureException("设备代次握手的 HTTPS 响应缺少 TLS 会话", null);
+        }
     }
 
     private HttpResponse<String> signedPost(DeviceIdentityStore.StoredIdentity identity, URI endpoint, byte[] body)
