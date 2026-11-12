@@ -175,6 +175,9 @@ final class LocalClientServerClient implements AutoCloseable {
         } catch (GeneralSecurityException failure) {
             throw new ClientFailureException("结果签名失败；本机操作可能已发生，请勿自动重试", failure);
         }
+        if (terminalResultRejection(response.statusCode())) {
+            throw new OperationResultRejectedException(response.statusCode());
+        }
         if (response.statusCode() != 204) throw new ClientFailureException(
                 "本机操作已执行，但结果回报未被接受；副作用可能已发生，请勿自动重试", null);
     }
@@ -393,6 +396,16 @@ final class LocalClientServerClient implements AutoCloseable {
         }
     }
 
+    /**
+     * 迟到、冲突或已过期回执属于该操作自身的终态，不应让整个设备停止轮询。
+     *
+     * <p>这些状态可能发生在服务端已把操作收口为 UNKNOWN 之后；客户端只能保留本机结果并继续
+     * 领取其他任务，不能重发原回执，也不能把服务端拒绝扩大成设备身份失效。</p>
+     */
+    private static boolean terminalResultRejection(int status) {
+        return status == 400 || status == 409 || status == 410 || status == 422 || status == 429;
+    }
+
     @Override public void close() {
         http.shutdownNow();
     }
@@ -470,6 +483,13 @@ final class LocalClientServerClient implements AutoCloseable {
     /** 项目任务的迟到或冲突回执不能重发，但不应永久占住客户端轮询。 */
     static final class ProjectResultRejectedException extends IOException {
         ProjectResultRejectedException(int status) { super("设备项目结果未被接受（HTTP " + status + "），请在控制台核对原请求"); }
+    }
+
+    /** 通用本机操作的迟到或冲突回执只结束当前操作，不能停止设备后续轮询。 */
+    static final class OperationResultRejectedException extends IOException {
+        OperationResultRejectedException(int status) {
+            super("本机操作结果未被接受（HTTP " + status + "），请核对原请求，不会自动重试");
+        }
     }
 
     /** 服务端要求客户端先落盘并确认运行代次，确认成功后重新领取即可。 */

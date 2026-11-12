@@ -225,6 +225,9 @@ public final class LocalClientApplication {
                 try {
                     client.reportTask(identity, current, outcome.state(),
                             outcome.output(), outcome.error());
+                } catch (LocalClientServerClient.OperationResultRejectedException rejected) {
+                    // 通用操作可能已被服务端收口为 UNKNOWN；拒绝迟到回执不能终止设备后续任务。
+                    System.err.println(rejected.getMessage());
                 } catch (LocalClientServerClient.ClientFailureException failure) {
                     if (!(failure.getCause() instanceof java.io.IOException)) throw failure;
                     // 通用操作的副作用也可能已经发生；只保留未知提示，不重发结果或执行。

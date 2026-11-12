@@ -1,6 +1,16 @@
 # 本机客户端项目工作区实施说明
 
-## R7 实际交付：T21 Rocky 经 HTTP 真实闭环（2026-11-12）
+## R8 实际交付：T22 重启恢复与迟到回执收口（2026-11-12）
+
+- `LocalClientServerClient.reportTask` 对 400/409/410/422/429 返回新增 `OperationResultRejectedException`；`LocalClientApplication.consumeTasks` 捕获后只输出“不会自动重试”提示并继续轮询。
+- `LocalClientReconnectTest` 新增通用操作迟到回执合同：首次领取 `NETWORK` 任务并返回结果时服务端回 409，客户端必须继续领取后续任务。
+- 用户手动重启 `8080` 至 PID `44012` 后，重启前设备 `a6d5da12-9f66-4699-8fdb-84ba84d46e25` 无需重新配对即可恢复签名轮询。
+- 客户端 PID `680242` 停止并由 PID `717669` 重启后，Run `80e8e563-5a1c-4694-8c8e-e5114b1660b3` 成功。
+- 迟到恢复真实验证：操作 `c074a4fc-04f1-4aa1-b3a8-d6a7cf5b9439` 为 `UNKNOWN`、Run `b0ef5c51-...` 为 `FAILED`；客户端收到 HTTP 409 后存活且未重放，后续 Run `22cca63e-4173-4e24-a857-f7d85024894d` 与操作 `bb6a0c93-...` 成功。
+- 验证：本地客户端 60/60、控制台 16/16、Server 恢复定向 8/8，均无失败、错误或跳过。客户端最终已停止，随机口令文件已删除。
+- **未执行：** 没有由代理重启用户 `8080`，没有启动额外 Server；真实 HTTP 中断恢复由用户手动重启和现有 `LocalClientReconnectTest` fixture 共同覆盖。
+
+## R7 历史实际交付：T21 Rocky 经 HTTP 真实闭环（2026-11-12）
 
 - `LocalClientProperties` 取消“非回环 HTTP audience 必须 HTTPS”的校验，保留固定 audience、无 userinfo、无附加路径、无查询/片段等规范来源要求；新增 `LocalClientPropertiesTest` 覆盖 HTTP/HTTPS 成功及危险来源拒绝。
 - `LocalClientServerClient.nextProjectTask` 将设备项目端点 `404` 解释为空队列，允许通用本机客户端在设备项目功能关闭时继续轮询；`LocalClientServerClientTest` 增加对应合同。
@@ -102,7 +112,7 @@
 - T19（当时待做，依赖 T3/T17）：为设备项目 Run 建立可信、可过期的持久实例归属与单调防护代次；领取、状态推进、外部副作用许可和恢复事务须共享可验证栅栏。仅在证明旧执行已失效且复核任务/命令时收敛，已有未知副作用继续隔离，不凭空内存缺失或客户端声明判定；跨实例竞争、迟到许可、审批恢复、审计失败回滚及 MySQL/PostgreSQL 双库测试必须覆盖。旧版没有归属见证的 Run 不得被新逻辑猜测为已停。
 - 本轮代码、运维与发布说明已修改；提交前需审查暂存区，仅提交本任务范围。旧客户端需先停用并排空已领取选择任务，再同步升级；Server 回退不能作为绕过确认的方式。
 
-日期：2026-11-09；当前修订 R7（2026-11-12）；mode=default；R4 业务代码提交 `9fff872`，R5/R6 已收口，R7 代码、真实验收与文档主提交为 `744bae5`。
+日期：2026-11-09；当前修订 R8（2026-11-12）；mode=default；R4 业务代码提交 `9fff872`，R5/R6 已收口，R7 主提交 `744bae5` 与证据提交 `5fe3f14` 已推送，R8 本轮待提交。
 
 ## R3 续验结果（历史，2026-11-10）
 
