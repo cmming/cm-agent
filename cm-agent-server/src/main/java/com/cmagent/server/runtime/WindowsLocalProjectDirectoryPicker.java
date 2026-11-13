@@ -6,6 +6,7 @@ import com.sun.jna.Native;
 import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
 import com.sun.jna.WString;
+import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.PointerByReference;
 import com.sun.jna.win32.StdCallLibrary;
 import java.io.IOException;
@@ -35,6 +36,10 @@ final class WindowsLocalProjectDirectoryPicker {
     private static final int CANCELLED = 0x800704c7;
     /** 文件夹、文件系统、路径存在、不改cwd及不加入最近列表，不隐式选择虚拟Shell位置。 */
     private static final int OPTIONS = 0x20 | 0x40 | 0x800 | 0x8 | 0x02000000;
+    /** 原生选择窗口标题同时作为本进程窗口取消定位约束。 */
+    private static final String DIALOG_TITLE = "CM Agent · 选择本地项目文件夹";
+    /** 关闭本进程自有模态窗口，不结束宿主进程。 */
+    private static final int WM_CLOSE = 0x0010;
 
     /**
      * 在真实本机桌面显示目录窗口，所有COM资源由本次调用释放。
@@ -58,7 +63,7 @@ final class WindowsLocalProjectDirectoryPicker {
             check(created);
             if (dialog == null) throw new LocalProjectNativeException(SELECTION_FAILED);
             check(invoke(dialog, 9, OPTIONS));
-            check(invoke(dialog, 17, new WString("CM Agent · 选择本地项目文件夹")));
+            check(invoke(dialog, 17, new WString(DIALOG_TITLE)));
             check(invoke(dialog, 18, new WString("使用此文件夹")));
             int shown = invoke(dialog, 3, (Pointer) null);
             if (shown == CANCELLED) return Optional.empty();
@@ -97,6 +102,33 @@ final class WindowsLocalProjectDirectoryPicker {
                 }
             }
         }
+    }
+
+    /**
+     * 由受控期限任务关闭仍打开的本进程窗口。
+     *
+     * <p>只按固定标题查找并核对窗口所属进程，避免把同名其他进程窗口一并关闭；
+     * 窗口已经结束属于幂等成功，不使用强制结束进程或自动确认目录。</p>
+     */
+    void cancel() throws IOException {
+        try {
+            closeOwnedWindow(DIALOG_TITLE, Api.USER, ProcessHandle.current().pid());
+        } catch (LocalProjectNativeException failure) {
+            throw failure;
+        } catch (RuntimeException | LinkageError failure) {
+            throw new LocalProjectNativeException(NATIVE_UNAVAILABLE);
+        }
+    }
+
+    /** 包内可见的系统消息发送点，供无窗口测试核对 PID 过滤而不加载真实 DLL。 */
+    static void closeOwnedWindow(String title, User user, long expectedProcessId) throws LocalProjectNativeException {
+        Pointer window = user.FindWindowW(null, new WString(title));
+        if (window == null) return;
+        var processId = new IntByReference();
+        user.GetWindowThreadProcessId(window, processId);
+        if (processId.getValue() != (int) expectedProcessId) return;
+        if (user.PostMessageW(window, WM_CLOSE, null, null) == 0)
+            throw new LocalProjectNativeException(SELECTION_FAILED);
     }
 
     /** 每层释放独立包装，嵌套finally继续释放其余资源，不让清理异常泄露原生消息。 */
@@ -181,6 +213,15 @@ final class WindowsLocalProjectDirectoryPicker {
     interface User extends StdCallLibrary {
         Pointer OpenInputDesktop(int flags, boolean inherit, int access);
         boolean CloseDesktop(Pointer desktop);
+        default Pointer FindWindowW(WString className, WString windowName) {
+            throw new UnsupportedOperationException("测试替身未提供窗口查找");
+        }
+        default int GetWindowThreadProcessId(Pointer window, IntByReference processId) {
+            throw new UnsupportedOperationException("测试替身未提供进程查询");
+        }
+        default int PostMessageW(Pointer window, int message, Pointer wParam, Pointer lParam) {
+            throw new UnsupportedOperationException("测试替身未提供消息投递");
+        }
     }
 }
 

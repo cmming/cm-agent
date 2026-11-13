@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +24,9 @@ class LocalProjectSelectionsTest {
     @BeforeEach void setup() {
         when(access.reject(any(), any(), anyString(), anyInt(), anyString())).thenAnswer(call ->
                 new LocalProjectAccessException(call.getArgument(2), "selection-test-error", call.getArgument(3), call.getArgument(4)));
+        when(access.infrastructure(any(), any(), anyString(), any())).thenAnswer(call ->
+                new LocalProjectAccessException("PROJECT_UNAVAILABLE", "selection-test-infrastructure",
+                        503, "本地项目服务暂不可用"));
     }
 
     @Test void 重复查询及开始不延长固定期限且过期窗口结果不能签发票据() throws Exception {
@@ -88,6 +92,33 @@ class LocalProjectSelectionsTest {
         assertThatThrownBy(() -> selections.start(owner, UUID.randomUUID())).isInstanceOf(LocalProjectAccessException.class);
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(selections.get(owner, id).state()).isEqualTo(LocalProjectSelections.State.CANCELLED));
         verifyNoInteractions(tickets);
+    }
+
+    @Test void 固定期限到达会主动关闭窗口并释放后续选择队列() throws Exception {
+        var release = new CountDownLatch(1);
+        var cancelled = new CountDownLatch(1);
+        var chooser = new LocalProjectSelections.Chooser() {
+            @Override public Optional<Path> choose() throws Exception {
+                release.await();
+                return Optional.of(Path.of("expired-selection"));
+            }
+            @Override public void cancel() {
+                cancelled.countDown();
+                release.countDown();
+            }
+        };
+        try (var selections = new LocalProjectSelections(chooser, tickets, access,
+                Clock.systemUTC(), Duration.ofMillis(80))) {
+            UUID expired = UUID.randomUUID();
+            selections.start(owner, expired);
+            assertThat(cancelled.await(2, TimeUnit.SECONDS)).isTrue();
+            await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> {
+                assertThat(selections.start(owner, UUID.randomUUID())).isNotNull();
+            });
+            verify(tickets, never()).issue(eq(owner), eq(expired), any());
+        } finally {
+            release.countDown();
+        }
     }
 
     /** 时钟只在测试推进，不等待真实TTL；线程通过AtomicReference观察同一个可信时间。 */

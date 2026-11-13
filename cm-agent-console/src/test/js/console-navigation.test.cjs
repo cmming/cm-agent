@@ -6,6 +6,25 @@ const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"), "utf8");
 
+test("每个 v2 入口都预载跨页导航所需样式和项目脚本", () => {
+    const directory = path.join(__dirname, "../../main/resources/META-INF/resources/console/v2");
+    const pages = ["login", "overview", "agents", "model-configs", "tools", "skills", "projects", "local-client", "chat", "runs", "audit"];
+    const dependencies = ["project-development.js?v=1.1.5", "local-projects.js?v=1.2.0", "client-projects.js?v=1.2.3", "/assets/app.js?v=2.0.45"];
+    for (const page of pages) {
+        const html = fs.readFileSync(path.join(directory, `${page}.html`), "utf8");
+        for (const stylesheet of ["local-projects.css?v=1.7.0", "local-client.css?v=1.0.4"]) {
+            assert.equal(html.split(stylesheet).length - 1, 1, `${page} 缺少样式或重复引用：${stylesheet}`);
+            assert.ok(html.indexOf(stylesheet) < html.indexOf("</head>"), `${page} 的样式必须位于 head`);
+        }
+        let previous = -1;
+        for (const dependency of dependencies) {
+            const position = html.indexOf(dependency);
+            assert.ok(position > previous && html.indexOf(dependency, position + 1) === -1, `${page} 的脚本顺序或引用次数错误：${dependency}`);
+            previous = position;
+        }
+    }
+});
+
 // 执行真实导航函数，仅替换浏览器和网络边界；覆盖 body 替换前后的组件生命周期。
 function navigationHarness() {
     function functionSource(name) {

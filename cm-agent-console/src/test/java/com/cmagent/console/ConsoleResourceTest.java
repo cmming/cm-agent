@@ -46,6 +46,7 @@ class ConsoleResourceTest {
         String modelConfigs = resource("META-INF/resources/console/v2/model-configs.html");
         String tools = resource("META-INF/resources/console/v2/tools.html");
         String skills = resource("META-INF/resources/console/v2/skills.html");
+        String projects = resource("META-INF/resources/console/v2/projects.html");
         String skillsScript = resource("META-INF/resources/console/v2/assets/skills.js");
         String chat = resource("META-INF/resources/console/v2/chat.html");
         String runs = resource("META-INF/resources/console/v2/runs.html");
@@ -106,12 +107,31 @@ class ConsoleResourceTest {
         assertThat(localClient)
                 .contains("data-page=\"localClientPage\"", "id=\"localClientPage\"",
                         "id=\"localClientPairForm\"", "id=\"localClientDeviceList\"",
-                        "id=\"localClientDeviceDetail\"", "每轮 Run", "不会自动重放")
+                        "id=\"localClientDeviceDetail\"", "每轮 Run", "不会自动重放",
+                        "data-command-copy=\"localClientPairCommand\"", "data-command-copy=\"localClientRunCommand\"",
+                        "--credential-backend system|password", "--password-stdin")
                 .doesNotContain("id=\"agentsPage\"", "id=\"toolsPage\"", "id=\"runsPage\"", "id=\"auditPage\"");
 
         for (String page : new String[]{overview, agents, modelConfigs, tools, skills, chat, runs, audit, localClient}) {
             assertThat(page.indexOf("href=\"/console/v2/model-configs.html\""))
                     .isLessThan(page.indexOf("href=\"/console/v2/agents.html\""));
+        }
+        String[] navigationPages = {overview, agents, modelConfigs, tools, skills, projects, localClient, chat, runs, audit};
+        String[] navigationTargets = {
+                "overview.html", "model-configs.html", "agents.html", "tools.html", "skills.html",
+                "projects.html", "local-client.html", "chat.html", "runs.html", "audit.html"
+        };
+        for (String page : navigationPages) {
+            int navStart = page.indexOf("<nav id=\"sidebarNav\"");
+            int navEnd = page.indexOf("</nav>", navStart);
+            assertThat(navStart).isGreaterThanOrEqualTo(0);
+            String navigation = page.substring(navStart, navEnd);
+            int position = 0;
+            for (String target : navigationTargets) {
+                int next = navigation.indexOf("href=\"/console/v2/" + target + "\"", position);
+                assertThat(next).as("导航顺序与入口 %s", target).isGreaterThanOrEqualTo(position);
+                position = next + target.length();
+            }
         }
         assertThat(app).contains(
                 "loadModelConfigs(undefined, session)", "function updateOverviewOnboarding", "overviewPrimaryAction",
@@ -139,7 +159,8 @@ class ConsoleResourceTest {
                 .doesNotContain("CmAgentConsoleSession", "sessionStorage", "localStorage");
         for (String page : pages) {
             assertThat(resource("META-INF/resources/console/v2/" + page))
-                    .contains("/assets/app.js?v=2.0.43", "/assets/console-core.js?v=2.0.19", "/assets/styles.css?v=2.0.17", "skill-artifacts.js?v=1.0.2", "skill-artifacts.css?v=1.0.0")
+                    .contains("/assets/app.js?v=2.0.45", "/assets/console-core.js?v=2.0.19", "/assets/styles.css?v=2.0.17", "skill-artifacts.js?v=1.0.2", "skill-artifacts.css?v=1.0.0")
+                    .contains("<link rel=\"icon\" href=\"/assets/icons/square.svg\" type=\"image/svg+xml\">")
                     .contains("/console/v2/assets/sandbox-endpoints.js?v=1.1.1", "/console/v2/assets/sandbox-endpoints.css?v=1.0.0")
                     .contains("/console/v2/assets/workbench.css?v=1.0.3")
                     .doesNotContain("session.js", "sessionStorage", "localStorage");

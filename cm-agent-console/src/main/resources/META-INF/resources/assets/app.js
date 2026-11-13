@@ -2865,6 +2865,55 @@
         }
     }
 
+    async function copyLocalClientCommand(button) {
+        const command = $(button?.dataset?.commandCopy)?.textContent?.trim();
+        const status = $(button?.dataset?.commandStatus);
+        if (!command) {
+            setStatus(status, "未找到要复制的命令，请刷新页面后重试。", "error");
+            return;
+        }
+        const original = button.textContent;
+        button.disabled = true;
+        try {
+            await writeClipboardText(command);
+            button.textContent = "已复制";
+            setStatus(status, "命令已复制。", "success");
+        } catch {
+            setStatus(status, "浏览器未允许复制，请手动选择命令文本。", "error");
+        } finally {
+            button.disabled = false;
+            window.setTimeout(() => {
+                if (button.isConnected) button.textContent = original;
+            }, 1800);
+        }
+    }
+
+    async function writeClipboardText(text) {
+        if (window.navigator?.clipboard?.writeText) {
+            try {
+                await window.navigator.clipboard.writeText(text);
+                return;
+            } catch {
+                // HTTP 非安全上下文或浏览器权限可能拒绝 Clipboard API，继续使用同一次点击内的兼容路径。
+            }
+        }
+        const field = document.createElement("textarea");
+        field.value = text;
+        field.setAttribute("readonly", "");
+        field.style.position = "fixed";
+        field.style.opacity = "0";
+        field.style.pointerEvents = "none";
+        document.body.append(field);
+        try {
+            field.focus();
+            field.select();
+            field.setSelectionRange(0, field.value.length);
+            if (!document.execCommand?.("copy")) throw new Error("COPY_UNAVAILABLE");
+        } finally {
+            field.remove();
+        }
+    }
+
     async function confirmLocalClientPair() {
         const button = $("confirmLocalClientPairBtn");
         const status = $("localClientPairStatus");
@@ -4829,6 +4878,9 @@
             confirmLocalClientPair().catch((error) => setStatus($("localClientPairStatus"), error.message, "error"));
         });
         bind("localClientPairPackage", "input", () => renderLocalClientPairPreview(true));
+        document.querySelectorAll("[data-command-copy]").forEach((button) => {
+            button.addEventListener("click", () => copyLocalClientCommand(button));
+        });
         bind("chatLocalClientDevice", "change", syncChatLocalClientControls);
         document.querySelectorAll(".chat-local-client-categories input")
             .forEach((control) => control.addEventListener("change", syncChatLocalClientControls));

@@ -26,6 +26,11 @@ public final class LocalProjectSelections implements AutoCloseable {
     private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "cm-agent-local-project-picker"); thread.setDaemon(true); return thread;
     });
+    /** 到期必须主动关闭原生模态窗口，否则阻塞线程会长期占用唯一选择队列。 */
+    private final ScheduledExecutorService deadlines = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "cm-agent-local-project-picker-deadline"); thread.setDaemon(true);
+        return thread;
+    });
     /** 对窗口创建、关闭和拒绝排队的判断在同一实例锁下进行。 */
     private boolean busy, closed;
 
@@ -45,8 +50,11 @@ public final class LocalProjectSelections implements AutoCloseable {
         access.record(principal, requestId, "PROJECT_SELECTION", "STARTED");
         var entry = new Entry(principal, clock.instant().plus(ttl));
         requests.put(requestId, entry); busy = true;
-        try { executor.execute(() -> choose(requestId, entry)); }
-        catch (RejectedExecutionException failure) {
+        try {
+            entry.deadline = deadlines.schedule(() -> expire(requestId, entry), ttl.toMillis(), TimeUnit.MILLISECONDS);
+            executor.execute(() -> choose(requestId, entry));
+        } catch (RejectedExecutionException failure) {
+            if (entry.deadline != null) entry.deadline.cancel(false);
             requests.remove(requestId); busy = false;
             throw access.infrastructure(principal, requestId, "PROJECT_SELECTION_START", failure);
         }
@@ -70,8 +78,12 @@ public final class LocalProjectSelections implements AutoCloseable {
         try {
             Optional<Path> selected = chooser.choose();
             synchronized (this) {
+                if (entry.deadline != null) entry.deadline.cancel(false);
                 // 超期或服务关闭后到达的窗口结果不能重新签发授权；用户需重新执行明确选择。
-                if (closed || !entry.expires.isAfter(clock.instant())) { entry.state = State.CANCELLED; return; }
+                if (closed || entry.state == State.CANCELLED || !entry.expires.isAfter(clock.instant())) {
+                    entry.state = State.CANCELLED;
+                    return;
+                }
                 if (selected.isEmpty()) { access.record(entry.principal, id, "PROJECT_SELECTION", "CANCELLED"); entry.state = State.CANCELLED; return; }
                 var ticket = tickets.issue(entry.principal, id, selected.get());
                 access.record(entry.principal, id, "PROJECT_SELECTION", "SUCCEEDED");
@@ -85,7 +97,34 @@ public final class LocalProjectSelections implements AutoCloseable {
                 var error = access.infrastructure(entry.principal, id, "PROJECT_NATIVE_SELECTION", failure);
                 entry.errorId = error.errorId(); entry.state = State.FAILED;
             }
-        } finally { synchronized (this) { busy = false; } }
+        } finally {
+            synchronized (this) {
+                if (entry.deadline != null) entry.deadline.cancel(false);
+                busy = false;
+            }
+        }
+    }
+
+    /**
+     * 固定期限到达时只关闭仍在等待的受控窗口；选择结果或票据仍由 {@link #choose} 的锁内复核决定。
+     */
+    private void expire(UUID id, Entry entry) {
+        boolean cancel;
+        synchronized (this) {
+            cancel = requests.get(id) == entry && entry.state == State.SELECTING
+                    && !entry.expires.isAfter(clock.instant());
+            if (cancel) entry.state = State.CANCELLED;
+        }
+        if (!cancel) return;
+        try {
+            chooser.cancel();
+        } catch (Exception failure) {
+            var error = access.infrastructure(entry.principal, id, "PROJECT_NATIVE_SELECTION_CANCEL", failure);
+            synchronized (this) {
+                entry.errorId = error.errorId();
+                entry.state = State.FAILED;
+            }
+        }
     }
 
     private View view(PrincipalRef principal, UUID id, Entry entry) {
@@ -97,11 +136,26 @@ public final class LocalProjectSelections implements AutoCloseable {
     private static View snapshot(UUID id, Entry entry) { return new View(id, entry.state, entry.ticket, entry.expires, entry.errorId); }
     private void prune() { requests.entrySet().removeIf(value -> !value.getValue().expires.isAfter(clock.instant())); }
 
-    /** 停止接受新窗口；已打开的系统模态窗口仍由用户关闭，关闭后结果作废，不自动选择。 */
-    @Override public synchronized void close() { closed = true; executor.shutdown(); }
+    /** 停止接受新窗口并主动关闭受控窗口；关闭后结果作废，不自动选择。 */
+    @Override public synchronized void close() {
+        closed = true;
+        requests.values().stream().map(entry -> entry.deadline).filter(Objects::nonNull)
+                .forEach(deadline -> deadline.cancel(false));
+        // 不能中断正在等待 COM 的线程；先关闭原生窗口，让 choose 返回后在 closed 分支拒绝结果。
+        executor.shutdown();
+        deadlines.shutdownNow();
+        try { chooser.cancel(); }
+        catch (Exception ignored) {
+            // 关闭阶段不能再向已停止的生命周期写审计；窗口结果仍会因 closed 标记被拒绝。
+        }
+    }
 
     /** 仅由同包配置装配原生选择器。 */
-    @FunctionalInterface interface Chooser { Optional<Path> choose() throws Exception; }
+    @FunctionalInterface interface Chooser {
+        Optional<Path> choose() throws Exception;
+        /** 默认替身无需关闭窗口；生产原生适配器负责向自身窗口投递关闭消息。 */
+        default void cancel() throws Exception {}
+    }
     public enum State {
         /** 系统模态窗口仍在等待用户操作。 */ SELECTING,
         /** 已取得可单次消费的主体绑定票据。 */ SELECTED,
@@ -116,6 +170,7 @@ public final class LocalProjectSelections implements AutoCloseable {
         /** 仅在实例锁内更新。 */ private State state = State.SELECTING;
         /** 成功签发的不透明票据。 */ private UUID ticket;
         /** 已记录的失败关联号，不存异常正文。 */ private String errorId;
+        /** 固定期限关闭任务，成功后必须取消以避免关闭后续窗口。 */ private ScheduledFuture<?> deadline;
         Entry(PrincipalRef principal, Instant expires) { this.principal = principal; this.expires = expires; }
     }
 }

@@ -1,6 +1,8 @@
 package com.cmagent.server.runtime;
 
 import com.sun.jna.Pointer;
+import com.sun.jna.WString;
+import com.sun.jna.ptr.IntByReference;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
@@ -43,6 +45,24 @@ class WindowsLocalProjectDirectoryPickerTest {
         assertThatThrownBy(() -> WindowsLocalProjectDirectoryPicker.checkDesktop(user))
                 .isInstanceOf(LocalProjectNativeException.class).hasNoCause()
                 .hasMessage("本机原生组件暂不可用");
+    }
+
+    @Test void 到期只向同进程固定标题窗口投递关闭消息() throws LocalProjectNativeException {
+        var posted = new AtomicInteger();
+        var user = new WindowsLocalProjectDirectoryPicker.User() {
+            @Override public Pointer OpenInputDesktop(int flags, boolean inherit, int access) { throw new AssertionError(); }
+            @Override public boolean CloseDesktop(Pointer desktop) { throw new AssertionError(); }
+            @Override public Pointer FindWindowW(WString className, WString windowName) { return Pointer.createConstant(1); }
+            @Override public int GetWindowThreadProcessId(Pointer window, IntByReference processId) {
+                processId.setValue(42); return 1;
+            }
+            @Override public int PostMessageW(Pointer window, int message, Pointer wParam, Pointer lParam) {
+                posted.incrementAndGet(); return 1;
+            }
+        };
+        WindowsLocalProjectDirectoryPicker.closeOwnedWindow("测试窗口", user, 42);
+        WindowsLocalProjectDirectoryPicker.closeOwnedWindow("测试窗口", user, 43);
+        assertThat(posted.get()).isEqualTo(1);
     }
 
     @Test @DisabledOnOs(OS.WINDOWS)

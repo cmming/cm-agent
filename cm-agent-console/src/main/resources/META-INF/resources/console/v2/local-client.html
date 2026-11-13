@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="referrer" content="same-origin">
     <title>本机客户端 | CM Agent 控制台 v2</title>
+    <link rel="icon" href="/assets/icons/square.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/styles.css?v=2.0.17">
     <link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.3.4">
     <link rel="stylesheet" href="/console/v2/assets/sandbox-endpoints.css?v=1.0.0">
     <link rel="stylesheet" href="/console/v2/assets/skill-artifacts.css?v=1.0.0">
     <link rel="stylesheet" href="/console/v2/assets/workbench.css?v=1.0.3">
     <link rel="stylesheet" href="/console/v2/assets/local-projects.css?v=1.7.0">
-    <link rel="stylesheet" href="/console/v2/assets/local-client.css?v=1.0.2">
+    <link rel="stylesheet" href="/console/v2/assets/local-client.css?v=1.0.4">
 </head>
 <body data-console-version="v2" data-page="localClientPage">
 <div class="console-layout">
@@ -45,14 +46,47 @@
                     <div class="local-client-setup" aria-label="首次连接步骤">
                         <ol>
                             <li><strong>准备客户端</strong><p>在构建电脑使用 JDK 21 和 Maven 3.9+ 构建 <code>cm-agent-local-client</code> 模块，然后把生成的 <code>-all.jar</code> 复制到目标电脑。目标电脑只需 JDK 21，不需要 Maven、源码或其他依赖目录。服务端需在隔离测试环境启用本机客户端功能；客户端使用部署中显式配置并允许的 HTTP 或 HTTPS 服务地址。</p>
-                                <details><summary>查看源码构建命令</summary><p>在项目源码根目录运行：</p><pre tabindex="0" aria-label="构建命令"><code>mvn -pl cm-agent-local-client -am -DskipTests package</code></pre><p>可执行文件位于 <code>cm-agent-local-client/target/cm-agent-local-client-0.1.0-SNAPSHOT-all.jar</code>；版本号变化时按构建输出替换。</p></details>
+                                <details><summary>查看源码构建命令</summary><p>在项目源码根目录运行：</p>
+                                    <div class="local-client-command-block">
+                                        <div class="local-client-command-toolbar"><span>PowerShell / Bash</span><button class="button ghost compact" type="button" data-command-copy="localClientBuildCommand" data-command-status="localClientBuildCommandStatus">复制命令</button></div>
+                                        <pre tabindex="0" aria-label="构建命令"><code id="localClientBuildCommand">mvn -pl cm-agent-local-client -am -DskipTests package</code></pre>
+                                        <p id="localClientBuildCommandStatus" class="local-client-command-status" role="status" aria-live="polite"></p>
+                                    </div>
+                                    <p>可执行文件位于 <code>cm-agent-local-client/target/cm-agent-local-client-0.1.0-SNAPSHOT-all.jar</code>；版本号变化时按构建输出替换。</p>
+                                </details>
                             </li>
                             <li><strong>生成配对包</strong><p>在目标电脑的交互式终端运行下面的配对命令，将服务端地址和设备名称换成实际值。保留终端打开，按提示设置本机身份口令（如需要），复制完整 JSON。</p>
-                                <details open><summary>配对命令</summary><pre tabindex="0" aria-label="配对命令"><code>java -jar cm-agent-local-client-0.1.0-SNAPSHOT-all.jar pair --server http://服务端地址:端口 --name 设备名称</code></pre><p>Windows、Linux 和 macOS 使用相同命令。HTTP/HTTPS 地址必须与部署配置及允许来源完全一致；使用 HTTPS 时仍由 JVM 校验服务器证书和主机名。不要将 <code>localhost</code> 当作另一台电脑的服务端地址。</p></details>
+                                <details open><summary>配对命令与全部参数</summary>
+                                    <div class="local-client-command-block">
+                                        <div class="local-client-command-toolbar"><span>命令 <code>pair</code></span><button class="button ghost compact" type="button" data-command-copy="localClientPairCommand" data-command-status="localClientPairCommandStatus">复制命令</button></div>
+                                        <pre tabindex="0" aria-label="配对命令"><code id="localClientPairCommand">java -jar cm-agent-local-client-0.1.0-SNAPSHOT-all.jar pair --server http://服务端地址:端口 --name 设备名称</code></pre>
+                                        <p id="localClientPairCommandStatus" class="local-client-command-status" role="status" aria-live="polite"></p>
+                                    </div>
+                                    <p>复制后请替换命令中的中文占位符。Windows、Linux 和 macOS 使用相同参数。</p>
+                                    <dl class="local-client-command-params" aria-label="配对命令参数">
+                                        <div><dt><code>--server &lt;URL&gt;</code><span>必填</span></dt><dd>服务端 HTTP/HTTPS 规范来源，例如 <code>http://192.168.1.10:8080</code>。只允许根来源，不接受查询、片段或子路径，且必须与部署 audience 和允许来源完全一致。</dd></div>
+                                        <div><dt><code>--name &lt;设备名称&gt;</code><span>必填</span></dt><dd>用于浏览器核对的目标电脑名称，长度为 1–120 个字符。</dd></div>
+                                        <div><dt><code>--state-dir &lt;目录&gt;</code><span>可选</span></dt><dd>保存设备身份和本地见证的位置。默认 Windows 为 <code>%USERPROFILE%\.cm-agent\local-client</code>，Linux/macOS 为 <code>$HOME/.cm-agent/local-client</code>；指定后后续 <code>run</code> 必须使用同一目录。</dd></div>
+                                        <div><dt><code>--credential-backend system|password</code><span>可选</span></dt><dd>设备私钥的保存方式。未指定 <code>--state-dir</code> 时默认 <code>system</code>；指定 <code>--state-dir</code> 时默认 <code>password</code>。自定义状态目录必须先使用 <code>password</code>，不能与 <code>system</code> 组合。</dd></div>
+                                        <div><dt><code>--password-stdin</code><span>可选标志</span></dt><dd>仅用于 <code>password</code> 凭据后端，从标准输入读取口令；<code>pair</code> 需要输入两次相同的非空口令。普通交互式终端可省略，由程序安全提示输入。</dd></div>
+                                    </dl>
+                                    <p><code>system</code> 使用操作系统凭据存储；<code>password</code> 使用受口令保护的本地密钥文件。使用 HTTPS 时仍由 JVM 校验服务器证书和主机名；不要将 <code>localhost</code> 当作另一台电脑的服务端地址。</p>
+                                </details>
                             </li>
                             <li><strong>核对并确认配对</strong><p>将 JSON 粘贴到下方，核对设备名称和平台属于目标电脑，再确认配对。浏览器确认后，回到客户端终端等待“配对完成”；服务端显示已登记不代表客户端已完成或在线。</p></li>
                             <li><strong>启动客户端并选择单轮授权</strong><p>配对完成后，在目标电脑运行以下命令并保持客户端运行。然后到<a href="/console/v2/chat.html">会话聊天</a>选择设备、本轮允许的能力和确认方式，再发送任务。</p>
-                                <details><summary>查看启动命令</summary><p>在 fat JAR 所在目录的交互式终端运行；如设置过身份口令，按提示输入。</p><pre tabindex="0" aria-label="启动命令"><code>java -jar cm-agent-local-client-0.1.0-SNAPSHOT-all.jar run</code></pre></details>
+                                <details open><summary>启动命令与全部参数</summary><p>在 fat JAR 所在目录的交互式终端运行；如设置过身份口令，按提示输入。</p>
+                                    <div class="local-client-command-block">
+                                        <div class="local-client-command-toolbar"><span>命令 <code>run</code></span><button class="button ghost compact" type="button" data-command-copy="localClientRunCommand" data-command-status="localClientRunCommandStatus">复制命令</button></div>
+                                        <pre tabindex="0" aria-label="启动命令"><code id="localClientRunCommand">java -jar cm-agent-local-client-0.1.0-SNAPSHOT-all.jar run</code></pre>
+                                        <p id="localClientRunCommandStatus" class="local-client-command-status" role="status" aria-live="polite"></p>
+                                    </div>
+                                    <dl class="local-client-command-params" aria-label="启动命令参数">
+                                        <div><dt><code>--state-dir &lt;目录&gt;</code><span>可选</span></dt><dd>必须与配对时使用的状态目录一致；省略时使用当前用户的默认目录。启动命令不再接收 <code>--server</code> 或 <code>--name</code>，服务端来源和设备身份均已从该目录读取。</dd></div>
+                                        <div><dt><code>--credential-backend system|password</code><span>可选</span></dt><dd>必须与配对身份的实际保存方式一致。未指定 <code>--state-dir</code> 时默认 <code>system</code>；指定 <code>--state-dir</code> 时默认 <code>password</code>。</dd></div>
+                                        <div><dt><code>--password-stdin</code><span>可选标志</span></dt><dd>仅用于 <code>password</code> 凭据后端，从标准输入读取一次解密口令；普通交互式终端可省略。</dd></div>
+                                    </dl>
+                                </details>
                             </li>
                         </ol>
                         <p class="local-client-pair-boundary">配对只登记设备，不授予文件、联网或命令操作权限；每次运行仍需在会话中选择设备、能力和确认方式，并受现有权限与审批策略约束。</p>
@@ -96,6 +130,6 @@
 <script src="/assets/console-core.js?v=2.0.19"></script>
 <script src="/console/v2/assets/sandbox-endpoints.js?v=1.1.1"></script>
 <script src="/console/v2/assets/skill-artifacts.js?v=1.0.2"></script>
-<script src="/assets/app.js?v=2.0.43"></script>
+<script src="/console/v2/assets/project-development.js?v=1.1.5"></script><script src="/console/v2/assets/local-projects.js?v=1.2.0"></script><script src="/console/v2/assets/client-projects.js?v=1.2.3"></script><script src="/assets/app.js?v=2.0.45"></script>
 </body>
 </html>

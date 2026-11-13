@@ -345,6 +345,14 @@ body[data-page="localClientPage"] .local-client-scope dd {
     .chat-local-client-categories {
         width: 100%;
     }
+    body[data-page="localClientPage"] .local-client-command-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+    body[data-page="localClientPage"] .local-client-command-toolbar .button {
+        width: 100%;
+        justify-content: center;
+    }
 }
 
 /* 首次连接说明可能长于视口；让页面滚动而不是把配对区固定在屏幕内。 */
@@ -357,4 +365,14 @@ body[data-page="localClientPage"] .local-client-setup li p { margin: 5px 0; colo
 body[data-page="localClientPage"] .local-client-setup details { margin-top: 8px; }
 body[data-page="localClientPage"] .local-client-setup summary { width: fit-content; cursor: pointer; font-weight: 600; }
 body[data-page="localClientPage"] .local-client-setup pre { max-width: 100%; overflow-x: auto; padding: 10px; border: 1px solid var(--local-client-border); border-radius: 8px; background: var(--local-client-soft); font: 12px/1.6 "Cascadia Code", Consolas, monospace; white-space: pre; }
+body[data-page="localClientPage"] .local-client-command-block { display: grid; gap: 7px; margin-top: 8px; }
+body[data-page="localClientPage"] .local-client-command-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+body[data-page="localClientPage"] .local-client-command-toolbar > span { color: var(--local-client-muted); font-size: 11px; font-weight: 700; }
+body[data-page="localClientPage"] .local-client-command-toolbar .button { flex: 0 0 auto; min-height: 32px; }
+body[data-page="localClientPage"] .local-client-command-status { min-height: 18px; margin: 0; font-size: 11px; }
+body[data-page="localClientPage"] .local-client-command-params { margin: 10px 0 7px; border-top: 1px solid var(--local-client-border); }
+body[data-page="localClientPage"] .local-client-command-params > div { padding: 8px 0; border-bottom: 1px solid #edf0f5; }
+body[data-page="localClientPage"] .local-client-command-params dt { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--local-client-ink); font-size: 12px; font-weight: 700; }
+body[data-page="localClientPage"] .local-client-command-params dt span { padding: 1px 6px; border-radius: 999px; background: #edf2fa; color: var(--local-client-muted); font-size: 11px; font-weight: 700; }
+body[data-page="localClientPage"] .local-client-command-params dd { margin: 4px 0 0; color: var(--local-client-muted); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
 body[data-page="localClientPage"] .local-client-pair-boundary { margin: 0; padding: 12px; border: 1px solid var(--local-client-border); border-radius: 8px; color: var(--local-client-ink); background: var(--local-client-soft); font-size: 12px; line-height: 1.7; }

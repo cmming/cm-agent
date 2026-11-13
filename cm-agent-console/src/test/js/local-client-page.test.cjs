@@ -26,9 +26,9 @@ function all(item) {
     return [item, ...(item.children || []).flatMap(all)];
 }
 
-function harness({request = async () => null} = {}) {
+function harness({request = async () => null, clipboardWrite = async () => {}} = {}) {
     const nodes = new Map();
-    const requests = [], statuses = [];
+    const requests = [], statuses = [], copied = [];
     const state = {
         localClientDevices: [],
         selectedLocalClientDeviceId: "",
@@ -40,6 +40,16 @@ function harness({request = async () => null} = {}) {
     }
     const document = {
         getElementById: get,
+        createElement(tag) {
+            const item = node(tag);
+            item.style = {};
+            item.remove = () => { item.removed = true; };
+            item.select = () => {};
+            item.setSelectionRange = () => {};
+            return item;
+        },
+        body: {append() {}},
+        execCommand: () => true,
         querySelector(selector) {
             if (selector !== ".local-client-revoke-zone .button") return null;
             return all(get("localClientDeviceDetail")).find(item => item.className === "button danger") || null;
@@ -67,10 +77,15 @@ function harness({request = async () => null} = {}) {
             requests.push({url, options});
             return request(url, options);
         }},
+        window: {
+            navigator: {clipboard: {writeText: async text => { copied.push(text); await clipboardWrite(text); }}},
+            setTimeout: callback => { callback(); return 1; }
+        },
         renderChatLocalClientOptions() {}
     };
-    vm.runInNewContext(`${actionsSource};globalThis.actions={parseLocalClientPairPackage,renderLocalClientPairPreview,confirmLocalClientPair,loadLocalClientDevices,renderLocalClientDevices,renderLocalClientDeviceDetail,revokeLocalClientDevice};`, context);
-    return {state, nodes, get, document, requests, statuses, actions: context.actions};
+    context.document.querySelectorAll = () => [];
+    vm.runInNewContext(`${actionsSource};globalThis.actions={parseLocalClientPairPackage,renderLocalClientPairPreview,copyLocalClientCommand,confirmLocalClientPair,loadLocalClientDevices,renderLocalClientDevices,renderLocalClientDeviceDetail,revokeLocalClientDevice};`, context);
+    return {state, nodes, get, document, requests, statuses, copied, actions: context.actions};
 }
 
 const pairingPackage = {
@@ -125,6 +140,19 @@ test("浏览器确认只报告服务端已确认，等待客户端最终落盘�
     assert.doesNotMatch(message, /设备已连接/);
     assert.equal(flow.get("localClientPairPackage").value, "");
     assert.equal(flow.get("localClientDeviceCount").textContent, "共 1 台");
+});
+
+test("命令复制按钮写入完整命令并公布可读结果", async () => {
+    const flow = harness();
+    const command = "java -jar cm-agent-local-client-0.1.0-SNAPSHOT-all.jar pair --server http://示例:8080 --name 验收机";
+    flow.get("copySource").textContent = command;
+    const button = node("button", {text: "复制命令"});
+    button.dataset.commandCopy = "copySource";
+    button.dataset.commandStatus = "copyStatus";
+    await flow.actions.copyLocalClientCommand(button);
+    assert.deepEqual(flow.copied, [command]);
+    assert.equal(button.textContent, "复制命令");
+    assert.equal(flow.get("copyStatus").textContent, "命令已复制。");
 });
 
 test("设备列表保留已撤销记录并展示服务端字段，不推断在线状态", () => {
@@ -217,8 +245,8 @@ test("页面文案和脚本引用区分系统健康与设备在线", () => {
     assert.match(page, /已登记设备/);
     assert.match(page, /共 0 台/);
     assert.doesNotMatch(page, /系统运行正常/);
-    assert.doesNotMatch(page, /project-development\.js/);
-    assert.doesNotMatch(page, /local-projects\.js/);
+    assert.match(page, /project-development\.js/);
+    assert.match(page, /local-projects\.js/);
     assert.doesNotMatch(page, /skills\.js/);
 });
 
@@ -226,7 +254,7 @@ test("页面文案和脚本引用区分系统健康与设备在线", () => {
 test("首次连接指引包含 fat JAR 构建、配对落盘和单轮授权边界", () => {
     const page = fs.readFileSync(path.join(__dirname, "../../main/resources/META-INF/resources/console/v2/local-client.html"), "utf8");
     assert.match(page, /mvn -pl cm-agent-local-client -am -DskipTests package/);
-    assert.match(page, /cm-agent-local-client-0\.1\.0-SNAPSHOT-all\.jar pair --server https:\/\/服务端地址 --name 设备名称/);
+    assert.match(page, /cm-agent-local-client-0\.1\.0-SNAPSHOT-all\.jar pair --server https?:\/\/服务端地址:端口 --name 设备名称/);
     assert.match(page, /java -jar cm-agent-local-client-0\.1\.0-SNAPSHOT-all\.jar run/);
     assert.match(page, /目标电脑只需 JDK 21/);
     assert.doesNotMatch(page, /target\/classes/);
@@ -237,4 +265,14 @@ test("首次连接指引包含 fat JAR 构建、配对落盘和单轮授权边�
     assert.match(page, /每次运行仍需在会话中选择设备、能力和确认方式/);
     assert.match(page, /href="\/console\/v2\/chat.html"/);
     assert.doesNotMatch(page, /浏览器所在电脑/);
+    assert.match(page, /配对命令与全部参数/);
+    assert.match(page, /启动命令与全部参数/);
+    for (const parameter of ["--server", "--name", "--state-dir", "--credential-backend", "--password-stdin"]) {
+        assert.match(page, new RegExp(parameter));
+    }
+    for (const target of ["localClientBuildCommand", "localClientPairCommand", "localClientRunCommand"]) {
+        assert.match(page, new RegExp(`data-command-copy="${target}"`));
+    }
+    assert.match(app, /document\.querySelectorAll\("\[data-command-copy\]"\)/);
+    assert.match(app, /function writeClipboardText/);
 });
