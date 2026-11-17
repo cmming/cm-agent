@@ -1,0 +1,79 @@
+# 在线文档直接使用现有 docs 目录，避免迁移历史和复制源码。
+site_name: CM Agent 文档
+site_description: CM Agent 产品、部署、架构、工具与历史工作包文档。
+site_url: https://cmming.github.io/cm-agent/
+
+docs_dir: docs
+site_dir: dist/docs-site
+strict: true
+
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+plugins:
+  - search:
+      lang: zh
+
+nav:
+  - 首页: README.md
+  - 使用与生产:
+      - 配置说明: configuration.md
+      - 部署指南: deployment.md
+      - 运维说明: operations.md
+      - 发布说明: release-notes.md
+      - 技能沙箱端点: skill-sandbox-endpoints.md
+      - 工具开发指南: tool-development-guide.md
+  - 架构与开发:
+      - 技术路线与实现逻辑: technical-architecture.md
+      - Harness 模块: harness-module.md
+      - 根 README: https://github.com/cmming/cm-agent/blob/master/README.md
+      - Core 模块说明: https://github.com/cmming/cm-agent/blob/master/cm-agent-core/README.md
+      - AgentScope Adapter 说明: https://github.com/cmming/cm-agent/blob/master/cm-agent-agentscope-adapter/README.md
+      - 协作与工程规则: https://github.com/cmming/cm-agent/blob/master/AGENTS.md
+  - 产品与设计:
+      - 产品上下文: https://github.com/cmming/cm-agent/blob/master/PRODUCT.md
+      - 设计系统: https://github.com/cmming/cm-agent/blob/master/DESIGN.md
+      - 术语表: https://github.com/cmming/cm-agent/blob/master/GLOSSARY.md
+      - 文档治理 ADR: adr/0001-documentation-governance.md
+  - 工作包与历史:
+      - 工作包索引: superpowers/README.md
+      - 工作包状态目录: superpowers/WORKPACK-STATUS.md
+      - 文档全量复核: superpowers/progress/2026-11-13-docs-full-review-ledger.md
+
+# 现有文档中有 94 个链接指向 docs 外的源码、脚本和根目录文档。
+hooks:
+  - scripts/mkdocs_docs_links.py
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+validation:
+  omitted_files: ignore
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn

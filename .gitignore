@@ -15,3 +15,5 @@ coverage/
 .agents/skills/*
 !.agents/skills/requirement-workpack/
 .playwright-cli/
+__pycache__/
+*.py[cod]
