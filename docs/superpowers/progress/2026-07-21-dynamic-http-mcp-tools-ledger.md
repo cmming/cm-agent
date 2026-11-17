@@ -12,3 +12,11 @@
 | Task 8：MCP Streamable HTTP 端点 | 已完成 | 官方客户端集成测试首跑发现 Spring ERROR 分派在认证上下文清理后将应有的 `404`/`405` 重写为 `401`；审查 RED 发现不可用路径未审计，且拒绝/运行时失败审计故障会逃逸 SDK handler | Temurin 21 下 MCP 目录/Servlet/配置/disabled/官方客户端集成共 32 项通过；覆盖 initialize、listTools、callTool、Schema 校验、取消发布、禁用、HTTP/LOCAL 漂移、JWT/权限、Origin/Host、GET 405、disabled 404、并发租户隔离与每请求关闭 | 放行 `DispatcherType.ERROR` 保留原始 HTTP 状态；不可用路径只写一次 `MCP_TOOL_CALL_FAILED`，其审计故障以及拒绝/运行时失败审计故障统一转换为不含敏感信息的 MCP 协议错误；正常请求仍要求 JWT；双阶段审查通过 | `0b7c20e`、`857b6ea` |
 | Task 9：控制台与端到端验证 | 已完成（容器验证待 Rocky 环境） | Node v16 不支持 `node:test`，新增纯函数正式测试无法启动；资源契约测试先覆盖 HTTP、MCP、调试、安全渲染、路径占位符 URL 模板、发布锁和加载版本门闩 | Temurin 21 下 console 资源测试、ToolControllerTest 通过；Node 兼容断言与语法检查通过 | 前端仅接受 `secret/` 引用、动态内容使用 textContent、HIGH 名称双重精确确认；URL 模板使用文本输入；MCP 操作按工具锁定实际按钮，每次写入完成创建当前 reload 版本，最终状态服从最后完成的操作；ConsoleSmoke 未在本机运行 | 未提交 |
 | Task 10：发布收尾与兼容性复核 | 已完成 | 文档契约首次因 README 缺少动态工具说明失败；最终独立审查 RED 覆盖初始发布非法名称/审计回滚、结构化敏感字段泄露、MCP LOCAL 超大输出、LOCAL 控制台发布入口、JDBC 批量审计原子性及完整文档契约；PostgreSQL 与 MySQL 均覆盖第二条冲突回滚和外层事务加入 | Temurin 21 定向回归、跳过测试打包、Node16 兼容检查均通过；最终 `a13f3b4` 在 Rocky Maven 3.9.9/JDK21 容器完成 PostgreSQL/MySQL 审计专项和全量 `mvn -q test`，Rocky Node22 正式前端 16 项通过 | 初始发布与显式发布共享 MCP 规则并追加原子发布审计；结构化输出脱敏并限制 MCP LOCAL 输出；HTTP/LOCAL 页面均可管理发布；JDBC `appendAll` 在独立或嵌套事务中均原子回滚；文档契约锁定 enable、端点、GET405、egress | `a13f3b4` |
+
+## 全量核定记录（2026-11-13）
+
+- 核定结论：待续。本记录只核定工作包责任及归档分类，前文任务、命令结果和提交状态保留形成时含义。
+- 责任范围与依据：端到端任务记录容器验证待 Rocky，不能按实现已完成归档该验收。
+- 证据限制：依据原文明确的工作范围、状态表、验收和遗留记录核定；本轮没有重跑业务测试、恢复旧服务、访问原数据库或重新证明历史外部环境。历史通过只适用于当时版本和环境。
+- 后继与剩余事项：上述剩余事项继续由原任务/验收范围跟踪；本次不执行它们，不依据后来相关主题自动宣布原验收通过，也不补造取消或移交。
+- 复核入口：[docs 全量整理账本](2026-11-13-docs-full-review-ledger.md#逐组核定快照)。本次整理不授予提交、推送、部署或外部副作用权限；同一需求恢复时保留本记录并追加恢复及修订。

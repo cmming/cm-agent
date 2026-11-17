@@ -1,57 +1,29 @@
 # 远程Docker账号密码认证执行提示词
 
-工作包日期：2026-10-01；主题：remote-docker-password-auth；当前修订：R1；修订日期：2026-10-02；mode=default。
+工作包日期：2026-10-01；主题：remote-docker-password-auth；当前修订：R2；修订日期：2026-11-13；mode=default。
 
-用户“按照执行提示词执行”已授权实际实施T1～T5。本轮保持codex/skill-sandbox-r1，HEAD bc57060fac00c671cd247525b6082516194afd20；未提交、未暂存、未推送、未合并、未部署。原2026-09-30技能沙箱六份文档及用户配置保留，R0仅作为需求分析历史归档，不再代表当前实施状态。
+以下是 R2 文档职责迁移的执行输入。它只描述本轮文档整理；R0/R1 原始提示词保留在文件末尾，不自动执行。
 
-关联：[清单](../checklists/2026-10-01-remote-docker-password-auth-checklist.md) · [提示词](../prompts/2026-10-01-remote-docker-password-auth-prompt.md) · [设计](../specs/2026-10-01-remote-docker-password-auth-design.md) · [计划](../plans/2026-10-01-remote-docker-password-auth.md) · [实现说明](../implementation/2026-10-01-remote-docker-password-auth-implementation-design.md) · [账本](../progress/2026-10-01-remote-docker-password-auth-ledger.md)。
-
-| 任务 | 当前状态 | 交付与验收 | 依赖 |
-|---|---|---|---|
-| T0 | 完成 | 已核对仓库、工作树、规范、相关POM、部署配置、CodeGraph及原工作包；保留R0分析历史 | 无 |
-| T1 | 完成 | JSch内存密码认证、严格主机信任、固定IP与Docker Unix socket、单次认证与取消/清理；Rocky真实执行、Windows传输专项、黑洞超时/取消通过 | T0 |
-| T2 | 完成 | KEY/PASSWORD领域与只写材料、AES/GCM、部署Secret文件、旧Java/JSON兼容、JDBC与双库V17；升级默认KEY与原生注释通过 | T1 |
-| T3 | 完成 | 服务/API/探测/运行按固定快照选择认证；独立凭据权限、CAS、轮换探测失效、错误码/状态/同编号日志与脱敏验证通过 | T2 |
-| T4 | 完成 | v2认证选择、掩码只写字段、切换/提交清空、失败保留元数据、只读/部署禁用；Node事件测试与桌面/移动浏览器组合验收通过 | T3 |
-| T5 | 完成 | Rocky全量与双库/密码/旧KEY/TLS/LOCAL回归、Windows专项、Node、浏览器、生产说明与六份文档同步 | T3、T4 |
-
-验收采用分层组合证据：真实PASSWORD保存/探测/默认/执行/轮换由Rocky集成测试覆盖；浏览器通过API预置的临时密码端点验证只写状态、元数据保存、失败与类型切换，并实际走LOCAL保存→探测→默认链路；密码新输入与提交失败清空由Node真实页面事件编排测试覆盖。浏览器未输入/更换真实主机凭据，没有目标生产主机的验收。Windows专项仅验证JVM认证与Unix socket中继，容器执行仍仅在Rocky验证。
-## R1修订差异与工程决定
-
-| 差异 | 类别 | R0 → R1 | 依据与影响 | 采用 |
-|---|---|---|---|---|
-| C1 | 澄清 | 仅生成文档 → 用户明确授权T1～T5实施 | 用户本轮执行指令；Git/部署限制继续有效 | 已采用 |
-| C2 | 调整 | 优先原生OpenSSH ASKPASS/IPC → 仅PASSWORD使用JSch 2.28.7内存传输 | OpenSSH readpass存在1024字节缓冲限制，Windows助手还需原生打包；不能兑现4096字节上限且增加Secret传递面。工程自主采用保持安全边界的库实现；KEY/TLS不重写 | 已采用，T1 |
-| C3 | 新增 | 控制台共享资源旧版本缓存 → 更新全部v2页面共享app/core版本及技能端点脚本版本 | 隔离浏览器实际复现旧app缓存导致入口不挂载；刷新新版本后标签与密码选择出现 | 已采用，T4 |
-| C4 | 调整 | 部署未启用仅禁新建 → 同时禁表单写入；类型变化需完整材料 | 浏览器观察与安全入口契约；Node只读/主密钥/关闭状态回归 | 已采用，T4 |
-
-账号密码仍指远端Linux主机SSH认证，不涉及Registry、HTTP Basic、keyboard-interactive/MFA。不存在用户新增交互决定；这些为默认模式工程选择，保留原需求安全边界。未修改用户8080服务、Rocky宿主sshd或daemon。
-
-技术依据：[Docker SSH/TLS官方说明](https://docs.docker.com/engine/security/protect-access/)、[OpenSSH Windows readpass源码](https://github.com/PowerShell/openssh-portable/blob/latestw_all/readpass.c)、[JSch 2.28.7发布](https://github.com/mwiede/jsch/releases/tag/jsch-2.28.7)、[direct-streamlocal源码](https://github.com/mwiede/jsch/blob/jsch-2.28.7/src/main/java/com/jcraft/jsch/ChannelDirectStreamLocal.java)、[通道IO与连接源码](https://github.com/mwiede/jsch/blob/jsch-2.28.7/src/main/java/com/jcraft/jsch/ChannelDirectTCPIP.java)。没有实施ASKPASS助手/IPC，不把替代方案写成原生客户端原型通过。
-## 当前执行入口（R1）
+## 当前执行输入（R2）
 
 ```text
-先读取本文件及关联清单、设计、计划、实现说明、账本、AGENTS.md与当前Git/工作树。
-mode=default；用户已授权此次T1～T5实施，现已完成，不重做已完成项、不把历史R0未授权文字当当前状态。
-如需继续修复，先复现新问题，保护既有R0/R1能力、原工作包、用户application*.yml/.codex/.workbuddy；保持codex/分支。
-PASSWORD仅SSH主机账号密码；JSch内存传输固定IP/known_hosts/Unix socket，KEY/TLS/LOCAL保留。密码不进入进程参数、CLI环境、生成明文文件、日志、审计或Web Storage。
-任何后续类型/凭据改动保持tenant/JWT、独立凭据权限、AES/GCM AAD、CAS、探测版本、在途固定连接与原限额；不得回退认证或重放脚本。
-Java21快速测试与Node；Docker/JDBC/Flyway/Testcontainers必须ssh rocky的maven:3.9.9-eclipse-temurin-21容器，核对HEAD+明确覆盖SHA256。
-新增问题按本包追加修订/关联任务和新证据；旧通过不替代新验收。同步六份、生产说明和发布说明。
-本轮禁止暂存/提交/推送/合并/部署或修改运行服务；后续必须有用户明确新授权。
+仓库：F:/java/cm-agent
+范围：将 2026-10-01-remote-docker-password-auth 六份历史工作包迁移到新契约。
+
+先读取清单、设计、计划、实现说明、进度账本、AGENTS.md 和当前 Git 状态。保护工作树中的其他修改，不修改业务代码，不重做 T1–T5 已形成的业务结论。
+
+保留 R0/R1 历史材料。把清单收敛为任务、依赖和验收；设计保留当前方案与决定；计划保留实施顺序和验证方法；提示词只保留可执行输入；实现说明只记录实际改动及设计差异。任务实时状态、命令结果、测试证据、阻塞和提交信息只写入账本。其他五份只在末尾链接账本。
+
+更新六份文档的当前修订为 R2，并更新 docs/superpowers/WORKPACK-STATUS.md。完成后检查任务编号、相对链接、代码围栏、空白、重复状态段和受保护文件；不提交、不推送、不部署。
 ```
 
-## R1最终收尾核对
+## 当前状态与证据
 
-最终本地命令：mvn -q -pl cm-agent-server -am test -Dtest=SandboxSecurityTest,PasswordSshRelayTest,SandboxEndpointControllerTest,ConsoleResourceTest -Dsurefire.failIfNoSpecifiedTests=false -Dcm-agent.agentscope.studio.enabled=false，退出0；四类30项通过，已覆盖旧四字段真实v1密文和4096/4097字节边界。Node最终92/92通过。
-
-原技能沙箱六份及三份用户application配置共9个受保护文件SHA256与本轮实施前一致；工作包6份、无无效相对链接；本轮相关路径git diff --check退出0，暂存区为空、HEAD未变化。Rocky本项目cm-agent-password-*及cm-agent-skill-*容器查询为空，浏览器服务和本地SSH转发已释放。原application.yml末尾空行未改动。
-
-代码实施没有剩余外部阻塞。生产主机接入、生产凭据、部署/重启及提交均未执行，仍需用户另行明确授权。浏览器手工更换密码未执行，凭据通过临时API预置，密码输入/失败清空/权限由Node事件测试及后端集成组合覆盖，不冒充生产凭据验收。
+当前修订的状态、验证和提交信息只以[进度账本](../progress/2026-10-01-remote-docker-password-auth-ledger.md)为准。其他入口：[清单](../checklists/2026-10-01-remote-docker-password-auth-checklist.md)、[设计](../specs/2026-10-01-remote-docker-password-auth-design.md)、[计划](../plans/2026-10-01-remote-docker-password-auth.md)、[实现说明](../implementation/2026-10-01-remote-docker-password-auth-implementation-design.md)。
 ## R0历史归档（仅分析，不代表当前状态）
 
 <details>
-<summary>保留2026-10-01需求分析原文，当前以R1为准</summary>
+<summary>保留2026-10-01需求分析原文，当前以R2为准</summary>
 
 # 远程Docker账号密码认证执行提示词
 

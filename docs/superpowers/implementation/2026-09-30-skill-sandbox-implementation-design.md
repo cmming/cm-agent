@@ -1,3 +1,45 @@
+# 技能沙箱实际实现说明（R2：文档职责迁移）
+
+日期：2026-09-30；主题：skill-sandbox；当前修订：R2；修订日期：2026-11-13；模式：mode=default。
+
+R0–R1 原文在文末归档。R2 起，本文件只记录实际改动、关键位置和与设计的差异；状态与证据见[进度账本](../progress/2026-09-30-skill-sandbox-ledger.md)。
+
+## 实际实现
+
+- Core 提供可注册的沙箱后端接口、统一限额和单次执行句柄；治理入口不直接绑定具体 Docker 实现。
+- Server 支持本地 Docker、SSH socket 转发和双向 TLS 远程连接；目标、身份和凭据版本在调用开始后固定。
+- 容器使用固定 Python、禁网、非 root、read-only 根、资源限制和受控 tmpfs；成功、失败、超时、中断和关闭都执行原 daemon 清理。
+- 端点领域与仓储按 tenant 隔离；凭据使用独立 AES/GCM 主密钥加密，API 只返回是否存在及版本。
+- 管理 API、默认端点、探测和严格审计接入既有技能治理；v2 技能页提供端点管理与凭据轮换入口。
+- R2 文档迁移实际重写本组五份非账本活动区，并将完整 R1 及更早内容折叠归档；账本追加 R2 文档责任迁移记录。
+
+## 与设计的差异
+
+实现保持固定 Docker 后端，通过 SPI 为未来后端保留 seam；未增加 HTTP/E2B/Kubernetes、任意 SSH 命令、持久工作区、文件导出、Agent 独立端点或共享 daemon 调度。条件跳过和未具备环境的人工验收不能由其他平台结果替代。
+
+## 关键位置
+
+- SkillSandboxBackend、ManagedSkillSandbox、GovernedSkillAccessService。
+- DockerDaemonConnection、DockerSkillSandboxConnection、SandboxTargetPolicy、SandboxCredentialCipher。
+- SandboxEndpointController、SandboxEndpointService、端点领域/仓储与 V16 方言迁移。
+- v2 技能页、sandbox endpoints JS/CSS、相关 Java/Node/远程集成测试和生产文档。
+
+具体历史测试数字、命令、提交记录和未执行项统一见账本。
+
+## 关联文档
+
+- [清单](../checklists/2026-09-30-skill-sandbox-checklist.md)
+- [设计](../specs/2026-09-30-skill-sandbox-design.md)
+- [计划](../plans/2026-09-30-skill-sandbox.md)
+- [提示词](../prompts/2026-09-30-skill-sandbox-prompt.md)
+- [实现说明](../implementation/2026-09-30-skill-sandbox-implementation-design.md)
+- [进度账本](../progress/2026-09-30-skill-sandbox-ledger.md)
+
+## R1 及更早历史原文
+
+<details>
+<summary>保留迁移前原文（仅供追溯，不代表当前职责）</summary>
+
 # 技能沙箱实际实现说明
 
 当前修订：R1；修订日期：2026-10-01；工作模式：mode=default。工作包日期与主题沿用2026-09-30 / skill-sandbox。
@@ -178,3 +220,5 @@ R1-09（2026-10-01）：用户明确授权在codex/分支实际实施T6～T11，
 六份工作包随实现同步。最终专项复验 215 项、JS 85 项通过；真实容器、双库 V15、哈希、六份文档链接与零残留已核对，详细证据见账本。
 
 关联文档：[清单](../checklists/2026-09-30-skill-sandbox-checklist.md) · [提示词](../prompts/2026-09-30-skill-sandbox-prompt.md) · [设计](../specs/2026-09-30-skill-sandbox-design.md) · [计划](../plans/2026-09-30-skill-sandbox.md) · [账本](../progress/2026-09-30-skill-sandbox-ledger.md)
+
+</details>

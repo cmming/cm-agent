@@ -1,3 +1,49 @@
+# 工作区目录选择进度账本（R3：文档职责迁移）
+
+日期：2026-10-27；主题：workspace-directory-selection-implementation；当前修订：R3；修订日期：2026-11-13；模式：mode=default。
+
+本账本是该工作包实时状态、实际验证证据、阻塞、提交和发布信息的唯一入口。R2 及更早账本完整归档在文末。
+
+## R3 文档职责迁移
+
+| 编号 | 状态 | 实际证据 |
+|---|---|---|
+| T19 | 完成 | 五份非账本文件的活动区已按固定职责重写；R2 及更早原文完整折叠保留 |
+| T20 | 完成 | 六份统一为 R3；关联链接与工作包状态目录已同步；受保护工作包未改动 |
+
+### R3 验证
+
+- 迁移前活动区最大/平均跨文件相似度约为 0.744/0.562；迁移后为 0.155/0.084。
+- 非账本活动区不再复制完整任务状态、测试结果或提交状态。
+- 业务源码、配置、数据库、迁移和真实 ACL 未修改。
+- 2026-11-09 与 2026-11-12 工作包保持任务开始前状态。
+
+### R3 历史状态摘要
+
+| 范围 | 状态 | 证据边界 |
+|---|---|---|
+| T0–T10 | 完成（历史记录） | 原完成证据保留在归档账本；ACL 变化由 T16–T18 追加 |
+| T11–T14 | 进行中（历史记录，整体验收未完成） | 原生窗口、真实 Provider、显式 JDBC 等门禁不得被 R2 ACL 结果替代 |
+| T15–T18 | 完成（历史记录） | R2 ACL 实现、验证和生产说明按原形成时证据保留 |
+
+### R3 提交状态
+
+未提交、未推送、未合并、未部署。本次只迁移文档职责和更新状态目录。
+
+## 关联文档
+
+- [清单](../checklists/2026-10-27-workspace-directory-selection-implementation-checklist.md)
+- [设计](../specs/2026-10-27-workspace-directory-selection-implementation-design.md)
+- [计划](../plans/2026-10-27-workspace-directory-selection-implementation.md)
+- [提示词](../prompts/2026-10-27-workspace-directory-selection-implementation-prompt.md)
+- [实现说明](../implementation/2026-10-27-workspace-directory-selection-implementation-implementation-design.md)
+- [进度账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)
+
+## R2 及更早历史账本（迁移前原文）
+
+<details>
+<summary>保留迁移前原文（仅供追溯，不代表当前职责）</summary>
+
 # 工作区目录选择进度账本（R2：可信Windows系统ACL兼容）
 
 日期：2026-10-27；主题：workspace-directory-selection-implementation；当前修订：R2；修订日期：2026-10-28；模式：mode=default。
@@ -388,3 +434,13 @@ B1–B8为默认方案，不是用户逐项确认；具体浏览器版本/OS/安
 > - [实施设计](../specs/2026-10-27-workspace-directory-selection-implementation-design.md)
 > - [实施计划](../plans/2026-10-27-workspace-directory-selection-implementation.md)
 > - [实际实现](../implementation/2026-10-27-workspace-directory-selection-implementation-implementation-design.md)
+
+</details>
+
+## 全量核定记录（2026-11-13）
+
+- 核定结论：待续。本记录只核定工作包责任及归档分类，前文任务、命令结果和提交状态保留形成时含义。
+- 责任范围与依据：T11–T14 整体验收未完成，R3 文档迁移完成不能替代业务门禁。
+- 证据限制：依据原文明确的工作范围、状态表、验收和遗留记录核定；本轮没有重跑业务测试、恢复旧服务、访问原数据库或重新证明历史外部环境。历史通过只适用于当时版本和环境。
+- 后继与剩余事项：上述剩余事项继续由原任务/验收范围跟踪；本次不执行它们，不依据后来相关主题自动宣布原验收通过，也不补造取消或移交。
+- 复核入口：[docs 全量整理账本](2026-11-13-docs-full-review-ledger.md#逐组核定快照)。本次整理不授予提交、推送、部署或外部副作用权限；同一需求恢复时保留本记录并追加恢复及修订。

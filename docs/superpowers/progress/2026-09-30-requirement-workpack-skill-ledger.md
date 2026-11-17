@@ -90,3 +90,11 @@ R1 集成检查实际结果：
 快捷问答在最终回复中提供 `:codex-followup`，实际点击后才触发后续问答；本轮验证了技能格式、输入路径与问答边界，没有执行该跟进或将它记作业务实施。
 
 [清单](../checklists/2026-09-30-requirement-workpack-skill-checklist.md)；[提示词](../prompts/2026-09-30-requirement-workpack-skill-prompt.md)；[设计](../specs/2026-09-30-requirement-workpack-skill-design.md)；[计划](../plans/2026-09-30-requirement-workpack-skill.md)；[实现说明](../implementation/2026-09-30-requirement-workpack-skill-implementation-design.md)。
+
+## 全量核定记录（2026-11-13）
+
+- 核定结论：已归档。本记录只核定工作包责任及归档分类，前文任务、命令结果和提交状态保留形成时含义。
+- 责任范围与依据：技能生成、迭代与快捷问答文档范围完成，文字模拟不外推为通用业务实测。
+- 证据限制：依据原文明确的工作范围、状态表、验收和遗留记录核定；本轮没有重跑业务测试、恢复旧服务、访问原数据库或重新证明历史外部环境。历史通过只适用于当时版本和环境。
+- 后继与剩余事项：无未关闭的本包事项移交；原记录中的独立后续需求、生产使用条件及范围外限制继续保留，不作为其已实现或已验收的证明。
+- 复核入口：[docs 全量整理账本](2026-11-13-docs-full-review-ledger.md#逐组核定快照)。本次整理不授予提交、推送、部署或外部副作用权限；同一需求恢复时保留本记录并追加恢复及修订。

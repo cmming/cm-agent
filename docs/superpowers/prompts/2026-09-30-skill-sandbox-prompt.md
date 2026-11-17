@@ -1,3 +1,38 @@
+# 技能沙箱执行提示词（R2：文档职责迁移）
+
+日期：2026-09-30；主题：skill-sandbox；当前修订：R2；修订日期：2026-11-13；模式：mode=default。
+
+R0–R1 原始提示词在文末归档。以下 R2 提示词只迁移文档职责，不重新实施已形成的业务。
+
+## 当前执行输入（R2）
+
+```text
+仓库：F:/java/cm-agent
+工作包：2026-09-30 / skill-sandbox / R2 / mode=default。
+
+先读取本提示词、清单、设计、计划、实现说明、进度账本和 AGENTS.md，并核对当前 Git 工作树。保护 2026-11-09、2026-11-12 工作包及所有无关修改。
+
+范围：把该历史工作包迁移到新文档契约。清单只保留稳定任务、依赖和验收；设计只保留目标、方案、决定和约束；计划只保留顺序、文件线索和验证方法；本提示词只保存当前执行输入；实现说明只记录实际代码与文档改动及差异。任务状态、命令结果、测试证据、阻塞和提交信息只能写入账本。R0–R1 原文完整归档。
+
+不得修改业务代码、配置、数据库、迁移或运行中的服务；不得放宽沙箱网络、用户、挂载、capability、资源、凭据、tenant、审计或清理限制；不得把条件跳过、历史测试或模拟连接写成当前通过。完成后更新工作包状态目录并校验修订、任务编号、链接、代码围栏、空白和保护范围；不提交、不推送、不合并、不部署。
+```
+
+当前状态与证据见[进度账本](../progress/2026-09-30-skill-sandbox-ledger.md)。
+
+## 关联文档
+
+- [清单](../checklists/2026-09-30-skill-sandbox-checklist.md)
+- [设计](../specs/2026-09-30-skill-sandbox-design.md)
+- [计划](../plans/2026-09-30-skill-sandbox.md)
+- [提示词](../prompts/2026-09-30-skill-sandbox-prompt.md)
+- [实现说明](../implementation/2026-09-30-skill-sandbox-implementation-design.md)
+- [进度账本](../progress/2026-09-30-skill-sandbox-ledger.md)
+
+## R1 及更早历史提示词
+
+<details>
+<summary>保留迁移前原文（仅供追溯，不代表当前职责）</summary>
+
 # 技能沙箱执行提示词
 
 当前修订：R1；修订日期：2026-10-01；工作模式：mode=default。工作包日期与主题沿用2026-09-30 / skill-sandbox。
@@ -90,3 +125,5 @@ D1–D6 均来自本轮交互工具的用户明确答复，没有将推荐项或
 文件生成本身不构成执行授权；本会话用户已明确授权实施。后续问答入口仅恢复文档上下文，不自动执行其中命令。
 
 关联文档：[清单](../checklists/2026-09-30-skill-sandbox-checklist.md) · [设计](../specs/2026-09-30-skill-sandbox-design.md) · [计划](../plans/2026-09-30-skill-sandbox.md) · [实现说明](../implementation/2026-09-30-skill-sandbox-implementation-design.md) · [账本](../progress/2026-09-30-skill-sandbox-ledger.md)
+
+</details>

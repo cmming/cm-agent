@@ -1,3 +1,43 @@
+# 工作区目录选择实际实现说明（R3：文档职责迁移）
+
+日期：2026-10-27；主题：workspace-directory-selection-implementation；当前修订：R3；修订日期：2026-11-13；模式：mode=default。
+
+R0–R2 原文在文末归档。R3 起，本文件只记录实际改动、关键位置和与设计的差异；状态与证据见[进度账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)。
+
+## 实际实现
+
+- 既有目录选择、受控导入、加密快照、审批恢复、配额和来源隔离保持。
+- R2 在 Windows 登记资料链加入固定根所有者、LocalSystem 与本机内置 Administrators 的 SID 策略，并逐项检查根、中间目录和登记文件。
+- 原生安全描述符读取采用最小只读 JNA 映射；读取前后复核权限，资源使用有界并显式释放。
+- 普通组、未知 ACE、NULL/空 DACL 和解析失败采用保守拒绝；不增加写 ACL、Shell、提权或按账户名信任能力。
+- R3 文档迁移实际重写本组五份非账本活动区，并将完整 R2 及更早内容折叠归档；账本追加 R3 文档责任迁移记录。
+
+## 与设计的差异
+
+R2 只覆盖 Windows 登记参考资料读取与审批恢复链；POSIX、IMPORTED、Skill 产物和 Harness 临时隔离未随之放宽。R1 的原生窗口、真实 Provider 等未验边界仍保留，不因本地提交或 ACL 测试而消失。
+
+## 关键位置
+
+- WorkspaceContextFiles、WindowsWorkspaceAclPolicy、WindowsSecurityDescriptorReader、WorkspaceContextService。
+- ReAct/Harness 工作区上下文流程与 Windows ACL 测试。
+- 根 README、configuration、operations、release-notes 中的部署和安全边界。
+
+具体历史测试数字、命令、提交记录和未执行项统一见账本。
+
+## 关联文档
+
+- [清单](../checklists/2026-10-27-workspace-directory-selection-implementation-checklist.md)
+- [设计](../specs/2026-10-27-workspace-directory-selection-implementation-design.md)
+- [计划](../plans/2026-10-27-workspace-directory-selection-implementation.md)
+- [提示词](../prompts/2026-10-27-workspace-directory-selection-implementation-prompt.md)
+- [实现说明](../implementation/2026-10-27-workspace-directory-selection-implementation-implementation-design.md)
+- [进度账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)
+
+## R2 及更早历史原文
+
+<details>
+<summary>保留迁移前原文（仅供追溯，不代表当前职责）</summary>
+
 # 工作区目录选择实际实现说明（R2：可信Windows系统ACL兼容）
 
 日期：2026-10-27；主题：workspace-directory-selection-implementation；当前修订：R2；修订日期：2026-10-28；模式：mode=default。
@@ -268,3 +308,5 @@ R0的WorkspaceContextFiles、Run加密快照及Skill加密产物提供实现参�
 > - [实施设计](../specs/2026-10-27-workspace-directory-selection-implementation-design.md)
 > - [实施计划](../plans/2026-10-27-workspace-directory-selection-implementation.md)
 > - [实施账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)
+
+</details>

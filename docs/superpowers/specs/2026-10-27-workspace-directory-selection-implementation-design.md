@@ -1,3 +1,62 @@
+# 工作区目录选择需求设计（R3：文档职责迁移）
+
+日期：2026-10-27；主题：workspace-directory-selection-implementation；当前修订：R3；修订日期：2026-11-13；模式：mode=default。
+
+R0–R2 原文在文末归档。R3 起，本设计只记录目标、方案、决定和约束；当前状态与证据见[进度账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)。
+
+## 背景与目标
+
+工作区上下文需要让 Agent 使用用户明确选择的参考资料，同时保持来源可追溯、租户与所有者隔离、审批快照稳定、停止与撤销可执行。R2 在既有目录选择与受控导入之上，解决 Windows 受信文件系统 ACL 的兼容问题。
+
+## 范围与非目标
+
+- DEFAULT 登记资料和 SELECTED catalog 的 Windows 读取、恢复及 ASK 保留前复核纳入范围。
+- 信任基线保留受信根所有者，并额外认可 LocalSystem（S-1-5-18）与本机内置 Administrators（S-1-5-32-544）。
+- 检查覆盖受信根、实际选中的中间目录和明确登记文件，不遍历未选文件。
+- POSIX 策略、IMPORTED 私有输入、Skill 产物存储和 Harness 临时隔离不随 R2 放宽。
+- 不修改真实 ACL，不增加 Shell/helper、提权、账户名白名单或跳过校验开关。
+
+## 方案与调用链
+
+可信主体与 Run → 来源选择/导入 API → 加密快照与审批边界 → 工作区上下文读取 → 路径/文件身份/预算校验 → Windows 安全描述符与固定 SID 策略 → AgentScope ReAct/Harness 输入。恢复和 ASK 保留前重新核验原路径权限，不从 DEFAULT、NONE 或替代文件回退。
+
+## 关键决定
+
+| 编号 | 决定 | 理由 |
+|---|---|---|
+| D1 | 浏览器只负责选择，正文由服务端受控目录/导入链读取 | 避免把客户端路径或正文当成可信输入 |
+| D2 | 导入对象绑定可信 tenant、owner、Agent 和来源版本 | 防止跨租户或派生会话复用 |
+| D3 | 原生选择与模拟文件输入分开验收 | 证明用户电脑上的真实交互，不用测试夹具冒充 |
+| D4 | 审批使用原加密快照；原来源缺失或权限变化时失败关闭 | 避免审批后读取不同内容 |
+| D5 | Windows 只信任固定根所有者、LocalSystem 和本机内置 Administrators | 兼容受信部署目录并拒绝普通组的任意 ALLOW |
+| D6 | 使用最小只读 Win32/JNA 描述符读取，不提供写 ACL 能力 | 降低依赖面和权限副作用 |
+| D7 | NULL DACL、空 DACL、未知 ACE、解析或资源失败均保守处理 | 不以账户显示名或部分枚举结果降级放行 |
+
+## 安全与兼容边界
+
+tenant 来自认证上下文；路径越界、链接、网络卷、文件清单、类型、UTF-8、读取预算和租户/owner/RBAC 检查保持。错误响应不暴露原始系统消息、路径、正文、完整 ACL/SID 列表或凭据。R1 的原生窗口、真实 Provider、显式 JDBC 等门禁仍由各自任务定义，R2 ACL 证据不能替代这些验收。
+
+## 验收标准
+
+- Windows 受信 SID 只在明确登记资料链生效，普通组和其他 ALLOW 仍被拒绝。
+- 根、中间目录和文件逐项检查；读取前后权限变化能阻止交付。
+- 失败原因可关联同一 errorId 的后台日志，但不泄露安全敏感信息。
+- 文档修订不改变业务范围或实现，R0–R2 历史可追溯。
+
+## 关联文档
+
+- [清单](../checklists/2026-10-27-workspace-directory-selection-implementation-checklist.md)
+- [设计](../specs/2026-10-27-workspace-directory-selection-implementation-design.md)
+- [计划](../plans/2026-10-27-workspace-directory-selection-implementation.md)
+- [提示词](../prompts/2026-10-27-workspace-directory-selection-implementation-prompt.md)
+- [实现说明](../implementation/2026-10-27-workspace-directory-selection-implementation-implementation-design.md)
+- [进度账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)
+
+## R2 及更早历史原文
+
+<details>
+<summary>保留迁移前原文（仅供追溯，不代表当前职责）</summary>
+
 # 工作区目录选择需求设计（R2：可信Windows系统ACL兼容）
 
 日期：2026-10-27；主题：workspace-directory-selection-implementation；当前修订：R2；修订日期：2026-10-28；模式：mode=default。
@@ -354,3 +413,5 @@ Playwright的setInputFiles或模拟FileList只能证明JS/上传合同，不能�
 > - [实施计划](../plans/2026-10-27-workspace-directory-selection-implementation.md)
 > - [实际实现](../implementation/2026-10-27-workspace-directory-selection-implementation-implementation-design.md)
 > - [实施账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)
+
+</details>

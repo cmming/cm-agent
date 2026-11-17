@@ -1,6 +1,18 @@
 # 本机客户端项目工作区实施说明
 
-## R8 实际交付：T22 重启恢复与迟到回执收口（2026-11-12）
+## R9 T23–T26 实际交付：本机客户端页面、设备撤销、favicon 与原生窗口期限（2026-11-12）
+
+- T23：真实页面完成配对、撤销、键盘和 1440/390/320 响应式验证；T24：11 个 v2 页面加入 favicon，并修正 HTTP/HTTPS 页面断言。
+- T25：`cm-agent-server/src/main/java/com/cmagent/server/runtime/LocalProjectSelections.java` 新增到期调度和 `Chooser.cancel()`；到期请求在锁内取消，迟到结果不签发票据，成功结果取消排程，关闭时主动释放原生窗口。
+- `cm-agent-server/src/main/java/com/cmagent/server/runtime/WindowsLocalProjectDirectoryPicker.java` 新增当前进程固定标题窗口查找与 `WM_CLOSE` 投递，按 PID 过滤，不自动选中目录、不结束宿主进程。
+- 两项定向测试新增期限关闭、后续队列释放、PID 过滤和单据拒绝证据；`LocalProjectSelectionsTest` 5/5、`WindowsLocalProjectDirectoryPickerTest` 5/5（1 项非 Windows 条件跳过）。
+- 11 个 `console/v2/*.html` 增加 `/assets/icons/square.svg` favicon；`ConsoleResourceTest` 增加跨页断言，并在指定 IP 来源真实加载后确认登录页、本机客户端页控制台 0 error。
+- `local-client-page.test.cjs` 将旧的 HTTPS-only 配对命令断言改为 `https?://服务端地址:端口`，与 R6 的 HTTP/HTTPS 可选部署一致。
+- T26：T9/T17 定向故障矩阵 47/47、控制台资源测试 16/16、两项 Node 页面测试各 9/9；真实注销、物理掉电、外部进程脱离和远端受信 TLS 仍不由此批次闭合。真实页面已完成一次新配对和新撤销：配对 `ec5c83aa-c29f-4201-b0f9-6cfb3854a97a`、设备 `2a182876-58c0-4236-9692-98b745b1370e`；页面撤销后版本 2、挑战 404、撤销审计 1 条。
+- 生成视觉证据 `output/playwright/local-client-page-r9/local-client-ip-desktop-1440.png`、`local-client-ip-mobile-390.png`、`local-client-ip-mobile-320.png`；页面无横向溢出。
+- **未完成：** 当前 8080 PID 25424 未加载原生选择新类。真实窗口关闭和指定目录登记留作 T25，不以单元测试替代。
+
+## R8 历史实际交付：T22 重启恢复与迟到回执收口（2026-11-12）
 
 - `LocalClientServerClient.reportTask` 对 400/409/410/422/429 返回新增 `OperationResultRejectedException`；`LocalClientApplication.consumeTasks` 捕获后只输出“不会自动重试”提示并继续轮询。
 - `LocalClientReconnectTest` 新增通用操作迟到回执合同：首次领取 `NETWORK` 任务并返回结果时服务端回 409，客户端必须继续领取后续任务。
@@ -112,7 +124,7 @@
 - T19（当时待做，依赖 T3/T17）：为设备项目 Run 建立可信、可过期的持久实例归属与单调防护代次；领取、状态推进、外部副作用许可和恢复事务须共享可验证栅栏。仅在证明旧执行已失效且复核任务/命令时收敛，已有未知副作用继续隔离，不凭空内存缺失或客户端声明判定；跨实例竞争、迟到许可、审批恢复、审计失败回滚及 MySQL/PostgreSQL 双库测试必须覆盖。旧版没有归属见证的 Run 不得被新逻辑猜测为已停。
 - 本轮代码、运维与发布说明已修改；提交前需审查暂存区，仅提交本任务范围。旧客户端需先停用并排空已领取选择任务，再同步升级；Server 回退不能作为绕过确认的方式。
 
-日期：2026-11-09；当前修订 R8（2026-11-12）；mode=default；R4 业务代码提交 `9fff872`，R5/R6 已收口，R7 主提交 `744bae5` 与证据提交 `5fe3f14` 已推送，R8 主提交为 `ac458f3`。
+日期：2026-11-09；当前修订 R9（2026-11-12）；mode=default；R4 业务代码提交 `9fff872`，R5/R6 已收口，R7 主提交 `744bae5` 与证据提交 `5fe3f14` 已推送，R8 主提交为 `ac458f3`；R9 当前业务、测试与文档改动尚未提交。
 
 ## R3 续验结果（历史，2026-11-10）
 

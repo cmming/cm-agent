@@ -1,6 +1,19 @@
 # 本机客户端项目工作区实施账本
 
-## R8 T22 重启恢复与迟到回执账本（2026-11-12）
+## R9 T23–T26 页面、撤销与原生窗口期限账本（2026-11-12）
+
+- **修订基线：** HEAD `f21a7b1`；mode=default。用户指定服务地址 `http://192.168.0.159:8080/`；未由代理重启 8080，未启动额外 Server。
+- **真实页面：** Playwright 在指定 IP 登录后进入 `local-client.html`，设备计数 15，配对表单存在，控制台 0 error；1440/390/320 截图均完成，`documentElement.scrollWidth == innerWidth`，无页面横向溢出。
+- **真实配对与撤销：** 客户端 `ec5c83aa-c29f-4201-b0f9-6cfb3854a97a` 配对包经页面确认，客户端写明“配对完成，设备标识 2a182876-58c0-4236-9692-98b745b1370e”。页面一次点击只进入确认态，二次点击后状态 `REVOKED`、版本 2；挑战 HTTP 404，审计 `LOCAL_CLIENT_DEVICE_REVOKE` 1 条。
+- **另一次设备撤销：** `rocky-server-cm5` / `0cf60776-0b98-45bf-84ba-91d518e78680` 撤销前挑战 200，撤销后 `REVOKED`/版本 2、挑战 404，旧版本重复撤销 409，审计 1 条。
+- **键盘与响应式：** Tab 将焦点从撤销设备移到 `cmwin10`，Enter 切换详情；320/390 宽度导航保持内部横向滚动，页面本身不横向溢出。
+- **T23/T24 页面测试与静态资源：** `node --test .../local-client-page.test.cjs` 9/9，`client-projects.test.cjs` 9/9；首轮发现 HTTPS-only 过期断言，修正为 HTTP/HTTPS 后通过。首轮真实页面每次请求 `/favicon.ico` 均 401；为 11 个 v2 页面增加已有 SVG 图标并扩展 `ConsoleResourceTest`，重新加载后登录页和本机客户端页均为 0 console error。`ConsoleResourceTest` 16/16。
+- **T9/T17 故障矩阵：** `LocalClientReconnectTest` 3、`LocalHttpOperationsTest` 2、`ClientProjectOperationJournalTest` 1、`ClientProjectFenceJournalTest` 5、`ClientProjectCommandOperationsTest` 5、`LocalClientOperationServiceTest` 4、`LocalClientPairingServiceTest` 4、`LocalClientPairingHttpIntegrationTest` 2、`ClientProjectFenceServiceTest` 3、`ClientProjectRunRecoveryServiceTest` 2、`LocalProjectRunCompletionTest` 6，合计 47/47，失败/错误/跳过为 0。该批次不关闭真实注销、物理掉电、外部进程脱离 Job 树、受信远端 TLS 等边界。
+- **原生选择缺陷：** 旧请求已从 API 清除后，Java `IFileOpenDialog` 仍存在并长期占用选择线程。新增到期调度、选择器取消合同和 Windows 同进程固定标题 `WM_CLOSE`；`LocalProjectSelectionsTest` 5/5、`WindowsLocalProjectDirectoryPickerTest` 5/5（1 项非 Windows 跳过），0 failure/error。
+- **T25 阻塞：** 当前真实 8080 仍运行修改前进程，不能证明窗口到期关闭。需用户手动重启后，新进程发起选择并准确选择 `F:\java\cm-agent\target\native-project-e2e-20261112-final`，再验证 TTL 窗口自动关闭和下一次请求可继续。
+- **Git：** 本轮代码、测试、页面修复与 R9 文档尚未提交、未推送；无关 `application*.yml`、`.impeccable/`、`.gitignore`、`.workbuddy/` 保持不动。
+
+## R8 T22 历史重启恢复与迟到回执账本（2026-11-12）
 
 - **修订基线：** HEAD `5fe3f14`；mode=default。追加 T22；用户明确要求继续使用现有 `8080`，不重启该服务且不在 Windows 启动新服务。
 - **Server 重启：** 用户手动重启 `8080`，当前健康检查 HTTP 200，PID `44012`。重启前设备 `a6d5da12-9f66-4699-8fdb-84ba84d46e25` 无需重新配对即可恢复签名轮询。
@@ -122,7 +135,7 @@
 - T19（当时待做，依赖 T3/T17）：为设备项目 Run 建立可信、可过期的持久实例归属与单调防护代次；领取、状态推进、外部副作用许可和恢复事务须共享可验证栅栏。仅在证明旧执行已失效且复核任务/命令时收敛，已有未知副作用继续隔离，不凭空内存缺失或客户端声明判定；跨实例竞争、迟到许可、审批恢复、审计失败回滚及 MySQL/PostgreSQL 双库测试必须覆盖。旧版没有归属见证的 Run 不得被新逻辑猜测为已停。
 - 本轮代码、运维与发布说明已修改；提交前需审查暂存区，仅提交本任务范围。旧客户端需先停用并排空已领取选择任务，再同步升级；Server 回退不能作为绕过确认的方式。
 
-日期：2026-11-09；当前修订 R8（2026-11-12）；mode=default；R4 业务代码提交 `9fff872`，R5/R6 已收口，R7 主提交 `744bae5` 与证据提交 `5fe3f14` 已推送，R8 主提交 `ac458f3`。
+日期：2026-11-09；当前修订 R9（2026-11-12）；mode=default；R4 业务代码提交 `9fff872`，R5/R6 已收口，R7 主提交 `744bae5` 与证据提交 `5fe3f14` 已推送，R8 主提交 `ac458f3`；R9 当前改动未提交、未推送，T25 真机验收等待用户重启。
 
 ## R3 续验结果（历史，2026-11-10）
 
@@ -306,3 +319,13 @@ W06 的查询/回报任务成功只表示未知状态已可靠接收，命令本
 ### 目录选择失败诊断补充
 
 - 客户端对根目录与已登记项目重叠返回 `CLIENT_PROJECT_ROOT_CONFLICT`，其他选择异常返回 `CLIENT_PROJECT_SELECTION_FAILED`，过期返回 `CLIENT_PROJECT_SELECTION_EXPIRED`；日志和安全回执包含同一个随机错误编号，异常堆栈去掉原始消息及因果链。单元测试核对编号一致、路径与凭据不泄漏。此前请求 `edb7e9f3-14e1-4c27-912f-419bb9910476` 使用旧版本执行，未保留足够诊断信息，原因仍不能倒推。
+
+## 全量核定记录（2026-11-13）
+
+- 核定结论：待续。本记录只核定工作包责任及归档分类，前文任务、命令结果和提交状态保留形成时含义。
+- 责任范围与依据：R9 的 T25 原生窗口期限仍待真实新进程验收，T9/T17 故障矩阵未整体收口。
+- 证据限制：依据原文明确的工作范围、状态表、验收和遗留记录核定；本轮没有重跑业务测试、恢复旧服务、访问原数据库或重新证明历史外部环境。历史通过只适用于当时版本和环境。
+- 后继与剩余事项：上述剩余事项继续由原任务/验收范围跟踪；本次不执行它们，不依据后来相关主题自动宣布原验收通过，也不补造取消或移交。
+- 复核入口：[docs 全量整理账本](2026-11-13-docs-full-review-ledger.md#逐组核定快照)。本次整理不授予提交、推送、部署或外部副作用权限；同一需求恢复时保留本记录并追加恢复及修订。
+
+协议层次说明：通用设备通道的 audience 与设备项目浏览器来源是两个独立策略。当前 `ClientProjectProperties` 仍拒绝非回环 HTTP 浏览器来源；R6/R7 的设备 HTTP 记录不能作为浏览器入口已放宽的依据，现行条件见[客户端项目配置](../../configuration.md#已配对设备项目文件变更与命令纵切)。

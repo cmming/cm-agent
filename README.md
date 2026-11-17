@@ -2,7 +2,7 @@
 
 CM Agent 是基于 AgentScope Java 的企业级智能体开源底座。第一阶段完成 Java SDK、Spring Boot Starter、独立服务端、轻量控制台、工具治理、多租户和 RBAC 基线；阶段2完成生产持久化与安全收口；阶段3已接入 AgentScope Java 2.0.2 真实运行时。
 
-真实运行时支持 `react` 与受控 `harness`，默认保持 `react`。两种策略使用同一 CM Agent 工具治理、HIGH 审批恢复、显式停止、固定 Skill/沙箱/文件产物和可选只读参考快照；长期记忆及跨实例自动接管不在当前合同内。模块职责、接入方式、当前状态与阶段验收统一见 [Harness 模块说明](docs/harness-module.md)；原阶段文档保留为历史证据，部署切换步骤见 [运维说明](docs/operations.md)。
+真实运行时支持 `react` 与受控 `harness`；属性初始值为 `react`，实际模式以合并配置和数据集模式记录为准，工作树覆盖见[配置快照](docs/configuration.md#当前工作树配置快照)。两种策略使用同一 CM Agent 工具治理、HIGH 审批恢复、显式停止、固定 Skill/沙箱/文件产物和可选只读参考快照；长期记忆及跨实例自动接管不在当前合同内。模块职责、接入方式、当前状态与阶段验收统一见 [Harness 模块说明](docs/harness-module.md)；原阶段文档保留为历史证据，部署切换步骤见 [运维说明](docs/operations.md)。
 
 ## 快速开始
 
@@ -10,7 +10,7 @@ CM Agent 是基于 AgentScope Java 的企业级智能体开源底座。第一阶
 
 登录、总览、模型配置、Agent、工具、技能（含沙箱端点）、会话、运行与审计统一使用同源的`workbench.css`和SVG导航图标，保留既有接口与v1入口。更新时需完整部署HTML、CSS及SVG静态资源，并刷新已打开页面；跨页导航只替换页面内容，不能仅更新某一页的样式依赖。
 
-当前已在1920×1080、1440×1000、1024×900、390×844浏览器视口中检查全部九个入口。1680px起采用宽屏规则；手机端按任务折叠，审计表格保留全部字段并支持局部横向滚动。该记录不等于真实手机、多浏览器或所有角色已完成验收，范围与证据见[v2统一优化账本](docs/superpowers/progress/2026-10-15-v2-console-polish-ledger.md)。
+2026-10-15 的历史样式验收覆盖当时九个入口及1920×1080、1440×1000、1024×900、390×844浏览器视口；不能据此宣布后续新增的本地项目和本机客户端页也通过该轮验收。1680px起采用宽屏规则；手机端按任务折叠，审计表格保留全部字段并支持局部横向滚动。该记录不等于真实手机、多浏览器或所有角色已完成验收，范围与证据见[v2统一优化账本](docs/superpowers/progress/2026-10-15-v2-console-polish-ledger.md)。
 
 ### Agent 模型名称同步
 
@@ -85,7 +85,7 @@ JDBC 模式新增 V15，仅更新 `skill_load_records.status` 的中文原生注
 
 Server 模块支持 Lombok，依赖版本由 Spring Boot BOM 管理，并同时配置了 Lombok 与 Spring Boot 配置元数据注解处理器。Lombok 仅参与编译，不作为运行时依赖；IDE 应重新导入 Maven 项目并启用注解处理，Maven 构建使用项目配置。扩展处理器列表时需保留这两个处理器，否则可能导致 `@Slf4j` 无法生成 `log` 字段或缺少配置元数据。
 
-本地开发调试必须显式选择 `local` profile。该 profile 加载 `application-local.yml`，启用 memory 持久化、fake runtime、本地 bootstrap admin 和本地专用 JWT 配置。无 profile 启动时不会自动加载 `local`。
+本地开发调试必须显式选择 `local` profile。该 profile 加载 `application-local.yml`；持久化、运行时、监听地址及可选能力还受公共配置、外部配置和环境变量影响，不能仅凭 profile 名称推断为 memory 或 fake runtime。启动前按[Profile 选择](docs/configuration.md#profile-选择)核对实际配置及功能门禁；开发凭据和 bootstrap admin 不用于生产。提交基线在未指定 profile 时不会加载 `local`，且安全校验会拒绝启动；当前工作树回退值可能不同，详见上述配置说明。
 
 ```powershell
 mvn -q "-DskipTests" package
@@ -115,6 +115,8 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 脚本会导出该提交相对首个父提交新增、修改和重命名后的文件，并保留仓库目录结构。导出内容取自该提交版本，可复制到目标工作区覆盖。`exported-files.txt` 会记录已导出的文件；已删除文件不会复制，而会列在 `deleted-files.txt` 中，覆盖前必须人工复核并处理这些删除项。导出目录必须不存在或为空，以避免混入旧的导出结果。
 
+## 服务访问与控制台
+
 本地和测试 profile 的 bootstrap admin 凭据只由代码/CI 注入或使用本地专用占位配置，不能复制到生产。生产和类生产环境必须使用受控外部 YAML 或 secret manager 提供 JWT secret 和 JDBC 凭据。
 
 服务启动后访问：
@@ -124,7 +126,7 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 - 旧版控制台（v1）：`http://localhost:8080/console/v1/`
 - OpenAPI：`http://localhost:8080/swagger-ui/index.html`
 
-v2 控制台按版本化 URL 拆分为登录、能力总览、Agent 管理、模型配置、工具治理、技能管理、会话聊天、运行记录和审计日志九个独立 HTML 页面。页面之间使用真实链接和独立 URL，并在当前文档内加载目标 HTML，以兼容会隔离跨文档状态的嵌入式浏览器；直接刷新或访问页面时由仅作用于 `/api` 的 `HttpOnly`、`SameSite=Strict` 会话 Cookie 恢复认证。登录响应中的 JWT 只在当前页面内存中短暂使用，不会写入浏览器存储或 URL；退出时会立即清除 Cookie。用户名和密码不会保存。原始单页 `index.html` 继续作为 v1 从 `/console/v1/` 提供，v1 的 JWT 仍只保存在页面内存中，刷新后需要重新登录。
+v2 控制台按版本化 URL 拆分为登录、能力总览、Agent 管理、模型配置、工具治理、技能管理、会话聊天、运行记录、审计日志、本地项目和本机客户端十一个独立 HTML 页面。页面之间使用真实链接和独立 URL，并在当前文档内加载目标 HTML，以兼容会隔离跨文档状态的嵌入式浏览器；直接刷新或访问页面时由仅作用于 `/api` 的 `HttpOnly`、`SameSite=Strict` 会话 Cookie 恢复认证。登录响应中的 JWT 只在当前页面内存中短暂使用，不会写入浏览器存储或 URL；退出时会立即清除 Cookie。用户名和密码不会保存。原始单页 `index.html` 继续作为 v1 从 `/console/v1/` 提供，v1 的 JWT 仍只保存在页面内存中，刷新后需要重新登录。
 
 两个版本复用相同的服务端 API、权限、多租户和审计边界。v2 面向平台使用者提供能力总览、Agent 列表/详情/创建/编辑/删除、模型配置列表/详情/创建/编辑/删除、Tool 列表/创建/编辑/删除/授权、技能 ZIP 导入和版本资源预览、Agent 技能绑定、会话聊天、会话式运行调试、运行历史与工具/技能读取详情，以及审计日志游标分页。技能包只接受 `SKILL.md` 与配置开放的文本资源；首次导入形成候选版本，候选不会进入正式 Run。管理员需要完成依赖映射与预检、以真实 Agent 启动 `TEST` Run 并确认目标技能实际读取后，才能显式发布；`TEST` Run 不创建会话或消息，但真实工具仍可能产生外部副作用。新绑定默认跟随当前正式发布版本，也可以固定到曾发布版本；发布或回滚只影响之后的跟随型 Run。依赖映射不会自动授予工具权限，工具仍须经过 Agent 授权、风险审批和审计。运行详情只显示固定版本、路径、状态、字节数、耗时和错误编号，正文仅通过受控读取路径交给模型，不进入读取记录或控制台列表。聊天页按 Agent 切换、新建和继续持久化会话；运行页保留面向调试的运行详情与历史回看。USER/ASSISTANT 消息按会话内序号保存；续聊时服务端注入最近 40 条且最多 60,000 字符的完整消息历史。流式发送接口依次返回 `started`、`message-started`、带 `replyId/blockId` 的 `delta`、`completed` 或带稳定错误码和 `errorId` 的 `error`。连接断开不会取消已经启动的运行，最终结果仍按既有持久化和审计流程收口。原 `/runs` 与 `/runs/stream` 继续作为兼容的单轮 API。Agent 创建和编辑必须从当前租户的已启用模型配置中选择，服务端使用该配置的 ID 与模型名称，不能由浏览器自由填写模型名称。Agent 删除需要 `agent:delete`；已有会话或运行历史时返回 `409 Conflict`，应改为停用 Agent，以保留运行与审计链路。v2 会话聊天支持停止本轮，实际退出前保持发送锁；已输出正文保留，原回答不续跑。权限、单实例限制及副作用边界见[运维说明](docs/operations.md#会话停止本轮)。
 
@@ -140,11 +142,11 @@ v2 聊天页支持 Enter 发送、Shift+Enter 换行，中文输入法组合选�
 
 ## 动态 HTTP 工具与 MCP
 
-控制台可创建 `HTTP` 工具：填写 `GET` 或 `POST`、URL 模板、输入 JSON Schema、参数映射、`secret/...` 请求头引用及超时。输入 JSON Schema 支持嵌套对象和数组；映射通过 JSON Pointer 读取输入并写入 PATH、QUERY、HEADER 或 BODY。缺失值与显式 `null` 都会按映射默认值处理，PATH 占位符必须与必填 PATH 映射一一对应。
+控制台可创建 `HTTP` 工具：填写 `GET` 或 `POST`、URL 模板、树形参数定义、`secret/...` 请求头引用及超时。页面提交扁平 `parameters`，服务端据此生成输入 JSON Schema；调用方不再提交 Schema 或 JSON Pointer 映射。参数支持嵌套对象和数组，顶层位置包括 PATH、QUERY、HEADER、BODY 和 BODY_ROOT；PATH 占位符须与必填 PATH 参数同名。完整字段约束和示例见[动态 HTTP 工具配置](docs/configuration.md#动态-http-工具)。
 
-工具不会保存或返回请求头密钥。Header 只能配置例如 `secret/integration/service-token` 的引用，运行时由受控 `SecretProvider` 解析。HTTP 执行默认关闭，启用前必须配置可访问主机白名单；协议、SSRF、重定向、超时和响应大小均受服务端限制。完整配置和运维边界见[配置说明](docs/configuration.md)与[运维说明](docs/operations.md)。
+工具不会保存或返回请求头密钥。Header 只能配置例如 `secret/integration/service-token` 的引用，运行时由受控 `SecretProvider` 解析。HTTP 执行在提交基线中默认关闭，部署配置可能覆盖；启用前必须配置可访问主机白名单；协议、SSRF、重定向、超时和响应大小均受服务端限制。完整配置和运维边界见[配置说明](docs/configuration.md)与[运维说明](docs/operations.md)。
 
-控制台支持对单个 HTTP 或 LOCAL 工具调试，需要 `tool:debug` 权限；HIGH 风险工具还必须输入与工具名称完全一致的二次确认。调试结果与失败信息只显示受控、脱敏后的摘要。已发布的 HTTP/LOCAL 工具可选择通过默认关闭的 MCP Streamable HTTP 端点提供；MCP 调用除 JWT 外还需要 `tool:mcp:invoke`，取消发布、禁用或运行配置漂移会立即使其不可调用。
+控制台支持对单个 HTTP 或 LOCAL 工具调试，需要 `tool:debug` 权限；HIGH 风险工具还必须输入与工具名称完全一致的二次确认。调试结果与失败信息只显示受控、脱敏后的摘要。已发布的 HTTP/LOCAL 工具可选择通过 MCP Streamable HTTP 端点提供，提交基线默认关闭该端点，部署配置可覆盖；MCP 调用除 JWT 外还需要 `tool:mcp:invoke`，取消发布、禁用或运行配置漂移会立即使其不可调用。
 
 工具编辑需要 `tool:grant` 权限，编辑时工具类型保持锁定，LOCAL 工具名称也不可修改；HTTP 工具必须提交完整且有效的 HTTP 配置，其他类型不能携带 HTTP 配置。编辑已发布的 LOCAL 工具会保持原 MCP 发布状态，也可在本次编辑中取消发布；未发布的 LOCAL 工具仍须使用独立的 MCP 发布操作。页面只回填 Secret 引用，不展示真实 Secret。
 
@@ -162,7 +164,7 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--cm-ag
 
 真实 Runtime 支持 AgentScope 2.0.2 的 OpenAI Compatible 与 DashScope Provider。启用时必须同时关闭 fake runtime；模型 API Key 由模型配置管理接口加密写入数据库，运行时按 `tenantId + modelConfigId` 读取：
 
-执行模式默认 `cm-agent.agentscope.execution-mode=react`。新增的受控 `harness` 策略复用工具治理、固定 Skill 和检查点，框架宿主文件、Shell、后台工具、动态 Skill 等能力关闭；AgentScope 构件保持 2.0.2。JDBC 新增 V21 全数据集模式记录，切换须先排空所有非终态 Run、TEST 和检查点，并停用未实现门禁的旧二进制。T2 交付及后续生产验收边界见[实施账本](docs/superpowers/progress/2026-10-10-harness-t2-ledger.md)，配置与切换流程见[配置说明](docs/configuration.md)和[运维说明](docs/operations.md)。
+`cm-agent.agentscope.execution-mode` 的属性初始值为 `react`；部署配置可覆盖。新增的受控 `harness` 策略复用工具治理、固定 Skill 和检查点，框架宿主文件、Shell、后台工具、动态 Skill 等能力关闭；AgentScope 构件保持 2.0.2。JDBC 新增 V21 全数据集模式记录，切换须先排空所有非终态 Run、TEST 和检查点，并停用未实现门禁的旧二进制。T2 交付及后续生产验收边界见[实施账本](docs/superpowers/progress/2026-10-10-harness-t2-ledger.md)，配置与切换流程见[配置说明](docs/configuration.md)和[运维说明](docs/operations.md)。
 
 ```yaml
 cm-agent:
@@ -179,7 +181,7 @@ cm-agent:
 
 `CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY` 是 Base64 编码的 256 位 AES 主密钥，不是模型 API Key，必须由部署环境或密钥管理系统提供。模型 API Key 只以 AES/GCM 密文写入 `model_configs`，创建时必填、更新时可轮换，所有读取接口均不会回显。生产也可以提供自定义 `ModelCredentialProvider` 对接外部密钥管理系统。
 
-`permission-enabled` 默认关闭，开启后 LOW/MEDIUM 工具继续执行，HIGH 工具在真正进入治理网关前暂停并在聊天页显示逐调用审批卡片。审批人必须是本轮发起人且同时拥有 `agent:run` 和 `agent:approve`；决定绑定当前 `toolCallId`、原工具 `toolId` 与输入哈希，恢复时仍会重新执行 ToolGrant、租户和工具状态校验。检查点使用与模型凭据相同的外部 AES 主密钥进行 AES/GCM 加密，`approval-ttl` 默认 15 分钟、最大 24 小时。会话和独立 TEST 的过期审批由系统主动扫描，原子标记 EXPIRED、将仍等待的 Run 收口为 DENIED 并清除该 Run 检查点；关联 TEST 状态同步为 FAILED。扫描默认开启，每批结束后间隔 30 秒、每批最多 50 项，可通过 `cm-agent.approval-expiry` 配置，见[配置说明](docs/configuration.md)。系统过期不执行模型或工具。进程中断后的已批准运行不自动接管，跨实例执行租约、长期授权和独立审批中心仍未提供，上线前须评估[运维限制](docs/operations.md)。
+`permission-enabled` 的属性初始值为关闭，部署配置可以覆盖；开启后 LOW/MEDIUM 工具继续执行，HIGH 工具在真正进入治理网关前暂停并在聊天页显示逐调用审批卡片。审批人必须是本轮发起人且同时拥有 `agent:run` 和 `agent:approve`；决定绑定当前 `toolCallId`、原工具 `toolId` 与输入哈希，恢复时仍会重新执行 ToolGrant、租户和工具状态校验。检查点使用与模型凭据相同的外部 AES 主密钥进行 AES/GCM 加密，`approval-ttl` 默认 15 分钟、最大 24 小时。会话和独立 TEST 的过期审批由系统主动扫描，原子标记 EXPIRED、将仍等待的 Run 收口为 DENIED 并清除该 Run 检查点；关联 TEST 状态同步为 FAILED。扫描默认开启，每批结束后间隔 30 秒、每批最多 50 项，可通过 `cm-agent.approval-expiry` 配置，见[配置说明](docs/configuration.md)。系统过期不执行模型或工具。进程中断后的已批准运行不自动接管，跨实例执行租约、长期授权和独立审批中心仍未提供，上线前须评估[运维限制](docs/operations.md)。
 
 聊天页的人工确认需要先核对参数、逐项选择，再显式提交。多项的“全部选为允许/拒绝”只改变选择，按钮下方汇总会显示允许与拒绝数量；未选完不能提交。提交后区分“正在提交决定”和“决定已接受”，批准不等于工具执行成功。只读或网络结果不确定时使用“刷新审批状态”重新查询指定请求，不会再次发起决定。当前页面可短暂保留同一审批快照的选择，刷新页面后不保留，也不形成长期授权。
 
@@ -202,6 +204,7 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 - 第一阶段：已交付工程骨架、核心领域接口、Starter、控制台、工具治理、多租户/RBAC 基线和 fake runtime。
 - 阶段2：已交付 Run、ToolCall、Audit 的 JDBC Repository 与 Flyway V2/V3 查询索引，租户隔离、严格审计、JWT/profile/bootstrap/error/redaction 安全收口，以及运行启动/完成两段事务和 cursor 查询。
 - 阶段3：已交付 AgentScope Java 2.0.2 真实运行、OpenAI Compatible/DashScope 模型适配、外部模型凭据、受治理工具调用、HIGH 工具在线逐调用审批、超时中止与结果映射；并交付消息一等公民的持久化会话、会话 SSE、动态 HTTP 工具、控制台调试与可选 MCP 发布。工具每次调用都会重新授权，endpoint 元数据不会被自动执行。
+- 阶段3后增量：已接入受控 Harness、显式停止本轮、技能版本/依赖预检/试运行/发布回滚、Python 脚本沙箱与加密文件产物、只读参考工作区和受控导入，以及需按部署条件启用的本机客户端和本地项目实验能力。
 - 阶段4：可观测性与运维增强尚未交付。
 - 阶段5：交付与稳定性工程尚未交付。
 
@@ -209,11 +212,11 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 完整范围和后续依赖见[中文路线图](docs/roadmap.md)。
 
-## 生产文档
+## 文档导航
 
+- [文档总入口](docs/README.md)：按使用与生产、架构与开发、产品与设计、工作包与历史分组查找文档。
 - [中文路线图](docs/roadmap.md)
 - [工具开发指南](docs/tool-development-guide.md)
-- [工具编辑、删除与 Agent 解除关联实现原理设计](docs/superpowers/implementation/2026-08-03-tool-management-edit-delete-implementation-design.md)
 - [配置说明](docs/configuration.md)
 - [部署指南](docs/deployment.md)
 - [运维说明](docs/operations.md)
@@ -223,25 +226,27 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 生产文档默认使用中文。英文文档可以作为翻译补充，但不能替代中文文档。
 
+## 文件产物与工作区
+
 技能沙箱可通过独立 `cm-agent.skills.sandbox.artifacts` 配置收集固定 Python 生成的文件：脚本写入 `CM_AGENT_ARTIFACT_DIR` 指定的 `/workspace/output`，容器退出前传输，服务端持久卷独立 AES/GCM 加密，JDBC V19 保存归属与配额。Run 成功持久化且严格审计成功后，创建者可在 v2 技能 TEST、运行详情和聊天回复下载；等待审批、失败与跨主体不交付。默认关闭，生产必须显式提供私有持久卷、独立密钥和 JDBC；详见[文件配置](docs/configuration.md#技能沙箱文件产物)与[运维说明](docs/operations.md#文件产物持久卷与补偿)。固定 Python 验收技能位于 `cm-agent-server/src/test/resources/skill-artifacts`；原 Anthropic docx.zip 的 Node.js 动态脚本仍不受支持。
 控制台会在选择技能时恢复本人当前版本最近的 TEST 结果；刷新或跨页返回后重新选择技能即可继续查看/下载，不自动重放执行。仅有读取权限的用户也可读取本人结果，试运行和发布仍需原写权限。产物组件最多并行下载两个文件，额外点击会提示等待。
 
 ### 会话工作区参考目录
 
-控制台 v2 支持在首条消息前选择管理员登记的只读参考目录。目录绑定会话、正文按 Run 加密冻结；审批恢复继续使用原正文，换目录请新建会话。默认关闭，旧无请求体创建及 input-only 运行调用保持兼容。配置和 API 示例见 [配置说明](docs/configuration.md#工作区目录选择)，部署、撤销与排空回退见 [运维说明](docs/operations.md#工作区目录选择运维)。这项能力不提供用户电脑目录选择、任意宿主路径、写文件或 Shell。
+控制台 v2 支持在首条消息前选择管理员登记的只读参考目录。目录绑定会话、正文按 Run 加密冻结；审批恢复继续使用原正文，换目录请新建会话。属性初始值为关闭，部署配置可以覆盖；旧无请求体创建及 input-only 运行调用保持兼容。配置和 API 示例见 [配置说明](docs/configuration.md#工作区目录选择)，部署、撤销与排空回退见 [运维说明](docs/operations.md#工作区目录选择运维)。这项能力不提供用户电脑目录选择、任意宿主路径、写文件或 Shell。
 
 Windows服务器登记资料现在允许可信所有者、`SYSTEM`和本机内置`Administrators`的显式/继承权限，按固定SID识别，不必为了通过检查删除正常系统管理权限。其他主体的允许项仍拒绝，检查覆盖根及实际选中的目录/文件；不自动修改ACL，也不放宽本机上传密文、Skill产物或Harness临时目录。升级后需带上Server新增的JNA5.17.0依赖并重启服务，配置键不变。详见[Windows登记资料权限](docs/configuration.md#windows登记参考资料权限)及[部署与回退](docs/operations.md#windows登记资料acl部署与回退)。这项兼容不代表R1原生窗口、Provider和全部发布门禁已完成。
 
 ### 本机文件夹导入的分阶段边界
 
-R1 已完成 T9 存储基线及 T10 受控导入 API：支持能力查询、明确确认后的 manifest/逐文件上传、READY 完成、结果核对和撤销，默认关闭。创建响应丢失可按同一次确认的 `requestId` 查询，不盲目重复创建。IMPORTED 派生会话/Run 的读取按原主体隔离，列表在游标分页前过滤；原三态保持原权限。
+R1 已完成 T9 存储基线及 T10 受控导入 API：支持能力查询、明确确认后的 manifest/逐文件上传、READY 完成、结果核对和撤销；上传开关的属性初始值为关闭，部署配置可以覆盖。创建响应丢失可按同一次确认的 `requestId` 查询，不盲目重复创建。IMPORTED 派生会话/Run 的读取按原主体隔离，列表在游标分页前过滤；原三态保持原权限。
 
-本阶段仍没有操作系统文件夹窗口、浏览器预览/勾选流程或 IMPORTED 运行绑定，READY 的 `bindable` 仍为 `false`，不能把 API 验收当作原生窗口或真实模型验收。部署和协议见 [导入存储配置](docs/configuration.md#本机只读导入存储基线t9)、[T10导入API](docs/configuration.md#本机只读导入apit10) 及 [导入维护](docs/operations.md#本机只读导入存储维护t9)。
+T10 验收时尚未接入 IMPORTED 运行绑定，`bindable` 和 `runtimeAvailable` 当时为 `false`。后续代码已提供受开关、存储和仓储能力约束的绑定与运行接线，以及浏览器目录选择入口；READY 不保证最终绑定或运行成功。T11–T14 的整体验收仍未完成，不能把代码接线或 API 验收当作真实窗口、模型与发布验收。部署和协议见 [导入存储配置](docs/configuration.md#本机只读导入存储基线t9)、[导入 API](docs/configuration.md#本机只读导入apit10) 及 [导入维护](docs/operations.md#本机只读导入存储维护t9)。
 
-### 本地项目开发工作区（未发布，默认关闭）
+### 本地项目开发工作区（未发布）
 
 控制台 v2 的“本地项目”支持通过 Windows 原生窗口选择本机文件夹，将原目录登记为私有项目，并在项目内创建绑定固定 Agent 的会话。项目页提供目录树、文本预览、搜索和带版本的文件引用；Agent 通过专用治理工具提出文件修改、条件撤销、命令和构建计划，实际文件写入或程序启动须逐调用 HIGH 审批。项目归档保留目录和历史，结果未知的操作不会自动重放。原只读参考资料及上传快照入口保留各自语义。
 
-`cm-agent.local-projects.enabled` 默认 `false`。首期仅支持 Server 与文件夹同机的 Windows x64 `local`/`test` 部署，要求 JDBC、显式回环监听、关闭转发头与 Studio、固定节点和私有状态目录，以及真实 ReAct 或受控 Harness 审批运行时。JDBC 新增 V26 五张项目表；四个 `project:*` 权限由部署者显式赋给主体，固定项目工具目录和 Agent grant 仍按原有 `tool:grant` 权限治理。新建项目会话会为所选 Agent 自动补齐当前固定 `project_*` 工具的缺失 grant，但不会自动提升普通用户权限；Run 首发后工具集合冻结。项目 Run 的系统提示明确列出这些工具，并说明原生 Harness 文件系统禁用时仍应通过项目工具读取。项目会话不加载普通业务工具或 Skill。
+`cm-agent.local-projects.enabled` 的属性初始值为 `false`，部署配置可以覆盖。首期仅支持 Server 与文件夹同机的 Windows x64 `local`/`test` 部署，要求 JDBC、关闭转发头与 Studio、固定节点和私有状态目录，以及真实 ReAct 或受控 Harness 审批运行时。默认要求回环监听和回环来源；显式允许非回环访问前须核对[配置与安全条件](docs/configuration.md#本地项目开发工作区)。JDBC 新增 V26 五张项目表；四个 `project:*` 权限由部署者显式赋给主体，固定项目工具目录和 Agent grant 仍按原有 `tool:grant` 权限治理。新建项目会话会为所选 Agent 自动补齐当前固定 `project_*` 工具的缺失 grant，但不会自动提升普通用户权限；Run 首发后工具集合冻结。项目 Run 的系统提示明确列出这些工具，并说明原生 Harness 文件系统禁用时仍应通过项目工具读取。项目会话不加载普通业务工具或 Skill。
 
-命令在原项目目录执行，继承服务运行账号的操作系统权限，可能访问目录外资源和网络；Job 负责本次进程树的生命周期，不提供操作系统级沙箱。工具链须由部署者显式配置；空配置不会显示命令或构建可用。启用方式、预算、恢复及归档说明见[本地项目配置](docs/configuration.md#本地项目开发工作区)和[本地项目运维](docs/operations.md#本地项目开发工作区运维)。当前授权、页面、真实 Provider 与浏览器读取证据及剩余门禁见[实施账本](docs/superpowers/progress/2026-11-02-agent-operation-authorization-implementation-ledger.md)。
+命令在原项目目录执行，继承服务运行账号的操作系统权限，可能访问目录外资源和网络；Job 负责本次进程树的生命周期，不提供操作系统级沙箱。工具链须由部署者显式配置；空配置不会显示命令或构建可用。启用方式、预算、恢复及归档说明见[本地项目配置](docs/configuration.md#本地项目开发工作区)和[本地项目运维](docs/operations.md#本地项目开发工作区运维)。当前授权、页面、真实 Provider 与浏览器读取证据及剩余门禁见[项目页账本](docs/superpowers/progress/2026-11-03-projects-page-ledger.md)。

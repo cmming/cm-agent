@@ -1,6 +1,6 @@
 # CM Agent 技术路线与实现逻辑
 
-本文面向参与开发、部署和运维 CM Agent 的人员，说明当前代码已实现的技术路线、模块职责、关键运行链路和生产边界。文中“当前能力”以代码及正式配置/运维文档为准；路线图中标注为后续阶段的项目不应视为已交付能力。
+本文面向参与开发、部署和运维 CM Agent 的人员，说明当前代码已实现的技术路线、模块职责、关键运行链路和生产边界。当前事实最后核验于 2026-11-13；具体配置值和操作步骤仍以[配置说明](configuration.md)、[运维说明](operations.md)和当前代码为准。
 
 ## 1. 项目定位与技术路线
 
@@ -12,9 +12,9 @@ CM Agent 是基于 AgentScope Java 的企业级智能体底座。当前路线不
 2. **框架可插拔**：Starter 提供默认领域能力；Server 负责 Spring MVC、安全、配置和运行编排；AgentScope 通过独立 Adapter 接入，避免核心层绑定某个模型框架。
 3. **安全与数据先行**：所有受保护请求先解析认证主体，再以主体 tenant 约束读取、写入和授权；运行、工具调用与审计均可落入 JDBC 数据库。
 4. **运行时受治理**：真实模型只能得到经授权的工具描述；工具实际调用时再次鉴权，而不是信任模型输出或配置中的 endpoint。
-5. **生产化演进**：阶段 1 的内存实现和 Fake Runtime 用于本地/测试；阶段 2 已形成 JDBC、Flyway、严格审计和 profile 安全边界；阶段 3 已接入 AgentScope Java 真实同步单轮运行。可观测性、正式交付流水线等属于后续路线。
+5. **生产化演进**：阶段 1 的内存实现和 Fake Runtime 用于本地/测试；阶段 2 已形成 JDBC、Flyway、严格审计和 profile 安全边界；阶段 3 已接入 AgentScope Java 真实运行，后续增量补齐持久化会话、显式停止、Skill 治理、受控工作区和按配置启用的本机能力。可观测性、正式交付流水线等仍属于后续路线。
 
-当前支持持久化多轮会话、流式 REST、在线 HIGH 工具人工确认及会话审批历史回显；不承诺手动取消、无人值守暂停或崩溃自动接管。超时或失败也不能证明具有外部副作用的工具已回滚。
+当前能力及其交付边界见[控制台、API 与当前边界](#8-控制台api-与当前边界)。进程中断后的自动接管、跨实例执行恢复和外部副作用回滚仍不在通用合同中。
 
 ## 2. 技术栈与模块边界
 
@@ -27,6 +27,7 @@ CM Agent 是基于 AgentScope Java 的企业级智能体底座。当前路线不
 | `cm-agent-persistence` | `Jdbc*Repository`、行映射、Flyway 迁移、数据库集成测试 | Controller 和 Web DTO |
 | `cm-agent-spring-boot-starter` | 配置属性和可覆盖的默认 Bean | 生产环境专有编排 |
 | `cm-agent-agentscope-adapter` | AgentScope 与核心 `AgentRuntime`、工具网关之间的适配 | 租户身份来源和 HTTP 路由 |
+| `cm-agent-local-client` | 设备配对、签名挑战、受治理本机操作和客户端项目任务领取 | Server 权限决策和跨实例自动接管 |
 | `cm-agent-server` | HTTP API、安全、审计、运行编排、Repository/Runtime 装配 | 在 Controller 中直接写 SQL |
 | `cm-agent-console` | 轻量管理控制台的静态资源与界面 | 绕过服务端授权 |
 | `cm-agent-examples` | Starter 接入示例 | 生产运行依赖 |
@@ -45,27 +46,28 @@ CM Agent 是基于 AgentScope Java 的企业级智能体底座。当前路线不
 
 仓储接口位于 `core.repository`，所有读写都显式带 tenant 条件。服务端从 JWT 认证主体取得 tenant 和权限，客户端输入不能覆盖当前主体的 tenant。权限判断分为普通资源访问的 `PermissionEvaluator` 与工具调用的 `ToolAuthorizationPolicy`；两者均是可替换的核心策略。
 
-## 4. 一次 Agent 运行的实现链路
+## 4. 一次受治理 Agent 运行的实现链路
 
-运行入口为 `RunController`，实际编排位于 `RunExecutionService`。一条同步单轮请求的主要过程如下：
+运行入口包括兼容的单轮 `RunController` 和持久化会话 `ConversationController`，实际编排位于 `RunExecutionService` 与 `ConversationService`。主要过程如下：
 
 ```text
 Bearer JWT
   → Security 解析 PrincipalRef（tenant、用户、权限）
-  → RunController 校验请求并调用 RunExecutionService
+  → Controller 校验请求或会话归属并进入运行编排
   → 按 tenant 查询已启用 Agent 与模型配置
-  → 读取 ToolGrant，筛选并预授权可用工具
+  → 固定 Skill/工作区快照并读取 ToolGrant，筛选预授权工具
   → RunPersistenceService 写入 RUNNING Run 与启动审计
-  → AgentRuntime 执行（Fake 或 AgentScope）
+  → AgentRuntime 执行（Fake、AgentScope ReAct 或受控 Harness）
+  → 每次工具调用再次经过治理网关；HIGH 工具可按配置进入审批恢复
   → 完成 Run、批量保存 ToolCall、写入完成/失败/拒绝审计
   → 对响应中的输入、输出和错误信息脱敏后返回
 ```
 
-`RunPersistenceService` 将持久化拆为启动和完成两个阶段：启动阶段创建 `RUNNING` 记录并写入“运行已启动”审计；完成阶段更新最终状态、写入工具调用并追加最终审计。在 JDBC 模式下每个阶段各自使用事务，从而保证该阶段内的运行事实与审计一致。审计是严格依赖：审计持久化不可用时请求不能被伪装为成功，服务会按受控错误语义失败。
+`RunPersistenceService` 将持久化拆为启动和完成两个阶段：启动阶段创建 `RUNNING` 记录并写入“运行已启动”审计；完成阶段更新最终状态、写入工具调用并追加最终审计。在 JDBC 模式下每个阶段各自使用事务，从而保证该阶段内的运行事实与审计一致。显式停止复用 Run 状态和加密检查点，必须等运行时确认工具退出后才收口；停止不是对外部副作用的回滚。审计是严格依赖：审计持久化不可用时请求不能被伪装为成功。
 
 运行时异常会尝试将运行记录收口为 `FAILED`，并对日志、持久化数据和响应中的敏感内容进行脱敏。运行历史和工具调用详情查询同样按 tenant 和 Agent 限定，并通过有界 cursor 分页避免无界扫描。
 
-## 5. 真实运行时与工具调用
+## 5. 运行策略、会话审批与工具调用
 
 ### 会话审批与只读历史
 
@@ -77,10 +79,10 @@ Bearer JWT
 
 ### 运行时适配
 
-`AgentRuntime` 是核心运行时接口。Starter 在显式启用 Fake Runtime 时提供 `FakeAgentRuntime`，用于本地开发和测试；生产/类生产环境使用 `AgentScopeRuntimeAdapter`。真实 Adapter 的职责是：
+`AgentRuntime` 是核心运行时接口。Starter 在显式启用 Fake Runtime 时提供 `FakeAgentRuntime`，用于本地开发和测试；生产/类生产环境使用 `AgentScopeRuntimeAdapter`。`cm-agent.agentscope.execution-mode` 选择 `react` 或 `harness`，属性初始值为 `react`，实际模式以合并配置及数据集模式记录为准；模式切换须在切换前排空 Run、TEST 和审批检查点。真实 Adapter 的职责是：
 
 1. 按 `tenantId + modelConfigId` 向 `ModelCredentialProvider` 请求凭据；默认实现从数据库读取 AES/GCM 密文并仅在本次模型调用期间解密。未找到或无法解密时返回受控的“模型凭据不可用”结果，不泄露密钥。
-2. 将核心 `AgentRunRequest` 转换为 AgentScope 单轮 ReAct 执行规格，并依据模型/工具 timeout 与最大尝试次数运行。
+2. 将核心 `AgentRunRequest` 转换为 AgentScope ReAct 或受控 Harness 执行规格，并依据模型/工具 timeout 与最大尝试次数运行。Harness 原生文件、Shell、后台工具、动态 Skill 和长期记忆入口关闭，只暴露 CM Agent 的固定治理能力。
 3. 通过 `AgentScopeToolBridge` 将 AgentScope 的工具调用转换为 `ToolInvocationGateway` 请求，再把结果映射回 `ToolCallRecord`。
 
 工具治理有两层：运行前，`RunExecutionService` 只将已授权工具传入模型；运行中，`GovernedToolInvocationService` 会基于当前主体、Agent、工具和授权关系再次检查。工具定义中的 endpoint 是元数据，不会被框架自动发起网络调用；真正的 `ToolExecutor` 必须由应用明确实现和注册。对于写外部系统的工具，下游应支持幂等键，并自行保证重试、超时或取消后的业务一致性。
@@ -99,21 +101,22 @@ Bearer JWT
 
 ## 7. 数据库、Flyway 与部署
 
-JDBC 模式由 `JdbcPersistenceConfiguration` 创建数据源并在启动时执行 Flyway。迁移位于 `cm-agent-persistence/src/main/resources/db/migration`：
+JDBC 模式由 `JdbcPersistenceConfiguration` 创建数据源并在启动时执行 Flyway。公共迁移与 PostgreSQL、MySQL 方言迁移分开存放，`CmAgentFlyway` 只加载公共脚本和当前数据库方言目录。版本分组、升级注意事项和部署前核对步骤统一见[部署指南](deployment.md#flyway-与数据库迁移)。
 
-- `V1__init_schema.sql` 建立租户、用户、角色、权限、模型、Agent、工具、运行、工具调用和审计表。
-- `V2__add_runtime_query_indexes.sql` 为 Run、ToolCall、Audit 的租户范围查询补充索引。
-- `V3__add_tool_calls_created_at_index.sql` 为工具调用明细的时间/ID 排序补充联合索引。
-- `V8__add_schema_comments.sql` 按 PostgreSQL/MySQL 方言为全部业务表和字段补充中文数据库原生注释；`V9__update_model_credential_comment.sql` 更新模型 API Key 加密密文字段说明；`CmAgentFlyway` 只加载公共迁移和当前数据库方言目录。
+部署前必须直接核对迁移目录和 `flyway_schema_history`；新增结构仍须提供两种方言的等价迁移、中文原生表和字段注释、JDBC 实现及迁移测试。
 
 已发布迁移不可修改；结构变化必须新增更高版本的迁移，并同步更新数据库原生表/字段注释、JDBC 实现、迁移测试和部署文档。PostgreSQL/MySQL 集成测试以及 Docker/Compose/Testcontainers 验证需要在 Rocky Linux 虚拟机的容器环境中执行，不以本机 Docker Desktop 代替。
 
-部署时应显式选择 profile。`local` 和 `test` 用于开发/自动化测试；`postgres`、`mysql` 用于 Rocky VM 集成验证；`production`、`prod` 与 `supabase` 是严格 profile。生产必须使用受控外部 YAML 或 Secret Manager 注入 JDBC、JWT 和模型凭据，并在切流前检查 Flyway 历史、数据库连通性、模型凭据和 `GET /actuator/health`。
+部署时应显式选择 profile；生产凭据必须由受控外部配置或 Secret Manager 注入。各 profile 适用范围、迁移和切流前检查见[部署指南](deployment.md#启动与健康检查)及[配置说明](configuration.md#profile-选择)。
 
 ## 8. 控制台、API 与当前边界
 
-轻量控制台由 Server 引入，提供登录、能力概览、Agent/Tool 的列表与创建、授权、同步运行调试、运行历史、工具调用详情和审计游标分页。控制台只展示已交付的后端能力；当前不提供编辑、删除、手动取消或流式运行。JWT 只保留在页面内存中，刷新或关闭页面后需要重新登录。
+v2 控制台当前包含 11 个入口：登录、能力总览、Agent、模型配置、工具、技能、会话、运行、审计、本地项目和本机客户端。页面复用统一 API、安全、多租户和审计边界，支持资源 CRUD、工具授权与调试、Skill 版本预检/试运行/发布、持久化会话与 SSE、显式停止、审批历史、运行详情和审计分页。v2 使用 `HttpOnly`、`SameSite=Strict` 的 `/api` 会话 Cookie 恢复刷新认证；JWT 不写入浏览器存储或 URL。v1 继续从 `/console/v1/` 提供兼容入口。
 
-服务还提供 OpenAPI 页面和 Actuator 健康检查。生产 profile 默认不应公开 API 文档，应由外围网关、网络策略或受控运维入口提供访问控制。
+当前能力按交付边界分为三类：
 
-下一阶段重点是 metrics、集中日志/追踪、告警、备份恢复、容量与数据保留治理；后续才是可重复 CI/CD、发布回滚、性能/故障演练和稳定性门禁。具体运行配置请参阅[配置说明](configuration.md)、[部署指南](deployment.md)、[运维说明](operations.md)与[路线图](roadmap.md)。
+- **已交付核心能力**：ReAct/Harness、会话与流式输出、停止本轮、工具/MCP 治理、审批、Skill 发布、沙箱文件和审计。
+- **需要部署门禁或尚未公开发布**：HTTP 工具、MCP、Skill 和脚本沙箱、文件产物、工作区上下文、受控导入、本机客户端和本地项目。是否启用以合并配置为准；属性初始值和当前工作树覆盖可能不同，见[配置快照](configuration.md#当前工作树配置快照)。启用条件以配置说明和运维说明为准。
+- **尚未交付**：消息编辑/删除、会话归档、附件与多模态、自动摘要、写请求幂等重放、独立审批中心、跨实例自动接管，以及阶段 4 的可观测性和阶段 5 的交付稳定性能力。
+
+服务还提供 OpenAPI 页面和 Actuator 健康检查。生产 profile 默认不应公开 API 文档，应由外围网关、网络策略或受控运维入口提供访问控制。具体运行配置、部署和回退步骤请参阅[配置说明](configuration.md)、[部署指南](deployment.md)、[运维说明](operations.md)与[路线图](roadmap.md)。

@@ -191,19 +191,22 @@
 - 配置、部署、安全、数据库、运行 profile、控制台入口变化时，同步更新 `README.md` 或 `docs/*.md`。
 - Secret 示例使用占位符，不写真实值；生产禁用项要直接写明。
 - `docs/superpowers` 用于设计、计划和过程记录；不要把它作为唯一的生产说明。
+- 文档权威来源按事实类型区分：实际行为核对对应版本代码、实际生效配置和可重复验证；预期行为核对用户确认的需求、设计和 ADR。冲突时记录差异并判断实现缺陷、文档过期或需求变更，不自动以实现覆盖需求。具体入口见 [事实来源矩阵](docs/README.md#当前事实来源矩阵)。
 - 每个涉及新需求或仓库内容改动的独立任务，完成前必须在 `docs/superpowers` 下生成一组主题一致的六份中文文档；新增的清单和提示词与原有四份过程文档共同构成需求工作包：
-  - `checklists/<YYYY-MM-DD>-<topic>-checklist.md`：记录需求、范围、当前证据、带稳定编号的待办、依赖、验收条件和状态；待办不得因文档生成而标记为实现完成。
-  - `prompts/<YYYY-MM-DD>-<topic>-prompt.md`：提供可直接交给执行者的完整提示词，引用清单与过程文档，明确执行范围、关键约束、验证方式、阻塞处理和交付要求；生成提示词不等于授权执行其内容。
-  - `specs/<YYYY-MM-DD>-<topic>-design.md`：记录背景、目标、范围、非目标、方案、约束和验收标准。
-  - `plans/<YYYY-MM-DD>-<topic>.md`：记录可执行任务拆分、涉及文件、实现顺序和验证方式。
-  - `implementation/<YYYY-MM-DD>-<topic>-implementation-design.md`：记录最终实际实现、关键代码位置、数据或调用链变化及与原方案的差异。
-  - `progress/<YYYY-MM-DD>-<topic>-ledger.md`：记录各任务状态、实际验证结果、遗留问题和提交信息；未提交时明确写“未提交”。
-- 同一任务的六份文档必须使用相同日期和 `<topic>`，内容相互引用并保持一致；清单、计划、提示词和账本使用一致的任务编号。清单侧重要做什么与验收条件，计划侧重如何实施，实现说明记录实际交付，账本记录证据和状态；不能用计划代替实现，也不能用最终回复代替账本。
+  - `checklists/<YYYY-MM-DD>-<topic>-checklist.md`：定义稳定任务编号、需求、范围、依赖、可观察验收条件和必要门禁；不维护进行中、完成、阻塞等实时状态，也不记录命令结果或提交状态。
+  - `prompts/<YYYY-MM-DD>-<topic>-prompt.md`：保存某一修订可执行的完整输入，引用当前清单、设计和计划中的固定职责；生成提示词不等于授权执行其内容，不复制实时状态或验证结果。
+  - `specs/<YYYY-MM-DD>-<topic>-design.md`：记录背景、目标、范围、非目标、方案、约束、决定和验收标准；只描述设计与决策，不维护执行进度。
+  - `plans/<YYYY-MM-DD>-<topic>.md`：记录实施顺序、涉及文件、依赖和验证方法；只描述计划，不填写测试结果、完成状态或提交事实。
+  - `implementation/<YYYY-MM-DD>-<topic>-implementation-design.md`：记录实际代码或文档改动、关键位置、数据或调用链变化及与设计的差异；不承载任务状态、测试通过结论或提交记录。
+  - `progress/<YYYY-MM-DD>-<topic>-ledger.md`：作为任务实时状态、实际验证证据、命令结果、遗留问题、提交和发布状态的唯一入口；未提交时明确写“未提交”。
+- 同一任务的六份文档使用相同日期、`<topic>`、当前修订号、任务编号、范围和最新采用的验收标准，并相互链接；不得要求六份文件复制同一份状态或证据。除账本外，其他五份只在固定职责需要时引用账本，避免维护多份实时状态副本。
+- 新工作包和后续修订执行上述单一状态源规则。规则生效前的历史工作包保留当时的职责和状态记录，不批量回改；历史文件因同一需求再次修订时，只迁移本次实际触及的内容，并在账本说明历史状态与新入口的衔接。
+- 工作包采用保留原路径的逻辑归档；归档依据是范围完成、明确取消或剩余事项已逐项移交，不由日期、提交或发布状态推断。归档及恢复记录只写原账本，索引提供导航；没有充分证据时标为“归档状态待核实”，不据此判定业务未完成。归档、恢复和历史纠错时须按[产物契约](.agents/skills/requirement-workpack/references/artifact-contract.md#工作包归档与恢复)执行并保留原任务、验收与限制。
 - 可使用项目技能 `.agents/skills/requirement-workpack/SKILL.md`，从一个需求生成上述六份产物；先核实当前项目再拆解，不机械套用历史业务任务、固定任务数量或旧测试结果。
 - 需求工作包默认模式不主动咨询，依据当前证据自主取舍并记录假设；用户显式开启交互模式后，对未确定且需要取舍的事项必须提供选项及影响，收到明确选择再定稿，未答复不能视为同意。工作模式在文档、执行提示词和快捷问答入口中保持一致，用户后续切换优先。
 - 同一需求的迭代优化复用原日期、主题和六份路径，以递增修订号记录新增、调整、取消、澄清及影响。任务编号稳定，新任务追加；移出项和被替代决定保留历史，已完成项验收改变时追加关联待办，不用旧通过代替新验收。当前提示词与采用范围同步，需求修订本身不自动实施或回滚业务；独立新需求仍建立新工作包。
 - 工作包交付应提供本次提示词文件链接和快捷问答入口：支持 Codex 快捷跟进指令时使用 `:codex-followup`，引用已核实的提示词、清单、账本绝对路径；其他界面提供含真实路径的简短输入。快捷入口先读取当前文档作为问答上下文，不自动执行提示词内的实施命令，不赋予额外修改或外部操作授权。
-- 只生成需求文档时，实现说明记录实际分析和文档产物，账本区分文档生成状态与业务实施状态；未执行的业务任务保持待做。后续独立实施任务应建立自己的工作包，并引用原分析工作包，保留形成需求的历史记录。
+- 只生成需求文档时，实现说明记录实际分析结论和文档产物及其与设计的差异，账本区分文档生成状态与业务实施状态；未执行的业务任务保持待做。后续独立实施任务应建立自己的工作包，并引用原分析工作包，保留形成需求的历史记录。
 - 同一独立任务的连续修改应同步更新该任务已有产物；新的独立需求或新的改动任务应新建一组六份文档。规则生效前的历史四文档工作包无需批量补齐；本次明确要求迁移的工作包除外。纯问答、只读检查且未改变仓库内容的任务不要求生成。
 - 发布相关行为变化应更新 `docs/release-notes.md` 或在最终输出中说明未更新原因。
 
@@ -226,23 +229,3 @@
 3. 影响范围：说明涉及的模块、接口、数据库、配置或文档。
 4. 风险与注意事项：说明兼容性、安全、迁移、运行环境限制。
 5. 后续建议：只列与本次任务直接相关的下一步。
-
-````
-This is the description of what the code block changes:
-<changeDescription>
-更新技术栈节：agentscope 版本、MCP 兼容性坑、redis、测试依赖 BOM 管理、新增依赖
-</changeDescription>
-
-This is the code block that represents the suggested code change:
-```markdown
-- AgentScope: `agentscope-core` 2.0.2；Provider 扩展由 adapter 模块按需引入，并保持 optional 依赖；父 POM 另管理 `agentscope-extensions-model-openai`/`agentscope-extensions-model-dashscope`，server 额外依赖 `agentscope-extensions-studio`（AgentScope Studio 集成，见 `cm-agent-server` 的 `com.cmagent.server.config.AgentScopeStudioConfiguration`）。
-- MCP: `io.modelcontextprotocol.sdk:mcp-core`/`mcp-json-jackson2` 2.0.0；用于将已发布工具以 MCP Streamable HTTP 方式对外提供，Server 端实现见 `cm-agent-server` 的 `com.cmagent.server.mcp` 包。注意：`cm-agent-examples/dashscope-mcp-agent` 因与 agentscope-core 2.0.x 存在 `NoSuchMethodError` 级不兼容，示例内将 MCP SDK 锁回 0.17.0（见该模块 `pom.xml` 注释），不要在主工程随意升级/降级 MCP SDK。
-- 数据库: 默认 memory，可通过 `cm-agent.persistence.mode=jdbc` 使用 JDBC/Flyway；目标为 PostgreSQL/Supabase PostgreSQL 和 MySQL。
-- 本地数据库: `docker compose up -d mysql postgres`（如需 Redis agent state 示例再加 `redis`）。
-- 本地启动必须显式选择 profile（local/test），无 profile 不会自动加载 local；可用环境变量 `$env:CM_AGENT_PROFILE='test'; mvn -pl cm-agent-server -am spring-boot:run`，或 `--spring.profiles.active=local` 参数方式。
-- AgentScope Studio 本地调试约定见 `README.md`（server 已集成 `agentscope-extensions-studio`）。
-- 依赖核对: `mvn -pl <module> dependency:tree`，版本异常时以实际解析结果为准。
-```
-<userPrompt>
-Provide the fully rewritten file, incorporating the suggested code change. You must produce the complete file.
-</userPrompt>

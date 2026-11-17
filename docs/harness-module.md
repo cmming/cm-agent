@@ -11,7 +11,7 @@ CM Agent 已完成首批受控 Harness 的代码接入及 T2–T6 验收。它�
 | 项目 | 当前采用结果 | 证据边界 |
 |---|---|---|
 | 依赖版本 | Core、Harness、Provider、Studio等 `io.agentscope` 构件统一2.0.2 | 2.0.4候选与早期实验保留为历史，不是正式运行版本 |
-| 仓库默认策略 | `react`；显式配置可选择 `harness` | 不是按Agent、租户或HTTP请求动态切换 |
+| 策略初始值 | 属性初始值为 `react`；部署配置可选择 `harness` | 实际以合并配置及数据集模式记录为准，不按 Agent、租户或 HTTP 请求动态切换 |
 | 功能接入 | 执行器、隔离、审批/状态/停止、Skill/沙箱/产物、只读上下文已实现并有阶段验收 | 不开放Harness全部原生能力 |
 | 本机启用 | 2026-10-13接续账本记录Windows、JDK21、`mysql`开发profile、真实Harness；数据库为Rocky MySQL | 登录和现有DeepSeek无工具Run成功；是该次运行记录，不是持续健康保证 |
 | Rocky生产部署 | 装配及旧产物密文副本已准备，正式部署未完成 | 七个生产Secret、真实认证恢复和正式入口等条件仍未闭合 |
@@ -80,7 +80,7 @@ Core/Harness/OpenAI/DashScope依赖在Adapter中为optional；嵌入式宿主自
 
 认证主体、tenant、Agent/工具归属及恢复身份来自服务端已校验状态，不能信任客户端提交的归属覆盖值。工具经过CM网关重新校验启用状态、授权、输入与审计；审批许可也不能绕过这次检查。
 
-`cm-agent.agentscope.permission-enabled`默认关闭以保持既有兼容行为。开启时，内置ReAct/Harness的可信会话请求对HIGH工具进入ASK；无会话单轮Run及内置Skill TEST对HIGH调用显式DENY。AgentScope2.0.2中显式ASK规则优先于 `DONT_ASK` 默认决策，因此非交互路径必须有显式拒绝规则，不能只切换模式。
+`cm-agent.agentscope.permission-enabled` 的属性初始值为关闭以保持既有兼容行为；实际值以合并配置为准。开启时，内置ReAct/Harness的可信会话请求对HIGH工具进入ASK；无会话单轮Run及内置Skill TEST对HIGH调用显式DENY。AgentScope2.0.2中显式ASK规则优先于 `DONT_ASK` 默认决策，因此非交互路径必须有显式拒绝规则，不能只切换模式。
 
 原生权限拒绝可能发生在桥接器之前，适配器补充拒绝记录并返回 `DENIED`，不误报 `SUCCEEDED`，不执行业务工具。已有运行级审批服务不等于内置Harness的无会话请求自动具备发起ASK能力。
 
@@ -128,7 +128,7 @@ Adapter按Run创建原生SkillBox，关闭自动上传及原生代码执行，�
 
 ## 6. 只读工作区参考上下文
 
-该能力由 `cm-agent.workspace-context`显式开启，默认关闭。部署管理员配置tenant/Agent、私有根、相对目录和逐项文件；HTTP请求和模型不能提供宿主路径。内置ReAct/Harness共享输入合同，旧自定义Runtime未声明支持时拒绝开启。
+该能力由 `cm-agent.workspace-context` 控制，属性初始值为关闭；公共或外部部署配置可以覆盖。部署管理员配置tenant/Agent、私有根、相对目录和逐项文件；HTTP请求和模型不能提供宿主路径。内置ReAct/Harness共享输入合同，旧自定义Runtime未声明支持时拒绝开启。
 
 只读取UTF-8 `.md/.txt/.json/.csv`。默认4文件、单文件16KiB、累计32KiB，硬上限8文件/32KiB/64KiB；读取预算默认2秒，范围10ms–5s，是协作检查预算，不保证强制终止操作系统阻塞I/O。
 
@@ -172,33 +172,24 @@ T6真实浏览器覆盖Harness续聊、消息/审批SSE、HIGH审批恢复、停
 | AgentScope | `io.agentscope`统一2.0.2；仅Adapter声明optional，Server显式装配 |
 | MCP | Server2.0.0；MCP示例客户端0.17.0，不能统一覆盖为Server版本 |
 | `cm-agent.agentscope.enabled` | 真实Runtime启用开关 |
-| `cm-agent.agentscope.execution-mode` | `react`或`harness`，默认react，未知值启动失败 |
+| `cm-agent.agentscope.execution-mode` | `react` 或 `harness`，属性初始值为 react，未知值启动失败 |
 | `cm-agent.fake-runtime-enabled` | 本次真实运行为false；生产禁止fake |
-| `cm-agent.agentscope.permission-enabled` | 默认false；开启后按可信会话及风险决定ASK/DENY，仍有网关二次授权 |
+| `cm-agent.agentscope.permission-enabled` | 属性初始值为 false；开启后按可信会话及风险决定 ASK/DENY，仍有网关二次授权 |
 | `cm-agent.agentscope.model-timeout` / `tool-timeout` | 默认60s/30s；工具单次尝试，不因基础设施故障自动重放 |
-| `cm-agent.workspace-context.enabled` | 默认false，管理员显式资料映射 |
+| `cm-agent.workspace-context.enabled` | 属性初始值为 false，管理员显式配置资料映射 |
 | `cm-agent.skills.sandbox.enabled` | 默认关闭，固定Python及部署受控端点 |
 | `cm-agent.skills.sandbox.artifacts.enabled` | 独立开启，需原产物主密钥和私有持久卷 |
 | 模型/沙箱凭据/产物主密钥 | 沿用各自旧密文对应密钥；不随机替换、不复用开发JWT、不写进仓库或启动参数 |
 
-DashScope原生 `baseUrl`为 `https://dashscope.aliyuncs.com`，2.0.2客户端自行追加API路径；OpenAI兼容接口为 `https://dashscope.aliyuncs.com/compatible-mode/v1`。重复给原生地址添加 `/api/v1`会造成错误路径。该规则来自本项目T6真实客户端验证，不代表任意第三方网关都已通过。
+DashScope 原生客户端会自行追加 API 路径，不要重复填写 `/api/v1`；原生与兼容协议的地址见[模型配置管理](configuration.md#模型配置管理)。该说明来自本项目 T6 客户端验证，不代表任意第三方网关均已通过。
 
-完整配置及密钥来源规则见[配置说明](configuration.md)，固定执行主机与凭据管理见[沙箱端点说明](skill-sandbox-endpoints.md)，停机/排空/回退和时钟核查见[运维说明](operations.md)。
+上述属性初始值不等于实例实际生效值；工作树配置快照和完整配置及密钥来源规则见[配置说明](configuration.md)，固定执行主机与凭据管理见[沙箱端点说明](skill-sandbox-endpoints.md)，停机/排空/回退和时钟核查见[运维说明](operations.md)。
 
 ### 9.2 本机Windows开发运行
 
-2026-10-13接续采用本机应用、Rocky MySQL、独立SSH转发13306及回环HTTP8080。有效配置为JDK21、`mysql`开发profile、真实AgentScope/harness、fake=false，关闭当前不可达的可选Studio。使用既有管理员、模型及原密钥。
+2026-10-13 的本机开发环境使用 JDK 21、`mysql` profile、真实 AgentScope 和 `harness`，通过独立 SSH 转发连接 Rocky MySQL；该记录不能推断当前工作树、运行实例或数据集状态。当时使用的候选包 SHA-256 为 `b456c963113a403d3907988404eb3761a82a81b4afc2df73525646d607959f12`，脚本不安装系统常驻服务。源码变化后必须重新构建并验证，不能将旧包证据推广到新源码。
 
-已有实例运行时不启动第二实例。重启先正常关闭原服务，按运维说明在独立终端建立SSH转发，再从仓库根目录执行：
-
-```powershell
-./scripts/start-local-harness.ps1 -CheckOnly
-./scripts/start-local-harness.ps1
-```
-
-[启动脚本](../scripts/start-local-harness.ps1)使用本轮已核验清洁候选包；SHA256为 `b456c963113a403d3907988404eb3761a82a81b4afc2df73525646d607959f12`。源码改变须重新构建并验证，不能把旧包证明推广给新源码。脚本只在内存读取已有主密钥，日志目录限当前用户，未安装系统常驻服务。
-
-控制台入口为[本机v2控制台](http://127.0.0.1:8080/console/v2/login.html)。正常停止先结束服务，待资源退出再关闭转发。仓库默认仍react，但该数据集的启用记录为harness；直接以默认react启动IDE实例前，必须统一执行模式切换门禁。
+先检查当前进程，已有实例运行时不启动第二实例；使用不同运行模式前须按门禁统一排空切换。历史环境、启动与停止顺序及其限制见[本机 Windows 开发运行](operations.md#本机-windows-的-harness-开发运行)，阶段验收范围见 [T6 账本](superpowers/progress/2026-10-12-harness-t6-ledger.md)。
 
 ### 9.3 Rocky生产剩余条件
 

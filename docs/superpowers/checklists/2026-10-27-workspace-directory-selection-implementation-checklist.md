@@ -1,3 +1,51 @@
+# 工作区目录选择实施清单（R3：文档职责迁移）
+
+日期：2026-10-27；主题：workspace-directory-selection-implementation；当前修订：R3；修订日期：2026-11-13；模式：mode=default。
+
+R0–R2 原文在文末归档。R3 起，本清单只维护稳定任务、依赖、范围和验收；实时状态与验证证据只以[进度账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)为准。
+
+## 当前有效范围
+
+- 保留用户电脑原生目录选择、受控导入、来源隔离、快照恢复和 Windows 可信 ACL 兼容合同。
+- Windows 仅放宽服务器登记资料链中的固定可信系统 SID；POSIX、IMPORTED、Skill 产物和 Harness 临时隔离策略不在本组放宽。
+- 历史任务编号不回收。T0–T7 保留原始范围和验收；T8–T18 保留后续分析和 R2 ACL 增量；T19–T20 只处理文档职责迁移。
+- 提示词读取不授予实现、提交、推送、合并、部署或修改真实目录 ACL 的权限。
+
+## 稳定任务与验收
+
+| 编号 | 目标 | 依赖 | 验收条件 |
+|---|---|---|---|
+| T0–T7 | 保留目录选择与受控导入的原始需求、实现和生产说明范围 | 历史基线 | 原始计划、实际实现和历史限制可从归档及账本追溯 |
+| T8 | 调研用户电脑原生目录能力与浏览器/服务端边界 | T0–T7 | 明确浏览器只产生选择结果，文件正文仍由受控链读取 |
+| T9 | 导入协议、领域、仓储、加密存储、配额与清理 | T8 | 来源按可信身份生成；边界和有界生命周期可验证 |
+| T10 | 导入 API、能力清单、撤销和派生对象隔离 | T9 | tenant、owner、Agent 和会话/Run 隔离；确认前不保存正文 |
+| T11 | 会话、同步/SSE 与 Run 接入 IMPORTED 来源 | T9、T10 | 来源固定、审批使用加密快照、撤销与停止不降级为其他来源 |
+| T12 | v2 两类来源、系统原生选择和只读预览 | T10、T11 | 取消不写入；不支持时不伪装；并发和慢响应不串台 |
+| T13 | 自动化、双库、新 JVM、存储重建和失败补偿 | T9–T12 | 不修改已发布迁移；新失败分支、租户边界和恢复证据完整 |
+| T14 | 原生窗口、真实 Provider、远程部署和生产回退 | T13 | 真实系统窗口与自动化分开举证；未实测环境明确记录 |
+| T15 | R2 ACL 兼容的需求差异和安全决定 | T14 的未验边界 | 范围、替代关系和 R1 未验门禁不混淆 |
+| T16 | Windows 可信 SID、固定根基线和有界 ACL 接入 | T15 | 根、实际中间目录和文件逐一复核；失败关闭；不修改 ACL |
+| T17 | 纯策略、真实 NTFS、审批后权限变化和错误脱敏验证 | T16 | 普通组仍拒绝；NULL/空 DACL、未知 ACE 和资源释放边界可观察 |
+| T18 | Windows 运行、生产说明、运维和回退边界 | T17 | 部署、依赖、权限前提、未验环境和回退条件明确 |
+| T19 | 将六份历史工作包迁移到新文档契约 | T0–T18 已形成的实际内容 | 非账本活动区不复制状态表；R0–R2 全文保留 |
+| T20 | 校验修订、任务、链接、状态目录和保护范围 | T19 | 六份统一为 R3；链接有效；其他工作包未被误改 |
+
+当前状态、实际命令、历史证据和提交信息见[进度账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)。
+
+## 关联文档
+
+- [清单](../checklists/2026-10-27-workspace-directory-selection-implementation-checklist.md)
+- [设计](../specs/2026-10-27-workspace-directory-selection-implementation-design.md)
+- [计划](../plans/2026-10-27-workspace-directory-selection-implementation.md)
+- [提示词](../prompts/2026-10-27-workspace-directory-selection-implementation-prompt.md)
+- [实现说明](../implementation/2026-10-27-workspace-directory-selection-implementation-implementation-design.md)
+- [进度账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)
+
+## R2 及更早历史原文
+
+<details>
+<summary>保留迁移前原文（仅供追溯，不代表当前职责）</summary>
+
 # 工作区目录选择实施清单（R2：可信Windows系统ACL兼容）
 
 日期：2026-10-27；主题：workspace-directory-selection-implementation；当前修订：R2；修订日期：2026-10-28；模式：mode=default。
@@ -263,3 +311,5 @@ T8 仅表示本次文档修订完成。2026-10-28授权的下一步T9已实施�
 > - [实施计划](../plans/2026-10-27-workspace-directory-selection-implementation.md)
 > - [实际实现](../implementation/2026-10-27-workspace-directory-selection-implementation-implementation-design.md)
 > - [实施账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)
+
+</details>

@@ -1,3 +1,45 @@
+# 技能沙箱实施计划（R2：文档职责迁移）
+
+日期：2026-09-30；主题：skill-sandbox；当前修订：R2；修订日期：2026-11-13；模式：mode=default。
+
+R0–R1 原文在文末归档。R2 起，本计划只记录顺序、依赖和验证方法；实时状态与证据见[进度账本](../progress/2026-09-30-skill-sandbox-ledger.md)。
+
+## 实施与验证顺序
+
+| 编号 | 顺序与文件线索 | 验证方法 |
+|---|---|---|
+| T5–T6 | 先固定 R1 范围，再建立 Core 后端 SPI、注册器和单次句柄 | 注册拒绝、并发、输入输出、扩展超时、幂等关闭测试 |
+| T10、T7 | 先完成租户仓储和凭据加密，再接入 LOCAL/SSH/TLS 生命周期 | 双库迁移、跨租户、CAS、认证、轮换、中断、清理和零残留 |
+| T8 | 在治理链上接入端点管理、探测、默认选择和错误诊断 | MockMvc 权限/tenant/凭据矩阵、审计回滚、同号日志检查 |
+| T11 | 扩展 v2 技能页端点视图，保持原技能流程 | JS 单测、资源测试、桌面和窄屏真实浏览器流程 |
+| T9 | 汇总受影响回归、真实远程和双库验证 | Rocky 指定 Maven/JDK 容器、PG16/MySQL8.4、源码哈希与测试报告 |
+| T12 | 迁移六份文档职责并保留 R0–R1 原文 | 检查活动区不复制状态表、测试数字或提交信息 |
+| T13 | 校验修订、任务、链接、状态目录和保护范围 | Markdown 链接扫描、围栏、空白、Git 范围和受保护路径哈希 |
+
+## 关键文件线索
+
+- Core：SkillSandboxBackend、沙箱限额和治理合同。
+- Server：ManagedSkillSandbox、GovernedSkillAccessService、Docker 连接/策略、端点服务、凭据加解密。
+- Persistence：端点与默认值领域、JDBC/memory 仓储、V16 方言迁移。
+- Console：技能页端点管理、JS/CSS 与资源测试。
+- Docs：根 README、sandbox deployment、configuration、release-notes、六件套。
+
+具体历史命令和结果保留在归档与账本中。计划不声称任务完成或测试通过。
+
+## 关联文档
+
+- [清单](../checklists/2026-09-30-skill-sandbox-checklist.md)
+- [设计](../specs/2026-09-30-skill-sandbox-design.md)
+- [计划](../plans/2026-09-30-skill-sandbox.md)
+- [提示词](../prompts/2026-09-30-skill-sandbox-prompt.md)
+- [实现说明](../implementation/2026-09-30-skill-sandbox-implementation-design.md)
+- [进度账本](../progress/2026-09-30-skill-sandbox-ledger.md)
+
+## R1 及更早历史原文
+
+<details>
+<summary>保留迁移前原文（仅供追溯，不代表当前职责）</summary>
+
 # 技能沙箱实施计划
 
 当前修订：R1；修订日期：2026-10-01；工作模式：mode=default。工作包日期与主题沿用2026-09-30 / skill-sandbox。
@@ -114,3 +156,5 @@ R1-09（2026-10-01）：用户明确授权在codex/分支实际实施T6～T11，
 发生代码或测试修正后只重复受影响检查；外部阻塞写明确切错误，不把代码完成当作验收通过。禁止全局 Docker 清理和覆盖无关配置；无需提交、推送或部署。
 
 关联文档：[清单](../checklists/2026-09-30-skill-sandbox-checklist.md) · [提示词](../prompts/2026-09-30-skill-sandbox-prompt.md) · [设计](../specs/2026-09-30-skill-sandbox-design.md) · [实现说明](../implementation/2026-09-30-skill-sandbox-implementation-design.md) · [账本](../progress/2026-09-30-skill-sandbox-ledger.md)
+
+</details>

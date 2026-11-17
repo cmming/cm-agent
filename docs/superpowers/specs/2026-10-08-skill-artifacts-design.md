@@ -1,5 +1,36 @@
 # 技能沙箱文件产物设计
 
+日期：2026-10-08；主题：skill-artifacts；当前修订：R1；修订日期：2026-11-13；模式：mode=default。
+
+R0 原文保留在文末归档；R1 只维护当前设计、约束和决定。
+
+## 当前设计
+
+- 包内固定 Python 将产物写入 `/workspace/output`，容器退出前通过有界文件帧回传；不接受模型提交的路径、命令或文件内容。
+- 服务端使用受控持久卷保存 AES/GCM 二进制对象，JDBC 只保存归属、状态、摘要、字节数、配额和过期元数据。
+- 调用完成时产物只能进入 `PENDING`；Run 成功持久化且严格审计成功后才发布 `READY`。
+- 下载必须校验可信租户、Run 创建者、Agent/TEST 权限、状态、文件完整性和审计；模型只接收 stdout 摘要。
+- 对象、配额和元数据之间无共同事务，需要使用 staging、幂等预留、补偿、租约和过期清理。
+
+## 关键工程决定
+
+| 编号 | 决定 | 依据 |
+|---|---|---|
+| D1 | 仅在容器退出前收集固定目录普通文件 | `--rm` 和无宿主挂载使退出后无法安全提取 tmpfs |
+| D2 | 二进制文件不进入数据库 TEXT、AgentState 或模型上下文 | 避免容量、隐私和上下文注入风险 |
+| D3 | 使用独立 AES/GCM 密钥与私有持久卷 | 与模型和沙箱凭据分离，支持鉴权下载 |
+| D4 | READY 只由成功 Run 和严格审计共同发布 | 文件保存成功不等于业务运行成功 |
+
+## 当前状态与证据
+
+当前修订的状态、验证和提交信息只以[进度账本](../progress/2026-10-08-skill-artifacts-ledger.md)为准。其他入口：[清单](../checklists/2026-10-08-skill-artifacts-checklist.md)、[计划](../plans/2026-10-08-skill-artifacts.md)、[提示词](../prompts/2026-10-08-skill-artifacts-prompt.md)、[实现说明](../implementation/2026-10-08-skill-artifacts-implementation-design.md)。
+## R0历史归档（仅分析，不代表当前状态）
+
+<details>
+<summary>保留 2026-10-08 R0 原文</summary>
+
+# 技能沙箱文件产物设计
+
 > 当前交付与剩余验收见文末 R0 当前交付状态；前文仅文档/待做描述为历史快照。
 
 日期：2026-10-08｜主题：skill-artifacts｜修订：R0｜工作模式：mode=default
@@ -173,3 +204,5 @@ X1：用户日志 MySQL 22001/1406 与检查点 TEXT 容量风险仍存在；只
 合并前master=5b881a8f0db8c0bf7cf2ce7d0f15c7c69a4c2443，是codex/skills-version-console的祖先，采用git merge --ff-only快进；会同时纳入本分支此前已提交的技能控制台/容量/诊断和文件产物变更。用户未提交的application配置、根index.html、.codex/、.workbuddy/不纳入提交，也不暂存或覆盖。合并后以master是否包含本次补验提交以及受保护文件摘要不变作为实际成功条件。
 
 代码与本次已通过Rocky验证的新增测试一致，提交/快进不引入新业务逻辑，不重复执行该6项测试；再次检查文档链接及暂存差异。T7仍为部分完成，隔离真实模型配置与X1独立修复范围确认仍未收到；提交和合并不表示真实模型已验收，不新增X1扩容迁移。
+
+</details>

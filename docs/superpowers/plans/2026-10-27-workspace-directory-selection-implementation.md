@@ -1,3 +1,44 @@
+# 工作区目录选择实施计划（R3：文档职责迁移）
+
+日期：2026-10-27；主题：workspace-directory-selection-implementation；当前修订：R3；修订日期：2026-11-13；模式：mode=default。
+
+R0–R2 原文在文末归档。R3 起，本计划只记录顺序、依赖和验证方法；实时状态与证据见[进度账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)。
+
+## 实施与验证顺序
+
+| 编号 | 顺序与文件范围 | 验证方法 |
+|---|---|---|
+| T8–T10 | 先明确选择边界，再建立 IMPORTED 领域、加密存储、配额和 API | 单元测试、MockMvc、tenant/owner/Agent 越权负例、迁移与清理 |
+| T11–T12 | 将会话/Run 与两类来源接入，再完成 v2 原生选择和预览状态机 | ReAct/Harness 流程、SSE、审批/停止、JS 状态机、桌面与窄屏 |
+| T13 | 在隔离环境验证双库、新 JVM、存储重建与补偿 | Rocky 指定 Maven/JDK、PG16/MySQL8.4、源码哈希和失败注入 |
+| T14 | 完成真实原生窗口、Provider、远程部署与回退说明 | 人工与自动化分开记录；未具备环境明确列出 |
+| T15–T18 | 先记录 ACL 差异/决定，再接入固定 SID、补真实 NTFS 测试和生产说明 | 纯策略矩阵、真实 Windows ACL、审批后权限变化、日志脱敏 |
+| T19 | 迁移六份文档职责并保留 R0–R2 原文 | 检查活动区是否混入状态表、测试结论或提交信息 |
+| T20 | 校验修订、任务、链接、围栏、状态目录和受保护工作包 | Markdown 链接扫描、空白检查、路径哈希和 Git 范围核对 |
+
+## 涉及位置线索
+
+- 工作区上下文、安全描述符、路径与策略：cm-agent-server 的 workspace/context/security 相关类。
+- 混合模型流程：ReAct 与 Harness 的 workspace context 流程测试。
+- 文档与生产说明：根 README、configuration、operations、release-notes。
+- 文档治理：本六件套与 docs/superpowers/WORKPACK-STATUS.md。
+
+具体历史路径、命令和结果保留在归档与账本中。计划不声称任务完成或测试通过。
+
+## 关联文档
+
+- [清单](../checklists/2026-10-27-workspace-directory-selection-implementation-checklist.md)
+- [设计](../specs/2026-10-27-workspace-directory-selection-implementation-design.md)
+- [计划](../plans/2026-10-27-workspace-directory-selection-implementation.md)
+- [提示词](../prompts/2026-10-27-workspace-directory-selection-implementation-prompt.md)
+- [实现说明](../implementation/2026-10-27-workspace-directory-selection-implementation-implementation-design.md)
+- [进度账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)
+
+## R2 及更早历史原文
+
+<details>
+<summary>保留迁移前原文（仅供追溯，不代表当前职责）</summary>
+
 # 工作区目录选择实施计划（R2：可信Windows系统ACL兼容）
 
 日期：2026-10-27；主题：workspace-directory-selection-implementation；当前修订：R2；修订日期：2026-10-28；模式：mode=default。
@@ -297,3 +338,5 @@ Windows Chrome/Edge使用合成资料目录验证真实操作系统选择框、�
 > - [实施设计](../specs/2026-10-27-workspace-directory-selection-implementation-design.md)
 > - [实际实现](../implementation/2026-10-27-workspace-directory-selection-implementation-implementation-design.md)
 > - [实施账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)
+
+</details>

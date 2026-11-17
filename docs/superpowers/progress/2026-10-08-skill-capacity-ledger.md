@@ -33,7 +33,7 @@ mvn -o -q -pl cm-agent-server -am test \
 - 15 个测试类共119项通过，失败/错误/跳过全部0：ConsoleResource14、迁移3、技能仓储2、PG技能接口3、SkillProperties6、解析17、技能读取/准备12、日志21、真实JDBC日志2、审批7、模型发现4、模型配置7、沙箱端点6、异常响应8、技能Controller7。
 - 同容器补跑 `mvn -o -q -pl cm-agent-server -am test -Dtest=SkillManagementJdbcPersistenceTest -Dsurefire.failIfNoSpecifiedTests=false -Dcm-agent.test.skill-packages-dir=/workspace/packages -Dcm-agent.test.skill-database=mysql -Dcm-agent.agentscope.studio.enabled=false -Dcm-agent.skills.sandbox.enabled=false`，退出0，3项通过。合计本轮Java122项执行。
 - PostgreSQL16/MySQL8.4均验证原版docx/pptx/pdf ZIP导入201、资源完整回读，以及长描述/Unicode/权限隔离；迁移测试验证V18两库兼容与历史数据。当前容量6项全通过，旧64KiB断言失败已消除。大资源集沙箱准备和累计预算在模拟后端上通过，未声称真实脚本已执行。
-- 安全统计位于仓库外 [Java专项摘要](C:/Users/chmi/Documents/Codex/diagnostic-verification/commit-verification-summary.json)、[MySQL接口摘要](C:/Users/chmi/Documents/Codex/diagnostic-verification/commit-mysql-api-summary.json)。远程原始测试日志留在隔离目录 commit-verification.log/commit-mysql-api.log，未回传原始服务日志或凭据。
+- 安全统计当时位于仓库外 `C:/Users/chmi/Documents/Codex/diagnostic-verification/commit-verification-summary.json`、`C:/Users/chmi/Documents/Codex/diagnostic-verification/commit-mysql-api-summary.json`。这两份文件在 2026-11-13 链接复核时不可用，保留路径作历史线索，不作为可点击证据或本轮验证结果。远程原始测试日志留在隔离目录 commit-verification.log/commit-mysql-api.log，未回传原始服务日志或凭据。
 
 未运行全仓库测试、真实模型和真实沙箱脚本；当前任务为容量同步及已有改动提交，相关专项已通过。用户运行服务未重启、用户数据库未迁移，未推送/合并/部署。应用连接配置和工具目录保持未暂存；实际提交编号见末尾记录。
 
@@ -53,3 +53,11 @@ mvn -o -q -pl cm-agent-server -am test \
 - 59 个显式路径的暂存范围、敏感片段、文档链接及 `git diff --cached --check` 已检查。初次暂存发现新文档 EOF 多余空行，仅修正本任务文档后检查通过。
 - `application.yml`、`application-mysql.yml`、未跟踪 `application-ok.yml` 与 `.codex/`、`.workbuddy/` 保持未提交。未推送、未合并、未部署，未重启用户服务或操作其数据库。
 - 原生浏览器 ZIP 上传仍保留技能控制台 R0 的扩展权限阻塞；本轮数据库原包导入测试不替代该浏览器验收。
+
+## 全量核定记录（2026-11-13）
+
+- 核定结论：已归档。本记录只核定工作包责任及归档分类，前文任务、命令结果和提交状态保留形成时含义。
+- 责任范围与依据：容量配置、解析与双库接口专项完成；不把浏览器 ZIP 未验或真实脚本未执行外推为通过。
+- 证据限制：依据原文明确的工作范围、状态表、验收和遗留记录核定；本轮没有重跑业务测试、恢复旧服务、访问原数据库或重新证明历史外部环境。历史通过只适用于当时版本和环境。
+- 后继与剩余事项：无未关闭的本包事项移交；原记录中的独立后续需求、生产使用条件及范围外限制继续保留，不作为其已实现或已验收的证明。
+- 复核入口：[docs 全量整理账本](2026-11-13-docs-full-review-ledger.md#逐组核定快照)。本次整理不授予提交、推送、部署或外部副作用权限；同一需求恢复时保留本记录并追加恢复及修订。

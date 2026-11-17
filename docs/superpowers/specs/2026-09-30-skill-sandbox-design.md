@@ -1,3 +1,54 @@
+# 技能沙箱设计（R2：文档职责迁移）
+
+日期：2026-09-30；主题：skill-sandbox；当前修订：R2；修订日期：2026-11-13；模式：mode=default。
+
+R0–R1 原文在文末归档。R2 起，本设计只记录目标、方案、决定和约束；当前状态与证据见[进度账本](../progress/2026-09-30-skill-sandbox-ledger.md)。
+
+## 目标与范围
+
+Sandbox 后端通过统一接口提供本地 Docker、SSH 隧道和双向 TLS 远程 Docker 三种连接方式。部署者定义允许目标与安全上限；租户管理员管理端点、加密凭据和每租户默认值。执行中的调用固定原目标与凭据版本，后续调用才读取当前默认端点。
+
+## 核心方案
+
+可信 Run 与固定技能快照 → 治理服务准备/预算/审计 → 沙箱模块读取 tenant 默认端点或部署连接 → 固定主机身份、端点版本和凭据版本 → 后端执行一次 → 同一 daemon 清理/关闭 → 事务外复核原端点策略 → 短事务复核 Run/技能状态并记录严格终态审计 → 脱敏交付。远程失败不降级本地，也不重放脚本。
+
+## 安全与资源约束
+
+- 容器固定镜像和入口、禁网、非 root、read-only 根、无宿主 socket、drop capabilities、no-new-privileges。
+- CPU、内存/交换、PID、文件数和最小 tmpfs 由部署配置限制；超时、输入输出和并发有硬边界。
+- allowed-targets 精确匹配地址；SSH 只转发 Docker socket，使用私有配置、严格主机校验和固定 IP；TLS 验证 CA、服务端身份和客户端证书。
+- 端点、凭据、默认值和审计均按可信 tenant 隔离；凭据使用 AES/GCM 加密落库，API 不回显材料。
+- 无法确认清理、审计失败、撤销或原策略变化时失败关闭；不释放错误配额，不返回原始秘密或输入输出。
+
+## 已保留决定
+
+R1 的 D1–D6 继续有效：Docker 实现并保留扩展接口、SSH/TLS 双连接、部署配置与控制台管理、租户隔离和地址白名单、加密落库、每租户一个默认端点。R2 不重开会话决定，只调整文档职责。
+
+## 非目标
+
+不实现 HTTP/E2B/Kubernetes 执行后端、任意 SSH 主机命令、Agent 独立端点、联网安装、持久工作区、文件导出、跨实例任务接管、脚本重放或共享 daemon 全局调度。
+
+## 验收标准
+
+- 后端注册、全局限额、单次句柄和关闭语义有明确合同。
+- 本地/SSH/TLS 的认证、目标固定、资源清理和失败脱敏可验证。
+- 租户端点、默认选择、凭据轮换、审计回滚和双库迁移边界一致。
+- 文档修订不改变已形成业务，R0–R1 历史可追溯。
+
+## 关联文档
+
+- [清单](../checklists/2026-09-30-skill-sandbox-checklist.md)
+- [设计](../specs/2026-09-30-skill-sandbox-design.md)
+- [计划](../plans/2026-09-30-skill-sandbox.md)
+- [提示词](../prompts/2026-09-30-skill-sandbox-prompt.md)
+- [实现说明](../implementation/2026-09-30-skill-sandbox-implementation-design.md)
+- [进度账本](../progress/2026-09-30-skill-sandbox-ledger.md)
+
+## R1 及更早历史原文
+
+<details>
+<summary>保留迁移前原文（仅供追溯，不代表当前职责）</summary>
+
 # 技能沙箱设计
 
 当前修订：R1；修订日期：2026-10-01；工作模式：mode=default。工作包日期与主题沿用2026-09-30 / skill-sandbox。
@@ -146,3 +197,5 @@ T1 至 T4 验收见清单。能力接口仅增加字段，不暴露 daemon、镜
 设计细化：初始计划复用成功读取记录作为准备凭据；实施审查后改为独立 SANDBOX_PREPARED，增加 V15 双方言注释与中文状态，避免放行发布门禁。此变化不扩大代码执行范围。
 
 关联文档：[清单](../checklists/2026-09-30-skill-sandbox-checklist.md) · [提示词](../prompts/2026-09-30-skill-sandbox-prompt.md) · [计划](../plans/2026-09-30-skill-sandbox.md) · [实现说明](../implementation/2026-09-30-skill-sandbox-implementation-design.md) · [账本](../progress/2026-09-30-skill-sandbox-ledger.md)
+
+</details>

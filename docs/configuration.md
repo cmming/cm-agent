@@ -1,5 +1,16 @@
 # 配置说明
 
+本文说明服务端配置、安全约束和典型使用条件。启动前必须核对当前代码版本、激活的 profile、外部配置和环境变量；文中属性初始值及提交基线不等于运行实例的实际值，排查时不要输出凭据。
+
+## 按场景查找
+
+- 初次启动：[工作树配置快照](#当前工作树配置快照)、[Profile 选择](#profile-选择)、[基础配置](#基础配置)、[JDBC 与 Flyway](#jdbc-与-flyway)。
+- 生产安全：[安全配置](#安全配置)、[生产认证边界](#生产认证边界)、[执行模式与切换](#执行模式与切换)。
+- 模型和工具：[模型配置管理](#模型配置管理)、[动态 HTTP 工具](#动态-http-工具)、[MCP Streamable HTTP](#mcp-streamable-http)。
+- 文件和设备：[只读工作区参考资料](#显式只读工作区参考资料)、[本地项目开发工作区](#本地项目开发工作区)、[本机客户端](#本机客户端功能开关)。
+- 技能执行：[Skill 配置与权限](#skill-配置与权限)、[技能沙箱](#技能脚本沙箱与远程-docker)、[文件产物](#技能沙箱文件产物)。
+- 出错排查：[模型接口失败诊断](#模型接口失败诊断)、[审计与错误语义](#审计与错误语义)。
+
 ## 模型接口失败诊断
 
 模型接口失败时，问答同步响应、SSE completed 与历史 Run 查询通过 `errorMessage` 返回实际上游 HTTP 状态和结构化错误说明的脱敏摘要。失败还返回 `errorCode=RUNTIME_EXECUTION_FAILED`、`errorId=runId`，可用该编号检索运行诊断日志；没有结构化错误说明时明确提示未提供，不暴露原始异常或完整响应。
@@ -8,9 +19,7 @@ Server 默认设置 `logging.level.io.agentscope.core.model.transport.JdkHttpTra
 
 ## 显式只读工作区参考资料
 
-DashScope 原生 `baseUrl` 使用 `https://dashscope.aliyuncs.com`；AgentScope 2.0.2 原生客户端自行追加 `/api/v1/services/...`，不要重复填写 `/api/v1`。OpenAI 兼容协议使用 `https://dashscope.aliyuncs.com/compatible-mode/v1`。本项目 T6 两策略真实协议验收覆盖上述两个接口，不代表所有兼容网关均已验证。
-
-`cm-agent.workspace-context.enabled` 默认 `false`。管理员可将私有参考资料绑定到明确的 tenant/Agent；该映射使资料可供该租户中获准运行此Agent的主体使用，不授予业务工具权限。Controller/模型不能提交宿主路径。启用后实际Runtime须声明支持；内置ReAct与Harness支持，旧自定义Runtime默认拒绝启用。
+`cm-agent.workspace-context.enabled` 的属性初始值为 `false`，公共配置或外部配置可以覆盖。管理员可将私有参考资料绑定到明确的 tenant/Agent；该映射使资料可供该租户中获准运行此Agent的主体使用，不授予业务工具权限。Controller/模型不能提交宿主路径。启用后实际Runtime须声明支持；内置ReAct与Harness支持，旧自定义Runtime默认拒绝启用。
 
 ```yaml
 cm-agent:
@@ -36,9 +45,15 @@ cm-agent:
 
 资料作为模型用户消息中的JSON参考数据，系统只追加数据使用规则；没有原生文件工具、UI上传、任意路径、Shell或自动权限授权。按目标模型上下文窗口收紧字节预算，当前不自动压缩或调用真实tokenizer。本地与Rocky两库/Linux合同已通过，真实Provider、浏览器和回退由T6验收，见 [T5账本](superpowers/progress/2026-10-12-harness-t5-ledger.md)。
 
-本文档说明服务端的 profile、真实 AgentScope Runtime、技能脚本沙箱、持久化、安全和敏感信息配置。`local`/`test` 可显式使用 fake runtime；生产 profile 必须关闭 fake runtime、启用 AgentScope Runtime，并使用外部签发、受控验证的 JWT。
+## 当前工作树配置快照
+
+2026-11-17 静态检查时，本工作树的未提交 `application.yml` 将 profile 回退设为 `mysql,local`，启用 AgentScope、工具审批、HTTP 工具、MCP、Skill、本机客户端、参考工作区及导入、本地项目，执行模式为 `harness`，且 HTTP 工具允许明文 HTTP。设备项目开关仍关闭。未提交的 `application-local.yml` 设置 `server.address=0.0.0.0` 并开启本地项目非回环访问；精确来源、认证、权限及其他请求边界仍须满足配置和代码门禁。
+
+这只是文件内容快照，不代表进程已经启动、端口正在监听、网络可达或这些值最终生效；外部配置和环境变量可覆盖。生产部署须单独核对最终 profile、监听地址、功能开关、明文 HTTP 和全部安全门禁，不能照搬本地配置，也不要在诊断记录中输出凭据。当前配置与提交基线的区别不代表要求修改用户的本地配置。
 
 ## Profile 选择
+
+`local`/`test` 可显式使用 fake runtime；生产 profile 必须关闭 fake runtime、启用 AgentScope Runtime，并使用外部签发、受控验证的 JWT。
 
 公共 `application.yml` 通过 `spring.profiles.active` 选择环境，也兼容使用 `CM_AGENT_PROFILE` 作为 profile 选择器。部署时优先使用 `spring.profiles.active`，例如：
 
@@ -46,7 +61,7 @@ cm-agent:
 mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=local"
 ```
 
-`application.yml` 没有把 `local` 设为默认 profile。未显式设置 `spring.profiles.active` 且未设置 `CM_AGENT_PROFILE` 时，不会自动加载 `application-local.yml`；服务将使用公共配置中的默认值。
+提交基线 `e7da291` 的公共 `application.yml` 未默认选择 profile。2026-11-17 检查时，本工作树的未提交公共配置将回退 profile 设置为 `mysql,local`；未提供更高优先级配置时会加载相应 profile；使用该提交基线且未显式选择 profile 时，安全校验会拒绝启动。工作树可能继续变化，实际部署必须检查所用版本及生效配置，不能依赖本快照推断运行状态。
 
 | Profile | 用途 | 持久化与安全边界 |
 | --- | --- | --- |
@@ -61,12 +76,14 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 ## 基础配置
 
-| 配置项 | 默认值 | 说明 |
+下表描述提交基线 `e7da291` 的服务端配置或明确标注的属性初始值，不代表所有 Java 属性对象的初始值，也不代表当前工作树或运行实例的实际生效值。公共 `application.yml`、profile、外部 YAML、环境变量及启动参数都可能覆盖默认值；尤其不能仅凭 `local` 名称推断持久化、运行时和监听地址。启动前应核对合并配置，排障时只记录非敏感策略，不输出密钥或连接凭据。
+
+| 配置项 | 基线值 | 说明 |
 | --- | --- | --- |
 | `server.port` | `8080` | 服务端监听端口 |
 | `spring.profiles.active` | 空 | 运行环境选择器；推荐显式设置 |
 | `CM_AGENT_PROFILE` | 空 | profile 兼容选择器；仅在未通过 Spring 配置选择时使用 |
-| `cm-agent.fake-runtime-enabled` | `false` | fake runtime 开关；仅 `local`/`test` 可按需设为 `true`，strict profile 必须为 `false` |
+| `cm-agent.fake-runtime-enabled` | Server 公共配置回退值 `false` | 独立 Starter 的属性对象初始值为 `true`，Server 会通过公共配置覆盖；仅 `local`/`test` 可按需启用，strict profile 必须为 `false` |
 | `cm-agent.agentscope.enabled` | `false` | AgentScope 真实 Runtime 开关；生产 profile 必须为 `true`，并与 fake runtime 互斥 |
 | `cm-agent.agentscope.execution-mode` | `react` | 全数据集执行策略，仅支持 `react`、`harness`；默认 ReAct，未知值启动失败，切换须排空 |
 | `cm-agent.agentscope.model-timeout` | `60s` | 单次模型阶段超时时间，必须为正数 |
@@ -97,7 +114,7 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 ## 执行模式与切换
 
-通过受控外部 YAML 设置 `cm-agent.agentscope.execution-mode: harness` 或使用完整 Spring 属性覆盖。此模式不是 Agent/API 请求参数；现有配置文件和默认值保持 `react`。Core、Harness、Provider 和 Studio 等 AgentScope 构件统一使用 2.0.2，MCP Server 2.0.0 与示例客户端 0.17.0 保持原版本。
+通过受控外部 YAML 设置 `cm-agent.agentscope.execution-mode: harness` 或使用完整 Spring 属性覆盖。此模式不是 Agent/API 请求参数；属性初始值为 `react`，实际模式以合并后的部署配置和数据集模式记录为准，不能假定当前工作树仍为 ReAct。Core、Harness、Provider 和 Studio 等 AgentScope 构件统一使用 2.0.2，MCP Server 2.0.0 与示例客户端 0.17.0 保持原版本。
 
 默认运行时启动时激活选定模式。JDBC 的 V21 `runtime_execution_modes` 是系统部署元数据，仅保存一个数据集的模式与更新时间；短事务行锁串行化切换，非终态 Run、非终态 TEST 和全部检查点（包括过期或孤立记录）均阻塞切换，不自动删除。相同模式重启不阻塞已有审批恢复。每次运行及恢复在凭据读取前核对持久化模式；旧模式实例返回 `DENIED` 和“执行模式已切换，请排空旧实例并重启服务”，后台使用 `errorId=runId`、`RUNTIME_MODE_CONFLICT` 关联。数据库读取失败继续按执行失败处理，不默认认为匹配。
 
@@ -105,7 +122,7 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 ## Skill 配置与权限
 
-Skill 只接受 ZIP 中的 `SKILL.md` 和文本资源；不支持二进制、网络地址或写入型资源。资源扩展名由 `cm-agent.skills.allowed-resource-types` 配置，默认开放 `.md`、`.txt`、`.json`、`.yaml`、`.yml`、`.csv`、`.html`、`.js`、`.cjs` 和 `.sh`。扩展名控制导入范围，不授予执行权限；沙箱默认关闭。启用 `cm-agent.skills.sandbox.enabled` 后，白名单自动补入 `.py`，通过受治理的 `run_skill_script` 执行当前 Run 快照中的 Python 脚本；其他语言仍作为文本资源。`cm-agent.skills.enabled` 默认关闭，启用前应先在 `test` 或隔离环境验证包结构、容量和模型上下文成本。服务端公开能力接口会返回当前允许扩展名、归档/解压大小、文件数、单资源/指令上限和单 Agent 绑定上限；浏览器不得自行放宽这些限制。
+Skill 只接受 ZIP 中的 `SKILL.md` 和文本资源；不支持二进制、网络地址或写入型资源。资源扩展名由 `cm-agent.skills.allowed-resource-types` 配置，提交基线开放 `.md`、`.txt`、`.json`、`.yaml`、`.yml`、`.csv`、`.html`、`.js`、`.cjs` 和 `.sh`。扩展名控制导入范围，不授予执行权限；沙箱默认关闭。启用 `cm-agent.skills.sandbox.enabled` 后，白名单自动补入 `.py`，通过受治理的 `run_skill_script` 执行当前 Run 快照中的 Python 脚本；其他语言仍作为文本资源。`cm-agent.skills.enabled` 的属性初始值为关闭，启用前应先在 `test` 或隔离环境验证包结构、容量和模型上下文成本。服务端公开能力接口会返回当前允许扩展名、归档/解压大小、文件数、单资源/指令上限和单 Agent 绑定上限；浏览器不得自行放宽这些限制。
 
 读取技能需要 `skill:read`，上传、版本更新和启停需要 `skill:write`。Agent 绑定同时要求 `agent:write` 与 `skill:read`，运行本身仍需要既有 `agent:run`；绑定不会授予任何业务 Tool 权限。生产变更权限后，应重新签发 JWT 或等待身份系统的短时令牌刷新，不能依赖前端隐藏按钮作为安全边界。
 
@@ -228,6 +245,8 @@ cm-agent:
 
 ## 模型配置管理
 
+DashScope 原生 `baseUrl` 使用 `https://dashscope.aliyuncs.com`；AgentScope 2.0.2 原生客户端自行追加 `/api/v1/services/...`，不要重复填写 `/api/v1`。OpenAI 兼容协议使用 `https://dashscope.aliyuncs.com/compatible-mode/v1`。本项目 T6 两策略真实协议验收覆盖上述两个接口，不代表所有兼容网关均已验证。
+
 `/api/model-configs` 提供当前租户模型元数据的列表、详情、创建、更新和删除接口。读取需要 `model:read`，创建与更新需要 `model:write`，删除需要 `model:delete`。请求体只包含：
 
 ```json
@@ -264,43 +283,17 @@ cm-agent:
 
 ## 动态 HTTP 工具
 
-动态 HTTP 工具由 `POST /api/tools` 创建，`type` 为 `HTTP`，需要 `tool:grant` 权限。工具定义与 HTTP 配置在同一事务内保存；同一租户的工具名称唯一。新版 HTTP 配置包含 `method`（`GET` 或 `POST`）、`urlTemplate`、扁平 `parameters`、`secretHeaders` 与 `timeoutMillis`。输入 JSON Schema 由服务端生成，不需要调用方重复维护。示例仅展示结构，不含可用凭据：
+动态 HTTP 工具使用 `POST /api/tools` 创建，须有 `tool:grant` 权限；工具定义与 HTTP 配置在同一事务内保存，同一租户的工具名称唯一。服务端根据扁平 `parameters` 自动生成 Tool/MCP 输入 Schema。创建请求、参数类型与位置约束、控制台树形编辑及调试示例统一见[工具开发指南](tool-development-guide.md#4-创建-http-工具)，包括 [PATH、QUERY、BODY 和 BODY_ROOT 参数规则](tool-development-guide.md#43-扁平参数定义)。
 
-```json
-{
-  "name": "order_lookup",
-  "description": "查询订单摘要",
-  "type": "HTTP",
-  "riskLevel": "MEDIUM",
-  "httpConfig": {
-    "method": "POST",
-    "urlTemplate": "https://api.example.test/orders/{orderId}",
-    "parameters": [
-      { "id": "orderId", "name": "orderId", "dataType": "STRING", "requestLocation": "PATH", "required": true },
-      { "id": "filter", "name": "filter", "dataType": "OBJECT", "requestLocation": "BODY", "required": false },
-      { "id": "status", "parentId": "filter", "name": "status", "dataType": "STRING", "required": false, "defaultValue": "OPEN" }
-    ],
-    "secretHeaders": { "X-Service-Token": "secret/integration/order-service" },
-    "timeoutMillis": 3000
-  }
-}
-```
+`secretHeaders` 只允许 `secret/...` 格式的引用，不保存密钥值，也不向创建响应、审计、日志、调试或 MCP 响应返回值。部署方必须提供受控 `SecretProvider`，并确保其自身 I/O 超时与中断响应；缺失、超时或失败的解析只产生固定受控错误。开发与生产的 Secret 接入边界见[Secret Header](tool-development-guide.md#44-secret-header)。
 
-每个参数以 `id` 唯一标识，嵌套参数只需用 `parentId` 指向父节点。只有顶层参数填写 `requestLocation`；字段 `name` 会直接作为 PATH、QUERY、HEADER 或 BODY 字段名，不再需要 `sourcePointer`、`targetPointer` 或 `nodeRole`。`dataType` 支持 `STRING`、`INTEGER`、`NUMBER`、`BOOLEAN`、`OBJECT` 和 `ARRAY`。ARRAY 必须有且只有一个直接匿名子节点（`name` 为空）来描述元素类型，子节点仍用 `parentId` 定位。
+HTTP 工具的属性初始值为关闭，实际开关以合并后的部署配置为准；启用不等于允许所有出站目标。URL 必须匹配 `allowed-hosts`，服务端拒绝回环、链路本地、私有/保留地址及其他 SSRF 风险地址。重定向只允许同源，且每次跳转再次执行 DNS/地址校验；总超时覆盖 Secret 解析、请求和重定向。响应采用固定大小上限并经脱敏后才返回。JDK HTTP 客户端无法在域名解析后将已校验 IP 与 TLS SNI 原子绑定，生产网络仍必须配置 egress 防火墙、受控 DNS 或代理，作为 DNS TOCTOU 的纵深防御。部署示例见[Server 前置配置](tool-development-guide.md#41-server-前置配置)。
 
-顶层位置支持 `PATH`、`QUERY`、`HEADER`、`BODY` 和 `BODY_ROOT`。`BODY_ROOT` 会把该命名 Tool 输入字段的值直接作为整个请求体，因此可表达 `[{"p1":"v1"}]` 这类根数组请求；它不能与 `BODY` 并用。PATH 必须是必填标量且与 URL `{placeholder}` 完整同名；QUERY 允许标量或标量数组；HEADER 仅允许非敏感标量；GET 不允许 BODY/BODY_ROOT。缺失输入或显式 `null` 会尝试应用参数的 `defaultValue`。
-
-HTTP 工具配置只接受 `parameters`。`inputSchema` 由服务端根据参数定义生成，并保存在通用工具定义中供模型和 MCP 使用；客户端不能提交或编辑 HTTP 配置中的 Schema 和 JSON Pointer 映射。
-
-`secretHeaders` 只允许 `secret/...` 格式的引用，不保存密钥值，也不向创建响应、审计、日志、调试或 MCP 响应返回值。部署方必须提供受控 `SecretProvider`，并确保其自身 I/O 超时与中断响应；缺失、超时或失败的解析只产生固定受控错误。
-
-HTTP 工具默认不能出站。启用后，URL 必须匹配 `allowed-hosts`，并由服务端拒绝回环、链路本地、私有/保留地址及其他 SSRF 风险地址。重定向只允许同源，且每次跳转再次执行 DNS/地址校验；总超时覆盖 Secret 解析、请求和重定向。响应采用固定大小上限并经脱敏后才返回。JDK HTTP 客户端无法在域名解析后将已校验 IP 与 TLS SNI 原子绑定，生产网络仍必须配置 egress 防火墙、受控 DNS 或代理，作为 DNS TOCTOU 的纵深防御。
-
-控制台使用树形编辑器录入参数：顶层节点直接添加，OBJECT/ARRAY 在节点内添加子参数；页面保存时自动转换为扁平 `parameters[]`。Secret 配置仍只接受 JSON 对象和 `secret/...` 引用。调试入口仅支持 HTTP/LOCAL 工具，需要 `tool:debug`；HIGH 风险工具必须提交完全一致的工具名称。调试不创建 Agent 或 Run，仍经过同一治理、审计和输出脱敏链路。
+调试入口仅支持 HTTP/LOCAL 工具，需要 `tool:debug`；HIGH 风险工具必须提交完全一致的工具名称。调试不创建 Agent 或 Run，仍经过同一治理、审计和输出脱敏链路；调用和错误响应示例见[调试 HTTP 工具](tool-development-guide.md#45-调试-http-工具)。
 
 ## MCP Streamable HTTP
 
-MCP 端点默认关闭。启用时，除 `cm-agent.mcp.enabled=true` 外，必须显式配置非空的 `cm-agent.mcp.allowed-origins` 和 `cm-agent.mcp.allowed-hosts`；任一白名单缺失都会使服务启动失败。可使用部署环境的等价环境变量或受控外部 YAML 提供列表，示例中的值仅用于说明：
+MCP 端点在提交基线中默认关闭，实际生效值以部署配置为准。启用时，除 `cm-agent.mcp.enabled=true` 外，必须显式配置非空的 `cm-agent.mcp.allowed-origins` 和 `cm-agent.mcp.allowed-hosts`；任一白名单缺失都会使服务启动失败。可使用部署环境的等价环境变量或受控外部 YAML 提供列表，示例中的值仅用于说明：
 
 ```yaml
 cm-agent:
@@ -370,7 +363,7 @@ AgentScope 2.0.0 在绑定可信 `RuntimeContext` 前可能探测无用户标识
 
 AgentScope 2.0.2 的显式 ASK 规则优先于 `DONT_ASK` 的默认决策，因此无会话必须配置显式 DENY，不能只依靠模式切换。模式固定为会话 `DEFAULT`、无会话 `DONT_ASK`；是否具备会话由服务端可信请求决定，没有 `permission.*` 嵌套配置。框架规则拒绝在桥接器执行前发生，适配器补充拒绝记录；诊断日志以 `errorId=runId` 关联、使用 `FORBIDDEN` 原因码，不记录原始模型参数或凭据。Run 结果继续使用既有 `status/errorMessage/runId` 契约，不新增 HTTP 错误字段或状态映射。
 
-`approval-ttl` 默认 `15m`，必须大于 0 且不超过 24 小时。审批请求保存脱敏摘要及原工具 ID、调用 ID、输入哈希，AgentScope 状态通过 AES/GCM 加密写入 `runtime_checkpoints`，终态或过期处理后删除。仅允许原运行发起人且同时拥有 `agent:run`、`agent:approve` 的主体决定，不支持独立审批人、长期预授权规则或无人值守暂停。正式模块已提供ReAct和受控Harness两种策略，默认仍为react，AgentScope依赖保持2.0.2；策略选择见上方“执行模式与切换”。
+`approval-ttl` 默认 `15m`，必须大于 0 且不超过 24 小时。审批请求保存脱敏摘要及原工具 ID、调用 ID、输入哈希，AgentScope 状态通过 AES/GCM 加密写入 `runtime_checkpoints`，终态或过期处理后删除。仅允许原运行发起人且同时拥有 `agent:run`、`agent:approve` 的主体决定，不支持独立审批人、长期预授权规则或无人值守暂停。正式模块已提供ReAct和受控Harness两种策略，属性初始值为react，AgentScope依赖保持2.0.2；策略选择见上方“执行模式与切换”。
 
 ## 审批主动过期扫描
 
@@ -443,9 +436,11 @@ V20 修复较大问答状态写入 MySQL 时的 `22001/1406` 错误：将 `runti
 
 ### 生产认证边界
 
-生产和类生产服务使用外部身份系统或受控认证服务签发的 Bearer JWT。服务只从受控外部配置取得验证密钥，用于校验外部签发的令牌；不得在 Git、镜像、命令行、日志或审计消息中保存密钥或令牌。
+生产和类生产服务使用外部身份系统或受控认证服务签发的 Bearer JWT。服务从受控外部配置取得共享 HMAC 密钥以校验签名；该密钥的持有方也具备签发能力，必须限定可信签发方并保护密钥。解析时 `tenantId` 须能转换为 UUID，服务读取主体 `sub` 和 `permissions` 列表；缺少权限列表时按空列表处理，当前解析未显式强制主体字段存在。签名验证后的权限由服务端用于授权，身份系统不得让客户端自行指定这些可信声明。不得在 Git、镜像、命令行、日志或审计消息中保存密钥或令牌。
 
-`/api/auth/login` 是 bootstrap admin 登录入口，仅供显式启用 bootstrap admin 的 `local` profile 使用。`production`、`prod` 和 `supabase` 必须关闭 bootstrap admin，因此生产调用该入口应被拒绝；生产调用方应携带外部签发的 Bearer JWT。`test` 的 bootstrap 凭据也必须由测试代码、CI 或受控外部配置注入。
+当前 `JwtService` 未配置 `issuer` 或 `audience` 的强制匹配，也未强制令牌包含 `exp`；JJWT 会校验已提供的 `exp`，但不能据此认为缺失 `exp` 的令牌会被拒绝。默认验证使用对称密钥，不能直接按标准公钥/JWKS 验证任意 OIDC 提供方令牌。生产接入前须核对签名算法、密钥及声明格式，并为签发方、受众、有效期和授权声明建立满足本环境要求的验证机制；如在受控入口执行，还须验证该入口不可绕过及令牌传递边界，不能仅凭部署网关就认定上述校验已覆盖。
+
+`/api/auth/login` 是 bootstrap admin 登录入口，建议只在受控 `local`/`test` 开发测试环境中显式启用并配置凭据。登录处理器依据启用开关和凭据判断；`production`、`prod` 和 `supabase` 的启动安全校验禁止启用 bootstrap admin，因此生产调用该入口应被拒绝，生产调用方应携带外部签发的 Bearer JWT。`test` 的 bootstrap 凭据必须由测试代码、CI 或受控外部配置注入。
 
 ## 审计与错误语义
 
@@ -511,7 +506,7 @@ TEST恢复入口为 GET /api/skills/{skillId}/trials/latest?versionId={versionId
 
 ## 工作区目录选择
 
-`cm-agent.workspace-context` 默认关闭；现有 `root-directory`、`bindings`、文件类型和预算继续生效。新增 `catalog` 最多登记 128 项，每项使用不复用的 UUID `id`，`name` 最多 120 个字符，`tenant-id` 唯一归属租户，`agent-ids` 显式列出获准 Agent。名称和根内相对位置只向通过读/运行权限校验的主体展示；服务端不扫描磁盘树，不接受 HTTP/模型指定 tenant、宿主路径或文件清单。
+`cm-agent.workspace-context` 的属性初始值为关闭，部署配置可以覆盖；现有 `root-directory`、`bindings`、文件类型和预算继续生效。新增 `catalog` 最多登记 128 项，每项使用不复用的 UUID `id`，`name` 最多 120 个字符，`tenant-id` 唯一归属租户，`agent-ids` 显式列出获准 Agent。名称和根内相对位置只向通过读/运行权限校验的主体展示；服务端不扫描磁盘树，不接受 HTTP/模型指定 tenant、宿主路径或文件清单。
 
 ```yaml
 cm-agent:
@@ -572,7 +567,7 @@ cm-agent:
 
 ## 本机只读导入存储基线（T9）
 
-本节存储约束自T9生效；T10已接入受控导入API和派生资源owner隔离，原生系统窗口及IMPORTED会话/Run执行接线仍待后续实施。`cm-agent.workspace-context.imports.enabled` 默认 `false`，开启导入API还要求顶层 `workspace-context.enabled=true`。当前即使资料达到READY，运行入口仍拒绝IMPORTED，不能据此宣布完整本机目录功能已经可用。
+本节描述 T9 存储约束和 T10 API；后续代码已接入原生目录选择交互及 IMPORTED 会话/Run 的受控运行链。`cm-agent.workspace-context.imports.enabled` 的属性初始值为 `false`，实际值可能由配置覆盖；开启导入 API 还要求顶层 `workspace-context.enabled=true` 和可用的私有存储。READY 本身不保证可绑定或运行，仍需满足能力、归属、预算及运行时检查。原生窗口、真实 Provider 和 JDBC 等 T11–T14 整体验收仍未完成，具体范围见[实施账本](superpowers/progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)。
 
 输入存储独立于服务器登记根和 Skill 产物。配置位于 `cm-agent.workspace-context.imports`；以下是运维准备示例，只使用环境占位符，不能把真实密钥写入仓库：
 
@@ -596,7 +591,7 @@ cm-agent:
 
 文件类型仍为 `.md/.txt/.json/.csv`，继承原 `max-files/max-file-bytes/max-total-bytes` 的4文件、16KiB单文件、32KiB总量默认值和8文件、32KiB/64KiB硬界。只允许有效非空UTF-8文本，实际长度和SHA-256由服务端复核，不截断超额内容。DRAFT一小时内有效、READY自完成起固定最长30天；主体跨Agent累计计费，撤销/过期仍占配额，直到真实密文删除确认。仓储租约为1秒至5分钟，读取引用可共享，上传/GC独占，每批次最多64个共享读取租约。
 
-V23在保留V22三态记录的基础上增加导入批次、文件清单及租约表，扩展绑定来源约束；T10新增V24请求关联和主体精确比较，历史V22/V23不修改。IMPORTED的workspaceId显式代表importId，directory必须为空，不能伪装为旧DEFAULT。T10以受控API承接HTTP预算和owner隔离，T11仍需完成运行冻结/恢复接线；不得绕过API直接暴露存储SPI。
+V23在保留V22三态记录的基础上增加导入批次、文件清单及租约表，扩展绑定来源约束；T10新增V24请求关联和主体精确比较，历史V22/V23不修改。IMPORTED的workspaceId显式代表importId，directory必须为空，不能伪装为旧DEFAULT。T10 以受控 API 承接 HTTP 预算和 owner 隔离；后续代码已接入运行冻结与审批恢复，恢复时核对原来源和密文完整性，不能改用最新正文。不得绕过 API 直接暴露存储 SPI。
 
 ## 本机只读导入API（T10）
 
@@ -612,19 +607,19 @@ V23在保留V22三态记录的基础上增加导入批次、文件清单及租�
 | `GET /{importId}` | 原主体核对安全状态、版本、清单/进度和期限，不返回正文 |
 | `DELETE /{importId}?expectedVersion=...` | 原主体先逻辑撤销；之后按租约回收，关闭上传后仍允许查询/撤销 |
 
-`requestId`由客户端为每次明确确认生成全新的随机UUID，与错误响应的errorId含义不同。服务端仍生成所有importId/fileId；requestId不能指定对象键或覆盖文件。同一确认重复POST返回409，网络结果未知先GET by-request或已知批次，不能自动重试写请求。仅选择文件夹或预览时不得发送manifest、文件名或正文；浏览器交互由T12实现，本阶段没有原生选择入口。
+`requestId`由客户端为每次明确确认生成全新的随机UUID，与错误响应的errorId含义不同。服务端仍生成所有importId/fileId；requestId不能指定对象键或覆盖文件。同一确认重复POST返回409，网络结果未知先GET by-request或已知批次，不能自动重试写请求。仅选择文件夹或预览时不得发送 manifest、文件名或正文；控制台已有浏览器目录选择交互，浏览器支持和真实原生窗口验收仍需按实施账本核对。
 
 manifest最多16KiB，complete正文最多1KiB；拒绝未知字段、重复JSON键、尾随JSON及非整数长度，不接受客户端tenant/owner或绝对路径。文件按声明长度加一实际读取并核对哈希/UTF-8/类型和当前预算；超过上限明确失败，不静默截断。使用原始正文，未启用multipart临时文件。每实例最多4项导入操作，正文读取最多4个无队列工作线程，总等待5秒；底层流不响应中断时真实读取槽仍占用，后续请求429，不无限建线程。
 
 DRAFT或撤销批次不可绑定，过期410；参数400、未知/不可见404、状态/版本/关闭409、HTTP正文超限413、内容/预算422、配额/并发429、正文超时或存储503、未知内部错误500。审计不可用为AUDIT_UNAVAILABLE/503；响应中文原因和errorId能检索同号脱敏日志。HTTP中的私有派生资源拒绝复用旧路由通用404 code/message，不额外泄露其存在；后台使用WORKSPACE_RESOURCE_NOT_FOUND记录治理分类。
 
-T10的READY只表示导入持久化完成：`ready=true`时`bindable=false`，capabilities的`runtimeAvailable=false`，运行接线仍待T11。关闭上传不会移除已有卷/密钥或放宽归属校验；GET和DELETE仍需原主体及入口权限。V24对owner精确比较，避免MySQL默认大小写比较或尾随空格把不同主体的请求关联合并。自定义ConversationRepository/RunRepository必须实现新listVisible合同，未实现时明确拒绝，不能截断后过滤或降级为共享列表。
+`ready=true` 表示批次当前处于可用的 READY 状态，不保证运行成功。当前代码在顶层与导入开关启用、私有存储可用，且 Run 和 Conversation 仓储声明支持来源协议时报告 `runtimeAvailable=true`；有效 READY 批次还可报告 `bindable=true`。绑定及运行仍会复核主体归属、状态、期限、清单和当前预算；审批恢复使用原冻结快照，关闭新上传不会移除已有卷/密钥或放宽归属校验，已冻结 Run 的排空仍受原来源检查。GET 和 DELETE 仍需原主体及入口权限。V24 对 owner 精确比较，避免 MySQL 默认大小写比较或尾随空格把不同主体的请求关联合并。自定义 ConversationRepository/RunRepository 必须实现来源协议及 `listVisible` 合同；旧实现不支持时明确拒绝，不能截断后过滤或降级为共享列表。T11–T14 的整体门禁未完成，能力字段不代表生产验收通过。
 
 ## 本地项目开发工作区
 
-独立开关 `cm-agent.local-projects.enabled` 默认 `false`，不受 `workspace-context` 或 `imports` 开关替代。关闭时能力查询返回 `enabled=false`，不装配原生选择、私有状态锁或文件/进程服务。当前功能未发布；首次启用前须核对[运维步骤与验证边界](operations.md#本地项目开发工作区运维)。
+独立开关 `cm-agent.local-projects.enabled` 的属性初始值为 `false`，部署配置可以覆盖；不受 `workspace-context` 或 `imports` 开关替代。关闭时能力查询返回 `enabled=false`，不装配原生选择、私有状态锁或文件/进程服务。当前功能未发布；首次启用前须核对[运维步骤与验证边界](operations.md#本地项目开发工作区运维)。
 
-启用仅支持 Windows x64，同一台电脑运行 Server、原生文件夹窗口和项目文件；需要交互式桌面。必须显式使用 `local` 或 `test` profile，禁止同时激活 `prod`、`production`、`supabase`；要求 JDBC、字面回环监听、禁用转发头、真实 AgentScope 运行时及权限审批、关闭 Studio。运行时可用 `react` 或受控 `harness`，自定义 Runtime 还必须声明支持项目保护合同。门禁不满足会拒绝启动，不降级到 memory 或演示执行器。
+启用仅支持 Windows x64，同一台电脑运行 Server、原生文件夹窗口和项目文件；需要交互式桌面。必须显式使用 `local` 或 `test` profile，禁止同时激活 `prod`、`production`、`supabase`；要求 JDBC、禁用转发头、真实 AgentScope 运行时及权限审批、关闭 Studio。默认要求字面回环监听和回环来源；只有显式启用 `allow-non-loopback` 后才允许非回环监听和精确非回环来源，安全条件见下表。运行时可用 `react` 或受控 `harness`，自定义 Runtime 还必须声明支持项目保护合同。门禁不满足会拒绝启动，不降级到 memory 或演示执行器。
 
 下面是独立配置片段，不包含数据库连接、登录或模型 API Key；沿用已有 JDBC 和模型配置。示例中的私有目录、稳定节点、允许源和工具程序均由部署者提供，不能照搬为任意电脑的实际路径。
 
@@ -671,15 +666,15 @@ cm-agent:
 | `node-id` | 必填，稳定的 1～80 位字母、数字、点、下划线或连字符标识，首位为字母或数字；重启不变，更换节点不能接管旧根或旧审批 |
 | `state-directory` | 必填、预先创建的本机私有绝对目录；不能与应用工作目录重叠，不能是用户主目录及其祖先，不能为网络卷、链接或路径别名；允许项仅可信所有者、固定 SID 的 SYSTEM/Administrators，需保证运行账号可写 |
 | `allow-non-loopback` | 默认 `false`。关闭时必须使用回环监听和回环来源。显式开启后允许非回环 `server.address` 与精确非回环 Origin，但仍保留 Host、Origin、`X-CM-Agent-Local-Project`、Fetch Metadata 和转发头拒绝检查；不能使用 `*`、`0.0.0.0` 或 `::` 作为浏览器来源。该能力会让远端请求操作服务器所在电脑的项目文件，必须配合 HTTPS、防火墙和网络隔离 |
-| `allowed-origins` | 必填，最多 8 个精确 HTTP/HTTPS 源，含实际端口；不带路径、查询、片段或通配符，Host/Origin 必须匹配；默认只允许回环源，`allow-non-loopback=true` 时才允许非回环精确源。不要把 `localhost` 与 `127.0.0.1` 当作同一源 |
+| `allowed-origins` | 必填，最多 8 个精确 HTTP/HTTPS 源，含实际端口；不带路径、查询、片段或通配符。Host 必须匹配；Origin 存在时也必须匹配。默认只允许回环源，`allow-non-loopback=true` 时才允许非回环精确源。不要把 `localhost` 与 `127.0.0.1` 当作同一源 |
 | `selection-ttl` | 默认 `2m`，大于 0 且不超过 `5m`；选择票据一次使用，轮询不延长票据期限，取消不产生目录授权 |
 | `bootstrap-permissions` | 默认空；仅允许 `project:read`、`project:write`、`project:execute`、`project:manage` 四项明细的无重复子集，不接受通配符或其他权限。仅在功能明确启用且 `local`/`test` 无生产混合 profile 时，追加到已通过真实登录的 bootstrap 主体；不修改旧角色或 Agent grant |
 | `commands.tools` | 默认空，最多 32 项，标识以字母开头且仅含字母、数字、下划线或连字符，最长 64 位；空配置仍可使用项目文件功能，不宣称命令/构建可用 |
 | `executable` / `prefix-arguments` | 真实普通 `.exe` 文件绝对路径及固定前缀，不扫描 PATH；运行前复核程序摘要。脚本须由部署者显式配置解释器及前缀，不能将脚本路径当作 `.exe` |
-
-仅当明确接受“远端用户可以操作服务器本机项目目录”的风险时，才可同时启用非回环监听与非回环来源。生产 profile 仍拒绝该能力；不要把它用于无认证、明文 HTTP 或来源不受限的网络。
 | `environment` / `allowed-environment` | 显式基础环境及允许请求覆盖的名称；子进程不继承 Server 全量环境。宿主固定加入 `SystemRoot` 和私有 `TEMP`/`TMP`，不允许请求覆盖这三项；秘密字段和秘密赋值参数被拒绝 |
 | `build` | 默认 `false`，标记该工具链可用于构建能力展示，不免除逐调用 HIGH 审批 |
+
+仅当明确接受“远端用户可以操作服务器本机项目目录”的风险时，才可同时启用非回环监听与非回环来源。生产 profile 仍拒绝该能力；不要把它用于无认证、明文 HTTP 或来源不受限的网络。
 
 私有状态目录由一个服务实例独占，并持有 `.instance-lock`；服务只建立固定 `changes`、`temp` 子目录，不自动修改用户项目 ACL。根、操作清单、恢复材料和 Run 读取快照使用现有持久 `model-credentials.encryption-key` 保护；保留原数据库、密钥、节点和状态目录，不能用临时密钥重启。项目目录、应用目录、私有状态区及已有工作区/导入私有区有排除和身份检查，客户端不能上传任意宿主绝对路径注册项目。
 
@@ -701,7 +696,7 @@ V26 新增 `local_project_roots`、`local_projects`、`local_project_conversatio
 
 固定工具定义的 `endpoint` 保存 `local-project:KIND` 逻辑标识，满足既有工具表的非空约束，不是 URL、命令或可自动执行的地址。实际执行仍由精确租户工具 ID、当前项目 Run 和治理授权决定；此修正不新增迁移。
 
-`/api/projects` API 在认证后要求真实连接两端均为回环地址、精确 Host/Origin 和 `X-CM-Agent-Local-Project: 1`，拒绝 `Forwarded`、`X-Forwarded-For`、`X-Forwarded-Host`、`X-Real-IP`；不支持通过反向代理、隧道或远程浏览器操作原生目录。核心入口包括能力查询、原生选择请求/轮询、消费票据登记项目、项目/会话列表、文件树/文本/搜索、工具登记、精确审批、操作历史、归档及 UNKNOWN 核对。正文响应不缓存；项目来源协议固定为 4，独立见证防止来源头损坏后回退到 DEFAULT 或旧导入入口。
+`/api/projects` API 在认证后默认要求真实连接两端均为回环地址；显式开启 `allow-non-loopback` 才放宽连接地址限制。两种模式均要求 Host 精确匹配和 `X-CM-Agent-Local-Project: 1`；Origin 存在时必须精确匹配，Fetch Metadata 存在时须符合允许值；拒绝 `Forwarded`、`X-Forwarded-For`、`X-Forwarded-Host`、`X-Real-IP`，不能依靠转发头通过反向代理或隧道绕过检查。原生选择窗口始终在 Server 所在桌面打开，不会选择远程浏览器所在电脑的目录。核心入口包括能力查询、原生选择请求/轮询、消费票据登记项目、项目/会话列表、文件树/文本/搜索、工具登记、精确审批、操作历史、归档及 UNKNOWN 核对。正文响应不缓存；项目来源协议固定为 4，独立见证防止来源头损坏后回退到 DEFAULT 或旧导入入口。
 
 ### 当前固定预算
 
@@ -715,7 +710,7 @@ V26 新增 `local_project_roots`、`local_projects`、`local_project_conversatio
 
 ## 本机客户端功能开关
 
-`cm-agent.local-client.enabled` 默认关闭，当前实现仍处于开发和验证阶段，不应视为生产可用。仅在隔离测试环境显式启用；远程连接需要配置客户端可访问的 HTTPS `cm-agent.local-client.audience`。设备配对、授权撤销、审计失败及跨平台完整链路的验收状态见 [实施账本](superpowers/progress/2026-11-02-agent-operation-authorization-implementation-ledger.md)。
+`cm-agent.local-client.enabled` 的属性初始值为关闭，部署配置可以覆盖；当前实现仍处于开发和验证阶段，不应视为生产可用。仅在隔离测试环境显式启用；`cm-agent.local-client.audience` 必须固定为客户端可访问的 HTTP/HTTPS 规范来源，不能由请求 Host 推断。非回环 HTTP 是部署显式选择，不提供响应机密性和真实性；应优先采用 HTTPS 并限制可信网络。该通用设备通道的协议选择不放宽下方设备项目浏览器入口的独立 HTTPS 门禁。设备配对、授权撤销、审计失败及跨平台完整链路的验收状态见[本机客户端页账本](superpowers/progress/2026-11-03-local-client-page-ledger.md)。
 
 本机客户端提示设备不可用时，先检查设备是否撤销以及服务端功能是否开放；已执行操作若无法回报，结果可能未知，不应自动重试。单轮本机确认方式只影响本机客户端固定工具，不改变普通业务工具的原审批要求。
 

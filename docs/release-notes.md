@@ -381,6 +381,8 @@
 - PostgreSQL/MySQL 新增 V22 元数据迁移，正文继续沿用加密检查点，审批恢复校验原目录身份与快照；Harness/Skill 权限和宿主文件边界不变。
 - 发布门禁与实际验证见本次实施账本，未执行的真实 Provider 或重启验收不能视为通过。配置及排空回退见 configuration.md、operations.md。
 
+> 后续说明（2026-11-17）：以下 T9/T10 条目保留当时阶段事实；后续代码已接入有条件的 IMPORTED 绑定与运行。能力及验收限制见[当前配置说明](configuration.md#本机只读导入apit10)和[实施账本](superpowers/progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)。
+
 ## 2026-10-28 本机资料导入存储基线（R1 T9，未发布）
 
 - 新增IMPORTED协议及不可变导入清单、DRAFT/READY/REVOKED/EXPIRED、memory/JDBC原子配额、上传/共享读取/GC租约和崩溃补偿清理。
@@ -413,7 +415,7 @@
 - 增加操作历史、UNKNOWN 原意图的人工核对终结、冷启动失联 Run 收口和七天私有材料清理；未知结果不自动重放，人工终结不撤销外部副作用。命令输出为实例内最多 32 份有界缓存，无持久输出恢复；文件恢复容量上限为每项目 100 MiB，不是节点总配额。
 - V26 新增五张带中文原生注释的项目表及四个未自动赋给旧角色的 `project:*` 权限。原主体隔离、固定节点/根/Agent/会话/Run 和协议 4 长期见证贯穿历史读取与运行，禁止降级到 DEFAULT；旧参考和导入协议保留。工具登记、Agent grant 与 HIGH 批准分别配置，不自动授予权限。
 - 补齐真实登录授权入口：新增默认空的 `cm-agent.local-projects.bootstrap-permissions`，仅允许四项项目权限明细，明确启用的 `local`/`test` bootstrap 登录才追加，不自动扩大旧角色或 Agent grant；工具登记改用既有 `tool:grant` 并保留 `project:manage` 要求。固定工具端点改为非空 `local-project:KIND` 逻辑标识，满足既有工具表约束，不提供地址执行能力，不新增迁移。
-- Rocky PostgreSQL 16/MySQL 8.4 持久化完整套件 92 项通过；Windows 夹具、服务合同、SDK 回环和前端模拟 API 验证的证据分别记录，真实 Provider、原生窗口、JDBC 与完整页面组合验收仍未完成。原 YAML 和既有 8080 服务未改，未提交、未部署。启用与运行边界见[配置](configuration.md#本地项目开发工作区)、[运维](operations.md#本地项目开发工作区运维)及[实施账本](superpowers/progress/2026-10-29-local-project-workspace-implementation-ledger.md)。
+- Rocky PostgreSQL 16/MySQL 8.4 持久化完整套件 92 项通过；Windows 夹具、服务合同、SDK 回环和前端模拟 API 验证的证据分别记录，真实 Provider、原生窗口、JDBC 与完整页面组合验收仍未完成。原 YAML 和既有 8080 服务未改，未提交、未部署。启用与运行边界见[配置](configuration.md#本地项目开发工作区)、[运维](operations.md#本地项目开发工作区运维)及[项目页账本](superpowers/progress/2026-11-03-projects-page-ledger.md)。
 
 - 本机客户端开发验证：补充设备不可用和结果回报未知提示；单轮本机确认方式不再放宽普通高风险工具审批。该功能仍默认关闭，完整跨平台与真实设备联合验收未完成。
 

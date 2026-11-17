@@ -138,3 +138,11 @@ G5/G9/G10未执行：生产启动、外部身份令牌验证、真实Provider/�
 G4结束保护检查：仅本六文件及docs/operations.md、docs/release-notes.md变化；生产代码、POM/YAML及其他工作包摘要保持。六文件/链接0错误，提示词围栏成对，实际环境凭据匹配0；副本/网络及重复数据快照关闭/移除，新V21私有备份保留，证据见harness-test-run-reconciliation/document-check.log。
 
 关联：[清单](../checklists/2026-10-12-harness-drain-readiness-checklist.md)、[提示词](../prompts/2026-10-12-harness-drain-readiness-prompt.md)、[设计](../specs/2026-10-12-harness-drain-readiness-design.md)、[计划](../plans/2026-10-12-harness-drain-readiness.md)、[实现](../implementation/2026-10-12-harness-drain-readiness-implementation-design.md)。
+
+## 全量核定记录（2026-11-13）
+
+- 核定结论：已归档。本记录只核定工作包责任及归档分类，前文任务、命令结果和提交状态保留形成时含义。
+- 责任范围与依据：当前采用 G11–G14 已完成；G5/G9/G10 有明确移出范围记录，未宣称 Rocky 生产已部署。
+- 证据限制：依据原文明确的工作范围、状态表、验收和遗留记录核定；本轮没有重跑业务测试、恢复旧服务、访问原数据库或重新证明历史外部环境。历史通过只适用于当时版本和环境。
+- 后继与剩余事项：无未关闭的本包事项移交；原记录中的独立后续需求、生产使用条件及范围外限制继续保留，不作为其已实现或已验收的证明。
+- 复核入口：[docs 全量整理账本](2026-11-13-docs-full-review-ledger.md#逐组核定快照)。本次整理不授予提交、推送、部署或外部副作用权限；同一需求恢复时保留本记录并追加恢复及修订。

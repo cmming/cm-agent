@@ -1,3 +1,38 @@
+# 工作区目录选择执行提示词（R3：文档职责迁移）
+
+日期：2026-10-27；主题：workspace-directory-selection-implementation；当前修订：R3；修订日期：2026-11-13；模式：mode=default。
+
+R0–R2 原始提示词在文末归档。以下 R3 提示词只迁移文档职责，不重新实施已形成的业务。
+
+## 当前执行输入（R3）
+
+```text
+仓库：F:/java/cm-agent
+工作包：2026-10-27 / workspace-directory-selection-implementation / R3 / mode=default。
+
+先读取本提示词、清单、设计、计划、实现说明、进度账本和 AGENTS.md，并核对当前 Git 工作树。保护 2026-11-09、2026-11-12 工作包及所有无关修改。
+
+范围：把该历史工作包迁移到新文档契约。清单只保留稳定任务、依赖和验收；设计只保留目标、方案、决定和约束；计划只保留顺序、文件线索和验证方法；本提示词只保留当前执行输入；实现说明只记录实际代码与文档改动以及与设计的差异。任务状态、命令结果、测试证据、阻塞和提交信息只能写入账本。R0–R2 原文完整归档。
+
+不得把历史 T11–T14 未完整收口写成已完成，不得把 R2 ACL 证据扩展为其他来源或环境通过。不得修改业务代码、配置、数据库、迁移或真实 ACL。完成后更新工作包状态目录并校验修订、任务编号、链接、代码围栏、空白和保护范围；不提交、不推送、不合并、不部署，不重启服务。
+```
+
+当前状态与证据见[进度账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)。
+
+## 关联文档
+
+- [清单](../checklists/2026-10-27-workspace-directory-selection-implementation-checklist.md)
+- [设计](../specs/2026-10-27-workspace-directory-selection-implementation-design.md)
+- [计划](../plans/2026-10-27-workspace-directory-selection-implementation.md)
+- [提示词](../prompts/2026-10-27-workspace-directory-selection-implementation-prompt.md)
+- [实现说明](../implementation/2026-10-27-workspace-directory-selection-implementation-implementation-design.md)
+- [进度账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)
+
+## R2 及更早历史提示词
+
+<details>
+<summary>保留迁移前原文（仅供追溯，不代表当前职责）</summary>
+
 # 工作区目录选择执行提示词（R2：可信Windows系统ACL兼容）
 
 日期：2026-10-27；主题：workspace-directory-selection-implementation；当前修订：R2；修订日期：2026-10-28；模式：mode=default。
@@ -241,3 +276,5 @@ T14：Windows Chrome/Edge实际原生窗口和取消/选择，API不支持的目
 > - [实施计划](../plans/2026-10-27-workspace-directory-selection-implementation.md)
 > - [实际实现](../implementation/2026-10-27-workspace-directory-selection-implementation-implementation-design.md)
 > - [实施账本](../progress/2026-10-27-workspace-directory-selection-implementation-ledger.md)
+
+</details>

@@ -7,6 +7,12 @@
 
 `MCP` 在当前项目中主要用于发布已经创建的 `LOCAL` 或 `HTTP` 工具，不是本文第三种工具实现方式。`A2A` 尚无完整执行器，因此不在本文范围内。
 
+## 快速导航
+
+- 入门：[选择工具类型](#1-如何选择工具类型) · [公共领域模型](#2-公共领域模型)
+- 开发：[创建 LOCAL 工具](#3-创建-local-工具) · [创建 HTTP 工具](#4-创建-http-工具) · [扁平参数定义](#43-扁平参数定义) · [Secret Header](#44-secret-header)
+- 调试与发布：[调试 HTTP 工具](#45-调试-http-工具) · [Agent 授权与 MCP 发布](#5-agent-授权与可选-mcp-发布) · [常见错误](#6-常见错误) · [验证命令](#7-验证命令) · [安全检查清单](#8-安全检查清单)
+
 ## 1. 如何选择工具类型
 
 | 场景 | 建议类型 | 原因 |
@@ -327,7 +333,7 @@ POST /api/tools
 
 ### 4.1 Server 前置配置
 
-HTTP 工具出站执行默认关闭。开发或部署配置至少需要：
+HTTP 工具出站执行的属性初始值为关闭；实际开关以合并后的部署配置为准，工作树的覆盖情况见[配置快照](configuration.md#当前工作树配置快照)。开发或部署配置至少需要：
 
 ```yaml
 cm-agent:
@@ -347,7 +353,7 @@ cm-agent:
 说明：
 
 - `allowed-hosts` 只填写主机名，不填写协议、路径或查询串。
-- 默认只允许 HTTPS。生产环境不应开启 `allow-http`。
+- `allow-http` 的属性初始值为 `false`；部署配置可能覆盖，生产环境应保持 `false` 并使用 HTTPS。
 - 回环、链路本地、私有和保留地址会被拒绝，因此不要把 `localhost` 作为动态 HTTP 工具目标。
 - `secrets` 示例只说明本地默认 Provider 的映射方式。生产应提供受控 `HttpToolSecretProvider`。
 - Secret 实际值不得进入 Git、工具定义、创建响应、日志或审计。
@@ -356,7 +362,7 @@ cm-agent:
 
 ### 4.2 完整创建请求
 
-以下请求创建一个 POST/BODY 工具。调用方只定义参数，服务端自动生成并返回 `inputSchema`：
+HTTP 配置的 `method` 支持 `GET` 和 `POST`。以下请求创建一个 POST/BODY 工具；调用方只定义参数，服务端自动生成 `inputSchema`，保存在通用工具定义中并返回：
 
 ```http
 POST /api/tools
@@ -394,11 +400,11 @@ Content-Type: application/json
 }
 ```
 
-工具定义、HTTP 配置、可选 MCP 发布记录和创建审计在同一创建流程中完成。同一租户内工具名称必须唯一。
+工具定义与 HTTP 配置在同一事务内保存；可选 MCP 发布记录和创建审计在同一创建流程中完成。同一租户内工具名称必须唯一。
 
 ### 4.3 扁平参数定义
 
-参数定义使用一层 JSON 数组保存树结构。每个节点有独立 `id`，嵌套节点通过 `parentId` 指向父节点；只有顶层节点填写 `requestLocation`。字段名称直接作为请求中的参数名，因此不需要维护 JSON Pointer 映射。
+参数定义使用一层 JSON 数组保存树结构。每个节点有独立 `id`，嵌套节点通过 `parentId` 指向父节点；只有顶层节点填写 `requestLocation`。字段名称直接作为请求中的参数名，因此不需要维护 JSON Pointer 映射或 `nodeRole`。ARRAY 必须有且只有一个直接匿名子节点（`name` 为空）描述元素类型；缺失输入或显式 `null` 时会尝试应用参数的 `defaultValue`。
 
 控制台展示为树形编辑器，用户通过“添加顶层参数”和节点内“添加子参数”建立层级；页面提交时再按树的先序遍历生成下述一层 JSON 数组。直接调用 REST API 的客户端仍按扁平数组提交。
 
@@ -418,9 +424,9 @@ Content-Type: application/json
 | --- | --- | --- |
 | `PATH` | 标量 | 必填，`name` 必须与 URL `{placeholder}` 完整匹配 |
 | `QUERY` | 标量或标量数组 | 自动以 `name` 追加查询参数 |
-| `HEADER` | 标量 | 不能覆盖 `Authorization`、`Cookie` 等受限 Header |
+| `HEADER` | 非敏感标量 | 不能覆盖 `Authorization`、`Cookie` 等受限 Header；敏感值使用 Secret 引用 |
 | `BODY` | 任意类型 | 多个顶层字段按名称组装成对象；GET 禁止 |
-| `BODY_ROOT` | 任意类型 | 字段值直接作为完整请求体，只能有一个，不能与 BODY 并用 |
+| `BODY_ROOT` | 任意类型 | 字段值直接作为完整请求体，只能有一个，不能与 BODY 并用；GET 禁止 |
 
 PATH 与 QUERY 混合请求示例：
 
@@ -612,7 +618,7 @@ DELETE /api/tools/{toolId}/mcp-publication
 Authorization: Bearer <access-token>
 ```
 
-MCP Server 默认关闭，且有独立的 Origin、Host、JWT 和 `tool:mcp:invoke` 权限要求。完整说明见[配置说明](configuration.md)。
+MCP Server 在提交基线中默认关闭，部署配置可能覆盖；启用时有独立的 Origin、Host、JWT 和 `tool:mcp:invoke` 权限要求。完整说明见[配置说明](configuration.md#当前工作树配置快照)。
 
 ## 6. 常见错误
 
@@ -625,8 +631,8 @@ MCP Server 默认关闭，且有独立的 Origin、Host、JWT 和 `tool:mcp:invo
 | HTTP 调试提示目标地址不允许 | 开关未启用、Host 不在白名单，或地址属于私有/保留范围 | 检查 `cm-agent.http-tools` 和网络出口策略 |
 | HTTP 调试提示工具不可用 | 定义和 HTTP 配置漂移，或工具已禁用 | 查询工具摘要并核对 URL 模板与启用状态 |
 | HTTP 调试失败但需要进一步定位 | 目标服务、Secret、超时、响应格式或网络策略失败 | 先查看前端具体错误原因和 HTTP 状态，再使用错误编号检索后台日志 |
-| PATH 映射校验失败 | 占位符与必填 PATH 映射不一致 | 让 `{name}` 与 `targetName=name` 精确对应 |
-| GET 配置校验失败 | 配置了 BODY 映射 | 改用 QUERY/PATH/HEADER，或改为 POST |
+| PATH 参数校验失败 | 占位符与必填 PATH 参数不一致 | 让 URL `{name}` 与 PATH 参数的 `name` 精确对应，并设置 `required=true` |
+| GET 配置校验失败 | 配置了 BODY 或 BODY_ROOT 参数 | 改用 QUERY/PATH/HEADER，或改为 POST |
 | Secret 解析失败 | 引用不存在，或 Provider 超时/失败 | 核对 tenant 范围内引用和 Provider 配置 |
 | HIGH 工具不能调试 | `confirmedToolName` 缺失或不完全匹配 | 提交与工具名称完全一致的确认值 |
 

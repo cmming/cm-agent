@@ -127,3 +127,21 @@ Historical pre-JDK21 attempts:
   - `mvn -q -pl cm-agent-server -am "-Dtest=ApplicationProfileConfigurationTest,RunControllerTest,AuthControllerTest" "-Dsurefire.failIfNoSpecifiedTests=false" test` passed with JDK 21.
 - No remaining source-level findings after fixes.
 - Known residual risk: Testcontainers coverage has not completed because Docker Desktop Linux engine is unavailable. Start Docker Desktop and re-run the targeted JDBC/Testcontainers commands before merge or release.
+
+## 全量核定记录（2026-11-13）
+
+- 核定结论：待续。本记录只核定工作包责任及归档分类，前文任务、命令结果和提交状态保留形成时含义。
+- 责任范围与依据：历史 JDBC/Testcontainers 验证因 Docker 不可用未完成；当前必须按 Rocky 规则补验，不继续旧 Docker Desktop 指引。
+- 证据限制：依据原文明确的工作范围、状态表、验收和遗留记录核定；本轮没有重跑业务测试、恢复旧服务、访问原数据库或重新证明历史外部环境。历史通过只适用于当时版本和环境。
+- 后继与剩余事项：上述剩余事项继续由原任务/验收范围跟踪；本次不执行它们，不依据后来相关主题自动宣布原验收通过，也不补造取消或移交。
+- 复核入口：[docs 全量整理账本](2026-11-13-docs-full-review-ledger.md#逐组核定快照)。本次整理不授予提交、推送、部署或外部副作用权限；同一需求恢复时保留本记录并追加恢复及修订。
+
+历史正文中的 Docker Desktop 补验建议保留为当时记录，现行验证环境必须遵循[部署指南](../../deployment.md#rocky-vm-容器验证)的 Rocky/JDK 21 容器要求，不能直接复用旧指引。
+
+## Git 补证核定（2026-11-13）
+
+- 当前核定结论：待续，维持前次分类。
+- 共同责任范围：文首 Plan 明确引用 `2026-06-26-production-persistence`，Spec 明确引用 `2026-06-25-production-persistence`；这两组存在真实共同账本，不是凭同名推测承接。
+- 依据：`37c6b4a856` 建立实施计划，`4592be30a0` 记录验证阻塞，`d04dfca` 记录后续修复，`497514aeca` 合并；均在当前 HEAD 历史中。原 Task6 仍记为 partially verified/docker blocked，没有本范围容器验收收口证据，合并不等于验收通过。
+- 限制与剩余事项：保留原验证缺口，不重新执行旧 Docker Desktop 指引；若后续补验，按现行 Rocky/JDK21 容器规则执行并记录当前版本。没有将后续阶段的笼统通过替代本包验收。
+- 核定详情：[6 月 25 日设计](2026-11-13-docs-full-review-ledger.md#git-audit-2026-06-25-production-persistence)、[6 月 26 日计划](2026-11-13-docs-full-review-ledger.md#git-audit-2026-06-26-production-persistence)。本次不提交、推送或部署，也不补造旧账本。

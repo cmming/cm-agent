@@ -47,7 +47,7 @@ docker run --rm --network host \
 
 真实 PostgreSQL 16/MySQL 8.4 驱动均验证字段长度超限和唯一约束冲突，日志包含原始类型、堆栈、原因与编号，不含 SQL、参数、失败行和内部 URL。API 回归验证 503/PERSISTENCE_UNAVAILABLE、中文消息、响应/响应头/日志 errorId 一致；新字段不进入响应。模型发现、审批扫描和沙箱端点调用方回归通过。
 
-原始测试输出仅保存于隔离验证目录 final-verification.log；只复制安全测试统计至本机 [验证摘要](C:/Users/chmi/Documents/Codex/diagnostic-verification/verification-summary.json)。远程同目录还保存 SHA256SUMS、verification-summary.json 和 Surefire 报告。本次未回传服务原始日志或凭据。
+原始测试输出仅保存于隔离验证目录 final-verification.log；当时只复制安全测试统计至本机 `C:/Users/chmi/Documents/Codex/diagnostic-verification/verification-summary.json`。该仓库外文件在 2026-11-13 链接复核时不可用，保留路径作历史线索，不作为可点击证据或本轮验证结果。远程同目录还保存 SHA256SUMS、verification-summary.json 和 Surefire 报告。本次未回传服务原始日志或凭据。
 
 最终静态检查：git diff --check 通过；六份文档齐全、相对链接检查通过；Java 注释/JavaDoc 已覆盖数据库消息拒绝策略、异常图复制、资源/预算、框架差异及 record 全部组件。保留原控制台、V18、配置及旧工作包改动。未提交、未推送、未合并、未部署；没有重启服务、没有修改运行数据库。
 
@@ -73,3 +73,11 @@ docker run --rm --network host \
 - 59 个显式路径的暂存范围、敏感片段、文档链接及 `git diff --cached --check` 已检查。初次暂存发现新文档 EOF 多余空行，仅修正本任务文档后检查通过。
 - `application.yml`、`application-mysql.yml`、未跟踪 `application-ok.yml` 与 `.codex/`、`.workbuddy/` 保持未提交。未推送、未合并、未部署，未重启用户服务或操作其数据库。
 - 原生浏览器 ZIP 上传仍保留技能控制台 R0 的扩展权限阻塞；本轮数据库原包导入测试不替代该浏览器验收。
+
+## 全量核定记录（2026-11-13）
+
+- 核定结论：已归档。本记录只核定工作包责任及归档分类，前文任务、命令结果和提交状态保留形成时含义。
+- 责任范围与依据：日志边界、受控接口与双库驱动专项完成；仓库外证据不可用及 UI 上传限制保留。
+- 证据限制：依据原文明确的工作范围、状态表、验收和遗留记录核定；本轮没有重跑业务测试、恢复旧服务、访问原数据库或重新证明历史外部环境。历史通过只适用于当时版本和环境。
+- 后继与剩余事项：无未关闭的本包事项移交；原记录中的独立后续需求、生产使用条件及范围外限制继续保留，不作为其已实现或已验收的证明。
+- 复核入口：[docs 全量整理账本](2026-11-13-docs-full-review-ledger.md#逐组核定快照)。本次整理不授予提交、推送、部署或外部副作用权限；同一需求恢复时保留本记录并追加恢复及修订。
