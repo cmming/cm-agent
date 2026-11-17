@@ -51,9 +51,13 @@
 
 ## Git 与发布
 
-- 本次改动未提交。
-- 未推送。
-- 未发布。
+- 主实现提交：`32d8654`，提交说明为 `docs: 增加 MkDocs Material 在线文档站点`。
+- 已推送到 `master`。HTTPS 推送因网络连接重置失败后，改用已认证的 GitHub SSH 通道完成推送；GitHub API 与 SSH 通道可用。
+- GitHub Pages 已启用，构建类型为 `workflow`，站点地址为 `https://cmming.github.io/cm-agent/`，已强制 HTTPS。
+- 首次发布工作流：[Docs #44105339670](https://github.com/cmming/cm-agent/actions/runs/44105339670)；`build` 与 `deploy` 均成功。
+- GitHub Pages 部署记录：部署 ID `7856433132`，环境 `github-pages`，引用 `master`，对应提交 `32d8654`。
+- 线上首页、搜索索引、配置说明和 Harness 模块页面均返回 HTTP 200。
+- 发布结果更新提交：`docs: 记录文档站点发布结果`；该提交的完整 SHA 由本次 Git 历史产生，最终以 `git log -1 --oneline` 为准。
 
 ## 关联产物
 
