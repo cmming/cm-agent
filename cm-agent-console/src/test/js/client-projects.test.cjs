@@ -147,7 +147,8 @@ test("设备项目经通用消息审批和Run路由时仍携带专用行动头",
             return {items: []};
         }}});
     try {
-        await page.mountChat({id: "project", deviceId: "device", state: "ACTIVE"}, {enabled: true, conversations: true});
+        await page.mount();
+        await document.getElementById("clientProjectList").children[0].events.click();
         await document.getElementById("clientProjectConversationList").children[0].events.click();
         document.getElementById("clientProjectChatInput").value = "验收输入";
         await document.getElementById("clientProjectChatForm").events.submit({preventDefault() {}});
@@ -195,7 +196,8 @@ test("精确拒绝使用真实SSE审批路由且断流错误保留编号并禁�
                     onEvent({type: "completed", data: {run: {status: "DENIED"}}});
                 }}});
             try {
-                await page.mountChat({id: "project", deviceId: "device", state: "ACTIVE"}, {enabled: true, conversations: true});
+                await page.mount();
+                await document.getElementById("clientProjectList").children[0].events.click();
                 await document.getElementById("clientProjectConversationList").children[0].events.click();
                 const card = document.getElementById("clientProjectApprovalItems").children[0];
                 const select = card.children[1].children.at(-1);
@@ -217,30 +219,6 @@ test("精确拒绝使用真实SSE审批路由且断流错误保留编号并禁�
         if (previousOption === undefined) delete global.Option;
         else global.Option = previousOption;
     }
-});
-
-test("已归档设备会话分页读取消息和审批历史，派生请求保留设备来源", async () => {
-    const document = dom(), calls = [];
-    const page = projects.createClientProjectPage({document, host: host(), getSessionEpoch: () => 1,
-        api: {request: async (url, options) => {
-            calls.push([url, options]);
-            if (url.includes("/conversations?")) return [{id: "conversation", agentId: "agent"}];
-            if (url.includes("/messages?")) return url.includes("afterSequence=1") ? {items: []} :
-                {items: [{id: "first", contentBlocks: [{type: "TEXT", text: "历史内容"}]}], nextSequence: 1};
-            if (url.includes("/approvals/history?")) return {items: [{status: "APPROVED", items: [{toolName: "测试工具"}]}]};
-            throw new Error(`只读项目发起了意外请求 ${url}`);
-        }}});
-    await page.mountChat({id: "project", state: "ARCHIVED"}, {enabled: true, conversations: true});
-    await document.getElementById("clientProjectConversationList").children[0].events.click();
-    await document.getElementById("clientProjectMessagesMore").events.click();
-    await document.getElementById("clientProjectApprovalHistory").events.toggle({target: {open: true}});
-    assert.equal(document.getElementById("clientProjectChatCreate").hidden, true);
-    assert.equal(document.getElementById("clientProjectChatForm").hidden, true);
-    assert.equal(document.getElementById("clientProjectCommandControls").hidden, true);
-    assert.match(document.getElementById("clientProjectHistoryItems").children[0].textContent, /测试工具.*APPROVED/);
-    assert.ok(calls.some(([url]) => url.includes("afterSequence=1")));
-    assert.ok(calls.every(([, options]) => options.headers["X-CM-Agent-Client-Project"] === "1" && !options.method));
-    page.dispose();
 });
 
 function dom() {

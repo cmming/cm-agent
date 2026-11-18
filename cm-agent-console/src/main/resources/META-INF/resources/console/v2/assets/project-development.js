@@ -72,7 +72,7 @@
         }
         target.append(details);
     }
-    function create({request, document, isCurrent, host = globalThis, fileReferenceDraft = null}) {
+    function create({request, document, isCurrent, host = globalThis}) {
         let revision = 0, project = null, conversation = null, capabilities = {}, active = true, sendBusy = false, sendUnknown = false, approvalPending = true;
         let messageCursor = null, messages = [], approvalRevision = 0, messageRevision = 0, historyCursor = null, historyRevision = 0, operationsRevision = 0;
         const commands = new Map(), lockedApprovals = new Set(), resolveLocks = new Map();
@@ -411,76 +411,35 @@
             try { await work; }
             finally { if (refreshInFlight?.promise === work) refreshInFlight = null; }
         }
-        let conversations = [];
-        let conversationPage = null;
-        let conversationListRevision = 0;
-
         async function selectConversation(value) {
             if (!active || !isCurrent()) return;
             if (conversation?.id === value.id) { await refresh(); return; }
             clearPoll(); currentRun = null; runKnown = false; approvalFingerprint = null; operationFingerprint = null; pollCount = 0; pollFailures = 0; revision++; conversation = value; messages = []; commands.clear(); resolveLocks.clear(); knownRuns.clear(); pendingRuns.clear(); lockedApprovals.clear(); messageCursor = null; historyCursor = null; historyItems = []; sendBusy = false; sendUnknown = false;
-            const selectionRevision = revision;
             approvalPending = true;
             $("projectChatInput").value = ""; $("projectChatSend").disabled = true;
             $("projectChatTitle").textContent = value.title || "项目会话"; $("projectChatBody").hidden = false;
-            $("projectChatPlaceholder").hidden = true;
-            renderConversations();
             $("projectApprovalItems").replaceChildren(); $("projectCommandResults").replaceChildren(); renderMessages(); status(""); await refresh();
-            if (fileReferenceDraft && !archived() && valid(selectionRevision)) {
-                const draft = fileReferenceDraft;
-                fileReferenceDraft = null;
-                const input = $("projectChatInput");
-                const quote = fileReference(draft);
-                input.value = input.value ? `${input.value}\n\n${quote}` : quote;
-                input.focus?.();
-                status("文件路径和版本已加入草稿。发送前可编辑正文，文件变化时请重新引用。");
-            }
         }
-        function renderConversations() {
-            const target = $("projectConversationList");
-            target.replaceChildren();
-            for (const item of conversations) {
-                const entry = button(item.title || "项目会话", () => selectConversation(item));
-                entry.setAttribute("aria-pressed", String(item.id === conversation?.id));
-                target.append(entry);
-            }
-            if (!conversations.length) target.append(node("p", archived() ? "此归档项目没有会话历史。" : "还没有项目会话。选择 Agent 后新建。", "field-help"));
-        }
-        async function listConversations(append = false) {
+        async function listConversations() {
             if (!active || !isCurrent()) return;
-            const requestRevision = ++conversationListRevision;
-            const params = new URLSearchParams({limit: "50"});
-            if (append && conversationPage) {
-                params.set("beforeUpdatedAt", conversationPage.updatedAt);
-                params.set("beforeId", conversationPage.id);
-            }
-            const rows = await request(`/api/projects/${encodeURIComponent(project.id)}/conversations?${params}`);
-            if (!active || !isCurrent() || requestRevision !== conversationListRevision) return;
-            const existing = append ? conversations : [];
-            conversations = [...existing, ...rows.filter(row => !existing.some(item => item.id === row.id))];
-            conversationPage = rows.length === 50 && rows.at(-1).updatedAt ? rows.at(-1) : null;
-            $("projectConversationsMore").hidden = !conversationPage;
-            renderConversations();
+            const stamp = revision;
+            const list = await request(`/api/projects/${encodeURIComponent(project.id)}/conversations?limit=50`);
+            if (!valid(stamp)) return;
+            const target = $("projectConversationList"); target.replaceChildren();
+            for (const item of list) target.append(button(item.title || "项目会话", () => selectConversation(item)));
+            if (!list.length) target.append(node("p", archived() ? "此归档项目没有会话历史。" : "还没有项目会话。选择已授权 Agent 后新建。", "field-help"));
         }
         async function mount(value, flags) {
-            project = value; capabilities = flags;
+            project = value; capabilities = flags; const stamp = revision;
             const region = $("projectDevelopment"); region.hidden = flags.conversations !== true;
             if (region.hidden) return;
-            for (const id of ["projectChatAgent", "projectNewConversation"]) {
-                $(id).hidden = archived();
-                $(id).disabled = true;
-            }
+            for (const id of ["projectChatAgent", "projectNewConversation"]) { $(id).hidden = archived(); $(id).disabled = archived(); }
             if ($("projectChatAgentLabel")) $("projectChatAgentLabel").hidden = archived();
             $("projectChatForm").hidden = archived(); $("projectChatInput").disabled = archived();
             if ($("projectAuthorizationMode")) $("projectAuthorizationMode").disabled = archived();
             $("projectAuthorizationMode")?.addEventListener("change", renderAuthorizationHelp); renderAuthorizationHelp();
             $("projectChatSend").disabled = true;
-            if (archived()) {
-                $("projectChatPromptTitle").textContent = "选择历史会话";
-                $("projectChatPrompt").textContent = "可查看消息、审批历史和操作记录。";
-                status("已归档项目以只读方式打开。");
-            }
-            else if (fileReferenceDraft) status("选择或新建会话以加入文件版本引用。");
+            if (archived()) status("已归档项目仅供查看会话、审批历史和操作记录。");
             $("projectNewConversation").addEventListener("click", async () => {
                 const agentId = $("projectChatAgent").value; if (!valid(revision) || !agentId || archived()) return;
                 const creationStamp = revision;
@@ -509,7 +468,6 @@
             $("projectOperationsRefresh")?.addEventListener("click", async () => { for(const id of knownRuns) pendingRuns.add(id); await recoverOperations(); });
             $("projectOperationHistoryMore")?.addEventListener("click", async () => { try { await loadHistory(true); await recoverOperations(); } catch(error) { if(active && isCurrent()) status(error.message,true); } });
             $("projectConversationRefresh").addEventListener("click", async () => { try { await listConversations(); } catch(error) { if(active && isCurrent()) status(error.message,true); } });
-            $("projectConversationsMore").addEventListener("click", async () => { try { await listConversations(true); } catch(error) { if(active && isCurrent()) status(error.message,true); } });
             $("projectMessagesMore").addEventListener("click", async () => { try { await loadMessages(true); await recoverOperations(); } catch(error) { if(active && isCurrent()) status(error.message,true); } });
             $("projectChatForm").addEventListener("submit", async event => {
                 event.preventDefault(); if (!active || !isCurrent() || !conversation || archived() || !runKnown || sendBusy || sendUnknown || approvalPending || activeRun(currentRun)) return;
@@ -525,212 +483,25 @@
                 finally { if (valid(current)) { sendBusy = false; renderRun(); schedulePoll(); } }
             });
             try {
-                await listConversations();
-                if (!active || !isCurrent() || archived()) return;
-                const agents = await request("/api/agents");
-                // Agent 候选项属于整个项目，选择历史会话只应让该会话的旧响应失效。
-                if (!active || !isCurrent()) return;
+                if (archived()) { await listConversations(); return; }
+                const agents = await request("/api/agents"); if (!valid(stamp)) return;
                 const select = $("projectChatAgent"); select.replaceChildren();
                 for (const agent of agents.filter(item => item.enabled)) { const option = node("option", agent.name); option.value = agent.id; select.append(option); }
-                select.disabled = !select.children.length;
-                $("projectNewConversation").disabled = select.disabled;
-            } catch (error) { if (active && isCurrent()) status(error.message, true); }
+                $("projectNewConversation").disabled = !select.children.length;
+                await listConversations();
+            } catch (error) { if (valid(stamp)) status(error.message, true); }
         }
-        return {mount, dispose() { clearPoll(); active = false; revision++; conversation = null; messages = []; fileReferenceDraft = null; conversations = []; commands.clear(); resolveLocks.clear(); knownRuns.clear(); pendingRuns.clear(); lockedApprovals.clear();
+        return {mount, referenceFile(value) {
+            if (!active || !isCurrent() || !conversation) throw new Error("请先选择或新建项目会话，再引用文件。");
+            if (archived()) throw new Error("已归档项目仅供查看历史，不能引用本地文件。");
+            if (sendBusy || sendUnknown) throw new Error("本轮结果尚未确认，请核对后再编辑引用。");
+            const input = $("projectChatInput"), quote = fileReference(value);
+            input.value = input.value ? `${input.value}\n\n${quote}` : quote; input.focus?.();
+            status("文件路径和版本已加入输入框，尚未发送；文件变化时请刷新预览后重新引用。");
+        }, dispose() { clearPoll(); active = false; revision++; conversation = null; messages = []; commands.clear(); resolveLocks.clear(); knownRuns.clear(); pendingRuns.clear(); lockedApprovals.clear();
             for (const id of ["projectChatMessages", "projectApprovalItems", "projectCommandResults", "projectConversationList"]) $(id)?.replaceChildren();
             if ($("projectChatInput")) $("projectChatInput").value = "";
         }};
     }
-    const chatPath = "/console/v2/chat.html";
-    const projectSources = {
-        server: {label: "服务端电脑", endpoint: "/api/projects", header: "X-CM-Agent-Local-Project"},
-        client: {label: "已配对电脑", endpoint: "/api/client-projects", header: "X-CM-Agent-Client-Project"}
-    };
-
-    function projectSelection(source, id) {
-        return Object.hasOwn(projectSources, source) && typeof id === "string"
-            && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id) ? {source, id} : null;
-    }
-
-    function chatSelection(search) {
-        const params = new URLSearchParams(search);
-        const ordinary = params.get("mode") === "ordinary";
-        return {ordinary, explicit: params.has("projectSource") || params.has("projectId"),
-            project: ordinary ? null : projectSelection(params.get("projectSource"), params.get("projectId"))};
-    }
-
-    function chatUrl(source, id) {
-        return `${chatPath}?${new URLSearchParams({projectSource: source, projectId: id})}`;
-    }
-
-    function createChatPage({api, document, host, user, mode, getSessionEpoch, openProject, handoff}) {
-        const $ = id => document.getElementById(id);
-        const epoch = getSessionEpoch();
-        const controller = new AbortController();
-        const valid = () => !controller.signal.aborted && epoch === getSessionEpoch();
-        const picker = $("directoryChatProject");
-        const archived = $("directoryChatArchived");
-        const more = $("directoryChatMore");
-        const status = $("directoryChatStatus");
-        const feedback = $("directoryChatFeedback");
-        const sourceNames = Object.keys(projectSources);
-        const capabilities = {};
-        const pages = {};
-        const pageSize = 50;
-        const probeErrors = [];
-        const preferenceKey = user?.tenantId && user?.principalId
-            ? `cm-agent:last-project:${JSON.stringify([user.tenantId, user.principalId])}` : "";
-        let catalogRevision = 0;
-        let selected = null;
-        let conversationController = null;
-
-        function readPreference() {
-            try {
-                const value = preferenceKey && JSON.parse(host.localStorage.getItem(preferenceKey));
-                return projectSelection(value?.source, value?.id);
-            } catch { return null; }
-        }
-
-        function remember(choice) {
-            if (!preferenceKey) return;
-            try { host.localStorage.setItem(preferenceKey, JSON.stringify(choice)); }
-            catch { /* 浏览器可能禁用存储，项目直链仍可定位。 */ }
-        }
-
-        // 项目来源决定 API 与请求头。链接和本地偏好只定位资源，详情仍由服务端按当前身份鉴权。
-        function request(source, path, options = {}) {
-            return api.request(path, {...options, signal: controller.signal,
-                headers: {...options.headers, [projectSources[source].header]: "1"}});
-        }
-
-        const enabled = source => capabilities[source]?.enabled === true && capabilities[source]?.conversations === true;
-
-        function renderChoices() {
-            const placeholder = document.createElement("option");
-            placeholder.value = "";
-            placeholder.textContent = "选择目录项目";
-            picker.replaceChildren(placeholder);
-            let count = 0;
-            for (const source of sourceNames.filter(enabled)) {
-                const group = document.createElement("optgroup");
-                group.label = projectSources[source].label;
-                const rows = pages[source]?.items || [];
-                const current = selected?.source === source ? selected.project : null;
-                const options = current && !rows.some(row => row.id === current.id) ? [current, ...rows] : rows;
-                for (const row of options) {
-                    const option = document.createElement("option");
-                    option.value = chatUrl(source, row.id);
-                    option.textContent = row.state === "ARCHIVED" ? `${row.name}（已归档）` : row.name;
-                    group.append(option);
-                }
-                if (options.length) picker.append(group);
-                count += options.length;
-            }
-            picker.value = selected ? chatUrl(selected.source, selected.project.id) : "";
-            picker.disabled = count === 0;
-            more.hidden = !Object.values(pages).some(page => page.next);
-            $("directoryChatEmpty").hidden = Boolean(selected);
-            $("directoryChatEmptyMessage").textContent = count
-                ? "选中项目后可查看会话或选择 Agent 新建会话。"
-                : sourceNames.some(enabled)
-                    ? "当前范围内没有可选项目。可前往本地项目登记目录，或进入普通聊天。"
-                    : "当前环境暂未开放目录项目聊天。可进入普通聊天。";
-        }
-
-        async function loadCatalog(append = false) {
-            const revision = ++catalogRevision;
-            const includeArchived = archived.checked;
-            more.disabled = true;
-            const sources = sourceNames.filter(source => enabled(source) && (!append || pages[source]?.next));
-            const results = await Promise.allSettled(sources.map(async source => {
-                const previous = append ? pages[source] : null;
-                const params = new URLSearchParams({limit: String(pageSize), includeArchived: String(includeArchived)});
-                if (previous?.next) {
-                    params.set("beforeUpdatedAt", previous.next.updatedAt);
-                    params.set("beforeId", previous.next.id);
-                }
-                const rows = await request(source, `${projectSources[source].endpoint}?${params}`);
-                if (!Array.isArray(rows)) throw new Error("项目列表格式无法识别，请刷新后重试。");
-                const last = rows.at(-1);
-                const existing = previous?.items || [];
-                return {items: [...existing, ...rows.filter(row => !existing.some(item => item.id === row.id))],
-                    next: rows.length >= pageSize && last?.updatedAt && last?.id ? last : null};
-            }));
-            if (!valid() || revision !== catalogRevision) return;
-            const errors = [...probeErrors];
-            results.forEach((result, index) => {
-                const source = sources[index];
-                if (result.status === "fulfilled") pages[source] = result.value;
-                else {
-                    if (!append) delete pages[source];
-                    errors.push(`${projectSources[source].label}项目读取失败。${result.reason.message}`);
-                }
-            });
-            status.textContent = errors.join(" ");
-            more.disabled = false;
-            renderChoices();
-        }
-
-        async function mount() {
-            picker.addEventListener("change", () => {
-                if (picker.value) openProject(picker.value);
-            });
-            archived.addEventListener("change", () => loadCatalog());
-            more.addEventListener("click", () => loadCatalog(true));
-            const probes = await Promise.allSettled(sourceNames.map(source =>
-                request(source, `${projectSources[source].endpoint}/capabilities`)));
-            if (!valid()) return;
-            probes.forEach((result, index) => {
-                const source = sourceNames[index];
-                if (result.status === "fulfilled") capabilities[source] = result.value;
-                else probeErrors.push(`${projectSources[source].label}项目能力读取失败。${result.reason.message}`);
-            });
-            archived.disabled = !sourceNames.some(enabled);
-            const choice = mode.explicit ? mode.project : readPreference();
-            if (choice && enabled(choice.source)) {
-                const {source, id} = choice;
-                try {
-                    const project = await request(source, `${projectSources[source].endpoint}/${encodeURIComponent(id)}`);
-                    if (!valid()) return;
-                    if (project?.id?.toLowerCase() !== id.toLowerCase()) throw new Error("详情与所选项目不一致，请重新选择。");
-                    selected = {source, project};
-                    remember(choice);
-                    archived.checked = project.state === "ARCHIVED";
-                    $("directoryChatCurrent").textContent = project.name;
-                    $("directoryChatSource").textContent = `${projectSources[source].label}${archived.checked ? " · 已归档" : ""}`;
-                    $("directoryChatContext").hidden = false;
-                    const flags = capabilities[source];
-                    if (source === "server") {
-                        conversationController = create({document, host, isCurrent: valid,
-                            request: (path, options) => request(source, path, options),
-                            fileReferenceDraft: handoff?.projectId === id ? handoff.reference : null});
-                        $("directoryServerChat").hidden = false;
-                        await Promise.all([loadCatalog(), conversationController.mount(project, flags)]);
-                    } else {
-                        conversationController = host.CmAgentClientProjects.createClientProjectPage({
-                            api, document, host, getSessionEpoch});
-                        $("directoryClientChat").hidden = false;
-                        await Promise.all([loadCatalog(), conversationController.mountChat(project, flags)]);
-                    }
-                    return;
-                } catch (error) {
-                    if (!valid()) return;
-                    feedback.textContent = `无法打开项目。${error.message}`;
-                }
-            } else if (mode.explicit) {
-                feedback.textContent = choice ? "此项目来源的聊天暂不可用，请选择其他项目。" : "项目链接不完整，请从列表重新选择。";
-            }
-            $("directoryChatEmpty").hidden = false;
-            await loadCatalog();
-        }
-
-        return {mount, dispose() {
-            controller.abort();
-            conversationController?.dispose();
-            handoff = null;
-        }};
-    }
-
-    return {operationReference, matchesPreview, completePreview, fileReference, renderExactPreview, create,
-        chatSelection, chatUrl, createChatPage};
+    return {operationReference, matchesPreview, completePreview, fileReference, renderExactPreview, create};
 });

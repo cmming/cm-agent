@@ -173,21 +173,25 @@ test("v2入口均预载项目脚本样式且不将文件夹选择伪装为上传
     const base = path.join(__dirname, "../../main/resources/META-INF/resources/console/v2");
     for (const name of fs.readdirSync(base).filter(name => name.endsWith(".html"))) {
         const html = fs.readFileSync(path.join(base, name), "utf8");
-        assert.match(html, /local-projects\.js\?v=1\.3\.0/);
-        assert.match(html, /project-development\.js\?v=1\.2\.0/);
-        assert.match(html, /local-projects\.css\?v=1\.8\.0/);
+        if (name === "local-client.html") {
+            assert.doesNotMatch(html, /local-projects\.js\?v=1\.2\.0/);
+            assert.doesNotMatch(html, /project-development\.js\?v=1\.1\.4/);
+        } else {
+            assert.match(html, /local-projects\.js\?v=1\.2\.0/);
+            assert.match(html, name === "projects.html"
+                ? /project-development\.js\?v=1\.1\.5/
+                : /project-development\.js\?v=1\.1\.4/);
+        }
+    assert.match(html, /local-projects\.css\?v=1\.7\.0/);
         if (name !== "login.html") assert.match(html, /href="\/console\/v2\/projects\.html"/);
     }
     const html = fs.readFileSync(path.join(base, "projects.html"), "utf8");
     assert.doesNotMatch(html, /webkitdirectory|type="file"/);
     assert.match(html, /运行 CM Agent Server 的电脑/);
-    assert.match(html, /id="projectOpenChat"/);
-    assert.doesNotMatch(html, /id="projectChatForm"|id="clientProjectChatForm"/);
-    const chat = fs.readFileSync(path.join(base, "chat.html"), "utf8");
-    assert.match(chat, /id="projectToolCatalogHelp"/);
+    assert.match(html, /id="projectToolCatalogHelp"/);
     for (const tool of ["project_list_files", "project_read_file", "project_search_files", "project_propose_changes",
         "project_apply_changes", "project_propose_undo", "project_list_toolchains", "project_propose_command",
-        "project_run_command", "project_command_status", "project_cancel_command"]) assert.match(chat, new RegExp(tool));
+        "project_run_command", "project_command_status", "project_cancel_command"]) assert.match(html, new RegExp(tool));
 });
 
 async function archiveFlow(failure = "") {
@@ -328,11 +332,10 @@ test("固定工具目录登记受控失败可重试，网络未知保持锁定�
     assert.equal(unknownCalls, 1);
     unknown.page.dispose();
 });
-test("项目页跳转聊天只交接当前项目的文件版本元数据，不自动发送", async () => {
-    const document = dom(), browser = host(), calls = [], references = [];
-    browser.CmAgentProjectDevelopment = require("../../main/resources/META-INF/resources/console/v2/assets/project-development.js");
-    const page = projects.createProjectPage({document, host: browser, getSessionEpoch: () => 1,
-        openFileReference: async (...args) => references.push(args), api: {request: async url => {
+test("会话与文件切换保持项目，引用成功切回输入且不自动发送", async () => {
+    const document = dom(), browser = host(), calls = [];
+    browser.CmAgentProjectDevelopment = {create() { return {async mount() {}, dispose() {}, referenceFile(value) { document.getElementById("projectChatInput").value = JSON.stringify(value); }}; }};
+    const page = projects.createProjectPage({document, host: browser, getSessionEpoch: () => 1, api: {request: async url => {
         calls.push(url);
         if (url.endsWith("capabilities")) return {enabled: true, conversations: true};
         if (url.includes("?limit=30")) return [{id: "project", name: "测试", state: "ACTIVE", version: 1}];
@@ -342,11 +345,13 @@ test("项目页跳转聊天只交接当前项目的文件版本元数据，不�
         throw new Error(url);
     }}});
     await page.mount(); await document.getElementById("localProjectList").children[0].click();
-    assert.equal(document.getElementById("projectOpenChat").href, "/console/v2/chat.html?projectSource=server&projectId=project");
+    assert.equal(document.getElementById("projectWorkingGrid").dataset.activePane, "chat");
+    await document.getElementById("projectPaneFiles").click();
+    assert.equal(document.getElementById("projectWorkingGrid").dataset.activePane, "files");
     await document.getElementById("projectFileList").children[0].click(); const count = calls.length;
     await document.getElementById("projectReferenceFile").click();
-    assert.deepEqual(references, [["project", {path: "readme.txt", sha256: "a".repeat(64), offset: 0, nextOffset: 12}]]);
-    assert.equal(calls.length, count);
+    assert.equal(document.getElementById("projectWorkingGrid").dataset.activePane, "chat");
+    assert.doesNotMatch(document.getElementById("projectChatInput").value, /PRIVATE_BODY/); assert.equal(calls.length, count);
     page.dispose();
 });
 
@@ -415,5 +420,5 @@ test("搜索显示受限与覆盖预算提示，旧项目迟到结果丢弃，�
     assert.equal(query.get("content"), "true"); assert.equal(query.has("cursor"), false);
     assert.equal(document.getElementById("projectSearchResults").children[1].textContent, "<script>仅字面片段</script>");
     await document.getElementById("projectSearchResults").children[0].click();
-    assert.match(calls.at(-1), /\/b\/text\?/); assert.equal(document.getElementById("projectReferenceFile").disabled, true); page.dispose();
+    assert.match(calls.at(-1), /\/b\/text\?/); assert.equal(document.getElementById("projectReferenceFile").disabled, false); page.dispose();
 });

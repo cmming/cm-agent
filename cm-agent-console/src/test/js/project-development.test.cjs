@@ -31,14 +31,14 @@ function dom() {
     return {getElementById(id) { if (!nodes.has(id)) nodes.set(id, new Element("div")); return nodes.get(id); }, createElement: tag => new Element(tag)};
 }
 function all(element) { return [element, ...element.children.flatMap(all)]; }
-async function setup({preview = {view: reference, changes: [{kind: "REPLACE", path: "README.md", before: "OLD_PRIVATE", after: "<script>NEW_PRIVATE</script>"}]}, previewRead = null, decisionFailure = false, command = false, recover = false, operationState = "SUCCEEDED", resolveFailure = false, archived = false, activeStatus = null, authorizationMode = "ASK_ON_RISK", scheduler = globalThis, cancelFailure = false, runRead = null, runLookupFailure = false, pendingApproval = true, newConversation = false, fileReferenceDraft = null, selectImmediately = true} = {}) {
+async function setup({preview = {view: reference, changes: [{kind: "REPLACE", path: "README.md", before: "OLD_PRIVATE", after: "<script>NEW_PRIVATE</script>"}]}, previewRead = null, decisionFailure = false, command = false, recover = false, operationState = "SUCCEEDED", resolveFailure = false, archived = false, activeStatus = null, authorizationMode = "ASK_ON_RISK", scheduler = globalThis, cancelFailure = false, runRead = null, runLookupFailure = false, pendingApproval = true, newConversation = false} = {}) {
     const document = dom(), calls = [], conversation = {id: "conversation", agentId: "agent", title: "开发会话"};
     const labels = {"": "高风险前确认", ASK_ON_RISK: "高风险前确认", ASK_ON_EFFECT: "副作用前确认", FULL_ACCESS: "自动执行已授权操作"};
     Object.defineProperty(document.getElementById("projectAuthorizationMode"), "selectedOptions", {get() { return [{textContent: labels[this.value]}]; }});
     const approval = {approvalId: "approval", runId: "run", version: 2, status: "PENDING", canDecide: true,
         items: [{itemId: "item", toolName: command ? "project_run_command" : "project_apply_changes", inputSummary: summary}]};
     let live = true, runStatus = activeStatus;
-    const page = development.create({document, host: scheduler, fileReferenceDraft, isCurrent: () => live, request: async (url, options) => {
+    const page = development.create({document, host: scheduler, isCurrent: () => live, request: async (url, options) => {
         calls.push([url, options]);
         if (url.endsWith("/conversations/conversation/active-run")) { if (runLookupFailure) throw new Error("活动状态查询失败"); return runStatus ? {id: "active-run", status: runStatus} : null; }
         if (url.endsWith("/runs/active-run/authorization-mode")) return {mode: authorizationMode};
@@ -62,31 +62,10 @@ async function setup({preview = {view: reference, changes: [{kind: "REPLACE", pa
         throw new Error(url);
     }});
     await page.mount({id: "project", state: archived ? "ARCHIVED" : "ACTIVE"}, {conversations: true, changes: true, commands: true});
-    if (selectImmediately) await document.getElementById("projectConversationList").children[0].click();
+    await document.getElementById("projectConversationList").children[0].click();
     const parts = () => all(document.getElementById("projectApprovalItems"));
     return {document, calls, page, parts, setApproval(value) { Object.assign(approval, value); }, setRunStatus(value) { runStatus = value; }, stop() { live = false; page.dispose(); }};
 }
-
-test("快速打开历史会话后仍加载当前项目的 Agent 选项", async () => {
-    const document = dom();
-    let finishAgents, beginAgents;
-    const agentsRequested = new Promise(resolve => { beginAgents = resolve; });
-    const page = development.create({document, isCurrent: () => true, request: async url => {
-        if (url === "/api/agents") return new Promise(resolve => { finishAgents = resolve; beginAgents(); });
-        if (url.includes("/conversations?")) return [{id: "history", agentId: "agent", title: "已有会话"}];
-        if (url.endsWith("/active-run")) return null;
-        return {items: []};
-    }});
-    const pending = page.mount({id: "project", state: "ACTIVE"}, {conversations: true});
-    await agentsRequested;
-    assert.equal(document.getElementById("projectNewConversation").disabled, true);
-    await document.getElementById("projectConversationList").children[0].click();
-    finishAgents([{id: "agent", name: "项目 Agent", enabled: true}]);
-    await pending;
-    assert.equal(document.getElementById("projectChatAgent").children[0].value, "agent");
-    assert.equal(document.getElementById("projectNewConversation").disabled, false);
-    page.dispose();
-});
 
 test("相同审批多次轮询后原预览按钮仍可读取且已核对选择保持有效", async () => {
     const clock = timers(), flow = await setup({activeStatus: "WAITING_APPROVAL", scheduler: clock});
@@ -188,18 +167,16 @@ test("刷新会话从服务端消息和审批历史恢复命令入口，只查�
     flow.stop();
 });
 test("文件引用只追加相对路径和版本，不含正文，不发送也不自动建会话", async () => {
-    const flow = await setup({selectImmediately: false,
-        fileReferenceDraft: {path: "src/Main.java", sha256: "c".repeat(64), offset: 0, nextOffset: 4096, content: "PRIVATE_FILE_BODY"}});
-    const input = flow.document.getElementById("projectChatInput");
-    assert.doesNotMatch(input.value || "", /expectedSha256/);
-    await flow.document.getElementById("projectConversationList").children[0].click();
-    assert.match(input.value, /expectedSha256/);
+    const flow = await setup(), input = flow.document.getElementById("projectChatInput"); input.value = "请检查这个文件";
+    const count = flow.calls.length;
+    flow.page.referenceFile({path: "src/Main.java", sha256: "c".repeat(64), offset: 0, nextOffset: 4096, content: "PRIVATE_FILE_BODY"});
+    assert.match(input.value, /请检查这个文件/); assert.match(input.value, /expectedSha256/);
     assert.match(input.value, /src\/Main.java/); assert.match(input.value, /4096/); assert.doesNotMatch(input.value, /PRIVATE_FILE_BODY/);
-    assert.equal(flow.calls.some(([, options]) => options?.method === "POST"), false);
+    assert.equal(flow.calls.length, count);
     for (const path of ["../secret", "C:/private", "/private", "src/../private", "src\\private", "src\nprivate"]) {
         assert.throws(() => development.fileReference({path, sha256: "c".repeat(64), offset: 0, nextOffset: 1}));
     }
-    flow.stop(); assert.equal(input.value, "");
+    flow.stop(); assert.throws(() => flow.page.referenceFile({}), /先选择或新建/);
 });
 test("UNKNOWN默认不确认，明确人工核对后只终结最新版本原意图，成功仅GET核对", async () => {
     const flow = await setup({recover: true, operationState: "UNKNOWN"});
@@ -232,11 +209,9 @@ test("人工收口网络未知不自动重复，刷新权威状态后重新人�
 
 
 test("归档会话读取消息审批历史和操作元数据，禁用开发与副作用入口", async () => {
-    const flow = await setup({archived: true, recover: true, operationState: "UNKNOWN",
-        fileReferenceDraft: {path: "README.md", sha256: "a".repeat(64), offset: 0, nextOffset: 1}});
+    const flow = await setup({archived: true, recover: true, operationState: "UNKNOWN"});
     assert.equal(flow.document.getElementById("projectChatForm").hidden, true);
     assert.equal(flow.document.getElementById("projectChatInput").disabled, true);
-    assert.equal(flow.document.getElementById("projectChatInput").value, "");
     assert.equal(flow.document.getElementById("projectNewConversation").hidden, true);
     assert.equal(flow.calls.some(([url]) => url === "/api/agents" || url.endsWith("/approvals")), false);
     assert.ok(flow.calls.some(([url]) => url.includes("/messages?")));
@@ -250,6 +225,7 @@ test("归档会话读取消息审批历史和操作元数据，禁用开发与�
     flow.document.getElementById("projectChatInput").value = "不应发送";
     await flow.document.getElementById("projectNewConversation").click();
     await flow.document.getElementById("projectChatForm").events.submit({preventDefault() {}});
+    assert.throws(() => flow.page.referenceFile({}), /归档项目/);
     assert.equal(flow.calls.length, count);
     assert.equal(flow.calls.some(([, options]) => options?.method === "POST"), false); flow.stop();
 });

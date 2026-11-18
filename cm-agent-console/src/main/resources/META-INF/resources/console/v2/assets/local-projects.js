@@ -78,14 +78,20 @@
         };
     }
 
-    function createProjectPage({api, document, host = globalThis, getSessionEpoch, openFileReference}) {
+    function createProjectPage({api, document, host = globalThis, getSessionEpoch}) {
         const $ = id => document.getElementById(id);
         let active = true, epoch = getSessionEpoch(), capability = null, selected = null, items = [], path = "", cursor = "";
         let listRevision = 0, detailRevision = 0, treeRevision = 0, textRevision = 0, searchRevision = 0, pollTimer = null, polls = 0;
-        let preview = null, installing = false, installUnknown = false;
+        let preview = null, development = null, installing = false, installUnknown = false;
         const archiveLocks = new Set();
         const controllers = new Set();
         const valid = () => active && epoch === getSessionEpoch();
+        function switchPane(pane) {
+            const grid = $("projectWorkingGrid"); if (!grid) return;
+            grid.dataset.activePane = pane;
+            $("projectPaneChat")?.setAttribute("aria-pressed", String(pane === "chat"));
+            $("projectPaneFiles")?.setAttribute("aria-pressed", String(pane === "files"));
+        }
         const text = (tag, content, className) => {
             const node = document.createElement(tag); node.textContent = content || "";
             if (className) node.className = className;
@@ -171,6 +177,7 @@
         }
         async function select(id, restoreFocus = false) {
             if (!valid()) return;
+            development?.dispose(); development = null;
             const stamp = ++detailRevision; treeRevision += 1; searchRevision += 1; clearPreview();
             $("projectSearchResults")?.replaceChildren();
             if ($("projectSearchQuery")) $("projectSearchQuery").value = "";
@@ -191,12 +198,8 @@
                 $("projectTreeMore").hidden = true;
                 $("projectTreePath").textContent = archived ? "已归档项目" : "项目根目录";
                 status("projectTreeStatus", archived ? "归档后仅查看会话、审批历史和操作记录，不再读取本地文件。" : ""); $("projectDetailEmpty").hidden = true; $("projectDetailRegion").hidden = false;
-                const chat = $("projectOpenChat");
-                chat.hidden = !capability?.conversations;
-                if (!chat.hidden) {
-                    chat.href = host.CmAgentProjectDevelopment.chatUrl("server", project.id);
-                    chat.textContent = archived ? "查看会话历史" : "进入项目聊天";
-                }
+                if ($("projectPaneChat")) $("projectPaneChat").disabled = !capability?.conversations;
+                switchPane(capability?.conversations ? "chat" : "files");
                 archiveLocks.delete(project.id);
                 if ($("projectArchiveBtn")) $("projectArchiveBtn").hidden = project.state !== "ACTIVE";
                 if ($("projectArchiveBtn")) $("projectArchiveBtn").disabled = false;
@@ -204,6 +207,10 @@
                 $("projectMetadata").textContent = `版本 ${project.version} · ${project.state === "ARCHIVED" ? "已归档" : "本地项目"}`;
                 $("projectRenameBtn").disabled = project.state !== "ACTIVE";
                 renderList(restoreFocus ? project.id : "");
+                if (host.CmAgentProjectDevelopment && capability?.conversations) {
+                    development = host.CmAgentProjectDevelopment.create({request, document, host, isCurrent: () => valid() && stamp === detailRevision});
+                    await development.mount(project, capability);
+                }
                 if (valid() && stamp === detailRevision && !archived) await loadTree("");
             } catch (error) {
                 if (valid() && stamp === detailRevision) $("projectDetailEmpty").textContent = error.message;
@@ -232,7 +239,7 @@
                 await request(`/api/projects/${encodeURIComponent(id)}/archive`, {method: "POST", body: JSON.stringify({expectedVersion: version})});
                 if (!valid()) return;
                 if (stamp === detailRevision && selected?.id === id) {
-                    detailRevision++; treeRevision++; clearPreview(); selection.dispose();
+                    detailRevision++; treeRevision++; development?.dispose(); development = null; clearPreview(); selection.dispose();
                     selected = null; $("projectFileList").replaceChildren(); $("projectDetailRegion").hidden = true;
                     $("projectDetailEmpty").hidden = false; $("projectDetailEmpty").textContent = "项目已归档，本地目录与历史保留。勾选“包含已归档”可查看历史。";
                     $("projectAddPanel").hidden = true; renderSelection(selection.value()); $("projectListHeading")?.focus();
@@ -286,7 +293,7 @@
                 if (!valid() || stamp !== textRevision || selected?.id !== projectId) return;
                 if (offset > 0 && previous?.sha256 !== chunk.sha256) throw new Error("文件已变化，请重新打开文件，从头读取。");
                 preview = chunk; $("projectPreviewContent").textContent = chunk.content || "";
-                if ($("projectReferenceFile")) $("projectReferenceFile").disabled = !capability?.conversations;
+                if ($("projectReferenceFile")) $("projectReferenceFile").disabled = false;
                 $("projectTextNext").hidden = !chunk.hasMore;
                 status("projectPreviewStatus", `${chunk.redacted ? "内容已脱敏 · " : ""}当前片段 ${chunk.offset}–${chunk.nextOffset} / ${chunk.totalBytes} 字节`);
             } catch (error) { if (valid() && stamp === textRevision) status("projectPreviewStatus", error.message, "error"); }
@@ -326,23 +333,18 @@
             } catch (error) { if (valid()) status("projectSelectionStatus", error.message + " 请核对列表中的项目。", "error"); }
         }
         async function mount() {
+            $("projectPaneChat")?.addEventListener("click", () => { if(valid() && capability?.conversations) switchPane("chat"); });
+            $("projectPaneFiles")?.addEventListener("click", () => { if(valid()) switchPane("files"); });
             $("projectArchiveBtn")?.addEventListener("click", archive);
             $("projectSearchForm")?.addEventListener("submit", search);
-            $("projectReferenceFile")?.addEventListener("click", async () => {
-                if (!valid() || !preview || selected?.state !== "ACTIVE" || !capability?.conversations) return;
-                const stamp = detailRevision;
-                const button = $("projectReferenceFile");
-                button.disabled = true;
+            $("projectReferenceFile")?.addEventListener("click", () => {
+                if (!valid() || !preview || selected?.state !== "ACTIVE") return;
                 try {
-                    const {path, sha256, offset, nextOffset} = preview;
-                    const reference = {path, sha256, offset, nextOffset};
-                    host.CmAgentProjectDevelopment.fileReference(reference);
-                    await openFileReference(selected.id, reference);
-                } catch (error) {
-                    if (valid() && stamp === detailRevision) status("projectPreviewStatus", error.message, "error");
-                } finally {
-                    if (valid() && stamp === detailRevision) button.disabled = !preview;
-                }
+                    if (!development) throw new Error("请先选择或新建项目会话，再引用文件。");
+                    development.referenceFile({path: preview.path, sha256: preview.sha256, offset: preview.offset, nextOffset: preview.nextOffset});
+                    switchPane("chat"); $("projectChatInput")?.focus();
+                    status("projectPreviewStatus", "文件版本引用已加入项目会话输入框，尚未发送。");
+                } catch(error) { status("projectPreviewStatus", error.message, "error"); }
             });
             $("projectInstallTools")?.addEventListener("click", async () => {
                 if (!valid() || !capability?.conversations || installing || installUnknown) return;
@@ -391,7 +393,7 @@
                 $("projectRefresh").disabled = result.enabled !== true;
                 if ($("projectIncludeArchived")) $("projectIncludeArchived").disabled = result.enabled !== true;
                 $("projectCapabilityNote").textContent = result.enabled === true
-                    ? result.conversations ? "选择项目浏览目录、搜索和预览文件，也可进入项目聊天。" : "当前可添加项目、浏览目录和预览文本。开发会话由服务端能力另行开放。"
+                    ? result.conversations ? "开发会话使用当前本地项目。新建会话会自动准备固定 project_* 工具；每轮可选择请求批准、帮我自动批准或完全访问。" : "当前可添加项目、浏览目录和预览文本。开发会话由服务端能力另行开放。"
                     : "当前服务未开放本地项目。请在运行 CM Agent Server 的电脑上配置并启用后重试。";
                 renderSelection(selection.value());
                 if (result.enabled === true) await reload();
@@ -400,6 +402,7 @@
         }
         return {mount, dispose() {
             active = false; listRevision++; detailRevision++; treeRevision++; textRevision++; searchRevision++; stopPoll(); selection.dispose();
+            development?.dispose(); development = null;
             archiveLocks.clear();
             controllers.forEach(controller => controller.abort()); controllers.clear();
             // 项目文本不可进入缓存/持久化；离页立即清空本实例持有的正文和已选票据。
