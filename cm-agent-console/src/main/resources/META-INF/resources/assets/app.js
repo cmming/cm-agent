@@ -217,20 +217,28 @@
 
     async function redirectAfterLogin() {
         const returnTo = new URLSearchParams(window.location.search).get("returnTo");
-        const allowedPath = Object.values(multiPagePaths).includes(returnTo) ? returnTo : multiPagePaths.overviewPage;
-        await loadMultiPage(allowedPath, {replaceHistory: true});
+        const route = consoleRoute(returnTo);
+        await loadMultiPage(route?.url || multiPagePaths.overviewPage, {replaceHistory: true});
     }
 
     function pageIdForPath(path) {
         return Object.keys(multiPagePaths).find((pageId) => multiPagePaths[pageId] === path) || "";
     }
 
-    async function loadMultiPage(targetPath, options = {}) {
-        const pageId = pageIdForPath(targetPath);
-        if (!pageId) throw new Error("目标控制台页面不受支持。");
+    function consoleRoute(url) {
+        const path = (url || "").split("?", 1)[0];
+        const pageId = pageIdForPath(path);
+        if (!pageId) return null;
+        return {pageId, path, url: pageId === "chatPage" ? url : path};
+    }
+
+    async function loadMultiPage(targetUrl, options = {}) {
+        const route = consoleRoute(targetUrl);
+        if (!route) throw new Error("目标控制台页面不受支持。");
+        const {pageId, path} = route;
 
         const revision = ++pageNavigationRevision;
-        const response = await window.fetch(targetPath, {
+        const response = await window.fetch(path, {
             headers: {Accept: "text/html"},
             credentials: "same-origin"
         });
@@ -268,10 +276,11 @@
         document.body.dataset.page = pageId;
         document.title = nextDocument.title;
         currentPage = pageId;
+        state.projectFileReference = options.projectFileReference || null;
 
         if (options.updateHistory !== false) {
             const method = options.replaceHistory ? "replaceState" : "pushState";
-            window.history[method]({consolePage: pageId}, "", targetPath);
+            window.history[method]({consolePage: pageId}, "", route.url);
         }
         window.scrollTo({top: 0, left: 0});
         bindPageControls();
@@ -287,10 +296,13 @@
         state.sandboxPage?.dispose();
         state.projectsPage?.dispose();
         state.clientProjectsPage?.dispose();
+        state.projectChatPage?.dispose();
         state.skillsPage = null;
         state.sandboxPage = null;
         state.projectsPage = null;
         state.clientProjectsPage = null;
+        state.projectChatPage = null;
+        state.projectFileReference = null;
     }
 
     function reportPageNavigationError(error) {
@@ -299,7 +311,8 @@
     }
 
     function loginPath() {
-        const currentPath = multiPagePaths[currentPage];
+        const currentPath = multiPagePaths[currentPage]
+            && (currentPage === "chatPage" ? multiPagePaths.chatPage + (window.location.search || "") : multiPagePaths[currentPage]);
         return currentPath
             ? `/console/v2/login.html?returnTo=${encodeURIComponent(currentPath)}`
             : "/console/v2/login.html";
@@ -520,10 +533,15 @@
             case "projectsPage":
                 if (window.CmAgentLocalProjects && !state.projectsPage) {
                     state.projectsPage = window.CmAgentLocalProjects.createProjectPage({
-                        api, document, host: window, getSessionEpoch: () => sessionEpoch.capture()
+                        api, document, host: window, getSessionEpoch: () => sessionEpoch.capture(),
+                        openFileReference: (projectId, reference) => loadMultiPage(
+                            window.CmAgentProjectDevelopment.chatUrl("server", projectId),
+                            {projectFileReference: {projectId, reference, user: state.currentUser}}
+                        )
                     });
                     await state.projectsPage.mount();
                 }
+                if (!sessionEpoch.isCurrent(session)) break;
                 if (window.CmAgentClientProjects && !state.clientProjectsPage) {
                     state.clientProjectsPage = window.CmAgentClientProjects.createClientProjectPage({
                         api, document, host: window, getSessionEpoch: () => sessionEpoch.capture()
@@ -535,6 +553,24 @@
                 await loadLocalClientDevices(session);
                 break;
             case "chatPage":
+                if ($("directoryChatPage")) {
+                    const mode = window.CmAgentProjectDevelopment.chatSelection(window.location.search);
+                    $("directoryChatPage").hidden = mode.ordinary;
+                    $("chatPage").hidden = !mode.ordinary;
+                    $(mode.ordinary ? "ordinaryChatLink" : "directoryChatLink").setAttribute("aria-current", "page");
+                    if (!mode.ordinary) {
+                        const handoff = state.projectFileReference;
+                        state.projectFileReference = null;
+                        state.projectChatPage = window.CmAgentProjectDevelopment.createChatPage({
+                            api, document, host: window, user: state.currentUser, mode,
+                            getSessionEpoch: () => sessionEpoch.capture(),
+                            openProject: url => loadMultiPage(url).catch(reportPageNavigationError),
+                            handoff: handoff?.user === state.currentUser ? handoff : null
+                        });
+                        await state.projectChatPage.mount();
+                        break;
+                    }
+                }
                 await loadAgents(session);
                 if (sessionEpoch.isCurrent(session)) await initializeChatPage();
                 break;
@@ -4917,7 +4953,7 @@
         }
         if (!pageIdForPath(target.pathname)) return;
         event.preventDefault();
-        loadMultiPage(target.pathname).catch(reportPageNavigationError);
+        loadMultiPage(target.pathname + target.search).catch(reportPageNavigationError);
     }
 
     function handleMultiPageHistory() {
@@ -4927,7 +4963,7 @@
             window.location.reload();
             return;
         }
-        loadMultiPage(targetPath, {updateHistory: false})
+        loadMultiPage(targetPath + window.location.search, {updateHistory: false})
             .catch(() => window.location.reload());
     }
 

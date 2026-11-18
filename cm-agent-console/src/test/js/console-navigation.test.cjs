@@ -9,10 +9,10 @@ const source = fs.readFileSync(path.join(__dirname, "../../main/resources/META-I
 test("每个 v2 入口都预载跨页导航所需样式和项目脚本", () => {
     const directory = path.join(__dirname, "../../main/resources/META-INF/resources/console/v2");
     const pages = ["login", "overview", "agents", "model-configs", "tools", "skills", "projects", "local-client", "chat", "runs", "audit"];
-    const dependencies = ["project-development.js?v=1.1.5", "local-projects.js?v=1.2.0", "client-projects.js?v=1.2.3", "/assets/app.js?v=2.0.45"];
+    const dependencies = ["project-development.js?v=1.2.0", "local-projects.js?v=1.3.0", "client-projects.js?v=1.3.0", "/assets/app.js?v=2.0.46"];
     for (const page of pages) {
         const html = fs.readFileSync(path.join(directory, `${page}.html`), "utf8");
-        for (const stylesheet of ["local-projects.css?v=1.7.0", "local-client.css?v=1.0.4"]) {
+        for (const stylesheet of ["local-projects.css?v=1.8.0", "local-client.css?v=1.0.4"]) {
             assert.equal(html.split(stylesheet).length - 1, 1, `${page} 缺少样式或重复引用：${stylesheet}`);
             assert.ok(html.indexOf(stylesheet) < html.indexOf("</head>"), `${page} 的样式必须位于 head`);
         }
@@ -41,9 +41,11 @@ function navigationHarness() {
         artifactManager: {dispose() { events.push("dispose-artifacts"); }},
         chatUx: {reset() { events.push("reset-chat"); }},
         state, pageNavigationRevision: 0, currentPage: "overviewPage", sessionEpoch: invalidate,
-        window: {fetch: async (url) => ({ok: true, text: async () => url}), scrollTo() {}, history: {pushState() {}, replaceState() {}}},
+        window: {fetch: async (url) => ({ok: true, text: async () => url}), scrollTo() {},
+            history: {pushState: (_state, _title, url) => events.push(`url:${url}`), replaceState() {}}},
         document: {body: {dataset: {}, replaceChildren() { events.push("replace-body"); }}, importNode: (node) => node},
-        pageIdForPath: (url) => url.includes("skills") ? "skillsPage" : "toolsPage",
+        pageIdForPath: (url) => ({"/console/v2/skills.html": "skillsPage", "/console/v2/tools.html": "toolsPage",
+            "/console/v2/chat.html": "chatPage"})[url],
         DOMParser: class { parseFromString(url) { return {body: {dataset: {consoleVersion: "v2", page: context.pageIdForPath(url)}, children: [{tagName: "MAIN"}]}, title: url}; } },
         bindPageControls() {}, toggleHttpConfigFields() {},
         initializeMultiPage: async () => {
@@ -60,9 +62,18 @@ function navigationHarness() {
         "modelConfigDetailRevision", "modelCatalogDiscoveryRevision", "localClientLoadRevision",
         "localExampleLoadRevision", "localExampleInstallRevision"]) context[key] = invalidate;
     vm.createContext(context);
-    vm.runInContext(functionSource("disposeSkillPages") + "\n" + functionSource("loadMultiPage"), context);
+    vm.runInContext(["disposeSkillPages", "consoleRoute", "loadMultiPage"].map(functionSource).join("\n"), context);
     return {context, state, views, events, navigate: (url) => context.loadMultiPage(url)};
 }
+
+test("聊天直链把项目参数交给历史记录，静态页面加载使用原路径", async () => {
+    const flow = navigationHarness();
+    const url = "/console/v2/chat.html?projectSource=server&projectId=1234";
+    await flow.navigate(url);
+    assert.equal(flow.context.document.title, "/console/v2/chat.html");
+    assert.ok(flow.events.includes(`url:${url}`));
+    await assert.rejects(flow.navigate("https://example.invalid/console/v2/chat.html"), /不受支持/);
+});
 
 test("技能页离开后释放双组件，重复进入为新 DOM 创建新实例", async () => {
     const flow = navigationHarness();
@@ -73,7 +84,7 @@ test("技能页离开后释放双组件，重复进入为新 DOM 创建新实例
     await flow.navigate("/console/v2/tools.html");
     assert.equal(firstSkill.disposed, true);
     assert.equal(firstSandbox.disposed, true);
-    assert.deepEqual(flow.events, ["reset-workspace", "reset-local-files", "dispose-artifacts", "dispose-skillsPage", "dispose-sandboxPage", "reset-chat", "replace-body"]);
+    assert.deepEqual(flow.events, ["reset-workspace", "reset-local-files", "dispose-artifacts", "dispose-skillsPage", "dispose-sandboxPage", "reset-chat", "replace-body", "url:/console/v2/tools.html"]);
     assert.equal(flow.state.chatBusy, false);
     assert.equal(flow.state.skillsPage, null);
     await flow.navigate("/console/v2/skills.html");

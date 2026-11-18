@@ -684,7 +684,9 @@ V26 新增 `local_project_roots`、`local_projects`、`local_project_conversatio
 
 当前本机登录使用既有 bootstrap 管理员。若需完整开发能力，部署者须在 `bootstrap-permissions` 中显式列出上述四项项目权限，并重新登录取得新会话；留空或关闭功能时，原登录权限集合不增加项目权限。不能通过客户端修改 JWT、手工构造身份或使用通配权限绕过这一配置。
 
-控制台入口为 `/console/v2/projects.html`。新建项目会话要求主体具有 `project:manage`、`tool:grant` 与 `agent:run`；服务端会登记固定项目工具目录，只为所选 Agent 补齐缺失 grant，已有合法授权不重复覆盖。登记和 grant 仍不等于 HIGH 批准。项目会话仅加载本轮冻结的专用项目工具，不加载普通业务工具或 Skill；后加 grant 不会扩大已经启动的 Run，恢复不能更换工具集合。项目 Run 的系统提示会明确列出可用 `project_*` 工具，并要求通过项目相对路径读取，不得把 Harness 原生文件系统禁用解释为没有项目授权。文件正文可发送给选定模型，预览和引用前应核对项目资料范围。
+目录登记、搜索和文件预览入口为 `/console/v2/projects.html`，项目会话入口为 `/console/v2/chat.html`。可从项目详情进入当前项目聊天，或从服务端电脑项目的预览发起文件版本引用。聊天页按当前账号恢复可访问的上次项目，项目链接中的来源和 ID 优先。勾选「包含已归档」后可打开只读会话历史。普通聊天可通过 `/console/v2/chat.html?mode=ordinary` 直接访问。
+
+新建项目会话要求主体具有 `project:manage`、`tool:grant` 与 `agent:run`；服务端会登记固定项目工具目录，只为所选 Agent 补齐缺失 grant，已有合法授权不重复覆盖。登记和 grant 仍不等于 HIGH 批准。项目会话仅加载本轮冻结的专用项目工具，不加载普通业务工具或 Skill；后加 grant 不会扩大已经启动的 Run，恢复不能更换工具集合。项目 Run 的系统提示会明确列出可用 `project_*` 工具，并要求通过项目相对路径读取，不得把 Harness 原生文件系统禁用解释为没有项目授权。文件正文可发送给选定模型，预览和引用前应核对项目资料范围。
 
 项目会话发送消息时可提交 `projectAuthorizationMode`：
 
@@ -721,6 +723,8 @@ V26 新增 `local_project_roots`、`local_projects`、`local_project_conversatio
 `cm-agent.client-projects.enabled` 默认关闭，并与 `cm-agent.local-projects.enabled` 独立。启用时必须同时满足：已启用 `cm-agent.local-client.enabled`、显式 `local`/`test` profile、`cm-agent.persistence.mode=jdbc`，且不得包含 `prod`、`production` 或 `supabase`。浏览器来源通过 `allowed-origins` 精确配置；非回环来源必须使用 HTTPS，并显式开启 `allow-non-loopback`。
 
 浏览器项目接口使用 `/api/client-projects`，要求认证 Cookie 和 `X-CM-Agent-Client-Project: 1`。设备任务使用独立的 `/api/local-client/bootstrap/project-tasks/*` 签名端点，并要求 `X-CM-Client-Project-Protocol: 5`；任务正文和结果在数据库中只保存认证加密值。客户端绝对路径只保存在当前 Windows 用户主目录的 `~/.cm-agent/client-project-roots`，操作回执只保存在 `~/.cm-agent/client-project-operations`，Server 仅保存 rootId、目录身份摘要和受限展示名。
+
+在控制台「本地项目」的已配对电脑来源登记和浏览目录。聊天页根据服务端能力展示可用设备项目，向会话、审批和运行接口发送同一设备项目请求头。已归档项目提供会话消息和审批历史的只读入口。
 
 固定工具使用独立 ID 命名空间 `cm-agent/client-project/v1`。模型可见的只读与变更工具为 `client_project_list_files`、`client_project_read_file`、`client_project_search_files`、`client_project_propose_changes`、`client_project_apply_changes`、`client_project_propose_undo` 和 `client_project_change_status`；命令工具为 `client_project_list_toolchains`、`client_project_propose_command`、`client_project_run_command`、`client_project_command_status` 和 `client_project_cancel_command`。这些工具只允许匹配协议 5 的设备项目 Run，不复用 `project_*` 或通用 `local_client_*` 执行器。
 
