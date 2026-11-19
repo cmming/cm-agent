@@ -23,6 +23,10 @@ class LocalProjectServiceTest {
     @TempDir Path directory;
     private final PrincipalRef owner = new PrincipalRef(UUID.randomUUID(), "owner", "测试", Set.of("project:read"));
     private final LocalProjectAccessService access = mock(LocalProjectAccessService.class);
+    private final LocalProjectRepository projects = mock(LocalProjectRepository.class);
+    private final LocalProjectRootRepository roots = mock(LocalProjectRootRepository.class);
+    private final LocalProjectSelections selections = mock(LocalProjectSelections.class);
+    private final LocalProjectRootCipher cipher = mock(LocalProjectRootCipher.class);
     private final ConversationRepository conversations = mock(ConversationRepository.class);
     private final LocalProjectBindingRepository bindings = mock(LocalProjectBindingRepository.class);
     private final AgentDefinitionRepository agents = mock(AgentDefinitionRepository.class);
@@ -46,8 +50,8 @@ class LocalProjectServiceTest {
                 new LocalProjectAccessException(call.getArgument(2), "test-error", call.getArgument(3), call.getArgument(4)));
         when(access.infrastructure(any(), any(), anyString(), any())).thenReturn(new LocalProjectAccessException("PROJECT_UNAVAILABLE", "test-error", 503, "服务不可用"));
         when(access.fileFailure(any(), any(), any())).thenReturn(new LocalProjectAccessException("PROJECT_FILE_UNAVAILABLE", "test-error", 422, "文件不可用"));
-        service = new LocalProjectService(null, null, bindings, conversations, agents, toolCatalog, toolGrants,
-                access, null, null, new LocalProjectFiles(List.of()), new SensitiveDataRedactor(), audit,
+        service = new LocalProjectService(projects, roots, bindings, conversations, agents, toolCatalog, toolGrants,
+                access, selections, cipher, new LocalProjectFiles(List.of()), new SensitiveDataRedactor(), audit,
                 transactions, Clock.systemUTC(), "node");
     }
 
@@ -101,6 +105,7 @@ class LocalProjectServiceTest {
         when(toolGrants.listByTenantAgentAndTool(owner.tenantId(), agentId, second.id())).thenReturn(List.of());
         when(transactions.execute(any())).thenAnswer(call -> ((org.springframework.transaction.support.TransactionCallback<?>)
                 call.getArgument(0)).doInTransaction(mock(org.springframework.transaction.TransactionStatus.class)));
+        when(projects.lock(owner.tenantId(), owner.principalId(), projectId)).thenReturn(Optional.of(project));
         when(conversations.save(eq(owner.tenantId()), any())).thenAnswer(call -> call.getArgument(1));
         when(bindings.insertConversation(any())).thenReturn(true);
 
@@ -135,5 +140,73 @@ class LocalProjectServiceTest {
         assertSame(denied, assertThrows(LocalProjectAccessException.class,
                 () -> service.createConversation(owner, projectId, agentId)));
         verifyNoInteractions(transactions, toolCatalog, toolGrants, agents);
+    }
+
+    @Test void 重选同一路径和身份复用原项目与名称() {
+        UUID request = UUID.randomUUID(), ticket = UUID.randomUUID();
+        var record = mock(LocalProjectRoot.class);
+        when(transactions.execute(any())).thenAnswer(call -> ((org.springframework.transaction.support.TransactionCallback<?>)
+                call.getArgument(0)).doInTransaction(mock(org.springframework.transaction.TransactionStatus.class)));
+        when(record.identity()).thenReturn(project.rootIdentity());
+        when(selections.consume(owner, request, ticket)).thenReturn(root);
+        when(projects.lockRegistrationCandidates(owner.tenantId(), owner.principalId(), "node", project.rootIdentity()))
+                .thenReturn(List.of(project));
+        when(roots.root(owner.tenantId(), owner.principalId(), project.rootBindingId())).thenReturn(Optional.of(record));
+        when(cipher.open(owner, record)).thenReturn(root);
+
+        var result = service.create(owner, request, ticket, "重选名称");
+
+        assertEquals(projectId, result.id());
+        assertEquals(project.name(), result.name());
+        verify(projects, never()).insert(any());
+        verify(roots, never()).insertRoot(any());
+        verify(audit).appendControlled(owner.tenantId(), owner.principalId(), "PROJECT_RESELECT", "LOCAL_PROJECT",
+                projectId.toString(), "SUCCEEDED", "本机项目显式操作");
+    }
+
+    @Test void 普通主体可使用预置授权建会话且重试保留原绑定() {
+        UUID agentId = UUID.randomUUID(), request = UUID.randomUUID();
+        var agent = new AgentDefinition(agentId, owner.tenantId(), "测试Agent", "", "测试", UUID.randomUUID(),
+                "test-model", 0.2, 4, true, List.of(), "Owner", "Owner");
+        when(agents.findByTenantAndId(owner.tenantId(), agentId)).thenReturn(Optional.of(agent));
+        when(projects.lock(owner.tenantId(), owner.principalId(), projectId)).thenReturn(Optional.of(project));
+        when(transactions.execute(any())).thenAnswer(call -> ((org.springframework.transaction.support.TransactionCallback<?>)
+                call.getArgument(0)).doInTransaction(mock(org.springframework.transaction.TransactionStatus.class)));
+        when(toolCatalog.hasReadGrant(eq(owner.tenantId()), eq(agentId), anyList())).thenReturn(true);
+        when(bindings.insertConversation(any())).thenReturn(true);
+
+        var first = service.createConversation(owner, projectId, agentId, request);
+        var source = new LocalProjectBinding(owner.tenantId(), owner.principalId(), projectId, agentId, first.id(), null,
+                project.rootBindingId(), project.rootIdentity(), project.nodeId(), project.version(), first.createdAt());
+        when(conversations.findByTenantAndAgentAndId(owner.tenantId(), agentId, first.id())).thenReturn(Optional.of(first));
+        when(bindings.conversation(owner.tenantId(), owner.principalId(), first.id())).thenReturn(Optional.of(source));
+        when(conversations.workspaceProtocol(owner.tenantId(), agentId, first.id())).thenReturn(LocalProjectBinding.PROTOCOL);
+
+        assertEquals(first, service.createConversation(owner, projectId, agentId, request));
+        verify(conversations, times(1)).save(owner.tenantId(), first);
+        verify(toolCatalog, never()).install(any());
+        verify(toolGrants, never()).save(any());
+        verify(access, never()).authorize(owner, "tool:grant", projectId);
+        verify(access, never()).authorize(owner, "project:manage", projectId);
+    }
+
+    @Test void 新聊天入口未准备Agent时拒绝且不写会话或工具授权() {
+        UUID agentId = UUID.randomUUID(), request = UUID.randomUUID();
+        var agent = new AgentDefinition(agentId, owner.tenantId(), "测试Agent", "", "测试", UUID.randomUUID(),
+                "test-model", 0.2, 4, true, List.of(), "Owner", "Owner");
+        when(agents.findByTenantAndId(owner.tenantId(), agentId)).thenReturn(Optional.of(agent));
+        when(projects.lock(owner.tenantId(), owner.principalId(), projectId)).thenReturn(Optional.of(project));
+        when(transactions.execute(any())).thenAnswer(call -> ((org.springframework.transaction.support.TransactionCallback<?>)
+                call.getArgument(0)).doInTransaction(mock(org.springframework.transaction.TransactionStatus.class)));
+
+        var failure = assertThrows(LocalProjectAccessException.class,
+                () -> service.createConversation(owner, projectId, agentId, request));
+
+        assertEquals("PROJECT_AGENT_NOT_READY", failure.errorCode());
+        assertEquals(409, failure.status());
+        verify(conversations, never()).save(any(), any());
+        verifyNoInteractions(bindings);
+        verify(toolCatalog, never()).install(any());
+        verify(toolGrants, never()).save(any());
     }
 }

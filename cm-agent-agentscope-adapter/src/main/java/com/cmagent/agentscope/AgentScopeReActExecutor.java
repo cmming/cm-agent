@@ -385,6 +385,10 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
 
             Model model = modelFactory.create(
                     spec.request().modelConfig(), spec.request().agent(), credential, spec.runId());
+            String systemPrompt = systemPrompt(spec.request(), skillSession.directoryPrompt());
+            ProjectDisclosureModel disclosure = spec.request().projectModelDisclosure() == null ? null
+                    : new ProjectDisclosureModel(model, spec.request(), stateStore, objectMapper, systemPrompt);
+            if (disclosure != null) toolkit.registerAgentTool(disclosure);
             ExecutionConfig modelConfig = ExecutionConfig.builder()
                     .timeout(options.modelTimeout())
                     .maxAttempts(options.modelMaxAttempts())
@@ -413,15 +417,15 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             }
             agent = lifecycle.create(ReActAgent.builder()
                     .name(spec.request().agent().name())
-                    .sysPrompt(systemPrompt(spec.request(), skillSession.directoryPrompt()))
-                    .model(model)
+                    .sysPrompt(systemPrompt)
+                    .model(disclosure == null ? model : disclosure)
                     .toolkit(toolkit)
                     .maxIters(spec.request().agent().maxIterations())
                     .modelExecutionConfig(modelConfig)
                     .toolExecutionConfig(toolConfig)
                     .permissionContext(permissionContext(
                             spec.request().tools(), options.permissionEnabled(), spec.request().conversationId() != null,
-                            authorizationMode(spec.request())))
+                            authorizationMode(spec.request()), disclosure != null))
                     .stateStore(stateStore)
                     .defaultSessionId(spec.runId().toString())
                     // 只注册经过 CM Agent 治理的业务工具，避免元工具或任务列表形成旁路能力。
@@ -437,7 +441,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             RuntimeContext activeContext = context;
             Msg inputMessage = decisions == null
                     ? new UserMessage(workspaceInput(spec, objectMapper))
-                    : resumeMessage(agent, context, decisions, objectMapper, spec.request().tools());
+                    : resumeMessage(agent, context, decisions, objectMapper, spec.request().tools(), disclosure);
             lifecycle.streamEvents(agent, inputMessage, context)
                     // shared Future 的订阅取消不能反向取消信号；停止即取消模型流，无需等待下一段文本。
                     .takeUntilOther(reactor.core.publisher.Mono.fromFuture(cancellation.signal(), true))
@@ -536,7 +540,13 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             AgentScopeExecutionResult completed = completedResult(
                     finalMessage.get(), records, approvalEvent.get(), spec.request().tools(), objectMapper,
                     spec.request().projectContext() != null,
-                    spec.request().projectContext() == null ? Set.of() : spec.request().projectContext().protectedToolIds());
+                    spec.request().projectContext() == null ? Set.of() : spec.request().projectContext().protectedToolIds(),
+                    disclosure);
+            if (disclosure != null && disclosure.hasPendingProposal() && completed.status() != RunStatus.WAITING_APPROVAL) {
+                log.warn("项目片段发送未进入等待审批。errorId={}, operation=PROJECT_MODEL_DISCLOSURE, errorCode=FORBIDDEN, tenantId={}, principalId={}, resourceType=RUN, resourceId={}",
+                        spec.runId(), spec.tenantId(), spec.principalId(), spec.runId());
+                return AgentScopeExecutionResult.denied("项目片段发送未进入审批，请重新发送消息", records);
+            }
             preserveCheckpoint = completed.status() == RunStatus.WAITING_APPROVAL;
             return completed;
         } catch (RuntimeException exception) {
@@ -883,6 +893,14 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             boolean protectedProject,
             Set<UUID> protectedToolIds
     ) {
+        return completedResult(result, records, approvalEvent, tools, objectMapper, protectedProject, protectedToolIds, null);
+    }
+
+    private static AgentScopeExecutionResult completedResult(
+            Msg result, List<ToolCallRecord> records, RequireUserConfirmEvent approvalEvent, List<ToolDefinition> tools,
+            ObjectMapper objectMapper, boolean protectedProject, Set<UUID> protectedToolIds,
+            ProjectDisclosureModel disclosure
+    ) {
         ToolCallRecord denied = findDenied(records);
         if (denied != null) {
             String output = result == null ? "" : result.getTextContent();
@@ -899,7 +917,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                     .toList()
                     : approvalEvent.getToolCalls();
             return AgentScopeExecutionResult.waiting(
-                    pendingApproval(result.getId(), asking, tools, objectMapper, protectedToolIds), records);
+                    pendingApproval(result.getId(), asking, tools, objectMapper, protectedToolIds, disclosure), records);
         }
         return AgentScopeExecutionResult.succeeded(
                 result.getTextContent(), records, safeMessage(result, records, protectedProject));
@@ -932,6 +950,12 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
     static PermissionContextState permissionContext(
             List<ToolDefinition> tools, boolean permissionEnabled, boolean interactive,
             OperationAuthorizationMode authorizationMode) {
+        return permissionContext(tools, permissionEnabled, interactive, authorizationMode, false);
+    }
+
+    private static PermissionContextState permissionContext(
+            List<ToolDefinition> tools, boolean permissionEnabled, boolean interactive,
+            OperationAuthorizationMode authorizationMode, boolean projectDisclosure) {
         var builder = PermissionContextState.builder()
                 .mode(interactive ? PermissionMode.DEFAULT : PermissionMode.DONT_ASK);
         for (ToolDefinition tool : tools) {
@@ -959,6 +983,11 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
                 builder.addAllowRule(tool.name(), rule);
             }
         }
+        if (projectDisclosure) {
+            // 仅宿主生成的模型发送标记进入 ASK 循环。它不出现在 Provider 的工具列表，不授予业务工具权限。
+            String name = ProjectModelDisclosureState.NAME;
+            builder.addAskRule(name, new PermissionRule(name, null, PermissionBehavior.ASK, "cm-agent-project-disclosure"));
+        }
         return builder.build();
     }
 
@@ -974,7 +1003,7 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             RuntimeContext context,
             RuntimeApprovalDecisions decisions,
             ObjectMapper objectMapper,
-            List<ToolDefinition> authorizedTools
+            List<ToolDefinition> authorizedTools, ProjectDisclosureModel disclosure
     ) {
         List<ToolUseBlock> asking = agent.getAgentState(context).getContext().stream()
                 .flatMap(message -> message.getContentBlocks(ToolUseBlock.class).stream())
@@ -994,6 +1023,10 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
         for (ToolUseBlock tool : asking) {
             // 检查点内工具名只用于定位，批准仍绑定原工具 ID；删除后重建同名工具不能继承旧批准。
             RuntimeApprovalDecisions.Item decision = byCall.get(tool.getId());
+            if (disclosure != null && ProjectModelDisclosureState.NAME.equals(tool.getName())) {
+                disclosure.verifyDecision(tool, decision);
+                continue;
+            }
             if (decision.decision() == ToolApprovalDecision.APPROVE
                     && authorizedTools.stream().noneMatch(candidate -> candidate.name().equals(tool.getName())
                     && candidate.id().equals(decision.toolId()))) {
@@ -1020,11 +1053,14 @@ final class AgentScopeReActExecutor implements AgentScopeExecutor {
             List<ToolUseBlock> asking,
             List<ToolDefinition> tools,
             ObjectMapper objectMapper,
-            Set<UUID> protectedToolIds
+            Set<UUID> protectedToolIds, ProjectDisclosureModel disclosure
     ) {
         Map<String, ToolDefinition> byName = tools.stream().collect(java.util.stream.Collectors.toMap(
                 ToolDefinition::name, java.util.function.Function.identity()));
         List<RuntimePendingApproval.RuntimePendingToolCall> items = asking.stream().map(block -> {
+            if (disclosure != null && ProjectModelDisclosureState.NAME.equals(block.getName())) {
+                return disclosure.pendingApproval(block);
+            }
             ToolDefinition tool = byName.get(block.getName());
             if (tool == null) {
                 throw new IllegalStateException("待审批工具不在本次授权快照中");

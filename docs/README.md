@@ -63,7 +63,9 @@
 
 - [产品上下文](../PRODUCT.md)：目标用户、产品定位、使用场景、能力边界和产品原则。
 - [设计系统](../DESIGN.md)：控制台视觉规范、布局、组件和响应式规则。
-- [术语表](../GLOSSARY.md)：本项目采用的文档治理概念。
+- [术语表](../GLOSSARY.md)：文档治理及桌面项目聊天概念。
+- [桌面版项目会话归属](adr/0002-desktop-project-conversation.md)：项目会话从创建起固定使用一个项目。
+- [项目片段与在线模型](adr/0003-desktop-project-model-disclosure.md)：授权档位与项目数据出站风险的决定。
 - [文档治理 ADR](adr/0001-documentation-governance.md)：保留路径、文档分工与权威来源的取舍。
 
 ## 工作包与历史

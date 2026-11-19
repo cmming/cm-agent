@@ -332,3 +332,88 @@ test("新建项目会话提示服务端已自动准备固定项目工具", async
     assert.match(flow.document.getElementById("projectChatStatus").textContent, /固定 project_\* 工具已准备/);
     flow.stop();
 });
+
+test("项目首发使用幂等会话创建、绑定项目和原发送模式，审批恢复走 SSE", async () => {
+    const document = dom(), get = id => document.getElementById(id), calls = [];
+    const conversation = {id: "session", agentId: "agent", title: "项目会话"};
+    const approval = {approvalId: "approve-1", runId: "run-1", version: 2, status: "PENDING", canDecide: true, items: [{
+        itemId: "disclose-1", toolName: "project_model_disclosure", preview: {targetModel: "已配置模型", fragments: ["<script>项目片段</script>"]}
+    }]};
+    let created = false, activeApproval = false, release;
+    const page = development.create({document, isCurrent: () => true, randomId: () => "new-conversation-intent",
+        request: async (url, options) => {
+            calls.push([url, options]);
+            if (url === "/api/agents") return [{id: "agent", enabled: true, name: "Agent"}];
+            if (url === "/api/projects/project/conversations" && options?.method === "POST") {
+                if (created) return conversation;
+                created = true; throw new Error("未收到创建回执");
+            }
+            if (url.includes("conversations?")) return created ? [conversation] : [];
+            if (url.includes("/messages?")) return {items: []};
+            if (url.includes("/approvals/history?")) return {items: []};
+            if (url.endsWith("/approvals")) return {items: activeApproval ? [approval] : []};
+            if (url.endsWith("/active-run") || url.endsWith("/runs/run-1")) return activeApproval ? {id: "run-1", status: "WAITING_APPROVAL"} : null;
+            if (url.endsWith("/authorization-mode")) return {mode: "ASK_ON_EFFECT"};
+            if (url.includes("/operations?")) return [];
+            throw new Error(url);
+        }, stream: async (url, options, onEvent) => {
+            calls.push([url, options]);
+            if (url.endsWith("/messages/stream")) {
+                onEvent({type: "started", data: {runId: "run-1"}});
+                onEvent({type: "delta", data: {delta: "正在读取"}});
+                await new Promise(resolve => { release = resolve; });
+                activeApproval = true; onEvent({type: "approval-required", data: approval});
+            } else {
+                activeApproval = false; onEvent({type: "approval-decision"});
+                onEvent({type: "completed", data: {run: {status: "SUCCEEDED"}}});
+            }
+        }
+    });
+    await page.mount({id: "project", state: "ACTIVE"}, {conversations: true, changes: true, commands: true});
+    get("projectChatAgent").value = "agent"; get("projectAuthorizationMode").value = "ASK_ON_EFFECT"; get("projectChatInput").value = "整理已有文件";
+    const submit = () => get("projectChatForm").events.submit({preventDefault() {}});
+    await submit();
+    assert.equal(get("projectChatInput").value, "整理已有文件");
+    const pending = submit();
+    while (!release) await new Promise(resolve => setImmediate(resolve));
+    get("projectAuthorizationMode").value = "FULL_ACCESS";
+    assert.equal(get("projectAuthorizationMode").disabled, true);
+    assert.ok(all(get("projectChatMessages")).some(item => item.textContent === "正在读取"));
+    const creates = calls.filter(([url, options]) => url === "/api/projects/project/conversations" && options?.method === "POST");
+    assert.deepEqual(creates.map(([, options]) => JSON.parse(options.body)), Array(2).fill({agentId: "agent", requestId: "new-conversation-intent"}));
+    const request = calls.find(([url]) => url.endsWith("/messages/stream"));
+    assert.equal(request[0], "/api/agents/agent/conversations/session/messages/stream");
+    assert.deepEqual(JSON.parse(request[1].body), {input: "整理已有文件", projectAuthorizationMode: "ASK_ON_EFFECT", projectId: "project"});
+    release(); await pending;
+    const elements = all(get("projectApprovalItems")), review = elements.find(node => node.tag === "input");
+    const decision = elements.find(node => node.tag === "select"), confirm = elements.find(node => node.textContent === "提交本次决定");
+    assert.equal(review.disabled, true); assert.equal(confirm.disabled, true);
+    await elements.find(node => node.textContent === "读取精确预览").click();
+    assert.ok(all(get("projectApprovalItems")).some(item => item.tag === "pre" && item.textContent === "<script>项目片段</script>"));
+    review.checked = true; review.events.change(); decision.value = "APPROVE"; decision.events.change();
+    await confirm.click();
+    assert.deepEqual(JSON.parse(calls.find(([url]) => url.endsWith("/decision/stream"))[1].body), {expectedVersion: 2, decisions: [{itemId: "disclose-1", decision: "APPROVE"}]});
+    page.dispose();
+});
+
+test("聊天页重新进入项目时自动打开最近会话", async () => {
+    const document = dom(), conversation = {id: "latest", agentId: "agent", title: "最近会话"}, calls = [];
+    const page = development.create({document, isCurrent: () => true, randomId: () => "request",
+        request: async (url, options) => {
+            calls.push([url, options]);
+            if (url === "/api/agents") return [{id: "agent", enabled: true, name: "Agent"}];
+            if (url.includes("conversations?")) return [conversation];
+            if (url.includes("/messages?")) return {items: []};
+            if (url.includes("/approvals/history?")) return {items: []};
+            if (url.endsWith("/approvals")) return {items: []};
+            if (url.endsWith("/active-run")) return null;
+            if (url.includes("/operations?")) return [];
+            throw new Error(url);
+        }, stream: async () => { throw new Error("本次挂载不得发送"); }});
+
+    await page.mount({id: "project", state: "ACTIVE"}, {conversations: true, changes: true, commands: true});
+
+    assert.equal(document.getElementById("projectChatTitle").textContent, "最近会话");
+    assert.ok(calls.some(([url]) => url.includes("/conversations/latest/messages?")));
+    page.dispose();
+});

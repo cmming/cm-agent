@@ -15,5 +15,11 @@ coverage/
 .agents/skills/*
 !.agents/skills/requirement-workpack/
 .playwright-cli/
+output/
+.codex/
+.workbuddy/
+client-state/
+cm-agent-server/src/main/resources/application-ok.yml
+skills-lock.json
 __pycache__/
 *.py[cod]

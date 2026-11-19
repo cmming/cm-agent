@@ -44,6 +44,7 @@ class JdbcLocalProjectRepositoryTest {
         UUID tenant = UUID.randomUUID(), model = UUID.randomUUID(), agent = UUID.randomUUID();
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         seed(jdbc, tenant, model, agent, now);
+        verifyDisabledInternalReference(jdbc, tx, tenant);
         var root = new LocalProjectRoot(UUID.randomUUID(), tenant, "Owner", "local-node",
                 encrypted("F:/synthetic/project"), "a".repeat(64), now);
         var project = new LocalProject(UUID.randomUUID(), tenant, "Owner", "我的项目", "local-node",
@@ -64,6 +65,12 @@ class JdbcLocalProjectRepositoryTest {
         }
         assertThat(rows.find(UUID.randomUUID(), "Owner", project.id())).isEmpty();
         assertThat(rows.list(tenant, "Owner", new LocalProjectPageRequest(1, null, null), false)).containsExactly(project);
+        tx.executeWithoutResult(status -> {
+            assertThat(rows.lockRegistrationCandidates(tenant, "Owner", "local-node", root.identity())).containsExactly(project);
+            assertThat(rows.lockRegistrationCandidates(tenant, "owner", "local-node", root.identity())).isEmpty();
+            assertThat(rows.lockRegistrationCandidates(tenant, "Owner", "LOCAL-NODE", root.identity())).isEmpty();
+            assertThat(rows.lockRegistrationCandidates(tenant, "Owner", "local-node", "b".repeat(64))).isEmpty();
+        });
         var mismatched = new LocalProject(UUID.randomUUID(), tenant, "owner", "不应借用他人根", root.nodeId(),
                 root.id(), root.identity(), LocalProject.State.ACTIVE, 1, now, now);
         assertThat(rows.insert(mismatched)).isFalse();
@@ -143,6 +150,26 @@ class JdbcLocalProjectRepositoryTest {
         assertThat(jdbc.sql("SELECT COUNT(*) FROM role_permissions WHERE permission_code LIKE 'project:%'").query(Long.class).single()).isZero();
         verifyRollback(jdbc, tx, rows, bindings, operations, tenant, agent, now);
         probe(database, tenant, project.id(), root.id(), operation.id());
+    }
+
+    private static void verifyDisabledInternalReference(JdbcClient jdbc, TransactionTemplate tx, UUID tenant) throws Exception {
+        var definitions = new JdbcToolDefinitionRepository(jdbc);
+        var reference = new ToolDefinition(UUID.randomUUID(), tenant, "internal_project_disclosure", "内部引用", ToolType.LOCAL,
+                "{\"type\":\"object\"}", ToolRiskLevel.HIGH, false, "internal:test", "system", "system");
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            java.util.concurrent.Callable<ToolDefinition> prepare = () -> tx.execute(status -> {
+                definitions.insertDisabledInternalReferenceIfAbsent(reference);
+                return definitions.findByTenantAndIdForUpdate(tenant, reference.id()).orElseThrow();
+            });
+            var first = executor.submit(prepare);
+            var second = executor.submit(prepare);
+            assertThat(first.get(10, TimeUnit.SECONDS)).isEqualTo(reference);
+            assertThat(second.get(10, TimeUnit.SECONDS)).isEqualTo(reference);
+        }
+        var collision = new ToolDefinition(reference.id(), tenant, reference.name(), "业务覆盖禁止", ToolType.LOCAL,
+                reference.inputSchema(), ToolRiskLevel.HIGH, false, reference.endpoint(), "system", "system");
+        tx.executeWithoutResult(status -> definitions.insertDisabledInternalReferenceIfAbsent(collision));
+        assertThat(definitions.findByTenantAndId(tenant, reference.id())).contains(reference);
     }
 
     /** 外层服务最终审计失败时，新增根/项目/绑定/操作及来源见证必须一起回滚，不留下半个可执行意图。 */

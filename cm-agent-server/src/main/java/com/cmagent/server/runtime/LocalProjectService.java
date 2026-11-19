@@ -74,7 +74,7 @@ public final class LocalProjectService {
     }
 
     /**
-     * 消费一次原生选择并登记固定根；持久化失败需重新选择，不自动重放选择票据。
+     * 消费一次原生选择并登记固定根。重复选择同一活动根时复用项目，持久化失败需重新选择。
      * @param principal 认证主体
      * @param requestId 原明确选择动作编号
      * @param ticketId 同主体原生选择票据
@@ -88,11 +88,16 @@ public final class LocalProjectService {
         UUID id = UUID.randomUUID();
         try {
             files.list(root, "", null, 1);
-            Instant now = clock.instant();
-            var protectedRoot = cipher.seal(principal, UUID.randomUUID(), root, now);
-            var project = new LocalProject(id, principal.tenantId(), principal.principalId(), name, nodeId,
-                    protectedRoot.id(), protectedRoot.identity(), LocalProject.State.ACTIVE, 1, now, now);
             return transactions.execute(status -> {
+                var existing = reusableProject(principal, root);
+                if (existing.isPresent()) {
+                    audit(principal, existing.get().id(), "PROJECT_RESELECT");
+                    return view(existing.get());
+                }
+                Instant now = clock.instant();
+                var protectedRoot = cipher.seal(principal, UUID.randomUUID(), root, now);
+                var project = new LocalProject(id, principal.tenantId(), principal.principalId(), name, nodeId,
+                        protectedRoot.id(), protectedRoot.identity(), LocalProject.State.ACTIVE, 1, now, now);
                 if (!roots.insertRoot(protectedRoot) || !projects.insert(project)) throw new IllegalStateException("项目登记冲突");
                 audit(principal, id, "PROJECT_CREATE");
                 return view(project);
@@ -100,6 +105,17 @@ public final class LocalProjectService {
         } catch (LocalProjectFileException failure) { throw access.fileFailure(principal, id, failure); }
         catch (LocalProjectAccessException failure) { throw failure; }
         catch (Exception failure) { throw access.infrastructure(principal, id, "PROJECT_CREATE", failure); }
+    }
+
+    private Optional<LocalProject> reusableProject(PrincipalRef principal, LocalProjectDirectoryTickets.Root root) {
+        String identity = LocalProjectRootCipher.digest(root.identity());
+        // 文件对象移动后身份可能不变。只比较解密后的固定路径，不重新开目录或改写旧会话的根。
+        return projects.lockRegistrationCandidates(principal.tenantId(), principal.principalId(), nodeId, identity).stream()
+                .filter(project -> {
+                    var record = roots.root(principal.tenantId(), principal.principalId(), project.rootBindingId()).orElseThrow();
+                    if (!identity.equals(record.identity())) throw new IllegalStateException("项目根身份见证不一致");
+                    return cipher.open(principal, record).directory().equals(root.directory());
+                }).findFirst();
     }
 
     /** @param principal 认证主体 @param projectId 项目标识 @param expectedVersion 页面已读取版本 @param name 新展示名 @return 新元数据，不移动目录 */
@@ -121,38 +137,102 @@ public final class LocalProjectService {
     }
 
     /**
-     * 新会话先保存空元数据，再在同事务原子写入项目来源头4；不产生旧DEFAULT可见窗口。
+     * 兼容项目管理页创建会话时显式准备固定项目工具。
      * @param principal 认证主体
      * @param projectId 已登记项目
      * @param agentId 当前租户内固定Agent
      * @return 新会话元数据；正文不在此处自动读取
      */
     public Conversation createConversation(PrincipalRef principal, UUID projectId, UUID agentId) {
+        return createConversation(principal, projectId, agentId, null);
+    }
+
+    /**
+     * 创建固定项目会话。携带请求编号的聊天入口只验证已有工具授权；同一请求重试返回原会话。
+     * @param principal 认证主体
+     * @param projectId 已登记并通过归属校验的项目
+     * @param agentId 当前租户内已选 Agent
+     * @param requestId 同一次新建操作的幂等编号，缺省时保留旧管理入口行为
+     * @return 原会话或新会话元数据
+     */
+    public Conversation createConversation(PrincipalRef principal, UUID projectId, UUID agentId, UUID requestId) {
         var scope = access.scope(principal, projectId, "project:read");
         access.authorize(principal, "agent:read", projectId);
         access.authorize(principal, "agent:run", projectId);
-        // 新项目会话会显式准备固定 project_* 工具，因此同时要求项目管理和工具授权权限；
-        // 不能仅凭已读取项目元数据就静默扩大所选 Agent 的能力。
-        access.authorize(principal, "project:manage", projectId);
-        access.authorize(principal, "tool:grant", projectId);
+        if (requestId == null) {
+            // 旧管理客户端依赖自动准备工具，必须保留原权限门禁；聊天入口不修改授权。
+            access.authorize(principal, "project:manage", projectId);
+            access.authorize(principal, "tool:grant", projectId);
+        }
         try {
-            if (agents.findByTenantAndId(principal.tenantId(), agentId).isEmpty())
-                throw access.reject(principal, projectId, "PROJECT_AGENT_NOT_FOUND", 404, "Agent不存在或不可访问");
+            var agent = requireAgent(principal, projectId, agentId);
+            // 编号只有幂等用途。会话 ID 由服务端按可信主体及固定项目上下文派生，不能由请求覆盖已有会话。
+            UUID conversationId = requestId == null ? UUID.randomUUID() : conversationId(principal, projectId, agentId, requestId);
             return transactions.execute(status -> {
+                var project = projects.lock(principal.tenantId(), principal.principalId(), projectId).orElseThrow(VersionConflict::new);
+                if (project.state() != LocalProject.State.ACTIVE || !project.rootBindingId().equals(scope.project().rootBindingId())
+                        || !project.rootIdentity().equals(scope.project().rootIdentity()) || !nodeId.equals(project.nodeId()))
+                    throw new VersionConflict();
+                if (requestId != null) {
+                    var existing = conversations.findByTenantAndAgentAndId(principal.tenantId(), agentId, conversationId);
+                    if (existing.isPresent()) return requireOriginalConversation(principal, project, existing.get());
+                    if (!agent.enabled() || !toolCatalog.hasReadGrant(principal.tenantId(), agentId,
+                            toolGrants.listByTenantAndAgent(principal.tenantId(), agentId))) throw new AgentNotReady();
+                } else {
+                    ensureProjectTools(principal, projectId, agentId, true);
+                }
                 Instant now = clock.instant();
-                ensureProjectTools(principal, projectId, agentId);
-                var conversation = new Conversation(UUID.randomUUID(), principal.tenantId(), agentId, Conversation.DEFAULT_TITLE,
+                var conversation = new Conversation(conversationId, principal.tenantId(), agentId, Conversation.DEFAULT_TITLE,
                         principal.principalId(), now, now);
                 conversations.save(principal.tenantId(), conversation);
-                var project = scope.project();
                 if (!bindings.insertConversation(new LocalProjectBinding(principal.tenantId(), principal.principalId(),
                         project.id(), agentId, conversation.id(), null, project.rootBindingId(), project.rootIdentity(),
                         project.nodeId(), project.version(), now))) throw new IllegalStateException("项目会话绑定冲突");
                 audit(principal, projectId, "PROJECT_CONVERSATION_CREATE");
                 return conversation;
             });
+        } catch (VersionConflict failure) {
+            throw access.reject(principal, projectId, "PROJECT_BINDING_CONFLICT", 409, "项目会话来源已变化，请刷新后重试");
+        } catch (AgentNotReady failure) {
+            throw access.reject(principal, projectId, "PROJECT_AGENT_NOT_READY", 409, "所选 Agent 未启用或尚未准备项目工具，请选择已配置的 Agent");
         } catch (LocalProjectAccessException failure) { throw failure; }
         catch (RuntimeException failure) { throw access.infrastructure(principal, projectId, "PROJECT_CONVERSATION_CREATE", failure); }
+    }
+
+    /**
+     * 供有管理权限的部署主体预置 Agent 的固定项目工具；普通聊天入口只消费已存在的授权。
+     * @param principal 认证管理主体
+     * @param agentId 当前租户内明确选择的 Agent
+     */
+    public void prepareAgentTools(PrincipalRef principal, UUID agentId) {
+        access.authorize(principal, "project:manage", agentId);
+        access.authorize(principal, "tool:grant", agentId);
+        try {
+            requireAgent(principal, agentId, agentId);
+            transactions.executeWithoutResult(status -> ensureProjectTools(principal, agentId, agentId, false));
+        } catch (LocalProjectAccessException failure) { throw failure; }
+        catch (RuntimeException failure) { throw access.infrastructure(principal, agentId, "PROJECT_AGENT_TOOLS_PREPARE", failure); }
+    }
+
+    private AgentDefinition requireAgent(PrincipalRef principal, UUID resourceId, UUID agentId) {
+        return agents.findByTenantAndId(principal.tenantId(), agentId)
+                .orElseThrow(() -> access.reject(principal, resourceId, "PROJECT_AGENT_NOT_FOUND", 404, "Agent不存在或不可访问"));
+    }
+
+    private static UUID conversationId(PrincipalRef principal, UUID projectId, UUID agentId, UUID requestId) {
+        String owner = Base64.getUrlEncoder().withoutPadding().encodeToString(principal.principalId().getBytes(StandardCharsets.UTF_8));
+        return UUID.nameUUIDFromBytes(("cm-agent/desktop-project-conversation/v1/" + principal.tenantId() + "/" + owner
+                + "/" + projectId + "/" + agentId + "/" + requestId).getBytes(StandardCharsets.UTF_8));
+    }
+
+    private Conversation requireOriginalConversation(PrincipalRef principal, LocalProject project, Conversation existing) {
+        var source = bindings.conversation(principal.tenantId(), principal.principalId(), existing.id()).orElseThrow(VersionConflict::new);
+        if (!principal.principalId().equals(existing.createdBy()) || !project.id().equals(source.projectId())
+                || !existing.agentId().equals(source.agentId()) || !project.rootBindingId().equals(source.rootBindingId())
+                || !project.rootIdentity().equals(source.rootIdentity()) || !nodeId.equals(source.nodeId()) || source.runId() != null
+                || conversations.workspaceProtocol(principal.tenantId(), existing.agentId(), existing.id()) != LocalProjectBinding.PROTOCOL)
+            throw new VersionConflict();
+        return existing;
     }
 
     /**
@@ -162,7 +242,7 @@ public final class LocalProjectService {
      * 不接受浏览器提交的工具 ID。定义安装、Agent 关联、grant 和审计与项目会话处于同一事务，
      * 任一步失败都不会留下一个表面可创建但实际没有文件能力的会话。</p>
      */
-    private void ensureProjectTools(PrincipalRef principal, UUID projectId, UUID agentId) {
+    private void ensureProjectTools(PrincipalRef principal, UUID resourceId, UUID agentId, boolean replaceDeniedGrant) {
         List<ToolDefinition> available = toolCatalog.install(principal);
         Set<UUID> granted = toolGrants.listByTenantAndAgent(principal.tenantId(), agentId).stream()
                 .filter(ToolGrant::granted)
@@ -172,12 +252,16 @@ public final class LocalProjectService {
             if (granted.contains(tool.id())) continue;
             ToolGrant existing = toolGrants.listByTenantAgentAndTool(principal.tenantId(), agentId, tool.id()).stream()
                     .findFirst().orElse(null);
-            if (existing != null) toolGrants.delete(principal.tenantId(), agentId, tool.id());
+            if (existing != null) {
+                // 新部署入口尊重已明确禁止的工具；旧管理入口保留原本显式补齐能力的兼容行为。
+                if (!replaceDeniedGrant) continue;
+                toolGrants.delete(principal.tenantId(), agentId, tool.id());
+            }
             toolGrants.save(new ToolGrant(principal.tenantId(), tool.id(), agentId, null, true));
             agents.addToolToAgent(principal.tenantId(), agentId, tool.id());
             audit.appendControlled(principal.tenantId(), principal.principalId(), "PROJECT_AGENT_TOOL_GRANT",
                     "TOOL", tool.id().toString(), "SUCCEEDED",
-                    "project=" + projectId + " agent=" + agentId + " tool=" + tool.name());
+                    (replaceDeniedGrant ? "project=" + resourceId + " " : "") + "agent=" + agentId + " tool=" + tool.name());
         }
     }
 
@@ -253,6 +337,8 @@ public final class LocalProjectService {
 
     /** 只跨出元数据短事务，不包含请求值或路径；随后由最终访问边界补写严格拒绝审计。 */
     private static final class VersionConflict extends RuntimeException {}
+    /** 短事务回滚后再写拒绝审计，避免授权拒绝记录随回滚丢失。 */
+    private static final class AgentNotReady extends RuntimeException {}
 
     /** @param id 项目标识 @param name 展示名 @param state 登记状态 @param version 条件更新版本 @param createdAt 创建时间 @param updatedAt 最近修改时间 */
     public record View(UUID id, String name, String state, long version, Instant createdAt, Instant updatedAt) {}

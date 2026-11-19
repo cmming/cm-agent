@@ -76,8 +76,9 @@ final class AgentScopeHarnessExecutor implements AgentScopeExecutor {
             var originals = new LinkedHashMap<String, io.agentscope.core.tool.AgentTool>();
             for (var name : base.getToolkit().getToolNames()) {
                 var tool = base.getToolkit().getTool(name);
+                // 模型发送标记由共享执行器生成，进入同一审批循环；模型包装器不会把它加入 Provider 可见工具。
                 if (!(tool instanceof AgentScopeToolBridge || tool instanceof AgentScopeSkillLoadBridge
-                        || tool instanceof AgentScopeSkillExecutionBridge))
+                        || tool instanceof AgentScopeSkillExecutionBridge || tool instanceof ProjectDisclosureModel))
                     throw new IllegalStateException("Harness 工具必须使用 CM Agent 治理桥接器");
                 originals.put(name, tool);
             }

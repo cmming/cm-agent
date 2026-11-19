@@ -1,0 +1,26 @@
+# 由试装管理员在当前 Windows 用户的私有数据目录中准备 pilot.properties。
+# 启动器默认读取 %LOCALAPPDATA%/CM Agent Pilot Data/pilot.properties。
+# 部署者替换占位符，配置文件和凭据不进入仓库或安装包。
+cm-agent.persistence.jdbc.url=<已配置的 JDBC URL>
+cm-agent.persistence.jdbc.username=<数据库账户>
+cm-agent.persistence.jdbc.password=<数据库密码>
+cm-agent.persistence.jdbc.driver-class-name=org.postgresql.Driver
+cm-agent.security.jwt-secret=<现有服务的 JWT 密钥>
+cm-agent.model-credentials.encryption-key=<现有模型凭据加密密钥>
+cm-agent.local-projects.node-id=<试装节点的稳定标识>
+cm-agent.agentscope.execution-mode=react
+
+# 已配置数据源有正式登录用户时，保持启动期管理员关闭。
+cm-agent.security.bootstrap-admin-enabled=false
+# 隔离试装数据库需要初始化时，由部署者显式配置启用、用户名及随机初始密码。
+# cm-agent.security.bootstrap-admin-username=<试装管理员账户>
+# cm-agent.security.bootstrap-admin-password=<试装管理员密码>
+# cm-agent.local-projects.bootstrap-permissions[0]=project:read
+# cm-agent.local-projects.bootstrap-permissions[1]=project:write
+# cm-agent.local-projects.bootstrap-permissions[2]=project:execute
+# cm-agent.local-projects.bootstrap-permissions[3]=project:manage
+
+# 有受信工具链的试装环境可以显式登记任务，环境与参数由试装管理员决定。
+# 在 .properties 中使用正斜杠填写 Windows 路径，工具链可执行文件须为已有的普通 .exe。
+# cm-agent.local-projects.commands.tools.task.executable=<绝对程序路径>
+# cm-agent.local-projects.commands.tools.task.prefix-arguments[0]=<首个固定参数>

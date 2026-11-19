@@ -53,14 +53,15 @@ public final class LocalProjectController {
     @GetMapping("/capabilities")
     public Capabilities capabilities(Authentication authentication, HttpServletRequest request) {
         PrincipalRef principal = principal(authentication);
-        if (!policy.isEnabled()) return new Capabilities(false, true, false, false, false, false);
+        if (!policy.isEnabled()) return new Capabilities(false, true, false, false, false, false, false);
         guard(principal, request, null);
         access.getObject().authorize(principal, "project:read", null);
         boolean development=projectTools!=null&&projectTools.getIfAvailable()!=null;
         var commandPolicy=commandPolicies==null?null:commandPolicies.getIfAvailable();
         boolean commands=development&&commandPolicy!=null&&!commandPolicy.getTools().isEmpty();
         boolean builds=commands&&commandPolicy.getTools().values().stream().anyMatch(com.cmagent.server.config.LocalProjectCommandProperties.Tool::isBuild);
-        return new Capabilities(true, !development, development, development, commands, builds);
+        return new Capabilities(true, !development, development, development, commands, builds,
+                access.getObject().allows(principal, "project:manage"));
     }
 
     @GetMapping
@@ -100,8 +101,10 @@ public final class LocalProjectController {
     @PostMapping("/{projectId}/conversations")
     public ResponseEntity<Conversation> conversation(Authentication authentication, HttpServletRequest request, @PathVariable("projectId") UUID projectId, @Valid @RequestBody NewConversation body) {
         var principal = principal(authentication); guard(principal, request, projectId);
-        return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore())
-                .body(services.getObject().createConversation(principal, projectId, body.agentId()));
+        var service = services.getObject();
+        Conversation created = body.requestId() == null ? service.createConversation(principal, projectId, body.agentId())
+                : service.createConversation(principal, projectId, body.agentId(), body.requestId());
+        return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore()).body(created);
     }
     /** 项目行锁下条件归档，保留原目录与历史，拒绝仍有活动或未知副作用的项目。 */
     @PostMapping("/{projectId}/archive")
@@ -157,6 +160,22 @@ public final class LocalProjectController {
         var principal=principal(authentication);guard(principal,request,null);
         if(catalogs==null||catalogs.getIfAvailable()==null)throw new ResponseStatusException(HttpStatus.NOT_FOUND,"项目工具尚未装配");
         return catalogs.getObject().install(principal);
+    }
+
+    /**
+     * 管理入口显式为当前租户 Agent 准备固定项目工具；服务端还核验项目管理及全局工具授权权限。
+     * @param authentication 经认证的管理主体
+     * @param request 用于校验真实本机来源的请求
+     * @param agentId 当前租户中选定的 Agent
+     * @return 工具准备成功后返回 204
+     */
+    @PostMapping("/tools/agents/{agentId}")
+    public ResponseEntity<Void> prepareAgentTools(Authentication authentication, HttpServletRequest request,
+            @PathVariable("agentId") UUID agentId) {
+        var principal = principal(authentication);
+        guard(principal, request, agentId);
+        services.getObject().prepareAgentTools(principal, agentId);
+        return ResponseEntity.noContent().build();
     }
     /** 完整差异只交原owner，不进入普通会话轨迹或工具摘要。 */
     @GetMapping("/{projectId}/runs/{runId}/changes/{operationId}")
@@ -218,8 +237,9 @@ public final class LocalProjectController {
                 .body(new Failure(failure.errorCode(), failure.errorId(), failure.getMessage()));
     }
 
-    /** @param enabled 当前部署是否已启用 @param readOnly 是否只有读取入口 @param conversations 是否可从项目运行会话 @param changes 是否已装配治理变更 @param commands 是否已装配治理命令 @param builds 是否已装配治理构建 */
-    public record Capabilities(boolean enabled, boolean readOnly, boolean conversations, boolean changes, boolean commands, boolean builds) {}
+    /** @param enabled 当前部署是否已启用 @param readOnly 是否只有读取入口 @param conversations 是否可从项目运行会话 @param changes 是否已装配治理变更 @param commands 是否已装配治理命令 @param builds 是否已装配治理构建 @param canRegister 当前主体是否具有本机目录登记权限 */
+    public record Capabilities(boolean enabled, boolean readOnly, boolean conversations, boolean changes, boolean commands,
+                               boolean builds, boolean canRegister) {}
     /** @param requestId 当前明确选择动作的随机编号 */
     public record Selection(@NotNull UUID requestId) {}
     /** @param requestId 原明确选择动作编号 @param ticketId 同主体原生票据 @param name 项目展示名，不解释为路径 */
@@ -228,8 +248,8 @@ public final class LocalProjectController {
     public record Rename(@Min(1) long expectedVersion, @NotBlank @Size(max = 120) String name) {}
     /** @param expectedVersion 当前读取的项目元数据版本，不能绕过活动/未知操作检查 */
     public record Archive(@Min(1) long expectedVersion) {}
-    /** @param agentId 当前租户内的固定Agent */
-    public record NewConversation(@NotNull UUID agentId) {}
+    /** @param agentId 当前租户内的固定 Agent @param requestId 一次新建意图的幂等编号，缺省使用旧管理行为 */
+    public record NewConversation(@NotNull UUID agentId, UUID requestId) {}
     /** @param expectedVersion 页面读取的审批版本 @param decisions 全部明细的逐项明确决定，不能用一项覆盖整批 */
     public record ApprovalDecision(@Min(0) long expectedVersion,@NotEmpty @Size(max=100) List<@Valid ApprovalItem> decisions) {
         public ApprovalDecision{decisions=decisions==null?null:List.copyOf(decisions);}

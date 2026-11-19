@@ -6,6 +6,7 @@ import com.cmagent.core.runtime.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -62,6 +63,112 @@ class HarnessProtectedToolPayloadTest {
     @Test void 项目能力声明跟随真实审批开关() {
         assertThat(executor(new InMemoryAgentStateStore(), true).supportsLocalProjects()).isTrue();
         assertThat(executor(new InMemoryAgentStateStore(), false).supportsLocalProjects()).isFalse();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(AgentScopeExecutionMode.class)
+    void 两种执行策略在批准前阻止首个项目请求及后续文件正文发送(AgentScopeExecutionMode executionMode) {
+        var state = new InMemoryAgentStateStore();
+        var executor = disclosureExecutor(executionMode, state);
+        var sends = new CopyOnWriteArrayList<Boolean>();
+        var request = disclosureRequest(com.cmagent.core.security.OperationAuthorizationMode.ASK_ON_RISK, sends);
+        ToolInvocationGateway gateway = call -> ToolInvocationResult.succeededProtected(
+                "PRIVATE_PROJECT_CONTENT\ntoken=PRIVATE_FIXTURE_TOKEN", "已读取");
+        var initial = executor.executeStructured(new AgentScopeRunSpec(request), credential(), gateway, ignored -> {});
+        assertThat(initial.status()).isEqualTo(RunStatus.WAITING_APPROVAL);
+        assertThat(bodies).isEmpty();
+        assertThat(disclosureState(state, request).pending().preview().fragments()).containsExactly(request.input());
+        var pending = initial.pendingApproval().items().getFirst();
+        assertThat(pending.toolId()).isEqualTo(ProjectModelDisclosureState.approvalTypeId(request.tenantId()));
+        assertThat(pending.toolId()).isNotEqualTo(ProjectModelDisclosureState.approvalTypeId(UUID.randomUUID()));
+        assertThat(pending.inputSummary()).doesNotContain(request.input());
+
+        var afterInput = executor.resumeStructured(new AgentScopeRunSpec(request), credential(), gateway,
+                approve(initial), ignored -> {}, ignored -> {});
+        assertThat(afterInput.status()).isEqualTo(RunStatus.WAITING_APPROVAL);
+        assertThat(bodies).hasSize(1);
+        assertThat(bodies.getFirst()).doesNotContain(ProjectModelDisclosureState.NAME, "PRIVATE_PROJECT_CONTENT");
+        assertThat(disclosureState(state, request).pending().preview().fragments().toString())
+                .contains("PRIVATE_PROJECT_CONTENT", "token=<已脱敏>").doesNotContain("PRIVATE_FIXTURE_TOKEN");
+
+        var done = executor.resumeStructured(new AgentScopeRunSpec(request), credential(), gateway,
+                approve(afterInput), ignored -> {}, ignored -> {});
+        assertThat(done.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(bodies).hasSize(2);
+        assertThat(bodies.getLast()).contains("PRIVATE_PROJECT_CONTENT", "token=<已脱敏>")
+                .doesNotContain(ProjectModelDisclosureState.NAME, "PRIVATE_FIXTURE_TOKEN");
+        assertThat(sends).containsExactly(false, false);
+        assertThat(state.exists(request.tenantId() + ":" + request.principal().principalId(),
+                request.runId().toString())).isFalse();
+    }
+
+    @Test void 模型目标变化时原有批准不会被用于新模型() {
+        var state = new InMemoryAgentStateStore();
+        var executor = disclosureExecutor(AgentScopeExecutionMode.REACT, state);
+        var request = disclosureRequest(com.cmagent.core.security.OperationAuthorizationMode.ASK_ON_EFFECT,
+                new CopyOnWriteArrayList<>());
+        ToolInvocationGateway gateway = call -> ToolInvocationResult.succeededProtected("正文", "已读取");
+        var initial = executor.executeStructured(new AgentScopeRunSpec(request), credential(), gateway, ignored -> {});
+        var model = request.modelConfig();
+        var changedModel = new ModelConfig(model.id(), model.tenantId(), model.providerType(), "变更后模型",
+                model.baseUrl() + "/changed", model.modelName(), true);
+        var changed = new AgentRunRequest(request.runId(), request.tenantId(), request.agent(), changedModel,
+                request.principal(), request.input(), request.tools(), request.conversationId(), List.of(), Map.of(),
+                new RunCancellation(), null, request.projectContext(), null, request.projectModelDisclosure());
+        var afterChange = executor.resumeStructured(new AgentScopeRunSpec(changed), credential(), gateway,
+                approve(initial), ignored -> {}, ignored -> {});
+        assertThat(afterChange.status()).isEqualTo(RunStatus.WAITING_APPROVAL);
+        assertThat(afterChange.pendingApproval().items().getFirst().inputHash())
+                .isNotEqualTo(initial.pendingApproval().items().getFirst().inputHash());
+        assertThat(disclosureState(state, request).pending().preview().targetModel()).contains("变更后模型");
+        assertThat(bodies).isEmpty();
+    }
+
+    @Test void 完全访问仍在每次实际发送前脱敏并核对宿主权限() {
+        var sends = new CopyOnWriteArrayList<Boolean>();
+        var request = disclosureRequest(com.cmagent.core.security.OperationAuthorizationMode.FULL_ACCESS, sends);
+        var done = disclosureExecutor(AgentScopeExecutionMode.REACT, new InMemoryAgentStateStore())
+                .executeStructured(new AgentScopeRunSpec(request), credential(), call ->
+                        ToolInvocationResult.succeededProtected("PRIVATE_PROJECT_CONTENT\ntoken=PRIVATE_FIXTURE_TOKEN", "已读取"),
+                        ignored -> {});
+        assertThat(done.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(bodies).hasSize(2);
+        assertThat(bodies.getLast()).contains("PRIVATE_PROJECT_CONTENT", "token=<已脱敏>")
+                .doesNotContain(ProjectModelDisclosureState.NAME, "PRIVATE_FIXTURE_TOKEN");
+        assertThat(sends).containsExactly(true, true);
+    }
+
+    private AgentScopeExecutor disclosureExecutor(AgentScopeExecutionMode mode, AgentStateStore state) {
+        var options = new AgentScopeRuntimeOptions(Duration.ofSeconds(6), Duration.ofSeconds(3), 1, true);
+        if (mode == AgentScopeExecutionMode.HARNESS) return new AgentScopeHarnessExecutor(options, state,
+                (ignored, ignoredLoader) -> { throw new IllegalStateException("意外的技能读取"); });
+        return new AgentScopeReActExecutor(options, new AgentScopeModelFactory(), state);
+    }
+
+    private AgentRunRequest disclosureRequest(com.cmagent.core.security.OperationAuthorizationMode mode,
+            List<Boolean> permittedSends) {
+        var request = request(ToolRiskLevel.LOW);
+        var context = new ProjectRuntimeContext(request.projectContext().binding(),
+                request.projectContext().protectedToolIds(), mode);
+        return new AgentRunRequest(request.runId(), request.tenantId(), request.agent(), request.modelConfig(),
+                request.principal(), request.input(), request.tools(), request.conversationId(), List.of(), Map.of(),
+                new RunCancellation(), null, context, null, new ProjectModelDisclosureGateway() {
+                    @Override public String redact(String value) {
+                        return value.replace("PRIVATE_FIXTURE_TOKEN", "<已脱敏>");
+                    }
+                    @Override public void beforeSend(boolean automatic) { permittedSends.add(automatic); }
+                });
+    }
+
+    private static ProjectModelDisclosureState disclosureState(AgentStateStore store, AgentRunRequest request) {
+        return store.get(request.tenantId() + ":" + request.principal().principalId(), request.runId().toString(),
+                ProjectModelDisclosureState.KEY, ProjectModelDisclosureState.class).orElseThrow();
+    }
+
+    private static RuntimeApprovalDecisions approve(AgentScopeExecutionResult waiting) {
+        return new RuntimeApprovalDecisions(waiting.pendingApproval().items().stream().map(item ->
+                new RuntimeApprovalDecisions.Item(item.toolCallId(), item.toolId(), item.inputHash(),
+                        ToolApprovalDecision.APPROVE)).toList());
     }
 
     @Test void 项目系统提示明确列出本轮固定工具并纠正原生文件系统隔离含义() {

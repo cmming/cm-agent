@@ -201,20 +201,32 @@ public class ConversationService {
 
     /**
      * 在HTTP线程创建SSE之前复核项目来源和本机请求；普通会话仍保留原异步错误合同。
-     * @param principal JWT认证主体 @param agentId 路由Agent @param conversationId 路由会话
+     * @param principal JWT 认证主体
+     * @param agentId 路由 Agent
+     * @param conversationId 路由会话
+     * @param expectedProjectId 可选的同机项目一致性检查，不能改变会话绑定
      */
-    public void verifyProjectRequest(PrincipalRef principal, UUID agentId, UUID conversationId) {
+    public void verifyProjectRequest(PrincipalRef principal, UUID agentId, UUID conversationId, UUID expectedProjectId) {
         var conversation = conversationRepository.findByTenantAndAgentAndId(principal.tenantId(), agentId, conversationId).orElse(null);
         int protocol = conversation == null ? 0
                 : conversationRepository.workspaceProtocol(principal.tenantId(), agentId, conversationId);
         if (conversation != null && (protocol == com.cmagent.core.domain.LocalProjectBinding.PROTOCOL
                 || conversationRepository.hasLocalProjectSource(principal.tenantId(), agentId, conversationId))) {
-            if (importAccess == null) throw new IllegalStateException("当前服务不支持项目会话来源核验");
-            importAccess.conversation(principal, conversation);
-        } else if (conversation != null && (protocol == ClientProjectBinding.PROTOCOL
+            if (projectRuns == null) throw new IllegalStateException("当前服务不支持项目会话来源核验");
+            projectRuns.verifyMessageRequest(principal, conversation, expectedProjectId);
+            return;
+        }
+        if (conversation != null && (protocol == ClientProjectBinding.PROTOCOL
                 || conversationRepository.hasClientProjectSource(principal.tenantId(), agentId, conversationId))) {
             if (clientProjectRuns == null) throw new IllegalStateException("当前服务不支持设备项目会话来源核验");
             clientProjectRuns.verifyConversation(principal, conversation);
+        }
+        if (expectedProjectId != null) {
+            if (conversation == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "会话不存在");
+            // 先核验普通会话可见性，不能用 projectId 探测受保护的导入会话或设备项目会话。
+            if (importAccess != null) importAccess.conversation(principal, conversation);
+            throw new RunControlException(com.cmagent.api.ApiErrorCode.PROJECT_BINDING_CONFLICT,
+                    "当前会话未绑定同机项目，请选择项目下的会话");
         }
     }
 

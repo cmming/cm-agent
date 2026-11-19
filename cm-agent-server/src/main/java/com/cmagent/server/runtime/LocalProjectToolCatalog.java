@@ -1,6 +1,7 @@
 package com.cmagent.server.runtime;
 
 import com.cmagent.api.PrincipalRef;
+import com.cmagent.agentscope.ProjectModelDisclosureState;
 import com.cmagent.core.domain.*;
 import com.cmagent.core.repository.ToolDefinitionRepository;
 import com.cmagent.server.audit.AuditAppender;
@@ -43,7 +44,38 @@ public final class LocalProjectToolCatalog {
     /** @param tenant 可信租户 @param kind 固定工具类型 @return 与租户及协议版本绑定的精确ID，不因名称编辑变化 */
     public static UUID id(UUID tenant, Kind kind) { return UUID.nameUUIDFromBytes(("cm-agent/local-project/v1/" + tenant + "/" + kind.name()).getBytes(StandardCharsets.UTF_8)); }
     static Optional<Kind> kind(UUID tenant, UUID toolId) { return Arrays.stream(Kind.values()).filter(kind -> id(tenant, kind).equals(toolId)).findFirst(); }
-    static boolean managed(UUID tenant, UUID toolId) { return kind(tenant, toolId).isPresent(); }
+    static boolean managed(UUID tenant, UUID toolId) { return kind(tenant, toolId).isPresent() || isModelDisclosureReference(tenant, toolId); }
+
+    /** @param tenant 可信租户 @param toolId 待核验的工具编号 @return 是否为该租户的内部模型审批引用 */
+    public static boolean isModelDisclosureReference(UUID tenant, UUID toolId) {
+        return ProjectModelDisclosureState.approvalTypeId(tenant).equals(toolId);
+    }
+
+    /**
+     * 普通工具管理入口据此保留内部模型审批名称。
+     *
+     * @param name 客户端提交或当前工具持有的名称
+     * @return 是否与内部模型审批引用名称冲突
+     */
+    public static boolean isModelDisclosureName(String name) {
+        return name != null && ProjectModelDisclosureState.NAME.equalsIgnoreCase(name.strip());
+    }
+
+    /**
+     * 在审批写入事务中准备已有工具外键所需的禁用引用。仅准备元数据，固定项目工具目录和 Run 授权均不包含该项。
+     * @param tenant 从项目审批取得的可信租户
+     */
+    void ensureModelDisclosureReference(UUID tenant) {
+        var expected = new ToolDefinition(ProjectModelDisclosureState.approvalTypeId(tenant), tenant,
+                ProjectModelDisclosureState.NAME, "项目片段发送的内部审批引用", ToolType.LOCAL, "{\"type\":\"object\"}",
+                ToolRiskLevel.HIGH, false, "local-project:MODEL_DISCLOSURE_APPROVAL",
+                "cm-agent-local-project", "cm-agent-local-project");
+        tools.insertDisabledInternalReferenceIfAbsent(expected);
+        if (!tools.findByTenantAndIdForUpdate(tenant, expected.id()).filter(expected::equals).isPresent()) {
+            // 同名、被修改或软删除的定义都不能充当审批外键，原事务会回滚且模型保持暂停。
+            throw new IllegalStateException("内部项目审批引用定义不一致");
+        }
+    }
 
     /** @param principal 认证主体 @return 显式登记的固定目录；不创建任何Agent授权，不读取本地文件 */
     public synchronized List<ToolDefinition> install(PrincipalRef principal) {
@@ -70,6 +102,15 @@ public final class LocalProjectToolCatalog {
         return authorized.stream().filter(tool -> kind(tenant, tool.id()).map(kind -> matches(tool, definition(tenant, kind))).orElse(false)).toList();
     }
     boolean valid(ToolDefinition tool) { return kind(tool.tenantId(), tool.id()).map(kind -> matches(tool, definition(tool.tenantId(), kind))).orElse(false); }
+
+    /** 会话创建只验证既有有效授权，不能把客户端选中的 Agent 当作授权工具的依据。 */
+    boolean hasReadGrant(UUID tenant, UUID agent, List<ToolGrant> grants) {
+        return grants.stream().filter(grant -> grant.granted() && tenant.equals(grant.tenantId()) && agent.equals(grant.agentId()))
+                .map(ToolGrant::toolId)
+                .filter(toolId -> toolId.equals(id(tenant, Kind.LIST)) || toolId.equals(id(tenant, Kind.READ))
+                        || toolId.equals(id(tenant, Kind.SEARCH)))
+                .anyMatch(toolId -> tools.findByTenantAndId(tenant, toolId).filter(this::valid).isPresent());
+    }
 
     private ToolDefinition definition(UUID tenant, Kind kind) {
         // 既有tool_definitions.endpoint为NOT NULL；这里只保存固定逻辑标识，不是可联网或执行的地址。

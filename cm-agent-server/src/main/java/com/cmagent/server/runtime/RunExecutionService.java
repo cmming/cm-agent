@@ -479,7 +479,14 @@ public class RunExecutionService {
                         skills == null ? Map.of() : skills.dependencyResolutions(), controls.find(runningRun.id()) == null
                                 ? new com.cmagent.core.runtime.RunCancellation()
                                 : controls.find(runningRun.id()).cancellation(), workspace, projectContext,
-                        localAuthorization
+                        localAuthorization, projectContext == null || projectContext.binding() == null ? null
+                                : new com.cmagent.core.runtime.ProjectModelDisclosureGateway() {
+                                    @Override public String redact(String value) { return redactor.redact(value); }
+
+                                    @Override public void beforeSend(boolean automatic) {
+                                        projectRuns.authorizeModelDisclosure(principal, runningRun, projectContext, automatic);
+                                    }
+                                }
                 );
                 Consumer<AgentTextDelta> safeDelta = delta -> {
                     String text = redactor.redact(delta.delta());

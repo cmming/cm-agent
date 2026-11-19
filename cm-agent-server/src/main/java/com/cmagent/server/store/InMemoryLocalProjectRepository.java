@@ -28,6 +28,16 @@ public final class InMemoryLocalProjectRepository implements LocalProjectReposit
         return Optional.ofNullable(projects.get(new Key(tenantId, projectId))).filter(value -> value.ownerId().equals(ownerId));
     }
 
+    @Override public List<LocalProject> lockRegistrationCandidates(UUID tenantId, String ownerId, String nodeId, String rootIdentity) {
+        // 内存实现仅供元数据测试，整个登记流程的事务锁由部署所需的 JDBC 实现提供。
+        return projects.values().stream()
+                .filter(value -> value.tenantId().equals(tenantId) && value.ownerId().equals(ownerId))
+                .filter(value -> value.state() == LocalProject.State.ACTIVE && value.nodeId().equals(nodeId)
+                        && value.rootIdentity().equals(rootIdentity))
+                .sorted(Comparator.comparing(LocalProject::createdAt).thenComparing(value -> value.id().toString()))
+                .toList();
+    }
+
     @Override public List<LocalProject> list(UUID tenantId, String ownerId, LocalProjectPageRequest page, boolean includeArchived) {
         return projects.values().stream()
                 .filter(value -> value.tenantId().equals(tenantId) && value.ownerId().equals(ownerId))

@@ -684,7 +684,13 @@ V26 新增 `local_project_roots`、`local_projects`、`local_project_conversatio
 
 当前本机登录使用既有 bootstrap 管理员。若需完整开发能力，部署者须在 `bootstrap-permissions` 中显式列出上述四项项目权限，并重新登录取得新会话；留空或关闭功能时，原登录权限集合不增加项目权限。不能通过客户端修改 JWT、手工构造身份或使用通配权限绕过这一配置。
 
-控制台入口为 `/console/v2/projects.html`。新建项目会话要求主体具有 `project:manage`、`tool:grant` 与 `agent:run`；服务端会登记固定项目工具目录，只为所选 Agent 补齐缺失 grant，已有合法授权不重复覆盖。登记和 grant 仍不等于 HIGH 批准。项目会话仅加载本轮冻结的专用项目工具，不加载普通业务工具或 Skill；后加 grant 不会扩大已经启动的 Run，恢复不能更换工具集合。项目 Run 的系统提示会明确列出可用 `project_*` 工具，并要求通过项目相对路径读取，不得把 Harness 原生文件系统禁用解释为没有项目授权。文件正文可发送给选定模型，预览和引用前应核对项目资料范围。
+在 `/console/v2/chat.html` 中可选择本机项目或通过原生窗口登记文件夹。`POST /api/projects/selections` 启动选择，随后查询 `/api/projects/selections/{requestId}`，使用返回的一次性票据提交 `POST /api/projects`。目录选择和登记需要 `project:manage`，能力响应中的 `canRegister` 用于页面提示。同一主体在同一节点重选相同路径和目录身份时返回原活动项目。目录移动或替换后登记为新项目，原会话保持固定来源。
+
+部署时可由具有 `project:manage` 和 `tool:grant` 的主体调用 `POST /api/projects/tools/agents/{agentId}`，为当前租户 Agent 预置固定的项目工具，成功返回 204。该操作补齐缺失 grant，保留已有明确拒绝的 grant。聊天页通过 `POST /api/projects/{projectId}/conversations` 提交 `agentId` 和本次会话创建的 `requestId`。该入口核验固定项目归属、`project:read`、`agent:read`、`agent:run` 及 Agent 已有的有效项目读取工具授权。同一个主体在同一项目、Agent 下重试同一 `requestId` 时返回原会话。所选 Agent 停用或缺少工具时返回 `PROJECT_AGENT_NOT_READY`。项目管理页 `/console/v2/projects.html` 的已有客户端可省略 `requestId`，沿用原有的管理权限检查和固定工具初始化流程。
+
+项目会话仅加载本轮冻结的专用项目工具。后加授权不扩大已经启动的 Run，恢复时仍使用原工具集合。项目 Run 的系统提示列出可用 `project_*` 工具，通过项目相对路径读取资料。详情、消息、审批与流式接口涉及项目会话时也使用本机来源标记。
+
+项目会话使用 `POST /api/agents/{agentId}/conversations/{conversationId}/messages/stream` 发送首条及后续消息。请求可提交 `projectId`，仅用于核对页面所选项目与服务端固定会话是否一致。绑定冲突返回 `PROJECT_BINDING_CONFLICT`，发生在开始流式响应和创建本轮消息之前。
 
 项目会话发送消息时可提交 `projectAuthorizationMode`：
 
@@ -693,6 +699,8 @@ V26 新增 `local_project_roots`、`local_projects`、`local_project_conversatio
 - `FULL_ACCESS`：仅为当前项目、Agent 和 Run 内已识别且通过 grant、归属、策略和审计检查的固定项目工具自动授权。
 
 授权方式和冻结工具集合写入原 Run 加密检查点；审批恢复只使用原值，不重新采纳浏览器后提交的模式。非项目会话不能提交该字段，项目会话也不能与独立本机客户端授权同时使用。正常成功、停止、审批拒绝、过期和失败收口都会撤销检查点并写 `PROJECT_RUN_AUTHORIZATION/REVOKED_<MODE>`。`FULL_ACCESS` 的自动副作用另写 `PROJECT_AUTO_AUTHORIZATION`，不伪造人工批准。审计失败发生在真实文件或命令副作用前时，状态不推进且不执行。
+
+本机项目 Run 将发往已配置模型的项目片段按高风险处理。两档询问模式在发送前展示目标模型和脱敏片段，使用既有 `.../approvals/{approvalId}/decision/stream` 提交决定并恢复原 Run。`FULL_ACCESS` 在项目边界、有效授权和脱敏检查内自动放行。项目模型发送审批沿用本机来源标记，历史输入和执行中生成的项目工具结果均进入发送检查。
 
 固定工具定义的 `endpoint` 保存 `local-project:KIND` 逻辑标识，满足既有工具表的非空约束，不是 URL、命令或可自动执行的地址。实际执行仍由精确租户工具 ID、当前项目 Run 和治理授权决定；此修正不新增迁移。
 

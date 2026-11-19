@@ -174,6 +174,9 @@ public class ConversationController {
     ) {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:run", "CONVERSATION", conversationId.toString());
+        if (request.projectId() != null) {
+            conversationService.verifyProjectRequest(principal, agentId, conversationId, request.projectId());
+        }
         return conversationService.send(principal, agentId, conversationId, request.input(),
                 request.localClient(), request.projectAuthorizationMode());
     }
@@ -267,8 +270,9 @@ public class ConversationController {
         PrincipalRef principal = principal(authentication);
         authorize(principal, "agent:run", "CONVERSATION", conversationId.toString());
         String errorId = RequestCorrelationFilter.errorIdOf(servletRequest);
+        if (request.projectId() != null) controlDiagnostic(servletRequest, principal, agentId, conversationId, null);
         // SSE工作线程不会继承原始Servlet连接上下文，本机项目必须在提交响应前检查真实来源。
-        conversationService.verifyProjectRequest(principal, agentId, conversationId);
+        conversationService.verifyProjectRequest(principal, agentId, conversationId, request.projectId());
         SseEmitter emitter = new SseEmitter(0L);
         streamExecutor.execute(() -> executeStream(
                 emitter, principal, agentId, conversationId, request.input(), request.localClient(),
@@ -627,16 +631,27 @@ public class ConversationController {
      * 客户端允许提交的唯一消息写入字段。
      *
      * <p>tenant、角色、序号、消息标识和 Run 关联均由服务端生成，不能通过请求体覆盖可信会话边界。</p>
+     * @param input 本轮用户输入
+     * @param localClient 普通会话可选的单轮设备授权
+     * @param projectAuthorizationMode 本轮项目操作模式，缺省时同机项目采用高风险询问
+     * @param projectId 可选的同机项目一致性检查，不能改变会话绑定
      */
     public record SendMessageRequest(@NotBlank String input,
                                      com.cmagent.server.runtime.LocalClientRunSelection localClient,
-                                     com.cmagent.core.security.OperationAuthorizationMode projectAuthorizationMode) {
+                                     com.cmagent.core.security.OperationAuthorizationMode projectAuthorizationMode,
+                                     UUID projectId) {
         /** 保留旧 input-only 请求，未携带设备选择即没有本机客户端能力。 */
         public SendMessageRequest(String input) { this(input, null, null); }
 
         /** 兼容设备授权引入后的请求构造；项目模式缺省由服务端按高风险询问处理。 */
         public SendMessageRequest(String input, com.cmagent.server.runtime.LocalClientRunSelection localClient) {
             this(input, localClient, null);
+        }
+
+        /** 保留仅指定单轮授权模式的已有调用方式。 */
+        public SendMessageRequest(String input, com.cmagent.server.runtime.LocalClientRunSelection localClient,
+                                  com.cmagent.core.security.OperationAuthorizationMode projectAuthorizationMode) {
+            this(input, localClient, projectAuthorizationMode, null);
         }
     }
 

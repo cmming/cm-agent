@@ -16,6 +16,8 @@ spring:
     active: ${CM_AGENT_PROFILE:}
     group:
       prod: production
+  config:
+    import: "classpath:application-skill-sandbox.yml"
 
 management:
   endpoints:
@@ -37,6 +39,37 @@ cm-agent:
     model-timeout: ${cm-agent.config.agentscope-model-timeout:60s}
     tool-timeout: ${cm-agent.config.agentscope-tool-timeout:30s}
     model-max-attempts: ${cm-agent.config.agentscope-model-max-attempts:2}
+    permission-enabled: ${cm-agent.config.agentscope-permission-enabled:false}
+    approval-ttl: 15m
+    studio:
+      enabled: false
+      url: http://localhost:3000
+      project: cm-agent-local
+      run-name: cm-agent-local
+    execution-mode: ${cm-agent.config.agentscope-execution-mode:react}
+  model-credentials:
+    # 仅用于加密数据库中的模型 API Key；模型 API Key 本身不从配置文件读取。
+    encryption-key: ${CM_AGENT_MODEL_CREDENTIAL_ENCRYPTION_KEY:}
+  local-client:
+    # 功能尚需显式启用；远端部署必须固定客户端实际访问的 HTTP/HTTPS 来源，不能以请求 Host 头作为设备签名受众。
+    enabled: ${cm-agent.config.local-client-enabled:false}
+    audience: ${CM_AGENT_LOCAL_CLIENT_AUDIENCE:http://127.0.0.1:8080}
+    pairing-ttl: 10m
+    challenge-ttl: 30s
+    run-grant-ttl: 2h
+    operation-timeout: 45s
+  client-projects:
+    # 已配对设备项目首版仍需显式开启；必须同时启用 local-client 和 JDBC local/test。
+    enabled: ${CM_AGENT_CLIENT_PROJECTS_ENABLED:false}
+    allow-non-loopback: ${CM_AGENT_CLIENT_PROJECTS_ALLOW_NON_LOOPBACK:false}
+    allowed-origins:
+      - http://127.0.0.1:8080
+      - http://localhost:8080
+    selection-ttl: 2m
+    query-ttl: 30s
+    status-retention: 10m
+    command-task-ttl: ${CM_AGENT_CLIENT_PROJECTS_COMMAND_TASK_TTL:35m}
+    command-barrier-timeout: ${CM_AGENT_CLIENT_PROJECTS_COMMAND_BARRIER_TIMEOUT:5m}
   http-tools:
     enabled: ${cm-agent.config.http-tools-enabled:false}
     allow-http: ${cm-agent.config.http-tools-allow-http:false}
@@ -48,10 +81,21 @@ cm-agent:
   mcp:
     enabled: ${cm-agent.config.mcp-enabled:false}
     endpoint: ${cm-agent.config.mcp-endpoint:/mcp}
-  default-tenant-code: ${cm-agent.config.default-tenant-code:default}
+    allowed-origins:
+      - https://mcp-client.example.test
+    allowed-hosts:
+      - localhost:8080
+  model-catalog-discovery:
+    allowed-hosts:
+      - api.openai.com
+      - dashscope.aliyuncs.com
+      - dashscope-intl.aliyuncs.com
+      - opencode.ai
   skills:
     enabled: ${cm-agent.config.skills-enabled:false}
     allowed-resource-types: ${cm-agent.config.skills-allowed-resource-types:.md,.txt,.json,.yaml,.yml,.csv,.html,.js,.cjs,.sh}
+
+  default-tenant-code: ${cm-agent.config.default-tenant-code:default}
   persistence:
     mode: ${cm-agent.config.persistence-mode:memory}
     jdbc:
@@ -59,3 +103,36 @@ cm-agent:
       username: ${cm-agent.config.jdbc-username:}
       password: ${cm-agent.config.jdbc-password:}
       driver-class-name: ${cm-agent.config.jdbc-driver-class-name:}
+  workspace-context:
+    enabled: ${cm-agent.config.workspace-context-enabled:false}
+    # Server 上的登记资料根，与下面的导入存储根分开
+    root-directory: ${CM_AGENT_WORKSPACE_REFERENCE_ROOT:}
+    max-files: 4
+    max-file-bytes: 16384
+    max-total-bytes: 32768
+    read-timeout: 2s
+    imports:
+      enabled: ${cm-agent.config.workspace-imports-enabled:false}
+      # Server 保存上传资料密文的位置，不是用户电脑所选目录
+      root-directory: ${CM_AGENT_WORKSPACE_IMPORT_ROOT:}
+      encryption-key: ${CM_AGENT_WORKSPACE_IMPORT_KEY:}
+      max-imports-per-owner: 8
+      max-imports-per-tenant: 64
+      max-bytes-per-owner: 262144
+      max-bytes-per-tenant: 2097152
+
+      draft-ttl: 1h
+      ready-ttl: 30d
+      cleanup-interval: 5m
+  local-projects:
+    enabled: ${cm-agent.config.local-projects-enabled:false}
+    # 默认只允许回环访问；仅在受控局域网调试时显式开启，并同时收紧 allowed-origins 与防火墙。
+    allow-non-loopback: ${CM_AGENT_LOCAL_PROJECTS_ALLOW_NON_LOOPBACK:false}
+    node-id: ${cm-agent.config.local-projects-node-id:}
+    state-directory: ${cm-agent.config.local-projects-state-directory:}
+    allowed-origins:
+      - http://127.0.0.1:8080
+      - http://localhost:8080
+    selection-ttl: 2m
+    commands:
+      tools: {}

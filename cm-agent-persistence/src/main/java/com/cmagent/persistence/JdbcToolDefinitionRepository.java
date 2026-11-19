@@ -36,6 +36,23 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
      * @return 已保存的工具定义
      */
     public ToolDefinition save(ToolDefinition tool) {
+        insert(tool, "");
+        return tool;
+    }
+
+    @Override
+    public void insertDisabledInternalReferenceIfAbsent(ToolDefinition tool) {
+        if (tool.enabled() || tool.type() != ToolType.LOCAL
+                || !org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalArgumentException("内部审批引用必须在短事务内以禁用 LOCAL 定义登记");
+        }
+        // 两库均在并发首次登记时保留原行。调用方随后锁行核对完整定义，其他唯一键冲突不能被当作成功。
+        String version = jdbcClient.sql("SELECT version()").query(String.class).single();
+        String suffix = version.startsWith("PostgreSQL") ? " ON CONFLICT DO NOTHING" : " ON DUPLICATE KEY UPDATE id = id";
+        insert(tool, suffix);
+    }
+
+    private void insert(ToolDefinition tool, String suffix) {
         Instant now = Instant.now();
         jdbcClient.sql("""
                         INSERT INTO tool_definitions (
@@ -67,7 +84,7 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
                             :createdAt,
                             :updatedAt
                         )
-                        """)
+                        """ + suffix)
                 .param("id", tool.id().toString())
                 .param("tenantId", tool.tenantId().toString())
                 .param("name", tool.name())
@@ -82,7 +99,6 @@ public class JdbcToolDefinitionRepository implements ToolDefinitionRepository {
                 .param("createdAt", Timestamp.from(now))
                 .param("updatedAt", Timestamp.from(now))
                 .update();
-        return tool;
     }
 
     @Override

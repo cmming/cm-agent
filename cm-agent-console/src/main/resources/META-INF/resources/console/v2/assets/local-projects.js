@@ -411,5 +411,158 @@
             if ($("projectSearchQuery")) $("projectSearchQuery").value = "";
         }};
     }
-    return {createRequestId, createSelection, createProjectPage};
+    function createChatPage({api, document, host = globalThis, getSessionEpoch}) {
+        const $ = id => document.getElementById(id);
+        const selectedProjectKey = "cm-agent.chat.project.v1";
+        const epoch = getSessionEpoch();
+        let active = true, selectionTimer = null, selectionPolls = 0, capabilities, development;
+        const controllers = new Set();
+        let items = [], cursor = null, projectId = "", listRevision = 0, projectRevision = 0;
+        const valid = () => active && getSessionEpoch() === epoch;
+        const randomId = () => createRequestId(host.crypto);
+        const rememberProject = id => {
+            try {
+                if (id) host.localStorage?.setItem(selectedProjectKey, id);
+                else host.localStorage?.removeItem(selectedProjectKey);
+            } catch {
+                // 隐私模式拒绝存储时仍可手动选择项目，页面状态恢复非核心能力。
+            }
+        };
+        const rememberedProject = () => {
+            try { return host.localStorage?.getItem(selectedProjectKey) || ""; }
+            catch { return ""; }
+        };
+        async function guarded(send, url, options = {}, onEvent) {
+            if (!valid()) throw new Error("项目聊天已离开，请重新打开后重试。");
+            const controller = new AbortController(); controllers.add(controller);
+            try { return await send(url, {...options, headers: {...options.headers, ...boundary}, signal: controller.signal}, onEvent); }
+            finally { controllers.delete(controller); }
+        }
+        const request = (url, options) => guarded(api.request, url, options);
+        const stream = (url, options, onEvent) => guarded(api.stream, url, options, onEvent);
+        const status = (text, error = false) => {
+            $("chatProjectSelectionStatus").textContent = text;
+            $("chatProjectSelectionStatus").dataset.tone = error ? "error" : "neutral";
+        };
+        const allowRegistration = () => capabilities?.enabled === true && capabilities.canRegister !== false;
+        const cancelPoll = () => { if (selectionTimer != null) host.clearTimeout(selectionTimer); selectionTimer = null; };
+        const selection = createSelection({request, randomId, changed: renderSelection});
+        function renderSelection(value) {
+            if (!valid()) return;
+            cancelPoll();
+            const selecting = value.phase === "SELECTING", selected = value.phase === "SELECTED", creating = value.phase === "CREATING";
+            $("chatProjectChoose").disabled = !allowRegistration() || selecting || selected || creating || ["UNKNOWN", "CREATE_UNKNOWN"].includes(value.phase);
+            $("chatProjectSelectionCheck").hidden = !selecting && value.phase !== "UNKNOWN";
+            $("chatProjectNameForm").hidden = !selected && !creating;
+            $("chatProjectRegister").disabled = !selected;
+            $("chatProjectAbandon").disabled = creating;
+            const messages = {SELECTING: "请在本机系统窗口中选择文件夹。", SELECTED: "为所选文件夹命名，添加为项目。",
+                CANCELLED: "已取消文件夹选择。", FAILED: `无法选择文件夹，请重试。${value.errorId ? `错误编号 ${value.errorId}` : ""}`,
+                UNKNOWN: `请选择「核对选择状态」。${value.message || ""}`, EXPIRED: "目录授权已过期，请重新选择文件夹。",
+                CREATING: "正在登记项目。", CREATED: "项目已添加。", CREATE_UNKNOWN: `登记结果待确认，请刷新项目列表。${value.message || ""}`};
+            status(messages[value.phase] || (allowRegistration() ? "" : "当前账号可浏览已有项目。"), ["FAILED", "UNKNOWN", "CREATE_UNKNOWN"].includes(value.phase));
+            if (selecting && selectionPolls++ < 120) selectionTimer = host.setTimeout(() => selection.check(), 1000);
+        }
+        function option(label, value) {
+            const option = document.createElement("option"); option.textContent = label; option.value = value; return option;
+        }
+        function renderList() {
+            const select = $("chatProjectSelect");
+            select.replaceChildren(option("选择项目", ""), ...items.map(item => option(item.name, item.id)));
+            select.value = projectId; $("chatProjectMore").hidden = !cursor;
+        }
+        async function loadList(append = false) {
+            const stamp = ++listRevision;
+            try {
+                const query = new URLSearchParams({limit: "50"});
+                if (append && cursor) { query.set("beforeUpdatedAt", cursor.updatedAt); query.set("beforeId", cursor.id); }
+                const page = await request(`/api/projects?${query}`);
+                if (!valid() || stamp !== listRevision) return;
+                const next = Array.isArray(page) ? page : page.items || [];
+                items = append ? [...items, ...next.filter(item => !items.some(existing => existing.id === item.id))] : next;
+                cursor = Array.isArray(page) ? (next.length === 50 ? next.at(-1) : null)
+                    : (page.nextUpdatedAt && page.nextId ? {updatedAt: page.nextUpdatedAt, id: page.nextId} : null);
+                renderList(); return true;
+            } catch (error) { if (valid() && stamp === listRevision) status(error.message, true); }
+        }
+        async function openProject(id) {
+            if (!valid() || id === projectId && development) return;
+            const stamp = ++projectRevision;
+            projectId = id; renderList();
+            development?.dispose(); development = null;
+            const mount = $("chatProjectConversationMount");
+            mount.textContent = id ? "正在核对项目…" : "选择已有项目，或选择文件夹创建项目。";
+            if (!id) { rememberProject(""); return; }
+            try {
+                const project = await request(`/api/projects/${encodeURIComponent(id)}`);
+                if (!valid() || stamp !== projectRevision) return;
+                rememberProject(id);
+                mount.replaceChildren($("chatProjectConversationTemplate").content.cloneNode(true));
+                $("projectDevelopmentHeading").textContent = project.name;
+                development = host.CmAgentProjectDevelopment.create({request, stream, randomId, document, host,
+                    isCurrent: () => valid() && stamp === projectRevision});
+                await development.mount(project, capabilities);
+            } catch (error) {
+                if (valid() && stamp === projectRevision) {
+                    rememberProject("");
+                    projectId = ""; renderList();
+                    status(error.message, true);
+                }
+            }
+        }
+        function switchMode(project) {
+            if (!valid()) return;
+            $("chatModeOrdinary").setAttribute("aria-pressed", String(!project));
+            $("chatModeProject").setAttribute("aria-pressed", String(project));
+            $("chatSessionPanel").hidden = $("ordinaryChatMain").hidden = $("chatSessionsToggle").hidden = project;
+            $("projectChatWorkspace").hidden = !project;
+        }
+        return {
+            async mount() {
+                try { capabilities = await request("/api/projects/capabilities"); }
+                catch { return; }
+                if (!valid() || !capabilities?.enabled || !capabilities.conversations) return;
+                $("chatModeSwitch").hidden = false; renderSelection(selection.value());
+                $("chatModeOrdinary").addEventListener("click", () => switchMode(false));
+                $("chatModeProject").addEventListener("click", () => { switchMode(true); void loadList(); });
+                $("chatProjectSelect").addEventListener("change", event => openProject(event.target.value));
+                $("chatProjectChoose").addEventListener("click", async () => {
+                    if (!valid() || !allowRegistration()) return;
+                    selectionPolls = 0; $("chatProjectName").value = "";
+                    try { await selection.start(); } catch (error) { if (valid()) status(error.message, true); }
+                });
+                $("chatProjectSelectionCheck").addEventListener("click", () => { selectionPolls = 0; return selection.check(); });
+                $("chatProjectAbandon").addEventListener("click", () => { selection.dispose(); renderSelection({phase: "CANCELLED"}); });
+                $("chatProjectRefresh").addEventListener("click", async () => {
+                    const refreshed = await loadList();
+                    if (refreshed && valid() && selection.value().phase === "CREATE_UNKNOWN") { selection.dispose(); renderSelection(selection.value()); }
+                });
+                $("chatProjectMore").addEventListener("click", () => loadList(true));
+                $("chatProjectNameForm").addEventListener("submit", async event => {
+                    event.preventDefault();
+                    if (!valid()) return;
+                    const stamp = projectRevision;
+                    try {
+                        const project = await selection.create($("chatProjectName").value);
+                        if (!valid() || !project) return;
+                        ++listRevision;
+                        if (!items.some(item => item.id === project.id)) items.unshift(project);
+                        renderList();
+                        if (stamp === projectRevision) await openProject(project.id);
+                    } catch (error) { if (valid()) status(error.message, true); }
+                });
+                const remembered = rememberedProject();
+                if (remembered) {
+                    const loaded = await loadList();
+                    if (valid() && loaded && items.some(item => item.id === remembered && item.state === "ACTIVE")) {
+                        switchMode(true);
+                        await openProject(remembered);
+                    } else if (valid()) rememberProject("");
+                }
+            },
+            dispose() { active = false; cancelPoll(); selection.dispose(); development?.dispose(); for (const controller of controllers) controller.abort(); }
+        };
+    }
+
+    return {createRequestId, createSelection, createProjectPage, createChatPage};
 });

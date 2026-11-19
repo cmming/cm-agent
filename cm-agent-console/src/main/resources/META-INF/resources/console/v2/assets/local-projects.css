@@ -213,3 +213,24 @@ body[data-console-version="v2"] #projectsPage .project-tree-toolbar > div { flex
 .project-source-switch .button[aria-pressed="true"]{border-color:var(--accent,#2864a8);background:var(--accent,#2864a8);color:#fff}
 #clientProjectDevice{min-width:14rem;max-width:100%}
 @media (max-width:640px){.project-source-switch{flex-wrap:wrap}#clientProjectDevice{width:100%}}
+.chat-page-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.chat-mode-switch { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
+body[data-console-version="v2"] .chat-mode-switch .button { border-color: transparent; background: transparent; }
+body[data-console-version="v2"] .chat-mode-switch [aria-pressed="true"] { border-color: var(--border); background: var(--surface); color: var(--accent); }
+.chat-project-workspace { grid-column: 1 / -1; display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; min-height: 0; }
+.chat-project-workspace[hidden], .chat-page > [hidden], #chatModeSwitch[hidden], #chatSessionsToggle[hidden] { display: none !important; }
+.chat-project-selector, .chat-project-conversation { min-width: 0; overflow: auto; padding: 16px; }
+.chat-project-selector h2, .chat-project-conversation h2 { margin: 0 0 12px; font-size: 18px; }
+.chat-project-selector select, .chat-project-selector input { width: 100%; }
+.chat-project-picker-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chat-project-conversation .project-development { border: 0; padding: 0; margin: 0; }
+.chat-project-conversation .project-conversation-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-project-conversation .project-chat-messages { min-height: 110px; max-height: 36vh; overflow: auto; }
+.chat-project-form { display: grid; gap: 6px; margin: 12px 0; }
+.chat-project-form textarea { width: 100%; resize: vertical; }
+.chat-project-form > button { justify-self: start; }
+.project-disclosure-preview { max-height: 40vh; overflow: auto; }
+@media (max-width: 850px) {
+    .chat-project-workspace { grid-template-columns: minmax(0, 1fr); align-content: start; overflow: auto; }
+    .chat-project-selector, .chat-project-conversation { overflow: visible; }
+}

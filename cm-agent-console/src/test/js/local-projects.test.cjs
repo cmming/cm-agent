@@ -169,20 +169,77 @@ test("项目选择后焦点回到同一项目按钮", async () => {
     page.dispose();
 });
 
+test("聊天中的取消选择保留已有项目，只有确认票据才登记文件夹", async () => {
+    const document = dom(), requests = [], opened = [];
+    const first = {id: "first", name: "原项目", state: "ACTIVE"};
+    const second = {id: "second", name: "新项目", state: "ACTIVE"};
+    const get = id => document.getElementById(id);
+    get("chatProjectConversationTemplate").content = {cloneNode: () => document.createElement("section")};
+    let result = "CANCELLED";
+    const page = projects.createChatPage({document, getSessionEpoch: () => 1, host: {...host(), CmAgentProjectDevelopment: {
+        create() { return {async mount(project) { opened.push(project.id); }, dispose() {}}; }
+    }}, api: {request: async (url, options) => {
+        requests.push([url, options]);
+        assert.equal(options.headers["X-CM-Agent-Local-Project"], "1");
+        if (url.endsWith("capabilities")) return {enabled: true, conversations: true, canRegister: true};
+        if (url.includes("?limit=50")) return [first];
+        if (url.endsWith("/first")) return first;
+        if (url.endsWith("/second")) return second;
+        if (url.endsWith("/selections")) return {};
+        if (url.endsWith("/selections/request-1")) return {...selected, state: result};
+        if (url === "/api/projects") return second;
+        throw new Error(url);
+    }}});
+    await page.mount(); get("chatModeProject").click(); await settle();
+    await get("chatProjectSelect").events.change({target: {value: "first"}});
+    await get("chatProjectChoose").click();
+    assert.deepEqual(opened, ["first"]);
+    assert.equal(get("chatProjectNameForm").hidden, true);
+    assert.equal(requests.some(([url]) => url === "/api/projects"), false);
+    result = "SELECTED";
+    await get("chatProjectChoose").click();
+    get("chatProjectName").value = "新项目";
+    await get("chatProjectNameForm").events.submit({preventDefault() {}});
+    assert.deepEqual(opened, ["first", "second"]);
+    assert.deepEqual(JSON.parse(requests.find(([url]) => url === "/api/projects")[1].body), {requestId: "request-1", ticketId: "ticket-1", name: "新项目"});
+    get("chatModeOrdinary").click();
+    assert.equal(get("ordinaryChatMain").hidden, false);
+    assert.equal(get("projectChatWorkspace").hidden, true);
+    page.dispose();
+});
+
+test("聊天页重启后恢复上次活动项目", async () => {
+    const document = dom(), opened = [], stored = new Map([["cm-agent.chat.project.v1", "last-project"]]);
+    const last = {id: "last-project", name: "上次项目", state: "ACTIVE"};
+    document.getElementById("chatProjectConversationTemplate").content = {cloneNode: () => document.createElement("section")};
+    const localStorage = {getItem: key => stored.get(key) || null, setItem: (key, value) => stored.set(key, value),
+        removeItem: key => stored.delete(key)};
+    const page = projects.createChatPage({document, getSessionEpoch: () => 1,
+        host: {...host(), localStorage, CmAgentProjectDevelopment: {create() {
+            return {async mount(project) { opened.push(project.id); }, dispose() {}};
+        }}},
+        api: {request: async (url, options) => {
+            if (url === "/api/projects/capabilities") return {enabled: true, conversations: true, canRegister: true};
+            if (url.startsWith("/api/projects?")) return [last];
+            if (url === "/api/projects/last-project") return last;
+            throw new Error(url);
+        }, stream: async () => { throw new Error("不得发送"); }}});
+
+    await page.mount();
+
+    assert.deepEqual(opened, ["last-project"]);
+    assert.equal(document.getElementById("chatModeProject").attributes["aria-pressed"], "true");
+    assert.equal(document.getElementById("projectChatWorkspace").hidden, false);
+    page.dispose();
+});
+
 test("v2入口均预载项目脚本样式且不将文件夹选择伪装为上传", () => {
     const base = path.join(__dirname, "../../main/resources/META-INF/resources/console/v2");
     for (const name of fs.readdirSync(base).filter(name => name.endsWith(".html"))) {
         const html = fs.readFileSync(path.join(base, name), "utf8");
-        if (name === "local-client.html") {
-            assert.doesNotMatch(html, /local-projects\.js\?v=1\.2\.0/);
-            assert.doesNotMatch(html, /project-development\.js\?v=1\.1\.4/);
-        } else {
-            assert.match(html, /local-projects\.js\?v=1\.2\.0/);
-            assert.match(html, name === "projects.html"
-                ? /project-development\.js\?v=1\.1\.5/
-                : /project-development\.js\?v=1\.1\.4/);
-        }
-    assert.match(html, /local-projects\.css\?v=1\.7\.0/);
+        assert.match(html, /local-projects\.js\?v=1\.3\.1/);
+        assert.match(html, /project-development\.js\?v=1\.2\.1/);
+        assert.match(html, /local-projects\.css\?v=1\.8\.0/);
         if (name !== "login.html") assert.match(html, /href="\/console\/v2\/projects\.html"/);
     }
     const html = fs.readFileSync(path.join(base, "projects.html"), "utf8");

@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="/console/v2/assets/skill-artifacts.css?v=1.0.0">
     <link rel="stylesheet" href="/assets/chat-stop.css?v=1.0.1">
     <link rel="stylesheet" href="/console/v2/assets/workbench.css?v=1.0.3">
-<link rel="stylesheet" href="/console/v2/assets/local-projects.css?v=1.7.0">
+<link rel="stylesheet" href="/console/v2/assets/local-projects.css?v=1.8.0">
 <link rel="stylesheet" href="/console/v2/assets/local-client.css?v=1.0.4"></head>
 <body data-console-version="v2" data-page="chatPage">
 <div class="console-layout">
@@ -33,7 +33,17 @@
         <header class="workspace-header"><p class="workspace-crumb">当前工作区 <span aria-hidden="true">/</span> <b>会话聊天</b></p><div class="user-actions"><span class="online-dot" aria-label="系统运行正常"></span><span class="system-status">系统运行正常</span><span class="user-avatar" aria-hidden="true">管</span><span id="currentUser" class="sr-only">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
         <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
         <section id="chatPage" class="page-view chat-page" aria-label="会话聊天工作区">
-            <div class="page-intro"><div><h1>会话聊天</h1><p>保留上下文，实时查看回答、思考和工具调用。</p></div><button id="chatSessionsToggle" class="button ghost" type="button" aria-controls="chatSessionPanel" aria-expanded="false">会话与 Agent</button><button id="newChatConversationTopBtn" type="button" hidden aria-hidden="true" tabindex="-1">新会话</button></div>
+            <div class="page-intro">
+                <div><h1>会话聊天</h1><p>保留上下文，实时查看回答、思考和工具调用。</p></div>
+                <div class="chat-page-actions">
+                    <div id="chatModeSwitch" class="chat-mode-switch" role="group" aria-label="聊天范围" hidden>
+                        <button id="chatModeOrdinary" class="button ghost compact" type="button" aria-pressed="true">普通聊天</button>
+                        <button id="chatModeProject" class="button ghost compact" type="button" aria-pressed="false">项目聊天</button>
+                    </div>
+                    <button id="chatSessionsToggle" class="button ghost" type="button" aria-controls="chatSessionPanel" aria-expanded="false">会话与 Agent</button>
+                </div>
+                <button id="newChatConversationTopBtn" type="button" hidden aria-hidden="true" tabindex="-1">新会话</button>
+            </div>
             <aside id="chatSessionPanel" class="panel chat-session-panel" aria-label="会话列表">
                 <div class="chat-agent-picker">
                     <label for="chatAgentSelect">当前 Agent</label>
@@ -45,7 +55,7 @@
                 <p id="chatConversationSearchHint" class="chat-session-note">仅查找当前 Agent 已加载的会话，最多加载 50 个。</p>
                 <div id="chatConversationList" class="chat-conversation-list"><p class="empty-state">正在加载会话。</p></div>
             </aside>
-            <section class="panel chat-main-panel" aria-label="消息内容">
+            <section id="ordinaryChatMain" class="panel chat-main-panel" aria-label="消息内容">
                 <div class="chat-main-heading"><div><p id="chatCurrentAgent" class="chat-current-agent">当前 Agent</p><h2 id="chatConversationTitle" tabindex="0">请选择会话</h2></div><span id="chatLiveStatus" class="chat-live-status" role="status" aria-live="polite">已就绪</span></div>
                 <div class="chat-reading-region"><div id="chatMessageList" class="chat-message-list" aria-label="会话消息" tabindex="0"><div class="chat-welcome"><h3>开始一段会话</h3><p>选择 Agent 后发送第一条消息，系统会自动创建会话并保存上下文。</p></div></div><button id="chatLatestBtn" class="button ghost compact" type="button" hidden>回到最新</button></div>
                 <section id="chatApprovalHistoryRegion" class="chat-approval-history-region" aria-labelledby="chatApprovalHistoryHeading" hidden>
@@ -121,13 +131,68 @@
                     <p id="chatFormStatus" class="form-status" aria-live="polite"></p>
                 </form>
             </section>
+            <section id="projectChatWorkspace" class="chat-project-workspace" aria-label="项目聊天" hidden>
+                <aside class="panel chat-project-selector" aria-labelledby="chatProjectListTitle">
+                    <h2 id="chatProjectListTitle">本机项目</h2>
+                    <label class="sr-only" for="chatProjectSelect">当前项目</label>
+                    <select id="chatProjectSelect"><option value="">选择项目</option></select>
+                    <div class="chat-project-picker-actions">
+                        <button id="chatProjectChoose" class="button primary compact" type="button">选择文件夹</button>
+                        <button id="chatProjectSelectionCheck" class="button ghost compact" type="button" hidden>核对选择状态</button>
+                        <button id="chatProjectRefresh" class="button ghost compact" type="button">刷新项目</button>
+                        <button id="chatProjectMore" class="button ghost compact" type="button" hidden>加载更多项目</button>
+                    </div>
+                    <p id="chatProjectSelectionStatus" class="form-status" role="status" aria-live="polite"></p>
+                    <form id="chatProjectNameForm" hidden>
+                        <label for="chatProjectName">项目名称</label>
+                        <input id="chatProjectName" required maxlength="120" autocomplete="off">
+                        <div class="chat-project-picker-actions"><button id="chatProjectRegister" class="button primary compact" type="submit">添加项目</button><button id="chatProjectAbandon" class="button ghost compact" type="button">取消</button></div>
+                    </form>
+                </aside>
+                <section class="panel chat-project-conversation" aria-label="项目会话">
+                    <div id="chatProjectConversationMount"><p class="empty-state">选择已有项目，或选择文件夹创建项目。</p></div>
+                </section>
+            </section>
+            <template id="chatProjectConversationTemplate">
+                <section id="projectDevelopment" class="project-development" aria-labelledby="projectDevelopmentHeading" hidden>
+                    <h2 id="projectDevelopmentHeading">项目会话</h2>
+                    <div class="project-conversation-toolbar">
+                        <label id="projectChatAgentLabel" for="projectChatAgent">新会话 Agent</label>
+                        <select id="projectChatAgent"></select>
+                        <button id="projectNewConversation" class="button ghost compact" type="button">新会话</button>
+                    </div>
+                    <div class="project-preview-toolbar"><h3>最近会话</h3><button id="projectConversationRefresh" class="button ghost compact" type="button">刷新会话</button></div>
+                    <div id="projectConversationList" class="project-conversation-list"></div>
+                    <p id="projectChatStatus" class="form-status" role="status" aria-live="polite"></p>
+                    <div id="projectChatBody" hidden>
+                        <div class="project-preview-toolbar"><h3 id="projectChatTitle"></h3><button id="projectChatRefresh" class="button ghost compact" type="button">核对状态</button></div>
+                        <p id="projectRunStatus" class="form-status" role="status" aria-live="polite"></p>
+                        <button id="projectRunStop" class="button ghost compact" type="button" hidden>停止本轮</button>
+                        <div id="projectChatMessages" class="project-chat-messages" aria-label="项目消息" tabindex="0"></div>
+                        <button id="projectMessagesMore" class="button ghost compact" type="button" hidden>加载后续消息</button>
+                        <div id="projectApprovalItems" aria-label="本轮审批"></div>
+                        <form id="projectChatForm" class="chat-project-form">
+                            <label for="projectChatInput">项目消息</label><textarea id="projectChatInput" rows="3" required placeholder="描述要在此项目中完成的任务"></textarea>
+                            <div class="project-authorization-mode">
+                                <label for="projectAuthorizationMode">本轮授权方式</label>
+                                <select id="projectAuthorizationMode" name="projectAuthorizationMode" aria-describedby="projectAuthorizationHelp">
+                                    <option value="ASK_ON_EFFECT">操作前询问</option><option value="ASK_ON_RISK" selected>高风险时询问</option><option value="FULL_ACCESS">完全访问</option>
+                                </select>
+                                <p id="projectAuthorizationHelp" class="field-help"></p>
+                            </div>
+                            <button id="projectChatSend" class="button primary" type="submit" disabled>发送</button>
+                        </form>
+                        <details><summary>运行操作</summary><div class="project-preview-toolbar"><button id="projectOperationsRefresh" class="button ghost compact" type="button">刷新操作状态</button></div><div id="projectCommandResults"></div><button id="projectOperationsMore" class="button ghost compact" type="button" hidden>查看其他操作</button><button id="projectOperationHistoryMore" class="button ghost compact" type="button" hidden>加载更早审批</button></details>
+                    </div>
+                </section>
+            </template>
         </section>
     </main>
 </div>
 <script src="/assets/console-core.js?v=2.0.19"></script>
 <script src="/console/v2/assets/sandbox-endpoints.js?v=1.1.1"></script>
 <script src="/console/v2/assets/skill-artifacts.js?v=1.0.2"></script>
-<script src="/console/v2/assets/project-development.js?v=1.1.5"></script><script src="/console/v2/assets/local-projects.js?v=1.2.0"></script><script src="/console/v2/assets/client-projects.js?v=1.2.3"></script><script src="/assets/app.js?v=2.0.45"></script>
+<script src="/console/v2/assets/project-development.js?v=1.2.1"></script><script src="/console/v2/assets/local-projects.js?v=1.3.1"></script><script src="/console/v2/assets/client-projects.js?v=1.2.3"></script><script src="/assets/app.js?v=2.0.46"></script>
 <script src="/console/v2/assets/skills.js?v=2.1.2"></script>
 </body>
 </html>

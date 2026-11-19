@@ -48,12 +48,28 @@ final class LocalProjectRunService {
         var binding = bindings.conversation(principal.tenantId(), principal.principalId(), conversation.id()).orElse(null);
         if (binding == null) {if(resources.applies(conversation))resources.conversation(principal,conversation);return null;}
         var source = resources.conversation(principal, conversation);
+        requireActiveRoot(principal, conversation, source);
+        return new LocalProjectBinding(source.tenantId(), source.ownerId(), source.projectId(), source.agentId(), source.conversationId(), runId,
+                source.rootBindingId(), source.rootIdentity(), source.nodeId(), source.projectVersion(), clock.instant());
+    }
+
+    /**
+     * 首发提交 SSE 前验证浏览器本机来源、固定绑定和当前目录，避免把可预期拒绝留给已提交的事件流。
+     * 客户端项目编号只用于发现页面选择已过期，不作为文件范围或授权来源。
+     */
+    void verifyMessageRequest(PrincipalRef principal, Conversation conversation, UUID expectedProjectId) {
+        var source = resources.conversation(principal, conversation);
+        if (expectedProjectId != null && !expectedProjectId.equals(source.projectId()))
+            throw access.reject(principal, conversation.id(), "PROJECT_BINDING_CONFLICT", 409,
+                    "聊天页选中的项目与会话不一致，请刷新后重试");
+        requireActiveRoot(principal, conversation, source);
+    }
+
+    private void requireActiveRoot(PrincipalRef principal, Conversation conversation, LocalProjectBinding source) {
         access.scope(principal, source.projectId(), "project:read");
         access.authorize(principal, "agent:run", conversation.id());
         if (operations.hasUncertainOperation(principal.tenantId(), principal.principalId(), source.projectId(), null))
             throw access.reject(principal, source.projectId(), "PROJECT_OPERATION_UNCERTAIN", 409, "项目仍有运行中或结果未知的操作，请先核对原操作");
-        return new LocalProjectBinding(source.tenantId(), source.ownerId(), source.projectId(), source.agentId(), source.conversationId(), runId,
-                source.rootBindingId(), source.rootIdentity(), source.nodeId(), source.projectVersion(), clock.instant());
     }
 
     /** 元数据短事务内先锁项目；根/文件I/O已在preflight完成且真实执行前仍须重查。 */
@@ -200,6 +216,22 @@ final class LocalProjectRunService {
         } catch (Exception failure) {
             throw access.infrastructure(principal, run.id(), "PROJECT_AUTHORIZATION_READ", failure);
         }
+    }
+
+    /**
+     * 在实际 Provider 调用前验证固定根和本轮授权，并先写入严格审计。
+     * 模式和上下文都来自本轮持久化快照，审计只保存操作结果，避免写入拟发送片段及模型地址。
+     */
+    void authorizeModelDisclosure(PrincipalRef principal, RunRecord run, ProjectRuntimeContext context,
+            boolean automatic) {
+        var scope = access.run(principal, run.id(), "project:read");
+        var mode = authorizationMode(principal, run);
+        if (!scope.binding().equals(context.binding()) || mode != context.authorizationMode()
+                || automatic != (mode == OperationAuthorizationMode.FULL_ACCESS)) {
+            throw access.reject(principal, run.id(), "PROJECT_MODEL_DISCLOSURE_CONFLICT", 409,
+                    "本轮项目片段发送授权已变化");
+        }
+        access.record(principal, run.id(), "PROJECT_MODEL_DISCLOSURE", automatic ? "AUTO_ALLOWED" : "APPROVED");
     }
     /** 供原owner历史差异/输出面板使用，不能把恢复检查点的TTL当作历史读取授权。 */
     void verifyResource(PrincipalRef principal,RunRecord run){resources.run(principal,run);}

@@ -79,6 +79,24 @@ class LocalProjectControllerTest {
         mvc.perform(get("/api/projects").with(auth())).andExpect(status().isNotFound());
     }
 
+    @Test void 项目会话使用幂等编号且准备工具仍校验本机来源() throws Exception {
+        UUID agent = UUID.randomUUID(), request = UUID.randomUUID(), conversation = UUID.randomUUID();
+        var now = java.time.Instant.now();
+        when(service.createConversation(any(), eq(projectId), eq(agent), eq(request))).thenReturn(
+                new com.cmagent.core.domain.Conversation(conversation, tenant, agent, "测试", "Owner", now, now));
+        mvc.perform(post("/api/projects/{id}/conversations", projectId).with(auth()).contentType("application/json")
+                        .content("{\"agentId\":\"" + agent + "\",\"requestId\":\"" + request + "\"}"))
+                .andExpect(status().isCreated()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.id").value(conversation.toString()));
+        verify(service).createConversation(argThat(owner -> owner.tenantId().equals(tenant) && owner.principalId().equals("Owner")),
+                eq(projectId), eq(agent), eq(request));
+
+        when(boundary.permits(any())).thenReturn(false);
+        mvc.perform(post("/api/projects/tools/agents/{id}", agent).with(auth()))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.errorId").value("safe-error-id"));
+        verify(service, never()).prepareAgentTools(any(), any());
+    }
+
     private org.springframework.test.web.servlet.request.RequestPostProcessor auth() {
         return authentication(new UsernamePasswordAuthenticationToken(new JwtService.JwtSession(tenant, "Owner", "测试", List.of("project:read")), null, List.of()));
     }

@@ -13,8 +13,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public final class LocalProjectCommandProperties {
     /** 由部署管理员显式配置的工具链映射，不自动扫描PATH。 */
     private Map<String,Tool> tools=new LinkedHashMap<>();
+    /** 桌面试装版仅执行部署固定的参数组合，避免给白名单程序附加其他操作。 */
+    private boolean fixedArgumentsOnly;
     public Map<String,Tool> getTools(){return tools;}
     public void setTools(Map<String,Tool> tools){this.tools=tools==null?new LinkedHashMap<>():new LinkedHashMap<>(tools);}
+    public boolean isFixedArgumentsOnly(){return fixedArgumentsOnly;}
+    public void setFixedArgumentsOnly(boolean fixedArgumentsOnly){this.fixedArgumentsOnly=fixedArgumentsOnly;}
 
     /**
      * @param privateTemp 宿主在项目根之外建立并验证的私有临时目录，不由模型覆盖
@@ -41,7 +45,8 @@ public final class LocalProjectCommandProperties {
                 env.put("TEMP",privateTemp.toString());env.put("TMP",privateTemp.toString());
                 if(tool.allowedEnvironment.stream().anyMatch(key->Set.of("TEMP","TMP","SYSTEMROOT").contains(key.toUpperCase(Locale.ROOT))))
                     throw new IllegalStateException("本机工具链不能开放临时目录或系统根覆盖");
-                result.put(entry.getKey(),new LocalProjectCommandService.Toolchain(exe,tool.prefixArguments,env,tool.allowedEnvironment,tool.build));
+                result.put(entry.getKey(),new LocalProjectCommandService.Toolchain(exe,tool.prefixArguments,env,
+                        tool.allowedEnvironment,tool.build,fixedArgumentsOnly));
             }catch(java.io.IOException|InvalidPathException failure){throw new IllegalStateException("本机工具链路径无法核实");}
         }
         return Map.copyOf(result);

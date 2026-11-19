@@ -58,5 +58,31 @@ class LocalProjectToolCatalogTest {
                 eq("-"),eq("DENIED"),contains("errorCode=PROJECT_FORBIDDEN"));
     }
 
+    @Test void 模型审批引用精确绑定租户且没有可执行定义或运行授权() {
+        doAnswer(call -> {
+            ToolDefinition value = call.getArgument(0);
+            stored.putIfAbsent(value.id(), value);
+            return null;
+        }).when(tools).insertDisabledInternalReferenceIfAbsent(any());
+        when(tools.findByTenantAndIdForUpdate(eq(tenant), any()))
+                .thenAnswer(call -> Optional.ofNullable(stored.get(call.getArgument(1))));
+
+        catalog.ensureModelDisclosureReference(tenant);
+        catalog.ensureModelDisclosureReference(tenant);
+
+        UUID id = com.cmagent.agentscope.ProjectModelDisclosureState.approvalTypeId(tenant);
+        ToolDefinition reference = stored.get(id);
+        assertFalse(reference.enabled());
+        assertTrue(LocalProjectToolCatalog.isModelDisclosureReference(tenant, id));
+        assertFalse(LocalProjectToolCatalog.isModelDisclosureReference(UUID.randomUUID(), id));
+        assertTrue(LocalProjectToolCatalog.isModelDisclosureName(" PROJECT_MODEL_DISCLOSURE "));
+        assertFalse(LocalProjectToolCatalog.isModelDisclosureName("普通工具"));
+        assertTrue(catalog.select(tenant, List.of(reference)).isEmpty());
+        assertTrue(LocalProjectToolCatalog.kind(tenant, id).isEmpty());
+        stored.clear();
+        doNothing().when(tools).insertDisabledInternalReferenceIfAbsent(any());
+        assertThrows(IllegalStateException.class, () -> catalog.ensureModelDisclosureReference(tenant));
+    }
+
     private PrincipalRef principal(Set<String> permissions){return new PrincipalRef(tenant,"Owner","测试",permissions);}
 }

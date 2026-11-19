@@ -93,8 +93,18 @@ public final class LocalProjectAccessService {
 
     /** 入口调用方只能传代码中的固定权限，权限集合来自认证主体而非请求体。 */
     public void authorize(PrincipalRef principal, String permission, UUID resourceId) {
-        if (!permissions.check(principal, permission).allowed())
+        if (!allows(principal, permission))
             throw reject(principal, resourceId, "PROJECT_FORBIDDEN", 403, "当前账号缺少本地项目操作权限");
+    }
+
+    /**
+     * 只用于计算页面能力提示。实际操作仍须调用 {@link #authorize}，以保留拒绝审计。
+     * @param principal 认证主体
+     * @param permission 代码中定义的固定权限码
+     * @return 当前主体是否具有该权限
+     */
+    public boolean allows(PrincipalRef principal, String permission) {
+        return permissions.check(principal, permission).allowed();
     }
 
     LocalProjectAccessException fileFailure(PrincipalRef principal, UUID id, LocalProjectFileException failure) {

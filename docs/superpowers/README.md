@@ -6,6 +6,8 @@
 
 ## 2026-11-13 之后的工作包
 
+- [2026-11-18 桌面项目聊天实施](progress/2026-11-18-desktop-project-chat-delivery-ledger.md)承接 R2 设计，记录前后端实施、三档权限和 Windows x64 试装。
+- [2026-11-18 桌面版项目聊天](progress/2026-11-18-desktop-project-chat-ledger.md)：本机安装、选文件夹、项目会话、流式发送及项目操作授权。
 - [2026-11-17 docs 可用性复核](progress/2026-11-17-docs-usability-review-ledger.md)：入口、长文导航和配置说明；本主题不在 2026-11-13 历史快照中。
 
 ## 2026-11-13 状态目录

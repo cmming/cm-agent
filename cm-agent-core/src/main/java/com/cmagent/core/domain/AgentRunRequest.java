@@ -28,6 +28,7 @@ import java.util.UUID;
  * @param workspaceContext 可选的可信只读参考快照；旧调用默认不携带，不授予文件或工具权限
  * @param projectContext 可选的可信项目Run及受保护工具标识；与旧参考快照互斥
  * @param localClientAuthorization 可选的本轮设备授权；旧调用默认没有本机客户端能力
+ * @param projectModelDisclosure 本机项目模型发送边界，仅由运行宿主注入到当前项目 Run
  */
 public record AgentRunRequest(
         UUID runId,
@@ -43,8 +44,18 @@ public record AgentRunRequest(
         com.cmagent.core.runtime.RunCancellation cancellation,
         WorkspaceContextSnapshot workspaceContext,
         ProjectRuntimeContext projectContext,
-        OperationAuthorizationSnapshot localClientAuthorization
+        OperationAuthorizationSnapshot localClientAuthorization,
+        com.cmagent.core.runtime.ProjectModelDisclosureGateway projectModelDisclosure
 ) {
+    /** 保留设备授权调用合同，由当前运行编排按需接入模型发送边界。 */
+    public AgentRunRequest(UUID runId, UUID tenantId, AgentDefinition agent, ModelConfig modelConfig,
+            PrincipalRef principal, String input, List<ToolDefinition> tools, UUID conversationId,
+            List<SkillVersionView> skills, Map<UUID, List<SkillDependencyResolution>> dependencies,
+            com.cmagent.core.runtime.RunCancellation cancellation, WorkspaceContextSnapshot workspaceContext,
+            ProjectRuntimeContext projectContext, OperationAuthorizationSnapshot localClientAuthorization) {
+        this(runId, tenantId, agent, modelConfig, principal, input, tools, conversationId, skills,
+                dependencies, cancellation, workspaceContext, projectContext, localClientAuthorization, null);
+    }
     /** 保留加入本机客户端授权前的十三参数合同；旧运行不能隐式取得设备能力。 */
     public AgentRunRequest(UUID runId, UUID tenantId, AgentDefinition agent, ModelConfig modelConfig,
             PrincipalRef principal, String input, List<ToolDefinition> tools, UUID conversationId,
@@ -122,6 +133,9 @@ public record AgentRunRequest(
             throw new IllegalArgumentException("参考快照不属于当前可信运行主体或 Agent");
         }
         tools = List.copyOf(Objects.requireNonNull(tools, "tools 不能为空"));
+        if (projectModelDisclosure != null && (projectContext == null || projectContext.binding() == null)) {
+            throw new IllegalArgumentException("模型发送授权只适用于当前本机项目运行");
+        }
         if (projectContext != null) {
             ProjectBinding fixed = projectContext.sourceBinding();
             if (workspaceContext != null || !tenantId.equals(fixed.tenantId()) || !runId.equals(fixed.runId())

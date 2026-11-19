@@ -1,6 +1,7 @@
 package com.cmagent.server.runtime;
 
 import com.cmagent.api.PrincipalRef;
+import com.cmagent.agentscope.ProjectModelDisclosureState;
 import com.cmagent.core.domain.AgentProgressEvent;
 import com.cmagent.core.domain.AgentRunResult;
 import com.cmagent.core.domain.AgentRuntimeResult;
@@ -54,6 +55,17 @@ import java.util.function.Supplier;
 public class ToolApprovalService {
     /** 审批恢复终态需要撤销仍在数据库中的单轮设备授权；未启用时不产生额外行为。 */
     private LocalClientAuthorizationService localClients;
+    /** 模型审批预览只存在于租户隔离的运行检查点，不进入审批历史或日志。 */
+    private io.agentscope.core.state.AgentStateStore agentStateStore;
+    /** 同机项目启用时才具备内部模型审批引用的登记能力。 */
+    private LocalProjectToolCatalog modelDisclosureCatalog;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureModelDisclosureState(
+            org.springframework.beans.factory.ObjectProvider<io.agentscope.core.state.AgentStateStore> provider,
+            org.springframework.beans.factory.ObjectProvider<LocalProjectToolCatalog> catalogs) {
+        agentStateStore = provider.getIfAvailable();
+        modelDisclosureCatalog = catalogs.getIfAvailable();
+    }
     @org.springframework.beans.factory.annotation.Autowired
     void configureLocalClients(
             org.springframework.beans.factory.ObjectProvider<LocalClientAuthorizationService> provider) {
@@ -243,11 +255,13 @@ public class ToolApprovalService {
         ToolApprovalRequest saved;
         try {
             saved = inTransaction(() -> {
-                ToolApprovalRequest persisted = approvalRepository.save(new ToolApprovalRequest(
+                ToolApprovalRequest request = new ToolApprovalRequest(
                         approvalId, principal.tenantId(), agentId, scope, conversationId, runId,
                         principal.principalId(), principal.displayName(), ToolApprovalStatus.PENDING,
                         now.plus(properties.getApprovalTtl()), 0, runId.toString(), now, now,
-                        null, null, null, items));
+                        null, null, null, items);
+                prepareModelDisclosureReference(request);
+                ToolApprovalRequest persisted = approvalRepository.save(request);
                 // 审批事实与严格审计必须同成同败；否则可能出现前端可决定但审计链缺口。
                 auditAppender.append(principal.tenantId(), principal.principalId(), "TOOL_APPROVAL_CREATE",
                         "TOOL_APPROVAL", approvalId.toString(), "PENDING", "已创建高风险工具审批请求");
@@ -261,6 +275,21 @@ public class ToolApprovalService {
             throw failure;
         }
         return view(principal, saved);
+    }
+
+    private void prepareModelDisclosureReference(ToolApprovalRequest request) {
+        var disclosures = request.items().stream()
+                .filter(item -> LocalProjectToolCatalog.isModelDisclosureReference(request.tenantId(), item.toolId())).toList();
+        if (disclosures.isEmpty()) return;
+        // 内部引用只能来自同机项目的受信检查点；不能因模型回传任意工具名而登记或授权平台工具。
+        if (modelDisclosureCatalog == null || request.scope() != ToolApprovalScope.CONVERSATION
+                || runRepository.workspaceProtocol(request.tenantId(), request.agentId(), request.runId())
+                        != com.cmagent.core.domain.LocalProjectBinding.PROTOCOL
+                || disclosures.stream().anyMatch(item -> item.riskLevel() != com.cmagent.core.domain.ToolRiskLevel.HIGH
+                        || disclosurePreview(request, item) == null)) {
+            throw new IllegalStateException("项目片段发送审批来源不完整");
+        }
+        modelDisclosureCatalog.ensureModelDisclosureReference(request.tenantId());
     }
 
     /** 在无事务的 memory 模式撤销创建失败时残留的审批请求，禁止其在后续被恢复使用。 */
@@ -412,8 +441,11 @@ public class ToolApprovalService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Run 不存在"));
         AgentRuntimeResult runtimeResult;
         if (status == ToolApprovalStatus.DENIED) {
+            boolean modelDisclosure = current.items().stream()
+                    .anyMatch(item -> LocalProjectToolCatalog.isModelDisclosureReference(current.tenantId(), item.toolId()));
             AgentRunResult denied = new AgentRunResult(
-                    waitingRun.id(), RunStatus.DENIED, "", List.of(), waitingRun.startedAt(), now, "工具调用已被用户拒绝");
+                    waitingRun.id(), RunStatus.DENIED, "", List.of(), waitingRun.startedAt(), now,
+                    modelDisclosure ? "项目片段发送已被用户拒绝" : "工具调用已被用户拒绝");
             RunRecord completed = runExecutionService.controls().withRun(waitingRun.id(), () -> inTransaction(() -> {
                 var control = runExecutionService.controls().find(waitingRun.id());
                 AgentRunResult result = control != null && control.cancellation().isRequested()
@@ -630,6 +662,13 @@ public class ToolApprovalService {
             }
         }
         validateClientProjectApprovals(request, decisions);
+        for (ToolApprovalItem item : request.items()) {
+            if (LocalProjectToolCatalog.isModelDisclosureReference(request.tenantId(), item.toolId())
+                    && decisions.get(item.id()) == ToolApprovalDecision.APPROVE
+                    && disclosurePreview(request, item) == null) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "项目片段发送预览已失效，请停止后重新发送");
+            }
+        }
         return Map.copyOf(decisions);
     }
 
@@ -804,7 +843,23 @@ public class ToolApprovalService {
                 request.decidedAt(), canDecide, request.expiresAt(), request.items().stream()
                 .map(item -> new ToolApprovalItemView(
                         item.id(), item.toolCallId(), item.toolId(), item.toolName(), item.riskLevel(),
-                        item.inputSummary(), item.decision())).toList());
+                        item.inputSummary(), item.decision(), canDecide ? disclosurePreview(request, item) : null)).toList());
+    }
+
+    /**
+     * 精确定位待审批 Run 的加密预览；调用方已经根据当前认证主体核对项目和审批所有权。
+     * 调用 ID 与摘要同时匹配才能显示预览或接受批准，防止读取后续片段或拿旧预览确认。
+     */
+    private ProjectModelDisclosureState.Preview disclosurePreview(ToolApprovalRequest request, ToolApprovalItem item) {
+        if (agentStateStore == null || !LocalProjectToolCatalog.isModelDisclosureReference(request.tenantId(), item.toolId())
+                || !ProjectModelDisclosureState.NAME.equals(item.toolName())) {
+            return null;
+        }
+        return agentStateStore.get(request.tenantId() + ":" + request.requestedBy(), request.runId().toString(),
+                        ProjectModelDisclosureState.KEY, ProjectModelDisclosureState.class)
+                .map(ProjectModelDisclosureState::pending)
+                .filter(proposal -> item.toolCallId().equals(proposal.callId()) && item.inputHash().equals(proposal.inputHash()))
+                .map(ProjectModelDisclosureState.Proposal::preview).orElse(null);
     }
 
     /** 在 JDBC 模式复用同一短事务；memory 模式直接执行。 */
@@ -852,7 +907,7 @@ public class ToolApprovalService {
     }
 
     /**
-     * 审批明细对外视图，只包含脱敏摘要。
+     * 审批明细对外视图。模型发送的准确预览仅供当前请求发起人在待审批时读取。
      *
      * @param itemId 审批明细公开标识
      * @param toolCallId AgentScope 工具调用标识
@@ -861,10 +916,13 @@ public class ToolApprovalService {
      * @param riskLevel 创建审批时的风险等级快照
      * @param inputSummary 已脱敏且限长的纯文本参数摘要
      * @param decision 已提交的决定，待审批时为空
+     * @param preview 当前模型片段准确预览，普通工具及历史审批为空
      */
     public record ToolApprovalItemView(
             UUID itemId, String toolCallId, UUID toolId, String toolName,
-            com.cmagent.core.domain.ToolRiskLevel riskLevel, String inputSummary, ToolApprovalDecision decision) {
+            com.cmagent.core.domain.ToolRiskLevel riskLevel, String inputSummary, ToolApprovalDecision decision,
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            ProjectModelDisclosureState.Preview preview) {
     }
 
     /**

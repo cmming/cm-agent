@@ -137,6 +137,7 @@ public enum ApiErrorCode {
     /** 项目元数据条件版本已变化。 */ PROJECT_VERSION_CONFLICT,
     /** 展示名称无效，不作为目录路径解释。 */ PROJECT_NAME_INVALID,
     /** 项目关联Agent不存在或不可访问。 */ PROJECT_AGENT_NOT_FOUND,
+    /** 目标 Agent 已停用或尚无预置的项目读取工具授权。 */ PROJECT_AGENT_NOT_READY,
     /** 系统选择窗口或有界请求槽正在占用。 */ PROJECT_SELECTION_BUSY,
     /** 原生选择票据过期、已消费或主体不匹配。 */ PROJECT_SELECTION_EXPIRED,
     /** 选择动作不存在或已超过固定保留期限。 */ PROJECT_SELECTION_NOT_FOUND,

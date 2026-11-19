@@ -72,7 +72,7 @@
         }
         target.append(details);
     }
-    function create({request, document, isCurrent, host = globalThis}) {
+    function create({request, stream, randomId, document, isCurrent, host = globalThis}) {
         let revision = 0, project = null, conversation = null, capabilities = {}, active = true, sendBusy = false, sendUnknown = false, approvalPending = true;
         let messageCursor = null, messages = [], approvalRevision = 0, messageRevision = 0, historyCursor = null, historyRevision = 0, operationsRevision = 0;
         const commands = new Map(), lockedApprovals = new Set(), resolveLocks = new Map();
@@ -80,6 +80,7 @@
         const archived = () => project?.state === "ARCHIVED";
         const knownRuns = new Set(), pendingRuns = new Set(), stoppedRuns = new Set();
         let currentRun = null, runKnown = false, pollTimer = null, pollCount = 0, pollFailures = 0, refreshInFlight = null, commandOutputCursor = 0;
+        let creationIntent = null, liveReply = null, nextMode = "ASK_ON_RISK";
         const activeRun = value => ["RUNNING", "WAITING_APPROVAL", "CANCELLING"].includes(value?.status);
         function renderAuthorizationHelp() {
             const select = $("projectAuthorizationMode"), mode = select?.value;
@@ -89,13 +90,15 @@
                 : mode === "ASK_ON_EFFECT"
                     ? "只读且非高风险的操作自动执行；文件变更、命令和其他非只读操作执行前需确认。"
                     : "除文件变更和命令外，低、中风险操作自动执行；高风险操作、文件变更和命令执行前需确认。";
+            if (stream) $("projectAuthorizationHelp").textContent += mode === "FULL_ACCESS"
+                ? "本轮授权范围内的项目片段可发给已配置的在线模型。" : "将项目片段发给在线模型前需要确认。";
         }
         function clearPoll() { if (pollTimer != null) host.clearTimeout(pollTimer); pollTimer = null; }
         function needsPoll() { return !archived() && (sendBusy || activeRun(currentRun) || [...commands.values()].some(item => ["RUNNING", "PREPARED"].includes(item.state))); }
         // 轮询仅读取状态，串行完成一轮后再计时；预算耗尽不会停止后台执行或重放写请求。
         function schedulePoll() {
             clearPoll();
-            if (!active || !isCurrent() || !conversation || !needsPoll() || pollFailures >= 3) return;
+            if (!active || !isCurrent() || !conversation || !needsPoll() || pollFailures >= 3 || liveReply) return;
             if (pollCount >= 150) { status("已达到本次自动查询预算，请点击核对消息与审批继续查看状态。"); return; }
             const stamp = revision;
             pollTimer = host.setTimeout(async () => {
@@ -110,6 +113,7 @@
             $("projectRunStop").disabled = !activeRun(currentRun) || stoppedRuns.has(currentRun?.id) || currentRun?.status === "CANCELLING";
             $("projectChatSend").disabled = archived() || !runKnown || sendBusy || sendUnknown || approvalPending || activeRun(currentRun);
             if ($("projectAuthorizationMode")) $("projectAuthorizationMode").disabled = archived() || !runKnown || sendBusy || activeRun(currentRun) || approvalPending;
+            if (stream) $("projectChatRefresh").hidden = !conversation;
         }
         async function loadRun() {
             if (archived() || !conversation) return;
@@ -130,6 +134,11 @@
                     $("projectAuthorizationMode").value = authority.mode;
                     renderAuthorizationHelp();
                 }
+            }
+            if (stream && !activeRun(result)) {
+                // 从后台恢复的授权只属于原 Run。它结束后显示下次发送的用户选择。
+                $("projectAuthorizationMode").value = nextMode;
+                renderAuthorizationHelp();
             }
             renderRun();
         }
@@ -155,7 +164,7 @@
         const operationBase = (run, operation, kind) => `/api/projects/${encodeURIComponent(project.id)}/runs/${encodeURIComponent(run)}/${kind}/${encodeURIComponent(operation)}`;
         function renderMessages() {
             const target = $("projectChatMessages"); target.replaceChildren();
-            if (!messages.length) target.append(node("p", archived() ? "此会话尚无历史消息。" : "发送第一条消息，开始在这个项目中工作。", "empty-state"));
+            if (!messages.length && !liveReply) target.append(node("p", archived() ? "此会话尚无历史消息。" : "发送第一条消息，开始在这个项目中工作。", "empty-state"));
             for (const message of messages) {
                 const article = node("article", "", "project-chat-message");
                 article.dataset.role = message.role === "USER" ? "user" : "agent";
@@ -166,7 +175,46 @@
                 }
                 target.append(article);
             }
+            if (liveReply?.user) target.append(liveReply.user);
+            if (liveReply) target.append(liveReply.article);
             $("projectMessagesMore").hidden = messageCursor == null;
+        }
+        async function streamRun(path, body, stamp, accepted = () => {}) {
+            const output = node("pre", ""), article = node("article", "", "project-chat-message");
+            article.dataset.role = "agent"; article.append(node("strong", "Agent"), output);
+            const user = body.input ? node("article", "", "project-chat-message") : null;
+            if (user) { user.dataset.role = "user"; user.append(node("strong", "你"), node("pre", body.input)); }
+            liveReply = {article, user}; clearPoll(); renderMessages();
+            let outcome = null, acknowledged = false;
+            const acknowledge = () => { if (!acknowledged) { acknowledged = true; accepted(); } };
+            try {
+                await stream(`${base()}${path}`, {method: "POST", body: JSON.stringify(body)}, event => {
+                    if (!valid(stamp)) return;
+                    const value = event.data;
+                    if (event.type === "started" && value?.runId) {
+                        currentRun = {id: value.runId, status: "RUNNING"}; runKnown = true;
+                        knownRuns.add(value.runId); pendingRuns.add(value.runId);
+                        acknowledge(); renderRun();
+                    } else if (event.type === "delta" && typeof value?.delta === "string") {
+                        output.textContent = (output.textContent || "") + value.delta;
+                        const target = $("projectChatMessages"); target.scrollTop = target.scrollHeight;
+                    } else if (event.type === "progress") {
+                        status(value?.toolName ? `正在处理项目工具 ${value.toolName}` : "正在处理项目任务…");
+                    } else if (event.type === "approval-decision") {
+                        status("已接受审批，正在接续本轮…");
+                    } else if (event.type === "completed" || event.type === "approval-required") {
+                        acknowledge(); outcome = event;
+                    } else if (event.type === "error") {
+                        const reference = [value?.code, value?.errorId && `错误编号 ${value.errorId}`].filter(Boolean).join(" · ");
+                        const error = new Error(`${value?.message || "项目运行失败"}${reference ? `（${reference}）` : ""}`);
+                        error.authoritative = true; throw error;
+                    }
+                });
+                if (valid(stamp) && !outcome) throw new Error("连接中断，尚未收到本轮结果。");
+                return outcome;
+            } finally {
+                if (valid(stamp)) { liveReply = null; renderMessages(); }
+            }
         }
         async function loadMessages(append = false, tail = false) {
             if (!active || !isCurrent() || !conversation) return;
@@ -333,19 +381,26 @@
                     card.querySelectorAll("select, input, button").forEach(control => { control.disabled = true; });
                     status("正在提交决定并等待原运行继续，请勿重复提交。");
                     try {
-                        const outcome = await request(`/api/projects/${encodeURIComponent(project.id)}/conversations/${encodeURIComponent(conversation.id)}/approvals/${encodeURIComponent(approval.approvalId)}/decision`, {
-                            method: "POST", body: JSON.stringify({expectedVersion: approval.version, decisions: approval.items.map(item => ({itemId: item.itemId, decision: choices.get(item.itemId)}))})});
+                        const path = `/approvals/${encodeURIComponent(approval.approvalId)}/decision`;
+                        const body = {expectedVersion: approval.version, decisions: approval.items.map(item => ({itemId: item.itemId, decision: choices.get(item.itemId)}))};
+                        const result = stream ? await streamRun(`${path}/stream`, body, stamp)
+                            : await request(`/api/projects/${encodeURIComponent(project.id)}/conversations/${encodeURIComponent(conversation.id)}${path}`, {method: "POST", body: JSON.stringify(body)});
                         if (!valid(stamp)) return;
                         lockedApprovals.delete(approval.approvalId);
-                        status(`审批决定已接受，运行状态：${stateLabel(outcome.run?.status)}。${outcome.run?.errorMessage || ""}`);
+                        const outcome = stream ? result.data : result;
+                        if (result.type === "approval-required") status("本轮需要核对另一项操作。");
+                        else status(`审批决定已接受，运行状态：${stateLabel(outcome.run?.status)}。${outcome.run?.errorMessage || ""}`);
                     } catch (error) { if (valid(stamp)) status(`${error.message} 提交结果尚未确认，请刷新会话核对，不能再次提交。`, true); }
                     if (valid(stamp)) await refresh();
                 }); submit.disabled = true;
                 for (const item of approval.items || []) {
                     const part = node("div", "", "project-approval-item"), reference = operationReference(item.inputSummary);
                     const command = item.toolName === "project_run_command", change = item.toolName === "project_apply_changes";
-                    const supported = reference && (command && capabilities.commands || change && capabilities.changes);
-                    const title = command ? "命令执行" : change ? "文件变更" : "待核对操作";
+                    const disclosure = item.toolName === "project_model_disclosure", preview = item.preview;
+                    const disclosureReady = disclosure && typeof preview?.targetModel === "string" && preview.targetModel.trim()
+                        && Array.isArray(preview.fragments) && preview.fragments.length > 0 && preview.fragments.every(value => typeof value === "string" && value.length > 0);
+                    const supported = disclosureReady || reference && (command && capabilities.commands || change && capabilities.changes);
+                    const title = command ? "命令执行" : change ? "文件变更" : disclosure ? "发送项目片段给在线模型" : "待核对操作";
                     part.append(node("strong", title));
                     const location = document.createElement("details"); location.className = "project-version-details";
                     location.append(node("summary","版本与定位信息"),node("p",item.inputSummary,"field-help")); part.append(location);
@@ -366,9 +421,17 @@
                     };
                     reviewed.addEventListener("change", update); decision.addEventListener("change", update);
                     const showPreview = button("读取精确预览", async () => {
-                        if (!currentApproval()) return;
+                        if (!currentApproval() || !supported) return;
                         reviewed.checked = false; reviewed.disabled = true; previewBody.textContent = ""; update();
                         try {
+                            if (disclosure) {
+                                // 明示实际拟发片段和目标。不要将预览复制到普通消息或本地缓存。
+                                const details = node("div", "", "project-disclosure-preview");
+                                details.append(node("p", `目标模型 ${preview.targetModel}`));
+                                for (const fragment of preview.fragments) details.append(node("pre", fragment));
+                                previewBody.append(details); reviewed.disabled = !editable;
+                                return;
+                            }
                             const result = await request(operationBase(approval.runId, reference.operationId, command ? "commands" : "changes") + (command ? "?preview=true" : ""));
                             if (!currentApproval()) return;
                             if (!matchesPreview(reference, result)) throw new Error("操作版本或摘要不一致，请刷新审批，不能批准。");
@@ -414,11 +477,16 @@
         async function selectConversation(value) {
             if (!active || !isCurrent()) return;
             if (conversation?.id === value.id) { await refresh(); return; }
-            clearPoll(); currentRun = null; runKnown = false; approvalFingerprint = null; operationFingerprint = null; pollCount = 0; pollFailures = 0; revision++; conversation = value; messages = []; commands.clear(); resolveLocks.clear(); knownRuns.clear(); pendingRuns.clear(); lockedApprovals.clear(); messageCursor = null; historyCursor = null; historyItems = []; sendBusy = false; sendUnknown = false;
+            clearPoll(); currentRun = null; runKnown = false; approvalFingerprint = null; operationFingerprint = null; pollCount = 0; pollFailures = 0; revision++; conversation = value; messages = []; commands.clear(); resolveLocks.clear(); knownRuns.clear(); pendingRuns.clear(); lockedApprovals.clear(); messageCursor = null; historyCursor = null; historyItems = []; sendBusy = false; sendUnknown = false; liveReply = null; creationIntent = null;
             approvalPending = true;
             $("projectChatInput").value = ""; $("projectChatSend").disabled = true;
             $("projectChatTitle").textContent = value.title || "项目会话"; $("projectChatBody").hidden = false;
             $("projectApprovalItems").replaceChildren(); $("projectCommandResults").replaceChildren(); renderMessages(); status(""); await refresh();
+        }
+        async function createBoundConversation(agentId) {
+            if (stream && (!creationIntent || creationIntent.agentId !== agentId)) creationIntent = {agentId, requestId: randomId()};
+            return request(`/api/projects/${encodeURIComponent(project.id)}/conversations`, {method: "POST",
+                body: JSON.stringify(stream ? creationIntent : {agentId})});
         }
         async function listConversations() {
             if (!active || !isCurrent()) return;
@@ -428,6 +496,7 @@
             const target = $("projectConversationList"); target.replaceChildren();
             for (const item of list) target.append(button(item.title || "项目会话", () => selectConversation(item)));
             if (!list.length) target.append(node("p", archived() ? "此归档项目没有会话历史。" : "还没有项目会话。选择已授权 Agent 后新建。", "field-help"));
+            return list;
         }
         async function mount(value, flags) {
             project = value; capabilities = flags; const stamp = revision;
@@ -437,22 +506,33 @@
             if ($("projectChatAgentLabel")) $("projectChatAgentLabel").hidden = archived();
             $("projectChatForm").hidden = archived(); $("projectChatInput").disabled = archived();
             if ($("projectAuthorizationMode")) $("projectAuthorizationMode").disabled = archived();
-            $("projectAuthorizationMode")?.addEventListener("change", renderAuthorizationHelp); renderAuthorizationHelp();
+            $("projectAuthorizationMode")?.addEventListener("change", event => {
+                if (stream && !event.target.disabled) nextMode = event.target.value;
+                renderAuthorizationHelp();
+            });
+            renderAuthorizationHelp();
             $("projectChatSend").disabled = true;
             if (archived()) status("已归档项目仅供查看会话、审批历史和操作记录。");
             $("projectNewConversation").addEventListener("click", async () => {
-                const agentId = $("projectChatAgent").value; if (!valid(revision) || !agentId || archived()) return;
+                const agentId = $("projectChatAgent").value; if (!valid(revision) || !agentId || archived() || sendBusy || liveReply) return;
                 const creationStamp = revision;
                 $("projectNewConversation").disabled = true;
                 try {
-                    const result = await request(`/api/projects/${encodeURIComponent(project.id)}/conversations`, {method: "POST", body: JSON.stringify({agentId})});
+                    const result = await createBoundConversation(agentId);
                     if (!valid(creationStamp)) return;
                     await listConversations();
                     if (!valid(creationStamp)) return;
                     await selectConversation(result);
-                    if (valid(creationStamp)) status("项目会话已创建，固定 project_* 工具已准备给所选 Agent。");
-                    if (active && isCurrent()) $("projectNewConversation").disabled = false;
-                } catch (error) { if (valid(creationStamp)) status(`${error.message} 请刷新会话列表核对，不要重复新建。`, true); }
+                    if (active && isCurrent()) {
+                        status(stream ? "项目会话已创建。" : "项目会话已创建，固定 project_* 工具已准备给所选 Agent。");
+                        $("projectNewConversation").disabled = false;
+                    }
+                } catch (error) {
+                    if (valid(creationStamp)) {
+                        status(stream ? error.message : `${error.message} 请刷新会话列表核对，不要重复新建。`, true);
+                        if (stream) $("projectNewConversation").disabled = false;
+                    }
+                }
             });
             $("projectChatRefresh").addEventListener("click", () => { pollFailures = 0; pollCount = 0; return refresh(); });
             $("projectRunStop").addEventListener("click", async () => {
@@ -470,16 +550,42 @@
             $("projectConversationRefresh").addEventListener("click", async () => { try { await listConversations(); } catch(error) { if(active && isCurrent()) status(error.message,true); } });
             $("projectMessagesMore").addEventListener("click", async () => { try { await loadMessages(true); await recoverOperations(); } catch(error) { if(active && isCurrent()) status(error.message,true); } });
             $("projectChatForm").addEventListener("submit", async event => {
-                event.preventDefault(); if (!active || !isCurrent() || !conversation || archived() || !runKnown || sendBusy || sendUnknown || approvalPending || activeRun(currentRun)) return;
+                event.preventDefault(); if (!active || !isCurrent() || !conversation && !stream || archived() || !runKnown || sendBusy || sendUnknown || approvalPending || activeRun(currentRun)) return;
                 const input = $("projectChatInput").value.trim(); if (!input) return;
                 const projectAuthorizationMode = $("projectAuthorizationMode").value;
                 if (!["ASK_ON_EFFECT", "ASK_ON_RISK", "FULL_ACCESS"].includes(projectAuthorizationMode)) return;
-                const current = revision; sendBusy = true; $("projectChatSend").disabled = true; $("projectAuthorizationMode").disabled = true; status("正在执行项目会话；授权方式已与当前 Run 绑定。"); pollCount = 0; pollFailures = 0; schedulePoll();
+                let current = revision, submitted = false;
+                sendBusy = true; $("projectChatSend").disabled = true; $("projectAuthorizationMode").disabled = true; status("正在执行项目会话；授权方式已与当前 Run 绑定。"); pollCount = 0; pollFailures = 0; schedulePoll();
                 try {
-                    const outcome = await request(`${base()}/messages`, {method: "POST", body: JSON.stringify({input, projectAuthorizationMode})});
+                    if (!conversation) {
+                        const agentId = $("projectChatAgent").value;
+                        if (!agentId) throw new Error("请选择可用于项目聊天的 Agent。");
+                        const created = await createBoundConversation(agentId);
+                        if (!valid(current)) return;
+                        const choose = selectConversation(created);
+                        current = revision; sendBusy = true; $("projectChatInput").value = input; renderRun();
+                        await choose;
+                        if (!valid(current)) return;
+                        if (!runKnown || approvalPending || activeRun(currentRun)) throw new Error("新会话的运行状态尚未确认，请核对后发送。");
+                        await listConversations();
+                        if (!valid(current)) return;
+                    }
+                    submitted = true;
+                    const body = {input, projectAuthorizationMode};
+                    const result = stream ? await streamRun("/messages/stream", {...body, projectId: project.id}, current,
+                        () => { if ($("projectChatInput").value.trim() === input) $("projectChatInput").value = ""; })
+                        : await request(`${base()}/messages`, {method: "POST", body: JSON.stringify(body)});
                     if (!valid(current)) return;
-                    $("projectChatInput").value = ""; status(`本轮状态：${stateLabel(outcome.run?.status)}。${outcome.run?.errorMessage || ""}`); await refresh();
-                } catch (error) { if (valid(current)) { sendUnknown = true; status(`${error.message} 结果尚未确认，请刷新核对；不会自动再次发送。`, true); } }
+                    if (!stream) $("projectChatInput").value = "";
+                    const outcome = stream ? result.data : result;
+                    if (result.type === "approval-required") status("本轮已暂停，请核对待审批操作。");
+                    else status(`本轮状态：${stateLabel(outcome.run?.status)}。${outcome.run?.errorMessage || ""}`);
+                    await refresh();
+                } catch (error) { if (valid(current)) {
+                    sendUnknown = submitted && !error.authoritative && !(stream && error.status >= 400 && error.status < 500);
+                    status(`${error.message}${sendUnknown ? " 结果尚未确认，请核对本轮状态。" : ""}`, true);
+                    if (submitted && stream) await refresh();
+                } }
                 finally { if (valid(current)) { sendBusy = false; renderRun(); schedulePoll(); } }
             });
             try {
@@ -488,7 +594,16 @@
                 const select = $("projectChatAgent"); select.replaceChildren();
                 for (const agent of agents.filter(item => item.enabled)) { const option = node("option", agent.name); option.value = agent.id; select.append(option); }
                 $("projectNewConversation").disabled = !select.children.length;
-                await listConversations();
+                const conversationList = await listConversations();
+                if (stream && valid(stamp)) {
+                    if (conversationList?.length) {
+                        await selectConversation(conversationList[0]);
+                    } else {
+                        $("projectChatTitle").textContent = "新项目会话"; $("projectChatBody").hidden = false;
+                        runKnown = true; approvalPending = false; renderMessages(); renderRun();
+                        if (!select.children.length) { $("projectChatSend").disabled = true; status("请先配置可用的项目 Agent。"); }
+                    }
+                }
             } catch (error) { if (valid(stamp)) status(error.message, true); }
         }
         return {mount, referenceFile(value) {

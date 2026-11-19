@@ -287,10 +287,12 @@
         state.sandboxPage?.dispose();
         state.projectsPage?.dispose();
         state.clientProjectsPage?.dispose();
+        state.projectChatPage?.dispose();
         state.skillsPage = null;
         state.sandboxPage = null;
         state.projectsPage = null;
         state.clientProjectsPage = null;
+        state.projectChatPage = null;
     }
 
     function reportPageNavigationError(error) {
@@ -535,6 +537,11 @@
                 await loadLocalClientDevices(session);
                 break;
             case "chatPage":
+                if ($("projectChatWorkspace") && window.CmAgentLocalProjects && window.CmAgentProjectDevelopment && !state.projectChatPage) {
+                    state.projectChatPage = window.CmAgentLocalProjects.createChatPage({api, document, host: window,
+                        getSessionEpoch: () => sessionEpoch.capture()});
+                    void state.projectChatPage.mount();
+                }
                 await loadAgents(session);
                 if (sessionEpoch.isCurrent(session)) await initializeChatPage();
                 break;

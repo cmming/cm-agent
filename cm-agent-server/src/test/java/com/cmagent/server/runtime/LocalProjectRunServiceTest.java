@@ -100,6 +100,22 @@ class LocalProjectRunServiceTest {
         assertEquals("PROJECT_OPERATION_UNCERTAIN",assertThrows(LocalProjectAccessException.class,()->service.preflight(principal,metadata,runId)).errorCode());
     }
 
+    @Test void 会话来源与页面项目不符时不打开本机根() {
+        var source = new LocalProjectBinding(tenant, "Owner", project, agent, conversation, null,
+                binding.rootBindingId(), binding.rootIdentity(), "node", 1, now);
+        var metadata = new Conversation(conversation, tenant, agent, "会话", "Owner", now, now);
+        when(resources.conversation(principal, metadata)).thenReturn(source);
+
+        var failure = assertThrows(LocalProjectAccessException.class,
+                () -> service.verifyMessageRequest(principal, metadata, UUID.randomUUID()));
+
+        assertEquals("PROJECT_BINDING_CONFLICT", failure.errorCode());
+        assertEquals(409, failure.status());
+        assertEquals("safe-id", failure.errorId());
+        verify(access, never()).scope(any(), any(), anyString());
+        verifyNoInteractions(operations);
+    }
+
     @Test void 终态清理只删短期工具快照不清长期来源() {
         service.prepare(principal,run,conversation,List.of(tool()),false);
         service.cleanup(principal,run);

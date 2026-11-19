@@ -1,6 +1,7 @@
 package com.cmagent.server.runtime;
 
 import com.cmagent.api.PrincipalRef;
+import com.cmagent.agentscope.ProjectModelDisclosureState;
 import com.cmagent.core.domain.*;
 import com.cmagent.core.repository.*;
 import com.cmagent.core.security.AuthorizationDecision;
@@ -61,6 +62,52 @@ class ToolApprovalServiceTest {
         assertThat(view.items().getFirst().inputSummary())
                 .contains("\"url\":\"<已脱敏>\"")
                 .doesNotContain("127.0.0.1", "\"url\":\"\"");
+    }
+
+    @Test
+    void 同机模型审批先准备内部外键且预览内容不写入普通审批摘要() {
+        var catalog = mock(LocalProjectToolCatalog.class);
+        var state = mock(io.agentscope.core.state.AgentStateStore.class);
+        var factory = new org.springframework.beans.factory.support.StaticListableBeanFactory();
+        factory.addBean("catalog", catalog);
+        factory.addBean("state", state);
+        service.configureModelDisclosureState(factory.getBeanProvider(io.agentscope.core.state.AgentStateStore.class),
+                factory.getBeanProvider(LocalProjectToolCatalog.class));
+        UUID runId = UUID.randomUUID();
+        String hash = "a".repeat(64);
+        var preview = new ProjectModelDisclosureState.Preview("测试模型", List.of("项目片段"));
+        var proposal = new ProjectModelDisclosureState.Proposal("call", hash, hash, Set.of(hash), preview);
+        when(runs.workspaceProtocol(tenant, agent, runId)).thenReturn(LocalProjectBinding.PROTOCOL);
+        when(state.get(tenant + ":initiator", runId.toString(), ProjectModelDisclosureState.KEY, ProjectModelDisclosureState.class))
+                .thenReturn(java.util.Optional.of(new ProjectModelDisclosureState(Set.of(), proposal)));
+        var pending = new RuntimePendingApproval("reply", List.of(new RuntimePendingApproval.RuntimePendingToolCall(
+                "call", ProjectModelDisclosureState.approvalTypeId(tenant), ProjectModelDisclosureState.NAME,
+                ToolRiskLevel.HIGH, "发送审批", hash)));
+
+        var view = service.create(principal, agent, conversation, runId, pending);
+
+        verify(catalog).ensureModelDisclosureReference(tenant);
+        assertThat(view.items().getFirst().preview()).isEqualTo(preview);
+        assertThat(repository.find(tenant, agent, conversation, view.approvalId()).orElseThrow()
+                .items().getFirst().inputSummary()).doesNotContain("项目片段");
+    }
+
+    @Test
+    void 普通运行提交内部模型审批标记时拒绝且不新增审批() {
+        var catalog = mock(LocalProjectToolCatalog.class);
+        var factory = new org.springframework.beans.factory.support.StaticListableBeanFactory();
+        factory.addBean("catalog", catalog);
+        service.configureModelDisclosureState(factory.getBeanProvider(io.agentscope.core.state.AgentStateStore.class),
+                factory.getBeanProvider(LocalProjectToolCatalog.class));
+        UUID runId = UUID.randomUUID();
+        var pending = new RuntimePendingApproval("reply", List.of(new RuntimePendingApproval.RuntimePendingToolCall(
+                "call", ProjectModelDisclosureState.approvalTypeId(tenant), ProjectModelDisclosureState.NAME,
+                ToolRiskLevel.HIGH, "发送审批", "a".repeat(64))));
+
+        assertThatThrownBy(() -> service.create(principal, agent, conversation, runId, pending))
+                .isInstanceOf(IllegalStateException.class).hasMessage("项目片段发送审批来源不完整");
+        verifyNoInteractions(catalog, audit);
+        assertThat(service.listPending(principal, agent, conversation)).isEmpty();
     }
 
     @Test

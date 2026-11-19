@@ -55,6 +55,20 @@ class LocalProjectCommandServiceTest {
         assertThatThrownBy(()->service.dispatchPrepared(owner,binding,root,proposal.operationId(),3)).isInstanceOf(IllegalStateException.class);
         assertThat(store.operation(owner.tenantId(),"Owner",proposal.operationId()).orElseThrow().state()).isEqualTo(LocalProjectOperation.State.PREPARED);
     }
+    @Test void 固定参数模式拒绝追加参数和此前批准的不同参数() throws Exception {
+        var legacy = service.propose(owner,binding,root,request("fixture",List.of("extra"),1,1024));
+        prepared(legacy);
+        service.close();
+        service = make(Map.of("fixture",new LocalProjectCommandService.Toolchain(temp.resolve("fixture.exe"),
+                List.of("fixed"),Map.of(),Set.of(),false,true)));
+
+        assertThatThrownBy(()->service.propose(owner,binding,root,request("fixture",List.of("extra"),1,1024)))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("固定的参数");
+        assertThatThrownBy(()->service.dispatchPrepared(owner,binding,root,legacy.operationId(),3))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("重新提案");
+        assertThat(service.propose(owner,binding,root,request("fixture",List.of(),1,1024)).arguments())
+                .containsExactly("fixed");
+    }
     @Test void 重建后运行意图只转结果未知且阻止新副作用()throws Exception{
         var proposal=service.propose(owner,binding,root,request("fixture",List.of(),1,1024));prepared(proposal);
         store.claimPrepared(owner.tenantId(),"Owner",proposal.operationId(),3,Instant.now());

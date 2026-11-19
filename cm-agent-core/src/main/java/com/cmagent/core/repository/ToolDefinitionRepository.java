@@ -19,6 +19,15 @@ public interface ToolDefinitionRepository {
     ToolDefinition save(ToolDefinition tool);
 
     /**
+     * 并发安全地写入一个禁用的内部引用定义。已有行保持原值，调用方须在同一短事务中锁定回读并核对完整定义。
+     * 该入口只用于满足已有外键，不能授予、启用或恢复工具，也不能替代普通工具创建行为。
+     * @param tool 由服务端固定生成的禁用 LOCAL 工具定义
+     */
+    default void insertDisabledInternalReferenceIfAbsent(ToolDefinition tool) {
+        throw new UnsupportedOperationException("当前仓储不支持内部审批引用");
+    }
+
+    /**
      * 尝试原位恢复受管的固定 LOCAL 工具定义。
      *
      * <p>该能力只供经过固定目录校验的内置示例安装流程使用。实现只能恢复租户、ID、原名称和

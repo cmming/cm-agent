@@ -31,6 +31,19 @@ public interface LocalProjectRepository {
     default Optional<LocalProject> lock(UUID tenantId, String ownerId, UUID projectId) { return find(tenantId, ownerId, projectId); }
 
     /**
+     * 在登记项目的短事务中串行化同租户的登记，查找可复用的活动目录身份。候选须按创建顺序稳定返回，
+     * 调用方仍应比较受保护的原路径，避免同一目录移动以后改变旧项目的根。
+     * @param tenantId 可信租户
+     * @param ownerId 已认证主体，必须精确比较
+     * @param nodeId 当前执行节点，来自服务配置
+     * @param rootIdentity 已核验原生目录的身份摘要
+     * @return 当前租户和主体在指定执行节点上的活动项目候选
+     */
+    default List<LocalProject> lockRegistrationCandidates(UUID tenantId, String ownerId, String nodeId, String rootIdentity) {
+        throw new UnsupportedOperationException("当前仓储未实现项目目录登记锁");
+    }
+
+    /**
      * 按updatedAt/id倒序分页，必须在LIMIT前完成tenant/owner/归档过滤。
      * @param tenantId 可信租户
      * @param ownerId 已认证主体

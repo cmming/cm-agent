@@ -27,6 +27,8 @@ public final class JdbcLocalProjectRepository implements LocalProjectRepository,
     private final JdbcClient jdbc;
     /** 只在固定owner列中使用的双方言精确谓词，不拼接客户端列名。 */
     private final String owner;
+    /** 避免 MySQL 默认排序规则把不同执行节点视为相同。 */
+    private final String node;
     /** 新增按真实租户行串行化，避免PostgreSQL重复键异常使上层共享审计事务进入失败态。 */
     private final TransactionTemplate transaction;
 
@@ -38,6 +40,7 @@ public final class JdbcLocalProjectRepository implements LocalProjectRepository,
         this.jdbc = Objects.requireNonNull(jdbc);
         this.transaction = Objects.requireNonNull(transaction);
         this.owner = JdbcOwnerPredicate.equal(jdbc, "owner_id", ":owner");
+        this.node = JdbcOwnerPredicate.equal(jdbc, "node_id", ":node");
     }
 
     @Override public boolean insertRoot(LocalProjectRoot root) {
@@ -71,6 +74,17 @@ public final class JdbcLocalProjectRepository implements LocalProjectRepository,
     @Override public Optional<LocalProject> lock(UUID tenantId, String ownerId, UUID projectId) {
         return jdbc.sql("SELECT * FROM local_projects WHERE tenant_id=:tenant AND id=:id AND " + owner + " FOR UPDATE")
                 .param("tenant", tenantId.toString()).param("owner", ownerId).param("id", projectId.toString()).query(this::map).optional();
+    }
+
+    @Override public List<LocalProject> lockRegistrationCandidates(UUID tenantId, String ownerId, String nodeId, String rootIdentity) {
+        if (!org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+            throw new IllegalStateException("项目目录登记需要短事务");
+        // 固定租户行先于候选查询持锁，同时保护「尚无匹配记录」的并发首次登记，沿用现有两库表结构。
+        if (!lockTenant(tenantId)) return List.of();
+        return jdbc.sql("SELECT * FROM local_projects WHERE tenant_id=:tenant AND " + owner + " AND " + node
+                + " AND root_identity=:identity AND state='ACTIVE' ORDER BY created_at,id")
+                .param("tenant", tenantId.toString()).param("owner", ownerId).param("node", nodeId)
+                .param("identity", rootIdentity).query(this::map).list();
     }
 
     @Override public List<LocalProject> list(UUID tenantId, String ownerId, LocalProjectPageRequest page, boolean includeArchived) {

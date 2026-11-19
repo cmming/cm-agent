@@ -21,11 +21,37 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ConversationControllerProjectModeTest {
+    @Test
+    void 项目绑定不一致在流任务提交前拒绝() {
+        ConversationService conversations = mock(ConversationService.class);
+        PermissionEvaluator permissions = mock(PermissionEvaluator.class);
+        TaskExecutor executor = mock(TaskExecutor.class);
+        when(permissions.check(any(), any())).thenReturn(AuthorizationDecision.allow());
+        var controller = new ConversationController(conversations, permissions, mock(AuditAppender.class), executor,
+                mock(ErrorDiagnosticLogger.class), mock(ToolApprovalService.class), new SensitiveDataRedactor());
+        UUID tenant = UUID.randomUUID(), agent = UUID.randomUUID(), conversation = UUID.randomUUID(), selected = UUID.randomUUID();
+        var session = new JwtService.JwtSession(tenant, "Owner", "测试", List.of("agent:run"));
+        var authentication = new UsernamePasswordAuthenticationToken(session, null, List.of());
+        var denied = new com.cmagent.server.runtime.LocalProjectAccessException("PROJECT_BINDING_CONFLICT", "safe-id", 409,
+                "聊天页选中的项目与会话不一致，请刷新后重试");
+        doThrow(denied).when(conversations).verifyProjectRequest(any(), eq(agent), eq(conversation), eq(selected));
+
+        assertSame(denied, assertThrows(com.cmagent.server.runtime.LocalProjectAccessException.class,
+                () -> controller.stream(agent, conversation, new ConversationController.SendMessageRequest(
+                        "测试消息", null, OperationAuthorizationMode.ASK_ON_RISK, selected), authentication,
+                        new MockHttpServletRequest())));
+        verifyNoInteractions(executor);
+    }
+
     @Test
     void 项目消息体中的授权方式原样交给可信服务校验() {
         ConversationService conversations = mock(ConversationService.class);

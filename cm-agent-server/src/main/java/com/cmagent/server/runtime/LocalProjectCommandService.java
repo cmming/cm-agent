@@ -81,6 +81,10 @@ public final class LocalProjectCommandService implements AutoCloseable {
             throw new IllegalStateException("项目存在运行中或结果未知的操作，请先核对");
         Toolchain tool=tools.get(request.toolchainId());
         if(tool==null)throw new IllegalArgumentException("命令工具链未获允许");
+        // 档位只决定是否询问。部署限定为固定参数时，完全访问也不能追加模型提供的参数。
+        if (tool.fixedArgumentsOnly() && !request.arguments().isEmpty()) {
+            throw new IllegalArgumentException("该工具链只接受部署固定的参数，请提交空的参数列表");
+        }
         Path directory=directory(root,request.relativeDirectory());
         var environment=new TreeMap<String,String>(String.CASE_INSENSITIVE_ORDER);
         environment.putAll(tool.environment());
@@ -134,7 +138,9 @@ public final class LocalProjectCommandService implements AutoCloseable {
             throw new IllegalStateException("命令尚未取得精确批准或已被派发");
         Manifest manifest=decode(operation,binding);
         Toolchain tool=tools.get(manifest.toolchainId());
+        // 批准后如果部署收紧参数范围，已有清单仍须采用当前白名单才能启动。
         if(tool==null||!tool.executable().toString().equals(manifest.executable())
+                ||(tool.fixedArgumentsOnly()&&!tool.prefixArguments().equals(manifest.arguments()))
                 ||!fileHash(tool.executable()).equals(manifest.executableHash())||!buildHashes(root).equals(manifest.buildHashes()))
             throw new IllegalStateException("工具链或构建配置已变化，请重新提案");
         Path directory=directory(root,manifest.relativeDirectory());
@@ -372,9 +378,14 @@ public final class LocalProjectCommandService implements AutoCloseable {
      * @param environment 完整受控基础环境，不自动继承宿主环境
      * @param allowedEnvironment 用户可覆盖的环境名称
      * @param build 是否是构建工具，不减弱批准或权限
+     * @param fixedArgumentsOnly 部署是否仅允许固定参数组合
      */
-    public record Toolchain(Path executable,List<String> prefixArguments,Map<String,String> environment,Set<String> allowedEnvironment,boolean build){
+    public record Toolchain(Path executable,List<String> prefixArguments,Map<String,String> environment,
+            Set<String> allowedEnvironment,boolean build,boolean fixedArgumentsOnly){
         public Toolchain(Path executable,List<String> prefixArguments,Map<String,String> environment,Set<String> allowedEnvironment){this(executable,prefixArguments,environment,allowedEnvironment,false);}
+        /** 原有服务端配置保留受检的追加参数行为。 */
+        public Toolchain(Path executable,List<String> prefixArguments,Map<String,String> environment,
+                Set<String> allowedEnvironment,boolean build){this(executable,prefixArguments,environment,allowedEnvironment,build,false);}
         public Toolchain{prefixArguments=List.copyOf(prefixArguments);environment=Map.copyOf(environment);allowedEnvironment=Set.copyOf(allowedEnvironment);}
         @Override public String toString(){return "Toolchain[受保护配置]";}
     }

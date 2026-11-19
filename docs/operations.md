@@ -366,6 +366,19 @@ HTTP正文总等待5秒、4个无队列读取槽；真实底层流若不响应�
 
 启用前应按[设备项目交付账本](superpowers/progress/2026-11-09-client-project-workspace-delivery-ledger.md)复核 Rocky 双库迁移与注释、远程 HTTPS、真实 Windows 目录/文件竞争与进程树停止、设备撤销、真实 Provider、浏览器及客户端崩溃/重启等门禁。历史记录不能替代对当前版本与目标环境的验证；提交与部署状态分别以 Git 和目标环境为准。
 
+## Windows x64 桌面试装
+
+试装包自带 Java 21，以当前 Windows 用户身份运行。启动器监听 `127.0.0.1:18180` 并打开 V2 聊天页，关闭启动器窗口会停止本机服务。
+
+1. 试装管理员在当前用户的 `%LOCALAPPDATA%\CM Agent Pilot Data` 下准备 `pilot.properties`，参考[试装配置模板](../scripts/windows-pilot.properties.example)。数据源使用已配置的 JDBC。凭据文件和运行状态目录应仅允许当前用户及 Windows 系统账户访问。
+2. 安装 MSI，从开始菜单打开 **CM Agent Pilot**，并使用该试装服务的账号登录。有独立测试需要时，可通过 `CM_AGENT_PILOT_HOME` 和 `CM_AGENT_PILOT_PORT` 指定单独的本机目录和端口。
+3. 管理员预先配置模型和项目 Agent，并通过 `POST /api/projects/tools/agents/{agentId}` 为该 Agent 准备固定项目工具授权。聊天页选择项目模式与 Agent，再点击「选择文件夹」。新会话的项目绑定从创建起固定。
+4. 聊天页默认「高风险时询问」。三档均只使用已获准项目及工具链，命令参数采用部署配置的固定组合。文件修改、命令执行和发给在线模型的项目片段按当前 Run 的授权决定执行或显示审批。
+
+启动失败时按窗口显示的诊断编号查询数据目录下的 `launcher.log`。数据库不可用时由试装管理员检查现有数据源和账号。免数据库配置的安装在桌面持久化改造后另行验收。
+
+构建需要 Windows x64、JDK 21 和 WiX v3。使用 Maven 生成 Spring Boot 可执行 Server JAR，再执行[打包脚本](../scripts/package-windows-pilot.ps1)。脚本输出 MSI、SHA-256 校验文件和包含运行时的应用镜像。它在暂存副本中移除内嵌的 `application*` 配置，运行时只加载外部试装配置。
+
 ## 本机运行管理脚本
 
 使用 [manage-local-runtime.ps1](../scripts/manage-local-runtime.ps1) 统一管理 8080 服务端和本机客户端：
