@@ -46,6 +46,44 @@ typography:
     fontWeight: 700
     lineHeight: 1.5
     letterSpacing: "0.05em"
+  workspace-heading:
+    fontFamily: "Segoe UI, Microsoft YaHei, sans-serif"
+    fontSize: "30px"
+    fontWeight: 700
+    lineHeight: 1.2
+    letterSpacing: "-0.02em"
+  object-heading:
+    fontFamily: "Segoe UI, Microsoft YaHei, sans-serif"
+    fontSize: "24px"
+    fontWeight: 700
+    lineHeight: 1.3
+    letterSpacing: "-0.015em"
+  mobile-object-heading:
+    fontFamily: "Segoe UI, Microsoft YaHei, sans-serif"
+    fontSize: "21px"
+    fontWeight: 700
+    lineHeight: 1.35
+    letterSpacing: "-0.01em"
+  section-heading:
+    fontFamily: "Segoe UI, Microsoft YaHei, sans-serif"
+    fontSize: "16px"
+    fontWeight: 700
+    lineHeight: 1.45
+  dense-body:
+    fontFamily: "Segoe UI, Microsoft YaHei, sans-serif"
+    fontSize: "14px"
+    fontWeight: 400
+    lineHeight: 1.65
+  control-label:
+    fontFamily: "Segoe UI, Microsoft YaHei, sans-serif"
+    fontSize: "13px"
+    fontWeight: 600
+    lineHeight: 1.5
+  metadata:
+    fontFamily: "Segoe UI, Microsoft YaHei, sans-serif"
+    fontSize: "12px"
+    fontWeight: 400
+    lineHeight: 1.5
 rounded:
   compact: "8px"
   control: "9px"
@@ -178,6 +216,20 @@ CM Agent 的视觉系统像平台工程人员长期使用的精密操作台：�
 - **Body**（400，16px，1.5）：表单输入与正文基准；辅助说明通常收敛为 12px–14px。
 - **Label**（700，11px，0.05em）：分组眉题、表头和短状态标签；仅英文缩写或极短标签使用全大写。
 
+### Compact Product Scale
+
+高频管理页使用固定、紧凑但仍可伸缩的角色尺度，不为每个页面创造新的字号：
+
+- **Workspace Heading**（700，30px，1.2）：业务工作区的唯一页面主标题，仅使用 `-0.02em` 级别的轻微紧字距。
+- **Object Heading**（700，24px，1.3）：当前资源或对象的唯一主标题，不能与多个同级标题争夺视线。
+- **Mobile Object Heading**（700，21px，1.35）：窄屏下的对象标题，保留层级但允许长名称自然换行。
+- **Section Heading**（700，16px，1.45）：当前资源内的会话、文件或局部任务标题。
+- **Dense Body**（400，14px，1.65）：项目说明、会话正文和需要持续阅读的紧凑内容。
+- **Control Label**（600，13px，1.5）：控件标签、标签页、摘要入口和表单辅助引导。
+- **Metadata**（400，12px，1.5）：版本、时间、状态和短元数据；数值角色使用等宽数字。
+
+字号层级由字重、空间和颜色共同承担，不以单一字号放大表示重要性。长标题使用平衡换行，正文使用 `pretty` 换行策略；中文标题不沿用西文展示标题的过度紧字距。
+
 ### Named Rules
 
 **The Scan Before Read Rule.** 页面标题、对象名称、状态和下一步动作必须先于说明文字进入视线；长说明不得与标题争夺字重。
@@ -257,6 +309,14 @@ CM Agent 的视觉系统像平台工程人员长期使用的精密操作台：�
 - 标准内容上限1480px，1680px起1600px；桌面列表300px、宽屏320px。模型宽屏并列详情与表单；聊天保留视口内输入与内部消息滚动，不使用统一面板padding覆盖其容器分配。
 - 总览使用紧凑事实栏，运行页使用中性紧凑引导；技能状态徽标必须完整可见。窄屏审计保留全字段表格，使用局部滚动、提示与键盘焦点，不压缩到不可读列宽。
 - 新规则以本节与当前统一层为准；上文的阴影词汇仍可用于明确需要抬升的独立场景。浏览器尺寸检查不等于全角色、真实设备或完整无障碍认证。
+
+### 2026-11-20：本地项目页字阶收敛
+
+- 本地项目页使用 `Workspace Heading`、`Object Heading`、`Section Heading`、`Dense Body`、`Control Label` 和 `Metadata` 六个固定产品角色；标题、正文、控件和元数据不以零散字号堆叠。
+- 标题使用 400/600/700 三档字重与固定字号建立层级；版本、时间、计数和技术事实启用等宽数字，代码与技术载荷继续使用等宽字体。
+- 中文标题将负字距控制在 `-0.02em` 以内，标题使用平衡换行，说明正文使用更自然的换行策略；不为了压缩单行长度而过紧密排。
+- 本地项目会话按“会话头、运行/审批状态、消息记录、输入区、运行操作”排列；消息记录独立滚动，用户消息右对齐、Agent 消息左对齐，输入区在消息之后保持紧凑。
+- 本地项目页的左侧导航先列项目，再列当前项目的会话；会话是项目下的第二级导航，右栏只显示当前会话或文件内容，新建会话入口默认收起。
 
 ### Do:
 

@@ -182,6 +182,10 @@
             $("projectSearchResults")?.replaceChildren();
             if ($("projectSearchQuery")) $("projectSearchQuery").value = "";
             status("projectSearchStatus", "");
+            $("projectConversationRail").hidden = true;
+            $("projectConversationList").replaceChildren();
+            $("projectChatBody").hidden = true;
+            $("projectChatStageEmpty").hidden = false;
             selected = null; $("projectDetailRegion").hidden = true; $("projectDetailEmpty").hidden = false;
             $("projectDetailEmpty").textContent = "正在读取项目…"; renderList(restoreFocus ? id : "");
             try {
@@ -199,6 +203,7 @@
                 $("projectTreePath").textContent = archived ? "已归档项目" : "项目根目录";
                 status("projectTreeStatus", archived ? "归档后仅查看会话、审批历史和操作记录，不再读取本地文件。" : ""); $("projectDetailEmpty").hidden = true; $("projectDetailRegion").hidden = false;
                 if ($("projectPaneChat")) $("projectPaneChat").disabled = !capability?.conversations;
+                $("projectConversationRail").hidden = !capability?.conversations;
                 switchPane(capability?.conversations ? "chat" : "files");
                 archiveLocks.delete(project.id);
                 if ($("projectArchiveBtn")) $("projectArchiveBtn").hidden = project.state !== "ACTIVE";
@@ -208,11 +213,13 @@
                 $("projectRenameBtn").disabled = project.state !== "ACTIVE";
                 renderList(restoreFocus ? project.id : "");
                 if (host.CmAgentProjectDevelopment && capability?.conversations) {
-                    development = host.CmAgentProjectDevelopment.create({request, document, host, isCurrent: () => valid() && stamp === detailRevision});
+                    development = host.CmAgentProjectDevelopment.create({request, document, host,
+                        isCurrent: () => valid() && stamp === detailRevision, showConversation: () => switchPane("chat")});
                     await development.mount(project, capability);
                 }
                 if (valid() && stamp === detailRevision && !archived) await loadTree("");
             } catch (error) {
+                $("projectConversationRail").hidden = true;
                 if (valid() && stamp === detailRevision) $("projectDetailEmpty").textContent = error.message;
             }
         }
@@ -241,6 +248,9 @@
                 if (stamp === detailRevision && selected?.id === id) {
                     detailRevision++; treeRevision++; development?.dispose(); development = null; clearPreview(); selection.dispose();
                     selected = null; $("projectFileList").replaceChildren(); $("projectDetailRegion").hidden = true;
+                    $("projectConversationRail").hidden = true;
+                    $("projectChatBody").hidden = true;
+                    $("projectChatStageEmpty").hidden = false;
                     $("projectDetailEmpty").hidden = false; $("projectDetailEmpty").textContent = "项目已归档，本地目录与历史保留。勾选“包含已归档”可查看历史。";
                     $("projectAddPanel").hidden = true; renderSelection(selection.value()); $("projectListHeading")?.focus();
                 }

@@ -14,7 +14,7 @@ body[data-console-version="v2"] .local-project-grid { display: grid; grid-templa
 .project-add-fields input { width: 100%; }
 .local-project-capability { margin-bottom: 20px; color: var(--muted); line-height: 1.7; font-size: 13px; }
 .local-project-empty { padding: 70px 28px; text-align: center; }
-.local-project-empty h2 { font-size: 20px; margin-top: 0; }
+.local-project-empty h2 { font-size: 24px; margin-top: 0; }
 .local-project-empty p { max-width: 48ch; margin: 10px auto; color: var(--muted); line-height: 1.8; }
 .project-rename { margin: 18px 0; padding: 16px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .project-rename form { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
@@ -49,11 +49,8 @@ body[data-console-version="v2"] .local-project-grid { display: grid; grid-templa
 .project-approval-item label { display: flex; align-items: center; gap: 8px; margin: 10px 0; font-size: 13px; }
 .project-approval-item input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 18px; }
 .project-development textarea { width: 100%; margin-top: 8px; }
-/* 三个工作区在桌面保留项目列表、会话和文件的独立滚动，窄屏只切换当前任务面板。 */
-.project-working-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(260px, .85fr); gap: 18px; align-items: start; }
-.project-working-grid > .project-development, .project-files-pane { margin: 0; padding: 0; border: 0; min-width: 0; max-height: max(480px, calc(100vh - 380px)); overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
-.project-files-pane { padding-left: 16px; border-left: 1px solid var(--border); }
-.project-pane-switch { display: none; }
+/* 会话与文件共用项目详情区，由标签切换当前任务，避免两列同时争夺阅读焦点。 */
+.project-working-grid > .project-development, .project-files-pane { margin: 0; min-width: 0; }
 .project-diff-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
 .project-diff-columns > div { min-width: 0; }
 .project-file-change h5, .project-exact-preview h5 { margin: 14px 0 6px; font-size: 13px; }
@@ -144,14 +141,6 @@ body[data-console-version="v2"] #projectsPage .project-file-list { max-height: n
 body[data-console-version="v2"] #projectsPage .project-file-row { min-height: 46px; padding: 11px 8px; border-color: #edf0f5; }
 body[data-console-version="v2"] #projectsPage .project-file-kind { font-size: 11px; }
 body[data-console-version="v2"] #projectsPage .project-file-row:not(:disabled):hover .project-file-action { color: var(--accent); }
-@media (max-width: 1100px) {
-    .project-pane-switch { display: flex; width: fit-content; gap: 4px; margin: 16px 0; padding: 4px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
-    body[data-console-version="v2"] #projectsPage .project-pane-switch .button { min-width: 80px; border-color: transparent; background: transparent; }
-    body[data-console-version="v2"] #projectsPage .project-pane-switch [aria-pressed="true"] { border-color: var(--border); color: var(--accent); background: var(--surface); }
-    .project-working-grid { display: block; }
-    .project-files-pane { padding-left: 0; border-left: 0; }
-    .project-working-grid[data-active-pane="chat"] > .project-files-pane, .project-working-grid[data-active-pane="files"] > .project-development { display: none; }
-}
 @media (max-width: 1100px) { body[data-console-version="v2"] .local-project-grid { grid-template-columns: 220px minmax(0, 1fr); gap: 14px; } }
 @media (max-width: 760px) {
     body[data-console-version="v2"] .local-project-grid { grid-template-columns: minmax(0, 1fr); }
@@ -192,12 +181,6 @@ body[data-console-version="v2"] #projectsPage .project-tree-toolbar { position: 
     body[data-console-version="v2"] #projectsPage .project-pane-switch .button { flex: 1; }
 }
 
-/* 原生下拉框在窄屏会截断选中项，单独换行显示完整文字。 */
-.project-authorization-selection { display: none; }
-@media (max-width: 760px) {
-    body[data-console-version="v2"] #projectsPage .project-authorization-selection { display: block; margin: 0; color: var(--text); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
-}
-
 /* 管理操作按需展开，常用会话控件保持相近，审批置于任务输入前。 */
 body[data-console-version="v2"] #projectsPage .project-management { margin-top: 14px; }
 body[data-console-version="v2"] #projectsPage .project-management > summary { width: fit-content; cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 600; }
@@ -208,6 +191,374 @@ body[data-console-version="v2"] #projectApprovalItems:not(:empty) { margin-top: 
 body[data-console-version="v2"] #projectsPage .project-tree-toolbar > div { flex-wrap: wrap; }
 @media (max-width: 760px) {
     body[data-console-version="v2"] #projectsPage .project-conversation-toolbar select { max-width: none; }
+}
+
+/* 2026-11-20 布局收敛：先说明环境与来源，再进入项目列表和当前项目工作区。 */
+#projectsPage .project-page-intro {
+    align-items: flex-end;
+    gap: 24px;
+    margin-bottom: 18px;
+}
+#projectsPage .project-page-intro h1 {
+    font-size: 30px;
+    letter-spacing: -.035em;
+}
+#projectsPage .project-page-intro > div > p {
+    max-width: 66ch;
+    margin-top: 6px;
+    line-height: 1.65;
+}
+#projectsPage .project-page-intro .button.primary {
+    flex: 0 0 auto;
+    min-height: 42px;
+    padding-inline: 18px;
+}
+#projectsPage .project-context-band {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px 28px;
+    margin-bottom: 18px;
+    padding: 14px 0;
+    border-block: 1px solid var(--border);
+}
+#projectsPage .project-context-band .project-guidance {
+    display: flex;
+    align-items: center;
+    gap: 12px 18px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    flex-wrap: wrap;
+}
+#projectsPage .project-context-band .local-project-capability {
+    flex: 1 1 520px;
+    max-width: 78ch;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.65;
+}
+#projectsPage .project-source-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+#projectsPage .project-source-label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+#projectsPage .project-context-band .project-source-switch {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin: 0;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface-soft);
+}
+#projectsPage .project-context-band .project-source-switch .button {
+    min-height: 32px;
+    padding-inline: 12px;
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted);
+}
+#projectsPage .project-context-band .project-source-switch [aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #fff;
+}
+#projectsPage .local-project-grid {
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: 20px;
+}
+#projectsPage .local-project-list-panel {
+    padding: 18px;
+}
+#projectsPage .local-project-list-panel .panel-heading {
+    gap: 10px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+#projectsPage .local-project-list-panel > label {
+    margin-bottom: 12px;
+}
+#projectsPage .local-project-list-panel .resource-list {
+    max-height: max(320px, calc(100dvh - 390px));
+    margin-top: 0;
+}
+#projectsPage .local-project-item {
+    position: relative;
+    gap: 4px;
+    padding: 13px 14px;
+    border-color: var(--border);
+    background: var(--surface);
+}
+#projectsPage .local-project-item strong {
+    display: -webkit-box;
+    padding-right: 12px;
+    overflow: hidden;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+#projectsPage .local-project-item > span {
+    padding-right: 12px;
+    line-height: 1.5;
+}
+#projectsPage .local-project-item[aria-pressed="true"] {
+    border-color: #a9c4ef;
+    background: #eef4ff;
+}
+#projectsPage .local-project-item[aria-pressed="true"]::after {
+    content: "";
+    position: absolute;
+    top: 19px;
+    right: 14px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px rgba(40, 101, 216, .1);
+}
+#projectsPage .local-project-detail {
+    padding: 0;
+    overflow: hidden;
+}
+#projectsPage #projectDetailEmpty {
+    display: grid;
+    place-content: center;
+    min-height: max(520px, calc(100dvh - 340px));
+    padding: 48px 30px;
+}
+#projectsPage #projectDetailEmpty .project-empty-icon {
+    box-sizing: border-box;
+    width: 64px;
+    height: 64px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface-soft);
+    color: var(--muted);
+}
+#projectsPage #projectDetailEmpty h2 {
+    margin: 18px 0 0;
+    font-size: 24px;
+    letter-spacing: -.015em;
+}
+#projectsPage #projectDetailEmpty p {
+    max-width: 46ch;
+    margin: 8px auto 0;
+    line-height: 1.7;
+}
+#projectsPage #projectDetailEmpty p:last-child {
+    margin-top: 4px;
+    font-size: 13px;
+}
+#projectsPage #projectDetailRegion {
+    padding: 22px 24px 26px;
+}
+#projectsPage .project-detail-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px 24px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+#projectsPage .project-detail-header .local-project-toolbar {
+    flex: 1 1 520px;
+    min-width: 0;
+}
+#projectsPage .project-folder-mark {
+    width: 48px;
+    height: 48px;
+    flex-basis: 48px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #f3f7fd;
+    color: #5d779e;
+}
+#projectsPage .project-heading-copy h2 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.35;
+    letter-spacing: -.02em;
+}
+#projectsPage .project-heading-copy .field-help {
+    margin: 0;
+    font-size: 12px;
+}
+#projectsPage .project-detail-header .project-management {
+    margin: 1px 0 0;
+}
+#projectsPage .project-detail-header .project-management > summary {
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--text);
+}
+#projectsPage .project-detail-header .project-management[open] {
+    flex: 1 0 100%;
+    padding-top: 4px;
+}
+#projectsPage .project-workspace {
+    margin-top: 18px;
+}
+body[data-console-version="v2"] #projectsPage .project-pane-switch {
+    display: flex;
+    width: 100%;
+    gap: 24px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+}
+body[data-console-version="v2"] #projectsPage .project-pane-switch .button {
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 2px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: var(--muted);
+}
+body[data-console-version="v2"] #projectsPage .project-pane-switch .button:hover {
+    color: var(--text);
+    background: transparent;
+}
+body[data-console-version="v2"] #projectsPage .project-pane-switch [aria-pressed="true"] {
+    border-bottom-color: var(--accent);
+    background: transparent;
+    color: var(--accent-strong, var(--accent));
+}
+#projectsPage .project-working-grid {
+    margin-top: 20px;
+}
+#projectsPage .project-development {
+    max-width: none;
+}
+#projectsPage .project-conversation-toolbar {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-soft);
+}
+#projectsPage .project-conversation-toolbar select {
+    background: var(--surface);
+}
+#projectsPage #projectSearchForm {
+    margin-top: 16px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-soft);
+}
+#projectsPage #projectSearchQuery {
+    background: var(--surface);
+}
+#projectsPage .project-tree-path {
+    margin-top: 16px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--text);
+    font-size: 12px;
+}
+#projectsPage .project-file-list {
+    border-top: 1px solid var(--border);
+}
+#projectsPage .project-file-row {
+    padding-inline: 12px;
+}
+#projectsPage .project-file-row:not(:disabled):hover {
+    background: var(--surface-soft);
+}
+#projectsPage .local-project-add {
+    margin-bottom: 18px;
+    border-color: #b8c9e2;
+    background: #fbfdff;
+}
+@media (max-width: 1100px) {
+    #projectsPage .local-project-grid {
+        grid-template-columns: 250px minmax(0, 1fr);
+        gap: 16px;
+    }
+    #projectsPage .project-context-band {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    #projectsPage .project-source-control {
+        justify-content: flex-start;
+    }
+}
+@media (max-width: 760px) {
+    #projectsPage .project-page-intro {
+        align-items: stretch;
+        gap: 14px;
+        margin-bottom: 14px;
+    }
+    #projectsPage .project-page-intro .button.primary {
+        width: 100%;
+    }
+    #projectsPage .project-context-band {
+        gap: 12px;
+        margin-bottom: 14px;
+        padding: 12px 0;
+    }
+    #projectsPage .project-source-control {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 7px;
+    }
+    #projectsPage .project-context-band .project-source-switch {
+        width: 100%;
+    }
+    #projectsPage .project-context-band .project-source-switch .button {
+        flex: 1 1 0;
+    }
+    #projectsPage .local-project-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 14px;
+    }
+    #projectsPage .local-project-list-panel .resource-list {
+        max-height: 300px;
+    }
+    #projectsPage #projectDetailEmpty {
+        min-height: 360px;
+        padding: 36px 20px;
+    }
+    #projectsPage #projectDetailRegion {
+        padding: 18px;
+    }
+    #projectsPage .project-detail-header {
+        display: block;
+    }
+    #projectsPage .project-detail-header .project-management {
+        margin-top: 12px;
+    }
+    body[data-console-version="v2"] #projectsPage .project-pane-switch {
+        gap: 12px;
+    }
+    body[data-console-version="v2"] #projectsPage .project-pane-switch .button {
+        flex: 1 1 0;
+    }
+    #projectsPage .project-conversation-toolbar,
+    #projectsPage #projectSearchForm {
+        padding: 12px;
+    }
 }
 .project-source-switch{display:flex;gap:.5rem;align-items:center;margin:0 0 1rem}
 .project-source-switch .button[aria-pressed="true"]{border-color:var(--accent,#2864a8);background:var(--accent,#2864a8);color:#fff}
@@ -220,7 +571,7 @@ body[data-console-version="v2"] .chat-mode-switch [aria-pressed="true"] { border
 .chat-project-workspace { grid-column: 1 / -1; display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; min-height: 0; }
 .chat-project-workspace[hidden], .chat-page > [hidden], #chatModeSwitch[hidden], #chatSessionsToggle[hidden] { display: none !important; }
 .chat-project-selector, .chat-project-conversation { min-width: 0; overflow: auto; padding: 16px; }
-.chat-project-selector h2, .chat-project-conversation h2 { margin: 0 0 12px; font-size: 18px; }
+.chat-project-selector h2, .chat-project-conversation h2 { margin: 0 0 12px; font-size: 16px; line-height: 1.45; }
 .chat-project-selector select, .chat-project-selector input { width: 100%; }
 .chat-project-picker-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .chat-project-conversation .project-development { border: 0; padding: 0; margin: 0; }
@@ -233,4 +584,578 @@ body[data-console-version="v2"] .chat-mode-switch [aria-pressed="true"] { border
 @media (max-width: 850px) {
     .chat-project-workspace { grid-template-columns: minmax(0, 1fr); align-content: start; overflow: auto; }
     .chat-project-selector, .chat-project-conversation { overflow: visible; }
+}
+
+/* 2026-11-20 字阶收敛：标题、正文、控件、元数据和技术内容使用固定的产品角色。 */
+#projectsPage {
+    font-kerning: normal;
+}
+#projectsPage :is(h1, h2, h3, h4) {
+    text-wrap: balance;
+}
+#projectsPage :is(p, .field-help, .local-project-capability) {
+    text-wrap: pretty;
+}
+#projectsPage .project-page-intro h1 {
+    font-size: 30px;
+    line-height: 1.2;
+    letter-spacing: -.02em;
+}
+#projectsPage .project-page-intro > div > p {
+    font-size: 14px;
+    line-height: 1.65;
+}
+#projectsPage .project-context-band .local-project-capability {
+    font-size: 13px;
+    line-height: 1.7;
+}
+#projectsPage .project-source-label {
+    font-size: 12px;
+    line-height: 1.4;
+    letter-spacing: .02em;
+}
+#projectsPage .local-project-list-panel .panel-heading h2,
+#projectsPage .local-project-list-panel .panel-heading h3 {
+    font-size: 16px;
+    line-height: 1.45;
+    font-weight: 700;
+}
+#projectsPage .local-project-item strong {
+    font-size: 14px;
+    line-height: 1.45;
+    font-weight: 600;
+}
+#projectsPage .local-project-item > span {
+    font-size: 12px;
+    line-height: 1.5;
+    letter-spacing: .005em;
+}
+#projectsPage .project-heading-copy h2 {
+    font-size: 24px;
+    line-height: 1.3;
+    letter-spacing: -.015em;
+}
+#projectsPage .project-heading-copy .field-help,
+#projectsPage #projectMetadata,
+#projectsPage #clientProjectMetadata {
+    font-size: 12px;
+    line-height: 1.6;
+    font-variant-numeric: tabular-nums;
+}
+#projectsPage .project-detail-header .project-management > summary,
+#projectsPage .project-management > summary,
+#projectsPage .project-rename summary,
+#projectsPage .project-conversation-history summary,
+#projectsPage .project-tool-details summary {
+    font-size: 13px;
+    line-height: 1.5;
+    font-weight: 600;
+}
+body[data-console-version="v2"] #projectsPage .project-pane-switch .button {
+    font-size: 13px;
+    line-height: 1.4;
+    font-weight: 600;
+    letter-spacing: .01em;
+}
+#projectsPage .project-development h3,
+#projectsPage .project-tree-toolbar h3,
+#projectsPage .project-preview-toolbar h3 {
+    font-size: 16px;
+    line-height: 1.45;
+    font-weight: 700;
+    letter-spacing: -.005em;
+}
+#projectsPage .project-development > .field-help,
+#projectsPage .project-tree-status,
+#projectsPage .project-preview-status {
+    font-size: 13px;
+    line-height: 1.7;
+}
+#projectsPage .project-conversation-toolbar label,
+#projectsPage #projectSearchForm > label:first-child,
+#projectsPage #projectChatForm > label,
+#projectsPage .project-authorization-mode > label {
+    font-size: 13px;
+    line-height: 1.5;
+    font-weight: 600;
+}
+body[data-console-version="v2"] #projectsPage .button {
+    font-size: 14px;
+    line-height: 1.4;
+    font-weight: 600;
+    letter-spacing: 0;
+}
+body[data-console-version="v2"] #projectsPage .button.compact {
+    font-size: 13px;
+}
+#projectsPage .field-help,
+#projectsPage .form-status {
+    font-size: 13px;
+    line-height: 1.65;
+}
+#projectsPage .project-chat-message {
+    font-size: 14px;
+    line-height: 1.75;
+}
+#projectsPage .project-chat-message > strong {
+    font-size: 12px;
+    line-height: 1.4;
+    letter-spacing: .02em;
+}
+#projectsPage .project-chat-message pre {
+    font-size: 14px;
+    line-height: 1.75;
+}
+#projectsPage .project-preview pre,
+#projectsPage .project-chat-message pre code,
+#projectsPage .project-command-arguments,
+#projectsPage .project-exact-preview {
+    font-size: 12px;
+    line-height: 1.75;
+}
+#projectsPage .project-tree-path,
+#projectsPage .project-file-name,
+#projectsPage .project-change-path {
+    font-size: 13px;
+    line-height: 1.55;
+}
+#projectsPage .project-file-kind,
+#projectsPage .project-file-action {
+    font-size: 12px;
+    line-height: 1.4;
+}
+#projectsPage .project-command-facts,
+#projectsPage .project-version-details,
+#projectsPage .project-approval-item label {
+    font-size: 13px;
+    line-height: 1.6;
+    font-variant-numeric: tabular-nums;
+}
+#projectsPage #projectDetailEmpty h2 {
+    font-size: 24px;
+    line-height: 1.35;
+    letter-spacing: -.01em;
+}
+#projectsPage #projectDetailEmpty p {
+    font-size: 14px;
+    line-height: 1.7;
+}
+#projectsPage #projectDetailEmpty p:last-child {
+    font-size: 13px;
+}
+@media (max-width: 760px) {
+    #projectsPage .project-heading-copy h2 {
+        font-size: 21px;
+        line-height: 1.35;
+    }
+    #projectsPage .project-development h3,
+    #projectsPage .project-tree-toolbar h3 {
+        font-size: 16px;
+    }
+}
+
+/* 会话态按会话头、状态、消息和输入区分层，避免长表单把消息记录推到首屏之外。 */
+body[data-console-version="v2"] #projectsPage #projectChatBody {
+    display: grid;
+    gap: 16px;
+}
+body[data-console-version="v2"] #projectsPage #projectChatBody[hidden] {
+    display: none;
+}
+#projectsPage .project-chat-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+}
+#projectsPage .project-chat-header h4 {
+    max-width: 68ch;
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.45;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+#projectsPage .project-chat-header .button {
+    flex: 0 0 auto;
+}
+#projectsPage .project-run-state {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 32px;
+    flex-wrap: wrap;
+}
+#projectsPage .project-run-state .form-status {
+    margin: 0;
+}
+#projectsPage .project-approval-region {
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-soft);
+}
+#projectsPage #projectApprovalItems,
+#projectsPage #projectApprovalItems:not(:empty) {
+    margin: 0;
+}
+#projectsPage .project-chat-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: min(54vh, 640px);
+    min-height: 220px;
+    margin: 0;
+    padding: 16px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-soft);
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+#projectsPage .project-chat-messages .empty-state {
+    margin: auto;
+}
+#projectsPage .project-chat-message {
+    width: fit-content;
+    max-width: 82%;
+    margin: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+}
+#projectsPage .project-chat-message[data-role="user"] {
+    align-self: flex-end;
+    max-width: 78%;
+    border-color: #d9e5f7;
+    background: #eef4ff;
+}
+#projectsPage .project-chat-message > strong {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 600;
+    letter-spacing: .02em;
+}
+#projectsPage .project-chat-message[data-role="user"] > strong {
+    color: #1e50b0;
+}
+#projectsPage .project-chat-message pre {
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    background: transparent;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.75;
+    white-space: pre-wrap;
+}
+#projectsPage .project-chat-message .field-help {
+    margin: 8px 0 0;
+}
+#projectsPage #projectMessagesMore {
+    justify-self: flex-start;
+    margin-top: -6px;
+}
+#projectsPage #projectChatForm {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-soft);
+}
+#projectsPage #projectChatInput {
+    min-height: 96px;
+    margin: 0;
+    background: var(--surface);
+}
+#projectsPage .project-authorization-mode {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+        "label"
+        "select"
+        "help"
+        "scope";
+    align-items: start;
+    gap: 7px;
+    margin: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+}
+#projectsPage .project-authorization-mode > label {
+    grid-area: label;
+    margin: 0;
+}
+#projectsPage #projectAuthorizationSelection {
+    display: none;
+}
+#projectsPage #projectAuthorizationMode {
+    grid-area: select;
+}
+#projectsPage #projectAuthorizationHelp {
+    grid-area: help;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+}
+#projectsPage #projectAuthorizationScope {
+    grid-area: scope;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+}
+#projectsPage #projectChatForm > .field-help {
+    max-width: 78ch;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+}
+#projectsPage #projectChatForm > .button.primary {
+    justify-self: end;
+    min-width: 132px;
+}
+#projectsPage .project-known-operations {
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+#projectsPage .project-known-operations > .field-help {
+    max-width: 78ch;
+}
+@media (min-width: 1200px) {
+    #projectsPage .project-authorization-mode {
+        grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+        grid-template-areas:
+            "label help"
+            "select scope";
+        gap: 6px 18px;
+    }
+}
+#projectsPage .project-conversation-history {
+    margin-top: 12px;
+}
+#projectsPage .project-conversation-list {
+    display: grid;
+    gap: 6px;
+    margin: 8px 0 0;
+}
+#projectsPage .project-conversation-list .button {
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+    padding: 8px 10px;
+    overflow: hidden;
+    border-color: var(--border);
+    background: var(--surface);
+    font-size: 13px;
+    font-weight: 500;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#projectsPage .project-conversation-list .button:hover {
+    border-color: #b8c9e2;
+    background: var(--surface-soft);
+}
+@media (max-width: 760px) {
+    #projectsPage .project-chat-header {
+        flex-direction: column;
+        gap: 10px;
+    }
+    #projectsPage .project-chat-header .button {
+        align-self: flex-start;
+    }
+    #projectsPage .project-chat-messages {
+        max-height: 52vh;
+        min-height: 200px;
+        padding: 12px;
+    }
+    #projectsPage .project-chat-message,
+    #projectsPage .project-chat-message[data-role="user"] {
+        max-width: 92%;
+    }
+    #projectsPage .project-chat-message[data-role="agent"] {
+        max-width: 100%;
+    }
+    #projectsPage .project-authorization-mode {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "label"
+            "select"
+            "help"
+            "scope";
+        gap: 7px;
+    }
+    #projectsPage #projectChatForm > .button.primary {
+        width: 100%;
+    }
+}
+
+/* 左栏承载项目和会话导航，右栏只显示当前会话或文件内容。 */
+#projectsPage .local-project-grid {
+    grid-template-columns: 320px minmax(0, 1fr);
+}
+#projectsPage .local-project-list-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    height: clamp(480px, calc(100dvh - 330px), 680px);
+    overflow: auto;
+    scrollbar-gutter: stable;
+}
+#projectsPage .project-rail-section {
+    min-width: 0;
+}
+#projectsPage .project-picker-section {
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+}
+#projectsPage .project-picker-section .resource-list {
+    max-height: min(220px, 28dvh);
+}
+#projectsPage .project-conversation-rail {
+    display: grid;
+    gap: 10px;
+}
+#projectsPage .project-conversation-rail[hidden] {
+    display: none;
+}
+#projectsPage .project-conversation-rail .panel-heading {
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+#projectsPage .project-conversation-rail .panel-heading h3 {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 16px;
+    line-height: 1.45;
+    white-space: nowrap;
+}
+body[data-console-version="v2"] #projectsPage .project-conversation-rail .panel-heading > .button {
+    flex: 0 0 auto;
+    width: auto !important;
+    min-width: 0;
+    max-width: 100%;
+}
+#projectsPage #projectConversationRail .project-conversation-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    margin: 0;
+    padding: 12px;
+}
+#projectsPage #projectConversationRail #projectChatAgentLabel {
+    flex-basis: auto;
+    grid-column: 1 / -1;
+}
+#projectsPage #projectConversationRail select {
+    width: 100%;
+    max-width: none;
+}
+#projectsPage #projectConversationRail .project-conversation-toolbar .button {
+    width: auto;
+    min-width: 68px;
+    padding-inline: 12px;
+    justify-content: center;
+    white-space: nowrap;
+}
+#projectsPage .project-conversation-rail > .field-help {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+}
+#projectsPage .project-conversation-rail .form-status:empty {
+    display: none;
+}
+#projectsPage .project-conversation-list {
+    max-height: min(260px, 30dvh);
+    margin: 0;
+    overflow: auto;
+    scrollbar-gutter: stable;
+}
+#projectsPage .project-conversation-create {
+    margin: 0;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+}
+#projectsPage .project-conversation-create > summary {
+    width: fit-content;
+    padding: 4px 0;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.5;
+    cursor: pointer;
+}
+#projectsPage .project-conversation-create[open] > summary {
+    margin-bottom: 8px;
+    color: var(--text);
+}
+#projectsPage .project-conversation-create .project-conversation-toolbar {
+    margin-top: 8px;
+}
+#projectsPage .project-conversation-list .button.active,
+#projectsPage .project-conversation-list .button[aria-pressed="true"] {
+    border-color: #a9c4ef;
+    background: #eef4ff;
+    color: var(--text);
+}
+#projectsPage .project-chat-stage-empty {
+    display: grid;
+    place-items: center;
+    min-height: 360px;
+    padding: 48px 24px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-soft);
+    text-align: center;
+}
+#projectsPage .project-chat-stage-empty[hidden] {
+    display: none;
+}
+#projectsPage .project-chat-stage-empty h3 {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.45;
+}
+#projectsPage .project-chat-stage-empty p {
+    max-width: 46ch;
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.7;
+}
+@media (max-width: 1100px) {
+    #projectsPage .local-project-grid {
+        grid-template-columns: 280px minmax(0, 1fr);
+    }
+}
+@media (max-width: 760px) {
+    #projectsPage .local-project-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    #projectsPage .local-project-list-panel {
+        height: auto;
+        overflow: visible;
+    }
+    #projectsPage .project-picker-section .resource-list,
+    #projectsPage .project-conversation-list {
+        max-height: 260px;
+    }
+    #projectsPage .project-chat-stage-empty {
+        min-height: 260px;
+        padding: 36px 18px;
+    }
 }

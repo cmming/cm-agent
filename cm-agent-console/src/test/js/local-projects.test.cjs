@@ -6,6 +6,21 @@ const path = require("node:path");
 const selected = {requestId: "request-1", state: "SELECTED", ticketId: "ticket-1", expiresAt: "2099-01-01T00:00:00Z"};
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
+// 浏览器会自动修复错位的闭合标签；测试提前按块级容器栈检查，防止文件区被解析到详情面板之外。
+function assertContainerNesting(html) {
+    const stack = [];
+    const tokens = /<(\/)?(main|aside|article|section|div)\b[^>]*>/gi;
+    for (const match of html.matchAll(tokens)) {
+        const closing = Boolean(match[1]), tag = match[2].toLowerCase();
+        if (!closing) {
+            stack.push(tag);
+            continue;
+        }
+        assert.equal(stack.pop(), tag, `闭合标签不匹配：</${tag}>`);
+    }
+    assert.deepEqual(stack, [], "存在未闭合的块级容器");
+}
+
 test("非安全上下文缺少 randomUUID 时使用 getRandomValues 生成 UUID v4", () => {
     const id = projects.createRequestId({getRandomValues(bytes) {
         for (let index = 0; index < bytes.length; index++) bytes[index] = index;
@@ -237,14 +252,28 @@ test("v2入口均预载项目脚本样式且不将文件夹选择伪装为上传
     const base = path.join(__dirname, "../../main/resources/META-INF/resources/console/v2");
     for (const name of fs.readdirSync(base).filter(name => name.endsWith(".html"))) {
         const html = fs.readFileSync(path.join(base, name), "utf8");
-        assert.match(html, /local-projects\.js\?v=1\.3\.1/);
-        assert.match(html, /project-development\.js\?v=1\.2\.1/);
-        assert.match(html, /local-projects\.css\?v=1\.8\.0/);
+        assert.match(html, /local-projects\.js\?v=1\.3\.2/);
+        assert.match(html, /project-development\.js\?v=1\.2\.2/);
+        assert.match(html, /local-projects\.css\?v=1\.11\.0/);
         if (name !== "login.html") assert.match(html, /href="\/console\/v2\/projects\.html"/);
     }
     const html = fs.readFileSync(path.join(base, "projects.html"), "utf8");
+    assertContainerNesting(html);
     assert.doesNotMatch(html, /webkitdirectory|type="file"/);
     assert.match(html, /运行 CM Agent Server 的电脑/);
+    assert.match(html, /class="project-context-band"/);
+    assert.match(html, /id="projectSourceLabel"/);
+    assert.match(html, /aria-labelledby="projectSourceLabel"/);
+    assert.match(html, /class="project-workspace"/);
+    assert.match(html, /class="project-detail-header"/);
+    assert.match(html, /class="project-chat-header"/);
+    assert.match(html, /class="project-approval-region"/);
+    assert.match(html, /class="project-known-operations"/);
+    assert.match(html, /id="projectConversationRail"/);
+    assert.match(html, /id="projectChatStageEmpty"/);
+    assert.ok(html.indexOf('id="projectConversationRail"') < html.indexOf('local-project-detail'));
+    assert.ok(html.indexOf('id="projectConversationList"') < html.indexOf('id="projectDevelopment"'));
+    assert.ok(html.indexOf('id="projectChatMessages"') < html.indexOf('id="projectChatForm"'));
     assert.match(html, /id="projectToolCatalogHelp"/);
     for (const tool of ["project_list_files", "project_read_file", "project_search_files", "project_propose_changes",
         "project_apply_changes", "project_propose_undo", "project_list_toolchains", "project_propose_command",

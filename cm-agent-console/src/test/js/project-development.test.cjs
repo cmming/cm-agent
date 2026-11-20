@@ -17,13 +17,13 @@ test("审批引用必须精确匹配，缺少版本或摘要的预览失败关�
 });
 function dom() {
     class Element {
-        constructor(tag) { this.tag = tag; this.children = []; this.events = {}; this.dataset = {}; this.value = ""; this.checked = false; this.disabled = false; }
+        constructor(tag) { this.tag = tag; this.children = []; this.events = {}; this.dataset = {}; this.attributes = {}; this.value = ""; this.checked = false; this.disabled = false; }
         set textContent(value) { this.text = value; this.children = []; }
         get textContent() { return this.text; }
         append(...items) { this.children.push(...items); }
         replaceChildren(...items) { this.children = items; }
         addEventListener(event, callback) { this.events[event] = callback; }
-        setAttribute() {}
+        setAttribute(name, value) { this.attributes[name] = String(value); }
         querySelectorAll() { return this.children.flatMap(item => [item, ...item.querySelectorAll()]).filter(item => ["select", "input", "button"].includes(item.tag)); }
         click() { return this.events.click?.(); }
     }
@@ -31,14 +31,14 @@ function dom() {
     return {getElementById(id) { if (!nodes.has(id)) nodes.set(id, new Element("div")); return nodes.get(id); }, createElement: tag => new Element(tag)};
 }
 function all(element) { return [element, ...element.children.flatMap(all)]; }
-async function setup({preview = {view: reference, changes: [{kind: "REPLACE", path: "README.md", before: "OLD_PRIVATE", after: "<script>NEW_PRIVATE</script>"}]}, previewRead = null, decisionFailure = false, command = false, recover = false, operationState = "SUCCEEDED", resolveFailure = false, archived = false, activeStatus = null, authorizationMode = "ASK_ON_RISK", scheduler = globalThis, cancelFailure = false, runRead = null, runLookupFailure = false, pendingApproval = true, newConversation = false} = {}) {
+async function setup({preview = {view: reference, changes: [{kind: "REPLACE", path: "README.md", before: "OLD_PRIVATE", after: "<script>NEW_PRIVATE</script>"}]}, previewRead = null, decisionFailure = false, command = false, recover = false, operationState = "SUCCEEDED", resolveFailure = false, archived = false, activeStatus = null, authorizationMode = "ASK_ON_RISK", scheduler = globalThis, cancelFailure = false, runRead = null, runLookupFailure = false, pendingApproval = true, newConversation = false, showConversation = () => {}} = {}) {
     const document = dom(), calls = [], conversation = {id: "conversation", agentId: "agent", title: "开发会话"};
     const labels = {"": "高风险前确认", ASK_ON_RISK: "高风险前确认", ASK_ON_EFFECT: "副作用前确认", FULL_ACCESS: "自动执行已授权操作"};
     Object.defineProperty(document.getElementById("projectAuthorizationMode"), "selectedOptions", {get() { return [{textContent: labels[this.value]}]; }});
     const approval = {approvalId: "approval", runId: "run", version: 2, status: "PENDING", canDecide: true,
         items: [{itemId: "item", toolName: command ? "project_run_command" : "project_apply_changes", inputSummary: summary}]};
     let live = true, runStatus = activeStatus;
-    const page = development.create({document, host: scheduler, isCurrent: () => live, request: async (url, options) => {
+    const page = development.create({document, host: scheduler, isCurrent: () => live, showConversation, request: async (url, options) => {
         calls.push([url, options]);
         if (url.endsWith("/conversations/conversation/active-run")) { if (runLookupFailure) throw new Error("活动状态查询失败"); return runStatus ? {id: "active-run", status: runStatus} : null; }
         if (url.endsWith("/runs/active-run/authorization-mode")) return {mode: authorizationMode};
@@ -83,6 +83,15 @@ test("相同审批多次轮询后原预览按钮仍可读取且已核对选择�
     await nodes.find(item => item.textContent === "提交本次决定").click();
     assert.equal(flow.calls.filter(([url]) => url.endsWith("/decision")).length, 1);
     assert.match(flow.document.getElementById("projectChatStatus").textContent, /审批决定已接受.*成功/); flow.stop();
+});
+
+test("会话列表标记当前会话并隐藏右侧未选择空态", async () => {
+    let shown = 0, flow = await setup({showConversation: () => { shown++; }});
+    const item = flow.document.getElementById("projectConversationList").children[0];
+    assert.equal(item.attributes["aria-pressed"], "true");
+    assert.equal(flow.document.getElementById("projectChatStageEmpty").hidden, true);
+    assert.equal(shown, 1);
+    flow.stop();
 });
 
 test("审批版本变化后迟到预览与旧提交控件均失效且不能解锁新审批", async () => {

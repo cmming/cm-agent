@@ -72,7 +72,7 @@
         }
         target.append(details);
     }
-    function create({request, stream, randomId, document, isCurrent, host = globalThis}) {
+    function create({request, stream, randomId, document, isCurrent, showConversation = () => {}, host = globalThis}) {
         let revision = 0, project = null, conversation = null, capabilities = {}, active = true, sendBusy = false, sendUnknown = false, approvalPending = true;
         let messageCursor = null, messages = [], approvalRevision = 0, messageRevision = 0, historyCursor = null, historyRevision = 0, operationsRevision = 0;
         const commands = new Map(), lockedApprovals = new Set(), resolveLocks = new Map();
@@ -159,6 +159,13 @@
         const node = (tag, value, className) => { const element = document.createElement(tag); element.textContent = value || ""; if (className) element.className = className; return element; };
         const valid = stamp => active && isCurrent() && stamp === revision;
         const status = (value, error = false) => { const target = $("projectChatStatus"); if (target) { target.textContent = value; target.dataset.tone = error ? "error" : "neutral"; } };
+        function renderConversationSelection() {
+            for (const item of $("projectConversationList")?.children || []) {
+                const active = item.attributes?.["data-conversation-id"] === conversation?.id;
+                item.classList?.toggle("active", active);
+                item.setAttribute("aria-pressed", String(active));
+            }
+        }
         const button = (label, action) => { const element = node("button", label, "button ghost compact"); element.type = "button"; element.addEventListener("click", action); return element; };
         const base = () => `/api/agents/${encodeURIComponent(conversation.agentId)}/conversations/${encodeURIComponent(conversation.id)}`;
         const operationBase = (run, operation, kind) => `/api/projects/${encodeURIComponent(project.id)}/runs/${encodeURIComponent(run)}/${kind}/${encodeURIComponent(operation)}`;
@@ -476,11 +483,13 @@
         }
         async function selectConversation(value) {
             if (!active || !isCurrent()) return;
-            if (conversation?.id === value.id) { await refresh(); return; }
+            if (conversation?.id === value.id) { renderConversationSelection(); showConversation(); await refresh(); return; }
             clearPoll(); currentRun = null; runKnown = false; approvalFingerprint = null; operationFingerprint = null; pollCount = 0; pollFailures = 0; revision++; conversation = value; messages = []; commands.clear(); resolveLocks.clear(); knownRuns.clear(); pendingRuns.clear(); lockedApprovals.clear(); messageCursor = null; historyCursor = null; historyItems = []; sendBusy = false; sendUnknown = false; liveReply = null; creationIntent = null;
             approvalPending = true;
             $("projectChatInput").value = ""; $("projectChatSend").disabled = true;
             $("projectChatTitle").textContent = value.title || "项目会话"; $("projectChatBody").hidden = false;
+            if ($("projectChatStageEmpty")) $("projectChatStageEmpty").hidden = true;
+            renderConversationSelection(); showConversation();
             $("projectApprovalItems").replaceChildren(); $("projectCommandResults").replaceChildren(); renderMessages(); status(""); await refresh();
         }
         async function createBoundConversation(agentId) {
@@ -494,8 +503,13 @@
             const list = await request(`/api/projects/${encodeURIComponent(project.id)}/conversations?limit=50`);
             if (!valid(stamp)) return;
             const target = $("projectConversationList"); target.replaceChildren();
-            for (const item of list) target.append(button(item.title || "项目会话", () => selectConversation(item)));
+            for (const item of list) {
+                const entry = button(item.title || "项目会话", () => selectConversation(item));
+                entry.setAttribute("data-conversation-id", item.id);
+                target.append(entry);
+            }
             if (!list.length) target.append(node("p", archived() ? "此归档项目没有会话历史。" : "还没有项目会话。选择已授权 Agent 后新建。", "field-help"));
+            renderConversationSelection();
             return list;
         }
         async function mount(value, flags) {
@@ -600,6 +614,7 @@
                         await selectConversation(conversationList[0]);
                     } else {
                         $("projectChatTitle").textContent = "新项目会话"; $("projectChatBody").hidden = false;
+                        if ($("projectChatStageEmpty")) $("projectChatStageEmpty").hidden = true;
                         runKnown = true; approvalPending = false; renderMessages(); renderRun();
                         if (!select.children.length) { $("projectChatSend").disabled = true; status("请先配置可用的项目 Agent。"); }
                     }

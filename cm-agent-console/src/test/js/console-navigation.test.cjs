@@ -9,10 +9,10 @@ const source = fs.readFileSync(path.join(__dirname, "../../main/resources/META-I
 test("每个 v2 入口都预载跨页导航所需样式和项目脚本", () => {
     const directory = path.join(__dirname, "../../main/resources/META-INF/resources/console/v2");
     const pages = ["login", "overview", "agents", "model-configs", "tools", "skills", "projects", "local-client", "chat", "runs", "audit"];
-    const dependencies = ["project-development.js?v=1.2.1", "local-projects.js?v=1.3.1", "client-projects.js?v=1.2.3", "/assets/app.js?v=2.0.46"];
+    const dependencies = ["project-development.js?v=1.2.2", "local-projects.js?v=1.3.2", "client-projects.js?v=1.2.3", "/assets/app.js?v=2.0.46"];
     for (const page of pages) {
         const html = fs.readFileSync(path.join(directory, `${page}.html`), "utf8");
-        for (const stylesheet of ["local-projects.css?v=1.8.0", "local-client.css?v=1.0.4"]) {
+        for (const stylesheet of ["local-projects.css?v=1.11.0", "local-client.css?v=1.0.4"]) {
             assert.equal(html.split(stylesheet).length - 1, 1, `${page} 缺少样式或重复引用：${stylesheet}`);
             assert.ok(html.indexOf(stylesheet) < html.indexOf("</head>"), `${page} 的样式必须位于 head`);
         }
