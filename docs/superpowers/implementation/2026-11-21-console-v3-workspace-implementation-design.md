@@ -17,7 +17,7 @@ T0～T5 覆盖十一页入口、普通与项目聊天、管理操作、版本化
 - 共享 `app.js` 使用显式 V2/V3 白名单、同版本 `returnTo` 和版本化路径；聊天 UX 同样受版本白名单约束。壳通过挂载/释放接口进入同文档导航生命周期，不复制模型、权限或审批 API。
 - `local-projects` 增加可选同步布局钩子；切换项目时先还原布局层移动的节点，再释放并克隆项目视图，以防重复 ID 和旧节点归属遗留。
 - `ConsoleController.workspaceV3()` 处理 `/`、`/console`、`/console/` 及显式 V3 入口，返回 HTTP 302 并给出同源 V3 登录页。`workspaceV2()` 独立处理 `/console/v2` 和 `/console/v2/`，保留已有书签的目标。固定短路径和 V1 继续沿用原控制器映射。
-- `ConsoleControllerRoutingTest` 覆盖两种默认控制台路径及根入口、显式 V2 与 V3 路径。`ConsoleSmokeTest` 在 production 安全配置下覆盖默认跳转、显式 V2 入口和 V3 登录页的版本标记。
+- `ConsoleControllerRoutingTest` 覆盖两种默认控制台路径及根入口、显式 V2 与 V3 路径。`ConsoleSmokeTest` 在 production 安全配置下覆盖默认跳转、显式 V2 入口和 V3 登录页的版本标记。冒烟测试用 JUnit 临时目录与随机密钥满足导入存储的启动约束。
 
 ## 布局与边界修正
 

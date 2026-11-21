@@ -8,6 +8,7 @@ import com.cmagent.server.CmAgentServerApplication;
 import com.cmagent.server.security.JwtAuthenticationFilter;
 import com.cmagent.server.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -24,6 +25,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.nio.file.Path;
+import java.security.SecureRandom;
+import java.util.Base64;
 
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
@@ -49,18 +54,29 @@ class ConsoleSmokeTest {
     @Container
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
+    @TempDir
+    static Path workspaceImportDirectory;
+
     @DynamicPropertySource
     /**
-     * 验证或支持 {@code jdbcProperties} 所描述的测试场景。
+     * 使用容器数据库和 JUnit 私有临时目录启动生产配置的应用上下文。
      *
-     * @param registry 本地工具执行器注册表
+     * @param registry 动态配置注册表
      */
-    static void jdbcProperties(DynamicPropertyRegistry registry) {
+    static void testProperties(DynamicPropertyRegistry registry) {
         registry.add("cm-agent.persistence.mode", () -> "jdbc");
         registry.add("cm-agent.persistence.jdbc.url", postgres::getJdbcUrl);
         registry.add("cm-agent.persistence.jdbc.username", postgres::getUsername);
         registry.add("cm-agent.persistence.jdbc.password", postgres::getPassword);
         registry.add("cm-agent.persistence.jdbc.driver-class-name", postgres::getDriverClassName);
+
+        // 导入存储启动时校验私有目录和密钥。此处使用 JUnit 临时目录和随机测试密钥，避免依赖部署环境。
+        byte[] key = new byte[32];
+        new SecureRandom().nextBytes(key);
+        String encodedKey = Base64.getEncoder().encodeToString(key);
+        registry.add("cm-agent.workspace-context.imports.root-directory",
+                () -> workspaceImportDirectory.resolve("imports").toString());
+        registry.add("cm-agent.workspace-context.imports.encryption-key", () -> encodedKey);
     }
 
     @Autowired
