@@ -1,12 +1,12 @@
 # V3 聊天工作区实现说明
 
-日期：2026-11-21；主题：`console-v3-workspace`；修订：R0；工作模式：`mode=default`；任务：T0～T5。
+日期：2026-11-21；主题：`console-v3-workspace`；修订：R1；工作模式：`mode=default`；任务：T0～T6。
 
 ## 已形成的分析与文档产物
 
 本次六份中文实施工作包承接[2026-11-20 独立 Sites 原型](https://cm-agent-codex-workspace.poetic-lark-9729.chatgpt.site/)的布局，实施范围覆盖 V3、现有功能和真实后端接入。
 
-当前文档把十一页入口、普通/项目聊天、管理操作、版本化导航和真实后端验证拆为 T0～T5。设计 D3 采用保留既有 V2 默认入口、V3 登录后默认聊天的兼容方案；新版本通过自己的入口和固定短路径访问。
+T0～T5 覆盖十一页入口、普通与项目聊天、管理操作、版本化导航和真实后端验证。T6 按修订后的 D3 将默认入口切到 V3。
 
 数据与执行边界已在清单、设计和执行提示词明确：参考 Site 仅用于视觉空间关系；产品调用仍须经当前共享客户端和真实同源 API，并保持认证、租户、权限、工具授权、审批、审计和错误脱敏契约。
 
@@ -16,7 +16,8 @@
 - V3 `assets/` 下的 `compatibility.css` 处理保留业务节点与新外壳的样式兼容；`workspace.js`、`workspace.css` 管理工作台壳；`chat-workspace.js`、`chat-workspace.css` 负责聊天/项目主区和上下文重排。
 - 共享 `app.js` 使用显式 V2/V3 白名单、同版本 `returnTo` 和版本化路径；聊天 UX 同样受版本白名单约束。壳通过挂载/释放接口进入同文档导航生命周期，不复制模型、权限或审批 API。
 - `local-projects` 增加可选同步布局钩子；切换项目时先还原布局层移动的节点，再释放并克隆项目视图，以防重复 ID 和旧节点归属遗留。
-- `ConsoleController` 增加 V3 根入口及固定页面短路径映射；原有根路径、V2 入口和旧版兼容路径保持原行为。没有调整 SecurityConfig、数据库或运行配置。
+- `ConsoleController.workspaceV3()` 处理 `/`、`/console`、`/console/` 及显式 V3 入口，返回 HTTP 302 并给出同源 V3 登录页。`workspaceV2()` 独立处理 `/console/v2` 和 `/console/v2/`，保留已有书签的目标。固定短路径和 V1 继续沿用原控制器映射。
+- `ConsoleControllerRoutingTest` 覆盖两种默认控制台路径及根入口、显式 V2 与 V3 路径。`ConsoleSmokeTest` 在 production 安全配置下覆盖默认跳转、显式 V2 入口和 V3 登录页的版本标记。
 
 ## 布局与边界修正
 

@@ -71,9 +71,19 @@ class ConsoleSmokeTest {
      * 验证或支持 {@code serveConsoleIndex} 所描述的测试场景。
      */
     void serveConsoleIndex() throws Exception {
-        mockMvc.perform(get("/"))
+        for (String entry : new String[]{"/", "/console", "/console/"}) {
+            mockMvc.perform(get(entry))
+                    .andExpect(status().isFound())
+                    .andExpect(header().string("Location", "/console/v3/login.html"));
+        }
+
+        mockMvc.perform(get("/console/v2/"))
                 .andExpect(status().isFound())
                 .andExpect(header().string("Location", "/console/v2/login.html"));
+
+        mockMvc.perform(get("/console/v3/login.html"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("data-console-version=\"v3\"")));
 
         mockMvc.perform(get("/console/v1/"))
                 .andExpect(status().isOk())

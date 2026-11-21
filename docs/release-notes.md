@@ -4,7 +4,7 @@
 
 - 新增 `/console/v3/` 的十一项页面入口，沿用已确认的 Sites 布局，以项目与会话导航、中央聊天和按需展开的上下文组织日常工作。
 - V3 复用现有真实 API、会话与项目模块，保留流式响应、停止、审批、文件参考、本机能力及模型、Agent、工具、技能、运行和审计管理；登录后默认进入聊天。
-- 根入口与 V2 保持现状，V3 使用独立版本路径；不新增数据库结构、运行配置或权限豁免。部署与验证范围以[实施账本](superpowers/progress/2026-11-21-console-v3-workspace-ledger.md)为准。
+- `/`、`/console` 和 `/console/` 默认跳转至 V3 登录页。`/console/v2/` 继续跳转至 V2 登录页，`/console/v3/` 可直接访问 V3。部署与验证范围见[实施账本](superpowers/progress/2026-11-21-console-v3-workspace-ledger.md)。
 
 ## 未发布的 Windows x64 桌面试装
 

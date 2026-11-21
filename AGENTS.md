@@ -91,7 +91,7 @@
 - `cm-agent-persistence`: JDBC Repository 实现、Flyway 迁移和数据库集成测试。
 - `cm-agent-spring-boot-starter`: Starter 自动配置、`cm-agent` 配置属性和默认 Bean。
 - `cm-agent-server`: Spring Boot 应用入口、Web Controller（`com.cmagent.server.web`）、安全配置（`com.cmagent.server.security`，含 `SecurityConfig`、`JwtAuthenticationFilter`、`BootstrapAdminConfiguration`、`ProfileSafetyValidator`）、运行编排（`com.cmagent.server.runtime`，含 `RunExecutionService`、`ConversationService`、`ToolApprovalService`、`GovernedToolExecutionService`）、配置（`com.cmagent.server.config`，含 AgentScope Studio 集成与模型凭据加密）、审计、memory store、诊断日志（`com.cmagent.server.diagnostic.ErrorDiagnosticLogger`）、MCP Streamable HTTP 端点（`com.cmagent.server.mcp`）。
-- `cm-agent-console`: 轻量控制台模块，由 server 引入；控制台 v1/v2 双版本共存，默认入口重定向到 `/console/v2/login.html`，旧版为 `/console/v1/`。
+- `cm-agent-console` 提供轻量控制台，由 server 引入。各版本入口见 [README](README.md#服务访问与控制台)。
 - `cm-agent-agentscope-adapter`: AgentScope 运行时适配层；零 Spring/JDBC 依赖，AgentScope 依赖均为 optional，嵌入式使用者须自行装配；模型/工具超时默认 60s/30s，模型重试 1-5 次，工具固定单次尝试不重试，工具桥接器不得按 endpoint 自动联网、必须经 `ToolInvocationGateway` 二次授权（详见该模块 README）。
 - `cm-agent-examples`: 示例工程，当前包含 `starter-local-tool`、`http-tool-client`（动态 HTTP 工具创建与调用示例客户端）和 `dashscope-mcp-agent`（AgentScope 智能体经 MCP Streamable HTTP 调用外部工具 + DashScope 通义千问模型自动决策的最小示例，另含 Redis/JSON 文件 agent state 存储示例类）。
 - `scripts/`: 辅助脚本，如 `export-commit-files.ps1`（提交文件导出工作流）。

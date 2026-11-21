@@ -122,8 +122,8 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 服务启动后访问：
 
 - 健康检查：`http://localhost:8080/actuator/health`
-- 控制台（默认 v2）：`http://localhost:8080/`，会重定向到 `/console/v2/login.html`
-- V3 聊天工作区：`http://localhost:8080/console/v3/login.html`，登录后默认进入会话聊天；原默认入口保持 V2
+- 控制台（默认 V3）：`http://localhost:8080/` 或 `http://localhost:8080/console/`，跳转到 `/console/v3/login.html`，登录后默认进入会话聊天
+- V2 控制台：`http://localhost:8080/console/v2/`，跳转到 `/console/v2/login.html`
 - 旧版控制台（v1）：`http://localhost:8080/console/v1/`
 - OpenAPI：`http://localhost:8080/swagger-ui/index.html`
 
@@ -147,7 +147,7 @@ V3 采用项目与会话侧栏、中央对话和可折叠上下文的布局。�
 
 能力总览、模型配置、Agent、工具、技能、运行、审计与本机客户端仍是独立页面，均位于 `/console/v3/`。V3 复用现有同源 `/api` 与业务客户端模块，沿用 Cookie 认证、权限、多租户和审计约束；模型由所选 Agent 的实际绑定决定。页面不包含 Sites 原型中的演示会话或模拟回答，也不把 JWT、文件正文和审批差异写入浏览器持久存储。
 
-`/console/v3/` 和固定短路径由服务端转向对应 V3 页面。V1、V2 入口保留；切换版本会加载对应文档，嵌入式浏览器如果隔离 Cookie，仍可能需要重新登录。升级静态资源后，应刷新已打开页面。V3 的[视觉规范](docs/design/console-v3/DESIGN.md)和[实施账本](docs/superpowers/progress/2026-11-21-console-v3-workspace-ledger.md)分别记录设计约束与实际验证边界。
+`/console/v3/` 和固定短路径由服务端转向对应 V3 页面。切换版本会加载对应文档，嵌入式浏览器如果隔离 Cookie，仍可能需要重新登录。升级静态资源后，应刷新已打开页面。V3 的[视觉规范](docs/design/console-v3/DESIGN.md)和[实施账本](docs/superpowers/progress/2026-11-21-console-v3-workspace-ledger.md)分别记录设计约束与实际验证边界。
 
 ## 动态 HTTP 工具与 MCP
 

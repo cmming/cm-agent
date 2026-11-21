@@ -17,23 +17,23 @@ import java.nio.charset.StandardCharsets;
 class ConsoleController {
 
     /**
-     * 将未携带版本号的入口导向当前默认版本。
+     * 保留明确选择 v2 的访问入口。
      *
-     * <p>使用重定向而不是覆盖根目录中的旧 HTML，确保 v1 可以继续通过固定版本路径访问。</p>
+     * <p>显式版本路径独立于默认入口，保证已有 v2 书签继续进入同一版本。</p>
      */
-    @GetMapping({"/", "/console", "/console/", "/console/v2", "/console/v2/"})
-    ResponseEntity<Void> latest() {
+    @GetMapping({"/console/v2", "/console/v2/"})
+    ResponseEntity<Void> workspaceV2() {
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(URI.create("/console/v2/login.html"))
                 .build();
     }
 
     /**
-     * 提供独立的 v3 登录入口，不改变已有无版本入口的默认版本。
+     * 将默认入口和显式 v3 入口导向 v3 登录页。
      *
-     * <p>认证与业务请求继续由现有安全链处理；此处仅重定向到同源静态页面。</p>
+     * <p>使用临时重定向到固定的同源页面，以便默认版本后续还能调整。认证与业务请求继续由现有安全链处理。</p>
      */
-    @GetMapping({"/console/v3", "/console/v3/"})
+    @GetMapping({"/", "/console", "/console/", "/console/v3", "/console/v3/"})
     ResponseEntity<Void> workspaceV3() {
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(URI.create("/console/v3/login.html"))

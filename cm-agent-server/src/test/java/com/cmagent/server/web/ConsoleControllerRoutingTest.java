@@ -15,21 +15,25 @@ class ConsoleControllerRoutingTest {
     private final MockMvc mockMvc = standaloneSetup(new ConsoleController()).build();
 
     @Test
-    /**
-     * 验证无版本入口稳定跳转到当前默认的 v2 登录页。
-     */
-    void 默认入口跳转到v2登录页() throws Exception {
-        mockMvc.perform(get("/"))
-                .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/console/v2/login.html"));
-
-        mockMvc.perform(get("/console/v2/"))
-                .andExpect(status().isFound())
-                .andExpect(header().string("Location", "/console/v2/login.html"));
+    void 默认入口和不带尾斜杠的别名跳转到v3登录页() throws Exception {
+        for (String entry : new String[]{"/", "/console", "/console/"}) {
+            mockMvc.perform(get(entry))
+                    .andExpect(status().isFound())
+                    .andExpect(header().string("Location", "/console/v3/login.html"));
+        }
     }
 
     @Test
-    void v3独立入口与固定短路径不改变默认版本() throws Exception {
+    void 显式v2入口及其别名仍跳转到v2登录页() throws Exception {
+        for (String entry : new String[]{"/console/v2", "/console/v2/"}) {
+            mockMvc.perform(get(entry))
+                    .andExpect(status().isFound())
+                    .andExpect(header().string("Location", "/console/v2/login.html"));
+        }
+    }
+
+    @Test
+    void 显式v3入口和固定短路径跳转到对应页面() throws Exception {
         for (String entry : new String[]{"/console/v3", "/console/v3/"}) {
             mockMvc.perform(get(entry))
                     .andExpect(status().isFound())
