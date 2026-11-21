@@ -59,6 +59,11 @@
 
 实现验收阶段，浏览器可从 [V3 聊天页面](http://192.168.5.149:8080/console/v3/chat.html) 访问。该阶段通过本机构建更新了静态资源，测试时的旧进程访问短路径曾返回 HTTP 404。最新源码中的短路径已通过独立路由测试。
 
+- 2026-11-21 将 V3 代码、测试与文档提交为 `4da4e01b03aff4772b5118b59ca51d6da9c2a31b`，已快进推送到 `origin/master`。先前的 V2 项目布局提交 `e70d9f8` 是 V3 的代码基线，随历史推送。五个原有本地修改与六份旧 Sites 原型文档保留在工作区。重启后复核了这五个原有修改文件的 SHA-256，内容一致。
+- 推送前复跑前端测试共 257 项，Maven 资源与独立路由测试共 21 项，均通过。没有运行数据库集成测试。
+- 推送后在 IntelliJ IDEA 重新运行现有 `CmAgentServerApplication-mysql` 配置。8080 监听进程从 `15320` 更换为 `2260`，新进程于 13:05:22（北京时间）启动，`/actuator/health` 为 `UP`。
+- 从局域网回查 `/console/v3/` 和 `/console/v3/chat`，分别以 HTTP 302 跳转至 V3 登录页和聊天页，目标页均为 HTTP 200，版本标记为 `v3`。`/console/v2/`、`/` 和 `/console/` 均以 HTTP 302 跳转至 V2 登录页，目标为 HTTP 200，版本标记为 `v2`。
+
 文件读取覆盖项目聊天工具、审批精确预览与独立本地项目页的手机文件预览。管理页覆盖真实只读加载与切换，未逐项提交创建、编辑、删除、配对或撤销等写操作。手机端为桌面浏览器视口模拟。
 
 关联：[清单](../checklists/2026-11-21-console-v3-workspace-checklist.md) · [提示词](../prompts/2026-11-21-console-v3-workspace-prompt.md) · [设计](../specs/2026-11-21-console-v3-workspace-design.md) · [计划](../plans/2026-11-21-console-v3-workspace.md) · [实现说明](../implementation/2026-11-21-console-v3-workspace-implementation-design.md)
