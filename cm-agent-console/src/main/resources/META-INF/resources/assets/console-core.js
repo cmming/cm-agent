@@ -561,7 +561,8 @@
                 const error = new Error(formatError(response.status, body, rawBody));
                 error.status = response.status;
                 if (body && typeof body === "object") {
-                    if (typeof body.code === "string") error.code = body.code;
+                    const code = body.code ?? body.errorCode;
+                    if (typeof code === "string") error.code = code;
                     if (typeof body.errorId === "string") error.errorId = body.errorId;
                 }
                 throw error;

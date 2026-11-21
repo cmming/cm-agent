@@ -78,7 +78,7 @@ test("会话聊天页复用既有会话流和多页面导航", () => {
     assert.match(chat, /id="chatMessageList"/);
     assert.match(chat, /id="chatApprovalRegion"/);
     assert.match(chat, /id="chatForm"/);
-    assert.match(app, /chatPage: "\/console\/v2\/chat\.html"/);
+    assert.match(app, /chatPage: `\$\{consoleBasePath\}\/chat\.html`/);
     assert.match(app, /function sendChatMessage\(\)/);
     assert.match(app, /messages\/stream/);
     assert.match(app, /function renderChatMessages\(messages\)/);

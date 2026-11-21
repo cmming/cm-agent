@@ -6,19 +6,23 @@
         throw new Error("控制台核心脚本未加载");
     }
 
-    const isMultiPage = document.body.dataset.consoleVersion === "v2";
+    // 版本只取页面声明中的固定白名单，不能用 URL 或任意 dataset 值拼接资源路径。
+    const consoleVersion = ["v2", "v3"].includes(document.body.dataset.consoleVersion)
+        ? document.body.dataset.consoleVersion : "";
+    const isMultiPage = Boolean(consoleVersion);
+    const consoleBasePath = `/console/${consoleVersion || "v2"}`;
     let currentPage = document.body.dataset.page || "";
     const multiPagePaths = Object.freeze({
-        overviewPage: "/console/v2/overview.html",
-        agentsPage: "/console/v2/agents.html",
-        modelConfigsPage: "/console/v2/model-configs.html",
-        toolsPage: "/console/v2/tools.html",
-        skillsPage: "/console/v2/skills.html",
-        projectsPage: "/console/v2/projects.html",
-        localClientPage: "/console/v2/local-client.html",
-        chatPage: "/console/v2/chat.html",
-        runsPage: "/console/v2/runs.html",
-        auditPage: "/console/v2/audit.html"
+        overviewPage: `${consoleBasePath}/overview.html`,
+        agentsPage: `${consoleBasePath}/agents.html`,
+        modelConfigsPage: `${consoleBasePath}/model-configs.html`,
+        toolsPage: `${consoleBasePath}/tools.html`,
+        skillsPage: `${consoleBasePath}/skills.html`,
+        projectsPage: `${consoleBasePath}/projects.html`,
+        localClientPage: `${consoleBasePath}/local-client.html`,
+        chatPage: `${consoleBasePath}/chat.html`,
+        runsPage: `${consoleBasePath}/runs.html`,
+        auditPage: `${consoleBasePath}/audit.html`
     });
 
     const HTTP_TOOL_FORM_EXAMPLE = Object.freeze({
@@ -191,7 +195,7 @@
                 if (!sessionEpoch.isCurrent(loginSession)) return;
                 const accessToken = result?.accessToken || "";
                 if (!accessToken) throw new Error("登录响应未包含访问令牌。");
-                // v2 仍以 HttpOnly Cookie 为跨文档会话主链路；内存令牌只用于兼容会隔离跨文档 Cookie 的嵌入式浏览器。
+                // 多页面版本以 HttpOnly Cookie 为跨文档会话主链路；内存令牌只兼容会隔离跨文档 Cookie 的嵌入式浏览器。
                 state.token = accessToken;
                 state.currentUser = await api.request("/api/auth/me");
                 if (!sessionEpoch.isCurrent(loginSession)) return;
@@ -217,7 +221,9 @@
 
     async function redirectAfterLogin() {
         const returnTo = new URLSearchParams(window.location.search).get("returnTo");
-        const allowedPath = Object.values(multiPagePaths).includes(returnTo) ? returnTo : multiPagePaths.overviewPage;
+        // returnTo 只能命中当前版本的固定页面，拒绝跨版本或外站跳转。
+        const defaultPath = consoleVersion === "v3" ? multiPagePaths.chatPage : multiPagePaths.overviewPage;
+        const allowedPath = Object.values(multiPagePaths).includes(returnTo) ? returnTo : defaultPath;
         await loadMultiPage(allowedPath, {replaceHistory: true});
     }
 
@@ -241,7 +247,7 @@
         if (revision !== pageNavigationRevision) return false;
 
         const nextDocument = new DOMParser().parseFromString(markup, "text/html");
-        if (nextDocument.body.dataset.consoleVersion !== "v2"
+        if (nextDocument.body.dataset.consoleVersion !== consoleVersion
                 || nextDocument.body.dataset.page !== pageId) {
             throw new Error("页面内容与目标版本不匹配，请刷新后重试。");
         }
@@ -264,7 +270,7 @@
             .filter((node) => node.tagName !== "SCRIPT")
             .map((node) => document.importNode(node, true));
         document.body.replaceChildren(...nextNodes);
-        document.body.dataset.consoleVersion = "v2";
+        document.body.dataset.consoleVersion = consoleVersion;
         document.body.dataset.page = pageId;
         document.title = nextDocument.title;
         currentPage = pageId;
@@ -293,6 +299,7 @@
         state.projectsPage = null;
         state.clientProjectsPage = null;
         state.projectChatPage = null;
+        if (consoleVersion === "v3") window.CmAgentV3?.dispose?.();
     }
 
     function reportPageNavigationError(error) {
@@ -303,8 +310,8 @@
     function loginPath() {
         const currentPath = multiPagePaths[currentPage];
         return currentPath
-            ? `/console/v2/login.html?returnTo=${encodeURIComponent(currentPath)}`
-            : "/console/v2/login.html";
+            ? `${consoleBasePath}/login.html?returnTo=${encodeURIComponent(currentPath)}`
+            : `${consoleBasePath}/login.html`;
     }
 
     async function clearServerSession() {
@@ -539,7 +546,8 @@
             case "chatPage":
                 if ($("projectChatWorkspace") && window.CmAgentLocalProjects && window.CmAgentProjectDevelopment && !state.projectChatPage) {
                     state.projectChatPage = window.CmAgentLocalProjects.createChatPage({api, document, host: window,
-                        getSessionEpoch: () => sessionEpoch.capture()});
+                        getSessionEpoch: () => sessionEpoch.capture(),
+                        layoutHooks: consoleVersion === "v3" ? window.CmAgentV3Chat?.layoutHooks : undefined});
                     void state.projectChatPage.mount();
                 }
                 await loadAgents(session);
@@ -2266,7 +2274,7 @@
         const hint = $("overviewOnboardingHint");
         const steps = $("overviewOnboardingSteps");
 
-        primaryAction.href = hasEnabledModelConfig ? "/console/v2/agents.html" : "/console/v2/model-configs.html";
+        primaryAction.href = hasEnabledModelConfig ? multiPagePaths.agentsPage : multiPagePaths.modelConfigsPage;
         title.textContent = hasEnabledModelConfig ? "创建 Agent" : (hasModelConfig ? "启用模型配置" : "配置首个模型");
         description.textContent = hasEnabledModelConfig
             ? "选择已启用模型，配置提示词与可用工具"
@@ -2441,7 +2449,7 @@
         let observer = null;
         let latestMessages = [];
         const node = id => document.getElementById(id);
-        const enabled = () => document.body.dataset.consoleVersion === "v2" && !!node("chatConversationSearch");
+        const enabled = () => ["v2", "v3"].includes(document.body.dataset.consoleVersion) && !!node("chatConversationSearch");
         const nearBottom = () => {
             const list = node("chatMessageList");
             return !list || list.scrollHeight - list.clientHeight - list.scrollTop <= 48;
@@ -4773,6 +4781,7 @@
     }
 
     function centerActiveNavigation() {
+        if (consoleVersion === "v3") return;
         const activeItem = document.querySelector("#sidebarNav .nav-item.active");
         if (!activeItem || !window.matchMedia("(max-width: 900px)").matches) return;
         // 移动端导航横向滚动，将当前页面居中可避免用户进入后续页面后看不到当前位置。
@@ -4893,6 +4902,7 @@
             .forEach((control) => control.addEventListener("change", syncChatLocalClientControls));
         document.querySelectorAll("button[data-page]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.page)));
         document.querySelectorAll("button[data-navigate]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.navigate)));
+        if (consoleVersion === "v3") window.CmAgentV3?.mount?.();
         centerActiveNavigation();
     }
 

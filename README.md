@@ -123,6 +123,7 @@ mvn -pl cm-agent-server -am spring-boot:run "-Dspring-boot.run.arguments=--sprin
 
 - 健康检查：`http://localhost:8080/actuator/health`
 - 控制台（默认 v2）：`http://localhost:8080/`，会重定向到 `/console/v2/login.html`
+- V3 聊天工作区：`http://localhost:8080/console/v3/login.html`，登录后默认进入会话聊天；原默认入口保持 V2
 - 旧版控制台（v1）：`http://localhost:8080/console/v1/`
 - OpenAPI：`http://localhost:8080/swagger-ui/index.html`
 
@@ -139,6 +140,14 @@ v2 聊天页支持 Enter 发送、Shift+Enter 换行，中文输入法组合选�
 “查找已加载会话”只过滤当前 Agent 已加载的标题（最多 50 个），不会搜索全部历史。手机通过“会话与 Agent”展开列表，选中会话后收起。空审批历史只占一行，可展开查看；读取失败会展开具体原因与错误编号。
 
 未确认输入仅在当前页面内存中按 Agent 和会话保留，切换页面、退出或刷新后清空。收到运行已开始、已完成或待审批事件后清空已接受输入。网络断线或 5xx 不能证明发送未发生，页面保留输入并锁定发送；点击“核对状态”查询，确认新增用户消息后再恢复正常操作，不会自动重发。部署静态资源后，已打开控制台需刷新一次加载新版脚本与样式。
+
+### V3 聊天工作区
+
+V3 采用项目与会话侧栏、中央对话和可折叠上下文的布局。普通聊天和项目聊天保留 Agent 选择、历史会话、SSE 回答、停止本轮、授权方式、审批和状态核对；参考目录、本机能力与审批历史可在上下文中查看。本地项目页继续提供真实文件树、搜索、文本预览、文件引用、项目管理及已配对电脑上的项目。
+
+能力总览、模型配置、Agent、工具、技能、运行、审计与本机客户端仍是独立页面，均位于 `/console/v3/`。V3 复用现有同源 `/api` 与业务客户端模块，沿用 Cookie 认证、权限、多租户和审计约束；模型由所选 Agent 的实际绑定决定。页面不包含 Sites 原型中的演示会话或模拟回答，也不把 JWT、文件正文和审批差异写入浏览器持久存储。
+
+`/console/v3/` 和固定短路径由服务端转向对应 V3 页面。V1、V2 入口保留；切换版本会加载对应文档，嵌入式浏览器如果隔离 Cookie，仍可能需要重新登录。升级静态资源后，应刷新已打开页面。V3 的[视觉规范](docs/design/console-v3/DESIGN.md)和[实施账本](docs/superpowers/progress/2026-11-21-console-v3-workspace-ledger.md)分别记录设计约束与实际验证边界。
 
 ## 动态 HTTP 工具与 MCP
 

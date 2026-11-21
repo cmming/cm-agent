@@ -6,6 +6,26 @@ const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "../../main/resources/META-INF/resources/assets/app.js"), "utf8");
 
+function versionConfiguration(version) {
+    const header = source.slice(source.indexOf("const consoleVersion ="), source.indexOf("const HTTP_TOOL_FORM_EXAMPLE"));
+    const context = {document: {body: {dataset: {consoleVersion: version, page: "overviewPage"}}}};
+    vm.runInNewContext(`${header}\nthis.configuration = {consoleVersion, isMultiPage, consoleBasePath, multiPagePaths};`, context);
+    return context.configuration;
+}
+
+test("只有显式V2或V3页面启用多页协议且路径固定在当前版本", () => {
+    for (const version of ["v2", "v3"]) {
+        const configuration = versionConfiguration(version);
+        assert.equal(configuration.isMultiPage, true);
+        assert.equal(configuration.multiPagePaths.chatPage, `/console/${version}/chat.html`);
+        assert.equal(configuration.multiPagePaths.modelConfigsPage, `/console/${version}/model-configs.html`);
+        assert.equal(Object.values(configuration.multiPagePaths).every(value => value.startsWith(`/console/${version}/`)), true);
+    }
+    for (const version of [undefined, "v1", "v4", "../external"]) {
+        assert.equal(versionConfiguration(version).isMultiPage, false);
+    }
+});
+
 test("每个 v2 入口都预载跨页导航所需样式和项目脚本", () => {
     const directory = path.join(__dirname, "../../main/resources/META-INF/resources/console/v2");
     const pages = ["login", "overview", "agents", "model-configs", "tools", "skills", "projects", "local-client", "chat", "runs", "audit"];
@@ -25,26 +45,54 @@ test("每个 v2 入口都预载跨页导航所需样式和项目脚本", () => {
     }
 });
 
+test("每个V3入口预载相同的外观和真实业务脚本以支持body导航", () => {
+    const directory = path.join(__dirname, "../../main/resources/META-INF/resources/console/v3");
+    const pages = ["login", "overview", "agents", "model-configs", "tools", "skills", "projects", "local-client", "chat", "runs", "audit"];
+    const scripts = ["/assets/console-core.js", "/console/v2/assets/project-development.js",
+        "/console/v2/assets/local-projects.js", "/console/v2/assets/client-projects.js",
+        "/console/v3/assets/workspace.js", "/console/v3/assets/chat-workspace.js", "/assets/app.js"];
+    let commonSources;
+    for (const page of pages) {
+        const html = fs.readFileSync(path.join(directory, `${page}.html`), "utf8");
+        assert.match(html, /data-console-version="v3"/);
+        const sources = Array.from(html.matchAll(/<script\s+src="([^"]+)"/g), match => match[1]);
+        commonSources ||= sources;
+        assert.deepEqual(sources, commonSources, `${page} 必须预载同一组脚本`);
+        for (const script of scripts) {
+            assert.equal(sources.filter(value => value.split("?")[0] === script).length, 1, `${page} 的 ${script} 应只加载一次`);
+        }
+        assert.ok(sources.findIndex(value => value.startsWith("/console/v3/assets/chat-workspace.js"))
+            < sources.findIndex(value => value.startsWith("/assets/app.js")));
+        for (const stylesheet of ["compatibility.css", "workspace.css", "chat-workspace.css"]) {
+            const position = html.indexOf(`/console/v3/assets/${stylesheet}`);
+            assert.ok(position >= 0 && position < html.indexOf("</head>"), `${page} 缺少 head 中的 ${stylesheet}`);
+        }
+    }
+});
+
 // 执行真实导航函数，仅替换浏览器和网络边界；覆盖 body 替换前后的组件生命周期。
-function navigationHarness() {
+function navigationHarness({version = "v2"} = {}) {
     function functionSource(name) {
         const result = source.match(new RegExp(`(?:async )?function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n    \\}`));
         assert.ok(result, `导航函数不存在：${name}`);
         return result[0];
     }
-    const views = [], events = [];
+    const views = [], events = [], requests = [];
     const state = {};
     const invalidate = {invalidate() {}, invalidateAll() {}};
     const context = {
+        ...versionConfiguration(version), URLSearchParams,
         workspaceChoice: {reset() { events.push("reset-workspace"); }},
         nativeWorkspaceImport: {reset() { events.push("reset-local-files"); }},
         artifactManager: {dispose() { events.push("dispose-artifacts"); }},
         chatUx: {reset() { events.push("reset-chat"); }},
         state, pageNavigationRevision: 0, currentPage: "overviewPage", sessionEpoch: invalidate,
-        window: {fetch: async (url) => ({ok: true, text: async () => url}), scrollTo() {}, history: {pushState() {}, replaceState() {}}},
+        window: {fetch: async (url) => { requests.push(url); return {ok: true, text: async () => url}; },
+            scrollTo() {}, location: {search: ""}, history: {pushState() {}, replaceState() {}},
+            CmAgentV3: {dispose() { events.push("dispose-v3"); }}},
         document: {body: {dataset: {}, replaceChildren() { events.push("replace-body"); }}, importNode: (node) => node},
-        pageIdForPath: (url) => url.includes("skills") ? "skillsPage" : "toolsPage",
-        DOMParser: class { parseFromString(url) { return {body: {dataset: {consoleVersion: "v2", page: context.pageIdForPath(url)}, children: [{tagName: "MAIN"}]}, title: url}; } },
+        responseVersion: version,
+        DOMParser: class { parseFromString(url) { return {body: {dataset: {consoleVersion: context.responseVersion, page: context.pageIdForPath(url)}, children: [{tagName: "MAIN"}]}, title: url}; } },
         bindPageControls() {}, toggleHttpConfigFields() {},
         initializeMultiPage: async () => {
             if (context.currentPage !== "skillsPage") return;
@@ -60,9 +108,42 @@ function navigationHarness() {
         "modelConfigDetailRevision", "modelCatalogDiscoveryRevision", "localClientLoadRevision",
         "localExampleLoadRevision", "localExampleInstallRevision"]) context[key] = invalidate;
     vm.createContext(context);
-    vm.runInContext(functionSource("disposeSkillPages") + "\n" + functionSource("loadMultiPage"), context);
-    return {context, state, views, events, navigate: (url) => context.loadMultiPage(url)};
+    vm.runInContext(["pageIdForPath", "disposeSkillPages", "loadMultiPage", "redirectAfterLogin", "loginPath"]
+        .map(functionSource).join("\n"), context);
+    return {context, state, views, events, requests, navigate: (url) => context.loadMultiPage(url)};
 }
+
+test("V3默认进入聊天且returnTo仅允许当前版本白名单", async () => {
+    for (const returnTo of [null, "https://external.example/", "/console/v2/tools.html", "/console/v3/not-a-page.html"]) {
+        const flow = navigationHarness({version: "v3"});
+        flow.context.window.location.search = returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : "";
+        await flow.context.redirectAfterLogin();
+        assert.equal(flow.requests.at(-1), "/console/v3/chat.html");
+    }
+    const v3 = navigationHarness({version: "v3"});
+    v3.context.window.location.search = "?returnTo=%2Fconsole%2Fv3%2Ftools.html";
+    await v3.context.redirectAfterLogin();
+    assert.equal(v3.requests.at(-1), "/console/v3/tools.html");
+    const v2 = navigationHarness();
+    await v2.context.redirectAfterLogin();
+    assert.equal(v2.requests.at(-1), "/console/v2/overview.html");
+});
+
+test("V3导航替换前释放外观组件且不接受跨版本页面", async () => {
+    const flow = navigationHarness({version: "v3"});
+    await flow.navigate("/console/v3/skills.html");
+    assert.ok(flow.events.indexOf("dispose-v3") < flow.events.indexOf("replace-body"));
+    assert.equal(flow.context.document.body.dataset.consoleVersion, "v3");
+    flow.context.currentPage = "toolsPage";
+    assert.equal(flow.context.loginPath(), "/console/v3/login.html?returnTo=%2Fconsole%2Fv3%2Ftools.html");
+    flow.context.currentPage = "login";
+    assert.equal(flow.context.loginPath(), "/console/v3/login.html");
+    await assert.rejects(flow.navigate("/console/v2/tools.html"), /目标控制台页面不受支持/);
+    flow.context.responseVersion = "v2";
+    flow.events.length = 0;
+    await assert.rejects(flow.navigate("/console/v3/tools.html"), /页面内容与目标版本不匹配/);
+    assert.equal(flow.events.length, 0);
+});
 
 test("技能页离开后释放双组件，重复进入为新 DOM 创建新实例", async () => {
     const flow = navigationHarness();

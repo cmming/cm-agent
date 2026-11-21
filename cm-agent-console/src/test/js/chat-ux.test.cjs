@@ -67,6 +67,27 @@ test("v1控制器不绑定新快捷键也不干预原滚动", () => {
     assert.equal(h.controller.scroll(), false);
 });
 
+test("V3复用输入法保护快捷键与草稿隔离且未知版本不启用", () => {
+    const h = harness({version: "v3"}), input = h.nodes.get("chatInput"), form = h.nodes.get("chatForm");
+    input.value = "V3草稿";
+    input.emit("input");
+    input.emit("compositionstart");
+    input.emit("keydown", {key:"Enter", isComposing:true, preventDefault() { throw new Error("不得发送选词输入"); }});
+    assert.equal(form.submits, 0);
+    input.emit("compositionend");
+    input.emit("keyup");
+    input.emit("keydown", {key:"Enter", preventDefault() {}});
+    assert.equal(form.submits, 1);
+    h.setKey("agent/two"); h.controller.activate();
+    assert.equal(input.value, "");
+    h.setKey("agent/one"); h.controller.activate();
+    assert.equal(input.value, "V3草稿");
+    const unknown = harness({version:"v4"});
+    unknown.nodes.get("chatInput").value = "不支持的版本";
+    unknown.nodes.get("chatInput").emit("keydown", {key:"Enter"});
+    assert.equal(unknown.nodes.get("chatForm").submits, 0);
+});
+
 test("上翻暂停delta和异步文件跟随，回到最新恢复", () => {
     const h = harness(), list = h.nodes.get("chatMessageList");
     h.controller.restoreReading(h.controller.captureReading());

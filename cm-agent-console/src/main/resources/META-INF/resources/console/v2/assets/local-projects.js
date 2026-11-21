@@ -37,7 +37,13 @@
                 publish({phase: result.state, requestId, ticketId: result.state === "SELECTED" ? result.ticketId : undefined,
                     expiresAt: result.expiresAt, errorId: result.errorId});
             } catch (error) {
-                if (currentRevision(stamp) && queryStamp === checkRevision) publish({phase: "UNKNOWN", requestId, message: error.message});
+                if (!currentRevision(stamp) || queryStamp !== checkRevision) return;
+                // 只有服务端明确确认原请求已不存在，才允许用户重新打开目录窗口；网络未知继续锁定原请求。
+                if (error.status === 404 && error.code === "PROJECT_SELECTION_NOT_FOUND") {
+                    publish({phase: "EXPIRED", errorCode: error.code, errorId: error.errorId});
+                } else {
+                    publish({phase: "UNKNOWN", requestId, message: error.message});
+                }
             }
         }
         return {
@@ -76,6 +82,11 @@
             },
             dispose() { revision += 1; current = {phase: "IDLE"}; }
         };
+    }
+
+    function expiredSelectionMessage(value) {
+        const detail = [value.errorCode && `错误码：${value.errorCode}`, value.errorId && `错误编号：${value.errorId}`].filter(Boolean);
+        return `目录授权已过期，请重新选择文件夹。${detail.length ? `（${detail.join("，")}）` : ""}`;
     }
 
     function createProjectPage({api, document, host = globalThis, getSessionEpoch}) {
@@ -127,7 +138,7 @@
                 CANCELLED: "已取消选择，没有新增项目。",
                 FAILED: `系统目录选择失败，请重试${value.errorId ? `（错误编号：${value.errorId}）` : ""}。`,
                 UNKNOWN: `尚未确认选择结果，请核对原请求。${value.message || ""}`,
-                EXPIRED: "目录授权已过期，请重新选择文件夹。",
+                EXPIRED: expiredSelectionMessage(value),
                 CREATING: "正在添加项目，请勿重复提交。",
                 CREATED: "项目已添加。",
                 CREATE_UNKNOWN: `添加结果尚未确认，请刷新项目列表核对。请勿重复提交。${value.message || ""}`
@@ -421,7 +432,7 @@
             if ($("projectSearchQuery")) $("projectSearchQuery").value = "";
         }};
     }
-    function createChatPage({api, document, host = globalThis, getSessionEpoch}) {
+    function createChatPage({api, document, host = globalThis, getSessionEpoch, layoutHooks = {}}) {
         const $ = id => document.getElementById(id);
         const selectedProjectKey = "cm-agent.chat.project.v1";
         const epoch = getSessionEpoch();
@@ -468,7 +479,7 @@
             $("chatProjectAbandon").disabled = creating;
             const messages = {SELECTING: "请在本机系统窗口中选择文件夹。", SELECTED: "为所选文件夹命名，添加为项目。",
                 CANCELLED: "已取消文件夹选择。", FAILED: `无法选择文件夹，请重试。${value.errorId ? `错误编号 ${value.errorId}` : ""}`,
-                UNKNOWN: `请选择「核对选择状态」。${value.message || ""}`, EXPIRED: "目录授权已过期，请重新选择文件夹。",
+                UNKNOWN: `请选择「核对选择状态」。${value.message || ""}`, EXPIRED: expiredSelectionMessage(value),
                 CREATING: "正在登记项目。", CREATED: "项目已添加。", CREATE_UNKNOWN: `登记结果待确认，请刷新项目列表。${value.message || ""}`};
             status(messages[value.phase] || (allowRegistration() ? "" : "当前账号可浏览已有项目。"), ["FAILED", "UNKNOWN", "CREATE_UNKNOWN"].includes(value.phase));
             if (selecting && selectionPolls++ < 120) selectionTimer = host.setTimeout(() => selection.check(), 1000);
@@ -499,6 +510,9 @@
             if (!valid() || id === projectId && development) return;
             const stamp = ++projectRevision;
             projectId = id; renderList();
+            // V3 可将模板内的导航和上下文移到工作区插槽；必须先同步还原，
+            // 再销毁旧实例与替换模板，避免重复 ID 让新项目绑定到旧控件。
+            layoutHooks.beforeProjectReplace?.({mount: $("chatProjectConversationMount"), projectId: id});
             development?.dispose(); development = null;
             const mount = $("chatProjectConversationMount");
             mount.textContent = id ? "正在核对项目…" : "选择已有项目，或选择文件夹创建项目。";
@@ -508,6 +522,7 @@
                 if (!valid() || stamp !== projectRevision) return;
                 rememberProject(id);
                 mount.replaceChildren($("chatProjectConversationTemplate").content.cloneNode(true));
+                layoutHooks.afterProjectClone?.({mount, project});
                 $("projectDevelopmentHeading").textContent = project.name;
                 development = host.CmAgentProjectDevelopment.create({request, stream, randomId, document, host,
                     isCurrent: () => valid() && stamp === projectRevision});
@@ -570,7 +585,13 @@
                     } else if (valid()) rememberProject("");
                 }
             },
-            dispose() { active = false; cancelPoll(); selection.dispose(); development?.dispose(); for (const controller of controllers) controller.abort(); }
+            dispose() {
+                active = false; cancelPoll(); selection.dispose();
+                // 退出或跨页时先把借出的真实控件还给旧模板，由原实例清理正文与监听。
+                layoutHooks.beforeDispose?.();
+                development?.dispose();
+                for (const controller of controllers) controller.abort();
+            }
         };
     }
 

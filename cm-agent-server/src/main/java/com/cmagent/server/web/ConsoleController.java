@@ -7,6 +7,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +25,35 @@ class ConsoleController {
     ResponseEntity<Void> latest() {
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(URI.create("/console/v2/login.html"))
+                .build();
+    }
+
+    /**
+     * 提供独立的 v3 登录入口，不改变已有无版本入口的默认版本。
+     *
+     * <p>认证与业务请求继续由现有安全链处理；此处仅重定向到同源静态页面。</p>
+     */
+    @GetMapping({"/console/v3", "/console/v3/"})
+    ResponseEntity<Void> workspaceV3() {
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create("/console/v3/login.html"))
+                .build();
+    }
+
+    /**
+     * 将 v3 已知短路径映射到对应的静态页面。
+     *
+     * <p>路由正则只接收固定页面名，不能根据任意客户端路径构造重定向，
+     * 以免将此兼容入口扩展为开放重定向或静态资源代理。</p>
+     * <p>显式声明路径变量名称，使未保留 Java 反射参数名的构建也能正确绑定。</p>
+     *
+     * @param page 已由路由白名单限定的页面名称
+     * @return 指向同源 v3 HTML 的临时重定向
+     */
+    @GetMapping("/console/v3/{page:login|overview|agents|model-configs|tools|skills|projects|local-client|chat|runs|audit}")
+    ResponseEntity<Void> workspaceV3Page(@PathVariable("page") String page) {
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create("/console/v3/" + page + ".html"))
                 .build();
     }
 

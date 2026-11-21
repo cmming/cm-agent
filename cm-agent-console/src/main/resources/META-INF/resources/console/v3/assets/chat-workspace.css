@@ -1,0 +1,371 @@
+/* V3 仅改变布局与视觉层级；所有业务 hidden 状态仍由共享模块决定。 */
+/* V2 的窄屏布局依赖聊天页内的会话栏，V3 使用独立抽屉，须保持主区与侧栏横向排列。 */
+body[data-console-version="v3"][data-page="chatPage"] .console-layout { flex-direction: row; }
+body[data-console-version="v3"] #v3WorkspaceNavigation #chatSessionPanel { display: flex; flex-direction: column; min-height: 0; }
+body[data-console-version="v3"][data-page="chatPage"] .workspace {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+}
+body[data-console-version="v3"] #chatPage {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+}
+body[data-console-version="v3"] #chatPage > .page-intro { display: none; }
+body[data-console-version="v3"] #chatPage .panel {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+body[data-console-version="v3"] #ordinaryChatMain,
+body[data-console-version="v3"] #projectChatWorkspace,
+body[data-console-version="v3"] .chat-project-conversation,
+body[data-console-version="v3"] #chatProjectConversationMount,
+body[data-console-version="v3"] #projectDevelopment,
+body[data-console-version="v3"] #projectChatBody {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+body[data-console-version="v3"] #chatProjectConversationMount > .empty-state {
+    margin: auto;
+    padding: 40px 24px;
+    font-size: 16px;
+    line-height: 1.8;
+}
+body[data-console-version="v3"] .chat-main-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: none;
+    gap: 16px;
+    padding: 20px 34px 8px;
+    border: 0;
+}
+body[data-console-version="v3"] #chatConversationTitle,
+body[data-console-version="v3"] #projectChatTitle {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.6;
+}
+body[data-console-version="v3"] #chatCurrentAgent {
+    margin: 0 0 2px;
+    color: var(--v3-muted, #67676e);
+    font-size: 12px;
+    font-weight: 400;
+}
+body[data-console-version="v3"] #chatLiveStatus { font-size: 12px; }
+body[data-console-version="v3"] .chat-reading-region {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+body[data-console-version="v3"] #chatMessageList,
+body[data-console-version="v3"] #projectChatMessages {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    overflow: auto;
+    padding: 20px max(34px, calc((100% - 790px) / 2));
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+body[data-console-version="v3"] #chatMessageList > *,
+body[data-console-version="v3"] #projectChatMessages > * { max-width: 790px; }
+body[data-console-version="v3"] .chat-message {
+    width: 100%;
+    margin: 0 0 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    font-size: 16px;
+    line-height: 1.8;
+}
+body[data-console-version="v3"] .chat-message.chat-message-user {
+    width: fit-content;
+    max-width: 88%;
+    margin-left: auto;
+    padding: 12px 17px;
+    border-radius: 16px 16px 4px 16px;
+    background: var(--v3-surface, #f3f3f4);
+}
+body[data-console-version="v3"] .chat-message.chat-message-agent {
+    background: transparent;
+    border: 0;
+}
+body[data-console-version="v3"] .chat-message-bubble {
+    max-width: none;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+body[data-console-version="v3"] .chat-message-label { margin: 0 0 9px; color: var(--v3-ink, #252528); font-size: 13px; font-weight: 600; }
+body[data-console-version="v3"] .chat-message-user .chat-message-label { display: none; }
+body[data-console-version="v3"] #chatMessageList .chat-welcome {
+    max-width: 660px;
+    margin: min(16vh, 140px) auto 0;
+    text-align: left;
+    border: 0;
+    background: transparent;
+}
+body[data-console-version="v3"] .chat-welcome h3 { font-size: 28px; font-weight: 600; }
+body[data-console-version="v3"] .chat-welcome p { font-size: 15px; color: var(--v3-muted, #67676e); }
+body[data-console-version="v3"] #chatForm,
+body[data-console-version="v3"] #projectChatForm {
+    flex: none;
+    width: calc(100% - 68px);
+    max-width: 790px;
+    margin: 12px auto 18px;
+    padding: 13px;
+    border: 1px solid var(--v3-border, #e8e8eb);
+    border-radius: 18px;
+    background: var(--v3-bg, #fff);
+    box-shadow: none;
+}
+body[data-console-version="v3"] #chatForm:focus-within,
+body[data-console-version="v3"] #projectChatForm:focus-within { border-color: #9b9ba8; }
+body[data-console-version="v3"] #chatInput,
+body[data-console-version="v3"] #projectChatInput {
+    width: 100%;
+    min-height: 56px;
+    max-height: 180px;
+    padding: 0 3px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    font-size: 15px;
+    line-height: 1.8;
+    resize: vertical;
+}
+body[data-console-version="v3"] .chat-composer-footer { gap: 10px; align-items: end; }
+body[data-console-version="v3"] #chatInputHint,
+body[data-console-version="v3"] .chat-guidance,
+body[data-console-version="v3"] #chatFormStatus { font-size: 12px; }
+body[data-console-version="v3"] #chatFormStatus:empty { display: none; }
+body[data-console-version="v3"] .chat-run-actions { gap: 6px; }
+body[data-console-version="v3"] .chat-run-actions .button { min-height: 33px; font-size: 12px; }
+body[data-console-version="v3"] #chatLatestBtn { position: absolute; right: 22px; bottom: 14px; }
+body[data-console-version="v3"] #v3WorkspaceNavigation {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    margin: 20px 0;
+}
+body[data-console-version="v3"] #chatModeSwitch {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid var(--v3-border, #e8e8eb);
+    border-radius: 8px;
+    background: transparent;
+}
+body[data-console-version="v3"] #chatModeSwitch .button {
+    min-width: 0;
+    min-height: 31px;
+    padding: 5px;
+    border: 0;
+    background: transparent;
+    font-size: 12px;
+    color: var(--v3-muted, #67676e);
+}
+body[data-console-version="v3"] #chatModeSwitch .button[aria-pressed="true"] {
+    background: var(--v3-hover, #ececee);
+    color: var(--v3-ink, #252528);
+}
+body[data-console-version="v3"] #chatSessionPanel,
+body[data-console-version="v3"] #v3ProjectSelectorNavigation,
+body[data-console-version="v3"] #v3ProjectConversationNavigation {
+    position: static;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+}
+body[data-console-version="v3"] #chatSessionPanel .panel-heading,
+body[data-console-version="v3"] #v3ProjectConversationNavigation .project-preview-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 18px 0 9px;
+}
+body[data-console-version="v3"] #chatSessionPanel h2,
+body[data-console-version="v3"] #v3ProjectSelectorNavigation h2,
+body[data-console-version="v3"] #v3ProjectConversationNavigation h2,
+body[data-console-version="v3"] #v3ProjectConversationNavigation h3 {
+    margin: 0 0 8px;
+    color: var(--v3-muted, #67676e);
+    font-size: 12px;
+    font-weight: 500;
+}
+body[data-console-version="v3"] .chat-agent-picker { margin: 0; }
+body[data-console-version="v3"] #v3WorkspaceNavigation label,
+body[data-console-version="v3"] #v3WorkspaceNavigation .field-help,
+body[data-console-version="v3"] #chatConversationSearchHint { font-size: 12px; }
+body[data-console-version="v3"] #v3WorkspaceNavigation select,
+body[data-console-version="v3"] #chatConversationSearch,
+body[data-console-version="v3"] #v3WorkspaceNavigation input {
+    width: 100%;
+    min-width: 0;
+    margin-top: 5px;
+    padding: 7px 9px;
+    border-color: var(--v3-border, #e8e8eb);
+    border-radius: 7px;
+    background-color: var(--v3-side, #f7f7f8);
+    font-size: 13px;
+}
+body[data-console-version="v3"] #v3WorkspaceNavigation .button { min-height: 30px; padding: 5px 8px; font-size: 12px; }
+body[data-console-version="v3"] #v3WorkspaceNavigation .button.primary {
+    background: transparent;
+    border-color: var(--v3-border, #e8e8eb);
+    color: var(--v3-ink, #252528);
+}
+body[data-console-version="v3"] #chatConversationList,
+body[data-console-version="v3"] #projectConversationList {
+    max-height: none;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+}
+body[data-console-version="v3"] #chatConversationList button,
+body[data-console-version="v3"] #projectConversationList button {
+    display: block;
+    width: 100%;
+    margin: 3px 0;
+    padding: 8px 9px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--v3-muted, #67676e);
+    text-align: left;
+    font-size: 13px;
+    line-height: 1.6;
+    box-shadow: none;
+}
+body[data-console-version="v3"] #chatConversationList button:hover,
+body[data-console-version="v3"] #projectConversationList button:hover,
+body[data-console-version="v3"] #chatConversationList button.active,
+body[data-console-version="v3"] #projectConversationList button[aria-pressed="true"] {
+    background: var(--v3-hover, #ececee);
+    color: var(--v3-ink, #252528);
+}
+body[data-console-version="v3"] #v3WorkspaceNavigation .project-conversation-toolbar,
+body[data-console-version="v3"] .chat-project-picker-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+body[data-console-version="v3"] #v3WorkspaceNavigation .project-conversation-toolbar label,
+body[data-console-version="v3"] #v3WorkspaceNavigation .project-conversation-toolbar select { flex-basis: 100%; }
+body[data-console-version="v3"] #v3WorkspaceNavigation .form-status { margin: 7px 0 0; font-size: 12px; }
+body[data-console-version="v3"] .v3-chat-context-section { margin: 0; font-size: 14px; }
+body[data-console-version="v3"] .v3-chat-context-section > h3,
+body[data-console-version="v3"] #v3ProjectApprovalContext > h3 { margin: 0 0 16px; font-size: 15px; font-weight: 600; }
+body[data-console-version="v3"] #v3ContextBody .chat-local-client-bar,
+body[data-console-version="v3"] #v3ContextBody .chat-workspace-bar {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin: 0 0 24px;
+    padding: 0 0 20px;
+    border: 0;
+    border-bottom: 1px solid var(--v3-border, #e8e8eb);
+    border-radius: 0;
+    background: transparent;
+}
+body[data-console-version="v3"] #v3ContextBody .chat-local-client-bar > div,
+body[data-console-version="v3"] #v3ContextBody .chat-workspace-bar > div { min-width: 0; }
+body[data-console-version="v3"] #v3ContextBody select,
+body[data-console-version="v3"] #v3ContextBody input:not([type="checkbox"]),
+body[data-console-version="v3"] #v3ContextBody .button { min-width: 0; max-width: 100%; font-size: 13px; }
+body[data-console-version="v3"] #v3ContextBody p,
+body[data-console-version="v3"] #v3ContextBody .field-help { font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+body[data-console-version="v3"] #v3ContextBody pre { max-width: 100%; overflow: auto; font-size: 12px; }
+body[data-console-version="v3"] #v3ContextBody .chat-approval-heading,
+body[data-console-version="v3"] #v3ContextBody .chat-approval-history-heading { display: flex; flex-wrap: wrap; gap: 8px; }
+body[data-console-version="v3"] #v3ContextBody .chat-approval-region,
+body[data-console-version="v3"] #v3ContextBody .chat-approval-history-region { margin: 0 0 22px; padding: 0; border: 0; }
+body[data-console-version="v3"] #v3ContextBody .project-approval-card { padding: 13px; border-radius: 9px; }
+body[data-console-version="v3"] #v3ContextBody .project-preview-toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+body[data-console-version="v3"] .v3-approval-notice {
+    flex: none;
+    margin: 10px 34px 0;
+    padding: 9px 12px;
+    border: 1px solid #ead9b8;
+    border-radius: 8px;
+    background: #fff8eb;
+    color: #7b5318;
+    text-align: left;
+    font-size: 13px;
+}
+body[data-console-version="v3"] #projectChatBody > .project-preview-toolbar,
+body[data-console-version="v3"] #projectRunStatus,
+body[data-console-version="v3"] #projectRunStop,
+body[data-console-version="v3"] #projectMessagesMore { flex: none; margin: 10px 34px 0; }
+body[data-console-version="v3"] #projectChatBody > .project-preview-toolbar { display: flex; justify-content: space-between; gap: 12px; }
+body[data-console-version="v3"] #projectRunStatus:empty { display: none; }
+body[data-console-version="v3"] #projectChatForm > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+body[data-console-version="v3"] #projectChatForm .project-authorization-mode {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin: 8px 0 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+body[data-console-version="v3"] #projectAuthorizationMode { width: auto; max-width: 100%; margin: 0; font-size: 12px; }
+body[data-console-version="v3"] #projectAuthorizationHelp { flex-basis: 100%; margin: 0; font-size: 12px; line-height: 1.6; }
+body[data-console-version="v3"] #projectChatSend { display: block; margin: 9px 0 0 auto; min-height: 33px; font-size: 13px; }
+body[data-console-version="v3"] #projectChatMessages .project-chat-message { margin: 0 0 26px; border: 0; background: transparent; padding: 0; font-size: 15px; line-height: 1.8; }
+body[data-console-version="v3"] #projectChatMessages .project-chat-message pre { margin: 8px 0 0; padding: 0; border: 0; background: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+body[data-console-version="v3"] #projectChatMessages .project-chat-message[data-role="user"] { width: fit-content; max-width: 88%; margin-left: auto; padding: 12px 17px; border-radius: 16px 16px 4px 16px; background: var(--v3-surface, #f3f3f4); }
+body[data-console-version="v3"] #projectChatMessages .project-chat-message[data-role="user"] > strong { display: none; }
+@media (max-width: 760px) {
+    body[data-console-version="v3"] .chat-main-heading { padding: 14px 20px 5px; }
+    body[data-console-version="v3"] #chatMessageList,
+    body[data-console-version="v3"] #projectChatMessages { padding: 18px 20px; }
+    body[data-console-version="v3"] #chatForm,
+    body[data-console-version="v3"] #projectChatForm { width: calc(100% - 26px); margin: 8px auto 13px; padding: 12px; border-radius: 16px; }
+    body[data-console-version="v3"] .chat-message { font-size: 15px; }
+    body[data-console-version="v3"] .chat-welcome h3 { font-size: 25px; }
+    body[data-console-version="v3"] .chat-composer-footer { flex-wrap: wrap; gap: 8px; }
+    body[data-console-version="v3"] .chat-composer-footer > div:first-child { flex: 1; min-width: 120px; }
+    body[data-console-version="v3"] .chat-run-actions { margin-left: auto; }
+    body[data-console-version="v3"] .chat-icon-button span { display: none; }
+    body[data-console-version="v3"] .chat-guidance { max-width: 190px; }
+    body[data-console-version="v3"] .v3-approval-notice { margin: 8px 20px 0; }
+    body[data-console-version="v3"] #projectChatBody > .project-preview-toolbar,
+    body[data-console-version="v3"] #projectRunStatus,
+    body[data-console-version="v3"] #projectRunStop,
+    body[data-console-version="v3"] #projectMessagesMore { margin-left: 20px; margin-right: 20px; }
+    body[data-console-version="v3"] #projectAuthorizationMode { max-width: 190px; }
+}

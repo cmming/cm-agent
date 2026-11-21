@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="same-origin">
+    <title>本机客户端 | CM Agent 控制台 V3</title>
+    <link rel="icon" href="/assets/icons/square.svg" type="image/svg+xml">
+
+
+
+
+
+
+
+<link rel="stylesheet" href="/assets/styles.css?v=2.0.17">
+<link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.3.4">
+<link rel="stylesheet" href="/console/v2/assets/sandbox-endpoints.css?v=1.0.0">
+<link rel="stylesheet" href="/console/v2/assets/skill-artifacts.css?v=1.0.0">
+<link rel="stylesheet" href="/assets/chat-stop.css?v=1.0.1">
+<link rel="stylesheet" href="/console/v2/assets/workbench.css?v=1.0.3">
+<link rel="stylesheet" href="/console/v2/assets/local-projects.css?v=1.11.0">
+<link rel="stylesheet" href="/console/v2/assets/local-client.css?v=1.0.4">
+<link rel="stylesheet" href="/console/v3/assets/compatibility.css?v=3.0.0">
+<link rel="stylesheet" href="/console/v3/assets/workspace.css?v=3.0.1">
+<link rel="stylesheet" href="/console/v3/assets/chat-workspace.css?v=3.0.1">
+</head>
+<body data-console-version="v3" data-page="localClientPage">
+<div class="console-layout">
+    <aside class="sidebar v3-sidebar" id="v3Sidebar" aria-label="工作区导航">
+  <div class="v3-brand-row"><a href="/console/v3/chat.html" class="v3-brand" aria-label="CM Agent 聊天工作区"><span class="v3-brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"/></svg></span><strong>CM Agent</strong></a><button id="v3SidebarClose" class="v3-icon-button" type="button" aria-label="收起导航"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button></div>
+  <div class="v3-primary-actions"><a href="/console/v3/chat.html" id="v3NewConversation" class="v3-action"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>新会话</span></a><a href="/console/v3/chat.html" id="v3FindConversation" class="v3-action"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><span>查找会话</span></a></div>
+  <div class="v3-sidebar-scroll"><nav id="sidebarNav" aria-label="控制台导航"><div class="v3-primary-nav"><a class="nav-item" href="/console/v3/chat.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#chat"></use></svg><span>会话聊天</span></a><a class="nav-item" href="/console/v3/projects.html"><svg class="nav-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M3 7V5h7l2 3h9v12H3Z"/></svg><span>本地项目</span></a></div><div id="v3WorkspaceNavigation" class="v3-workspace-navigation"></div><details class="v3-platform-nav" open><summary><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#overview"></use></svg><span>平台管理</span><svg class="v3-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></summary><div><a class="nav-item" href="/console/v3/overview.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#overview"></use></svg><span>能力总览</span></a><a class="nav-item" href="/console/v3/agents.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#agents"></use></svg><span>Agent 管理</span></a><a class="nav-item" href="/console/v3/model-configs.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#model-configs"></use></svg><span>模型配置</span></a><a class="nav-item" href="/console/v3/tools.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#tools"></use></svg><span>工具治理</span></a><a class="nav-item" href="/console/v3/skills.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#skills"></use></svg><span>技能管理</span></a><a class="nav-item" href="/console/v3/runs.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#runs"></use></svg><span>运行记录</span></a><a class="nav-item" href="/console/v3/audit.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#audit"></use></svg><span>审计日志</span></a><a class="nav-item active" href="/console/v3/local-client.html" aria-current="page"><svg class="nav-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>本机客户端</span></a></div></details></nav></div>
+  <div class="v3-sidebar-footer"><div class="v3-version-note">V3 工作区</div><div class="v3-system-links"><a href="/console/v2/chat.html">V2 控制台</a><a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI</a><a href="/actuator/health" target="_blank" rel="noreferrer">健康检查</a></div></div>
+</aside><button id="v3NavScrim" class="v3-nav-scrim" type="button" aria-label="关闭导航" hidden></button>
+    <main class="workspace">
+        <header class="workspace-header v3-topbar"><button id="v3NavToggle" class="v3-icon-button" type="button" aria-label="打开导航" aria-controls="v3Sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button><p class="workspace-crumb">当前工作区 <span aria-hidden="true">/</span> <b>本机客户端</b></p><div class="user-actions"><button id="v3ContextToggle" class="button ghost v3-context-toggle" type="button" aria-controls="v3ContextPanel" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg><span>上下文</span></button><span class="online-dot" aria-label="控制台服务状态，不代表设备在线"></span><span class="system-status">控制台服务已连接</span><span class="user-avatar" aria-hidden="true">管</span><span id="currentUser" class="sr-only">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
+        <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
+        <section id="localClientPage" class="page-view" aria-label="本机客户端管理">
+            <div class="page-intro">
+                <div><h1>本机客户端</h1><p>登记运行客户端的电脑，供后续会话选择。本页只显示服务端配对状态，不显示设备在线状态。</p></div>
+                <button id="refreshLocalClientDevicesBtn" class="button ghost" type="button"><img src="/assets/icons/refresh-cw.svg" alt="" width="16" height="16">刷新设备</button>
+            </div>
+            <div class="local-client-layout">
+                <section class="panel local-client-pairing-panel" aria-labelledby="localClientPairHeading">
+                    <div class="panel-heading"><div><h2 id="localClientPairHeading">连接新电脑</h2><p>在要执行操作的电脑上准备客户端，浏览器可以在另一台电脑使用。</p></div></div>
+                    <div class="local-client-setup" aria-label="首次连接步骤">
+                        <ol>
+                            <li><strong>准备客户端</strong><p>在构建电脑使用 JDK 21 和 Maven 3.9+ 构建 <code>cm-agent-local-client</code> 模块，然后把生成的 <code>-all.jar</code> 复制到目标电脑。目标电脑只需 JDK 21，不需要 Maven、源码或其他依赖目录。服务端需在隔离测试环境启用本机客户端功能；客户端使用部署中显式配置并允许的 HTTP 或 HTTPS 服务地址。</p>
+                                <details><summary>查看源码构建命令</summary><p>在项目源码根目录运行：</p>
+                                    <div class="local-client-command-block">
+                                        <div class="local-client-command-toolbar"><span>PowerShell / Bash</span><button class="button ghost compact" type="button" data-command-copy="localClientBuildCommand" data-command-status="localClientBuildCommandStatus">复制命令</button></div>
+                                        <pre tabindex="0" aria-label="构建命令"><code id="localClientBuildCommand">mvn -pl cm-agent-local-client -am -DskipTests package</code></pre>
+                                        <p id="localClientBuildCommandStatus" class="local-client-command-status" role="status" aria-live="polite"></p>
+                                    </div>
+                                    <p>可执行文件位于 <code>cm-agent-local-client/target/cm-agent-local-client-0.1.0-SNAPSHOT-all.jar</code>；版本号变化时按构建输出替换。</p>
+                                </details>
+                            </li>
+                            <li><strong>生成配对包</strong><p>在目标电脑的交互式终端运行下面的配对命令，将服务端地址和设备名称换成实际值。保留终端打开，按提示设置本机身份口令（如需要），复制完整 JSON。</p>
+                                <details open><summary>配对命令与全部参数</summary>
+                                    <div class="local-client-command-block">
+                                        <div class="local-client-command-toolbar"><span>命令 <code>pair</code></span><button class="button ghost compact" type="button" data-command-copy="localClientPairCommand" data-command-status="localClientPairCommandStatus">复制命令</button></div>
+                                        <pre tabindex="0" aria-label="配对命令"><code id="localClientPairCommand">java -jar cm-agent-local-client-0.1.0-SNAPSHOT-all.jar pair --server http://服务端地址:端口 --name 设备名称</code></pre>
+                                        <p id="localClientPairCommandStatus" class="local-client-command-status" role="status" aria-live="polite"></p>
+                                    </div>
+                                    <p>复制后请替换命令中的中文占位符。Windows、Linux 和 macOS 使用相同参数。</p>
+                                    <dl class="local-client-command-params" aria-label="配对命令参数">
+                                        <div><dt><code>--server &lt;URL&gt;</code><span>必填</span></dt><dd>服务端 HTTP/HTTPS 规范来源，例如 <code>http://192.168.1.10:8080</code>。只允许根来源，不接受查询、片段或子路径，且必须与部署 audience 和允许来源完全一致。</dd></div>
+                                        <div><dt><code>--name &lt;设备名称&gt;</code><span>必填</span></dt><dd>用于浏览器核对的目标电脑名称，长度为 1–120 个字符。</dd></div>
+                                        <div><dt><code>--state-dir &lt;目录&gt;</code><span>可选</span></dt><dd>保存设备身份和本地见证的位置。默认 Windows 为 <code>%USERPROFILE%\.cm-agent\local-client</code>，Linux/macOS 为 <code>$HOME/.cm-agent/local-client</code>；指定后后续 <code>run</code> 必须使用同一目录。</dd></div>
+                                        <div><dt><code>--credential-backend system|password</code><span>可选</span></dt><dd>设备私钥的保存方式。未指定 <code>--state-dir</code> 时默认 <code>system</code>；指定 <code>--state-dir</code> 时默认 <code>password</code>。自定义状态目录必须先使用 <code>password</code>，不能与 <code>system</code> 组合。</dd></div>
+                                        <div><dt><code>--password-stdin</code><span>可选标志</span></dt><dd>仅用于 <code>password</code> 凭据后端，从标准输入读取口令；<code>pair</code> 需要输入两次相同的非空口令。普通交互式终端可省略，由程序安全提示输入。</dd></div>
+                                    </dl>
+                                    <p><code>system</code> 使用操作系统凭据存储；<code>password</code> 使用受口令保护的本地密钥文件。使用 HTTPS 时仍由 JVM 校验服务器证书和主机名；不要将 <code>localhost</code> 当作另一台电脑的服务端地址。</p>
+                                </details>
+                            </li>
+                            <li><strong>核对并确认配对</strong><p>将 JSON 粘贴到下方，核对设备名称和平台属于目标电脑，再确认配对。浏览器确认后，回到客户端终端等待“配对完成”；服务端显示已登记不代表客户端已完成或在线。</p></li>
+                            <li><strong>启动客户端并选择单轮授权</strong><p>配对完成后，在目标电脑运行以下命令并保持客户端运行。然后到<a href="/console/v3/chat.html">会话聊天</a>选择设备、本轮允许的能力和确认方式，再发送任务。</p>
+                                <details open><summary>启动命令与全部参数</summary><p>在 fat JAR 所在目录的交互式终端运行；如设置过身份口令，按提示输入。</p>
+                                    <div class="local-client-command-block">
+                                        <div class="local-client-command-toolbar"><span>命令 <code>run</code></span><button class="button ghost compact" type="button" data-command-copy="localClientRunCommand" data-command-status="localClientRunCommandStatus">复制命令</button></div>
+                                        <pre tabindex="0" aria-label="启动命令"><code id="localClientRunCommand">java -jar cm-agent-local-client-0.1.0-SNAPSHOT-all.jar run</code></pre>
+                                        <p id="localClientRunCommandStatus" class="local-client-command-status" role="status" aria-live="polite"></p>
+                                    </div>
+                                    <dl class="local-client-command-params" aria-label="启动命令参数">
+                                        <div><dt><code>--state-dir &lt;目录&gt;</code><span>可选</span></dt><dd>必须与配对时使用的状态目录一致；省略时使用当前用户的默认目录。启动命令不再接收 <code>--server</code> 或 <code>--name</code>，服务端来源和设备身份均已从该目录读取。</dd></div>
+                                        <div><dt><code>--credential-backend system|password</code><span>可选</span></dt><dd>必须与配对身份的实际保存方式一致。未指定 <code>--state-dir</code> 时默认 <code>system</code>；指定 <code>--state-dir</code> 时默认 <code>password</code>。</dd></div>
+                                        <div><dt><code>--password-stdin</code><span>可选标志</span></dt><dd>仅用于 <code>password</code> 凭据后端，从标准输入读取一次解密口令；普通交互式终端可省略。</dd></div>
+                                    </dl>
+                                </details>
+                            </li>
+                        </ol>
+                        <p class="local-client-pair-boundary">配对只登记设备，不授予文件、联网或命令操作权限；每次运行仍需在会话中选择设备、能力和确认方式，并受现有权限与审批策略约束。</p>
+                    </div>
+                    <form id="localClientPairForm" class="local-client-pair-form">
+                        <label for="localClientPairPackage">客户端配对包</label>
+                        <textarea id="localClientPairPackage" rows="10" required spellcheck="false" autocomplete="off" placeholder='{"requestId":"…","deviceName":"…","platform":"WINDOWS","publicKey":"…","nonce":"…","proof":"…"}' aria-describedby="localClientPairHelp"></textarea>
+                        <p id="localClientPairHelp" class="field-help">浏览器只转交客户端签名的设备身份。请核对生成配对包的电脑；服务端确认后仍需等待该客户端完成配对。</p>
+                        <div id="localClientPairPreview" class="local-client-pair-preview" hidden>
+                            <span>待连接设备</span><strong id="localClientPairDeviceName">—</strong><small id="localClientPairPlatform">—</small>
+                        </div>
+                        <p class="local-client-risk-note">“完全访问”仅在后续运行中选择，并在已授权能力和服务端策略范围内生效。命令继承客户端运行账号的操作系统权限，可能访问项目外资源并产生不可逆变化。</p>
+                        <button id="confirmLocalClientPairBtn" class="button primary" type="submit">确认配对</button>
+                        <p id="localClientPairStatus" class="form-status" role="status" aria-live="polite"></p>
+                    </form>
+                </section>
+                <div class="local-client-device-workspace">
+                    <section class="panel local-client-device-list-panel" aria-labelledby="localClientDeviceListHeading">
+                        <div class="panel-heading"><h2 id="localClientDeviceListHeading">已登记设备</h2><span id="localClientDeviceCount" class="status-badge" data-tone="neutral" title="包含已撤销设备">共 0 台</span></div>
+                        <p id="localClientDeviceStatus" class="form-status" role="status" aria-live="polite"></p>
+                        <div id="localClientDeviceList" class="resource-list"><p class="empty-state">正在读取设备。</p></div>
+                    </section>
+                    <section class="panel local-client-device-detail-panel" aria-labelledby="localClientDeviceDetailHeading">
+                        <h2 id="localClientDeviceDetailHeading" class="sr-only">设备详情</h2>
+                        <div id="localClientDeviceDetail"><p class="empty-state">选择一台设备查看状态。页面不显示设备是否在线。</p></div>
+                    </section>
+                </div>
+            </div>
+            <section class="local-client-scope" aria-labelledby="localClientScopeHeading">
+                <h2 id="localClientScopeHeading">授权边界</h2>
+                <dl>
+                    <div><dt>作用对象</dt><dd>生成配对包并运行客户端的电脑及其操作系统账号；浏览器可能在另一台电脑。</dd></div>
+                    <div><dt>生效时间</dt><dd>每轮 Run 单独选择；Run 结束或审批等待取消后失效。</dd></div>
+                    <div><dt>服务端约束</dt><dd>租户、原主体、Agent、会话、Run、设备签名、工具能力与审计必须同时有效。</dd></div>
+                    <div><dt>结果未知</dt><dd>断线、超时或停止不会自动重放，也不会承诺回滚已经发生的外部副作用。</dd></div>
+                </dl>
+            </section>
+        </section>
+    </main>
+</div>
+
+
+
+
+<aside id="v3ContextPanel" class="v3-context-panel" aria-label="会话上下文" hidden><div class="v3-context-header" id="v3ContextHeader"><h2>会话上下文</h2><button id="v3ContextClose" class="v3-icon-button" type="button" aria-label="关闭上下文"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><div id="v3ContextTabs" class="v3-context-tabs"></div><div id="v3ContextBody" class="v3-context-body"></div></aside>
+<script src="/assets/console-core.js?v=2.0.20"></script>
+<script src="/console/v2/assets/skills.js?v=2.1.2"></script>
+<script src="/console/v2/assets/sandbox-endpoints.js?v=1.1.1"></script>
+<script src="/console/v2/assets/skill-artifacts.js?v=1.0.2"></script>
+<script src="/console/v2/assets/project-development.js?v=1.2.2"></script>
+<script src="/console/v2/assets/local-projects.js?v=1.3.4"></script>
+<script src="/console/v2/assets/client-projects.js?v=1.2.3"></script>
+<script src="/console/v3/assets/chat-workspace.js?v=3.0.1"></script>
+<script src="/console/v3/assets/workspace.js?v=3.0.0"></script>
+<script src="/assets/app.js?v=2.0.47"></script>
+</body>
+</html>

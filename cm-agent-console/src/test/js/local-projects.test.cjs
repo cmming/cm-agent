@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const projects = require("../../main/resources/META-INF/resources/console/v2/assets/local-projects.js");
+const core = require("../../main/resources/META-INF/resources/assets/console-core.js");
 const fs = require("node:fs");
 const path = require("node:path");
 const selected = {requestId: "request-1", state: "SELECTED", ticketId: "ticket-1", expiresAt: "2099-01-01T00:00:00Z"};
@@ -69,6 +70,27 @@ test("选择网络未知只查询原请求，不自动重开窗口", async () =>
     assert.equal(calls.length, 1);
     await flow.check(); assert.equal(flow.value().phase, "SELECTED");
     assert.equal(calls[1][0], "/api/projects/selections/request-1");
+});
+
+test("服务端确认原目录选择已过期后释放选择锁，保留同号诊断并且只接受手动再开", async () => {
+    const calls = [];
+    let serial = 0;
+    const api = core.createApiClient({getToken: () => "", onUnauthorized: () => {},
+        fetchImpl: async (url, options) => {
+            calls.push([url, options.method]);
+            if (options.method === "POST") return new Response("{}", {status: 200});
+            if (url.endsWith("request-1")) return Response.json({errorCode: "PROJECT_SELECTION_NOT_FOUND",
+                errorId: "test-error-id", message: "目录选择不存在或已过期"}, {status: 404});
+            return Response.json({...selected, requestId: "request-2"});
+        }});
+    const flow = projects.createSelection({request: api.request, randomId: () => `request-${++serial}`});
+    await flow.start();
+    assert.deepEqual(flow.value(), {phase: "EXPIRED", errorCode: "PROJECT_SELECTION_NOT_FOUND", errorId: "test-error-id"});
+    await flow.check();
+    assert.equal(calls.length, 2);
+    await flow.start();
+    assert.equal(flow.value().requestId, "request-2");
+    assert.equal(flow.value().phase, "SELECTED");
 });
 
 test("添加结果未知禁止再次消费授权，查询也不能退回已选择", async () => {
@@ -246,6 +268,34 @@ test("聊天页重启后恢复上次活动项目", async () => {
     assert.equal(document.getElementById("chatModeProject").attributes["aria-pressed"], "true");
     assert.equal(document.getElementById("projectChatWorkspace").hidden, false);
     page.dispose();
+});
+
+test("项目聊天布局在替换和销毁前同步还原节点，新模板挂载早于业务绑定", async () => {
+    const document = dom(), order = [];
+    document.getElementById("chatProjectConversationTemplate").content = {cloneNode: () => document.createElement("section")};
+    let current = "";
+    const page = projects.createChatPage({document, getSessionEpoch: () => 1,
+        layoutHooks: {
+            beforeProjectReplace({mount, projectId}) { assert.equal(mount, document.getElementById("chatProjectConversationMount")); order.push(`还原:${projectId}`); },
+            afterProjectClone({project}) { order.push(`布局:${project.id}`); },
+            beforeDispose() { order.push("离页还原"); }
+        },
+        host: {...host(), CmAgentProjectDevelopment: {create() {
+            const id = current;
+            order.push(`创建:${id}`);
+            return {async mount(project) { order.push(`挂载:${project.id}`); }, dispose() { order.push(`销毁:${id}`); }};
+        }}},
+        api: {request: async url => {
+            if (url.endsWith("capabilities")) return {enabled: true, conversations: true};
+            if (url.startsWith("/api/projects?")) return [];
+            current = url.split("/").at(-1);
+            return {id: current, name: current, state: "ACTIVE"};
+        }}});
+    await page.mount();
+    await document.getElementById("chatProjectSelect").events.change({target: {value: "a"}});
+    await document.getElementById("chatProjectSelect").events.change({target: {value: "b"}});
+    page.dispose();
+    assert.deepEqual(order, ["还原:a", "布局:a", "创建:a", "挂载:a", "还原:b", "销毁:a", "布局:b", "创建:b", "挂载:b", "离页还原", "销毁:b"]);
 });
 
 test("v2入口均预载项目脚本样式且不将文件夹选择伪装为上传", () => {

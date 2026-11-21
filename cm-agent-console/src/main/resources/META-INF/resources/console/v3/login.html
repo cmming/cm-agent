@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="same-origin">
+    <title>登录 | CM Agent 控制台 V3</title>
+    <link rel="icon" href="/assets/icons/square.svg" type="image/svg+xml">
+
+
+
+
+
+<link rel="stylesheet" href="/assets/styles.css?v=2.0.17">
+<link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.3.4">
+<link rel="stylesheet" href="/console/v2/assets/sandbox-endpoints.css?v=1.0.0">
+<link rel="stylesheet" href="/console/v2/assets/skill-artifacts.css?v=1.0.0">
+<link rel="stylesheet" href="/assets/chat-stop.css?v=1.0.1">
+<link rel="stylesheet" href="/console/v2/assets/workbench.css?v=1.0.3">
+<link rel="stylesheet" href="/console/v2/assets/local-projects.css?v=1.11.0">
+<link rel="stylesheet" href="/console/v2/assets/local-client.css?v=1.0.4">
+<link rel="stylesheet" href="/console/v3/assets/compatibility.css?v=3.0.0">
+<link rel="stylesheet" href="/console/v3/assets/workspace.css?v=3.0.1">
+<link rel="stylesheet" href="/console/v3/assets/chat-workspace.css?v=3.0.1">
+</head>
+<body data-console-version="v3" data-page="login">
+<section id="loginView" class="login-view" aria-labelledby="loginTitle">
+    <div class="login-intro">
+        <p class="eyebrow">CM AGENT</p>
+        <h2>从一个项目开始，<br>让工作持续向前</h2>
+        <p>围绕项目展开对话，在同一个工作区管理模型、工具、审批与运行记录。</p>
+    </div>
+    <form id="loginForm" class="login-card">
+        <div class="login-version">
+            <div class="brand-mark" aria-hidden="true">CM</div>
+            <span class="version-badge">V3 工作区</span>
+        </div>
+        <p class="eyebrow">企业智能体管理控制台</p>
+        <h1 id="loginTitle">登录 CM Agent</h1>
+        <p class="muted">登录状态通过安全会话维持，退出或关闭浏览器后失效。</p>
+
+        <label for="loginUsername">用户名</label>
+        <input id="loginUsername" name="username" type="text" autocomplete="username" required>
+
+        <label for="loginPassword">密码</label>
+        <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+
+        <button id="loginBtn" class="button primary full-width" type="submit">进入工作区</button>
+        <p id="loginStatus" class="form-status" aria-live="polite">请输入用户名和密码。</p>
+        <div class="v3-login-links"><a class="legacy-link" href="/console/v2/login.html">V2 控制台</a><a class="legacy-link" href="/console/v1/">旧版 V1</a></div>
+    </form>
+</section>
+
+
+
+
+
+<script src="/assets/console-core.js?v=2.0.20"></script>
+<script src="/console/v2/assets/skills.js?v=2.1.2"></script>
+<script src="/console/v2/assets/sandbox-endpoints.js?v=1.1.1"></script>
+<script src="/console/v2/assets/skill-artifacts.js?v=1.0.2"></script>
+<script src="/console/v2/assets/project-development.js?v=1.2.2"></script>
+<script src="/console/v2/assets/local-projects.js?v=1.3.4"></script>
+<script src="/console/v2/assets/client-projects.js?v=1.2.3"></script>
+<script src="/console/v3/assets/chat-workspace.js?v=3.0.1"></script>
+<script src="/console/v3/assets/workspace.js?v=3.0.0"></script>
+<script src="/assets/app.js?v=2.0.47"></script>
+</body>
+</html>

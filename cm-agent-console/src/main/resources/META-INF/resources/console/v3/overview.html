@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="same-origin">
+    <title>能力总览 | CM Agent 控制台 V3</title>
+    <link rel="icon" href="/assets/icons/square.svg" type="image/svg+xml">
+
+
+
+
+
+<link rel="stylesheet" href="/assets/styles.css?v=2.0.17">
+<link rel="stylesheet" href="/console/v2/assets/multipage.css?v=2.3.4">
+<link rel="stylesheet" href="/console/v2/assets/sandbox-endpoints.css?v=1.0.0">
+<link rel="stylesheet" href="/console/v2/assets/skill-artifacts.css?v=1.0.0">
+<link rel="stylesheet" href="/assets/chat-stop.css?v=1.0.1">
+<link rel="stylesheet" href="/console/v2/assets/workbench.css?v=1.0.3">
+<link rel="stylesheet" href="/console/v2/assets/local-projects.css?v=1.11.0">
+<link rel="stylesheet" href="/console/v2/assets/local-client.css?v=1.0.4">
+<link rel="stylesheet" href="/console/v3/assets/compatibility.css?v=3.0.0">
+<link rel="stylesheet" href="/console/v3/assets/workspace.css?v=3.0.1">
+<link rel="stylesheet" href="/console/v3/assets/chat-workspace.css?v=3.0.1">
+</head>
+<body data-console-version="v3" data-page="overviewPage">
+<div class="console-layout">
+    <aside class="sidebar v3-sidebar" id="v3Sidebar" aria-label="工作区导航">
+  <div class="v3-brand-row"><a href="/console/v3/chat.html" class="v3-brand" aria-label="CM Agent 聊天工作区"><span class="v3-brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"/></svg></span><strong>CM Agent</strong></a><button id="v3SidebarClose" class="v3-icon-button" type="button" aria-label="收起导航"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button></div>
+  <div class="v3-primary-actions"><a href="/console/v3/chat.html" id="v3NewConversation" class="v3-action"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>新会话</span></a><a href="/console/v3/chat.html" id="v3FindConversation" class="v3-action"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><span>查找会话</span></a></div>
+  <div class="v3-sidebar-scroll"><nav id="sidebarNav" aria-label="控制台导航"><div class="v3-primary-nav"><a class="nav-item" href="/console/v3/chat.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#chat"></use></svg><span>会话聊天</span></a><a class="nav-item" href="/console/v3/projects.html"><svg class="nav-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M3 7V5h7l2 3h9v12H3Z"/></svg><span>本地项目</span></a></div><div id="v3WorkspaceNavigation" class="v3-workspace-navigation"></div><details class="v3-platform-nav" open><summary><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#overview"></use></svg><span>平台管理</span><svg class="v3-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></summary><div><a class="nav-item active" href="/console/v3/overview.html" aria-current="page"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#overview"></use></svg><span>能力总览</span></a><a class="nav-item" href="/console/v3/agents.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#agents"></use></svg><span>Agent 管理</span></a><a class="nav-item" href="/console/v3/model-configs.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#model-configs"></use></svg><span>模型配置</span></a><a class="nav-item" href="/console/v3/tools.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#tools"></use></svg><span>工具治理</span></a><a class="nav-item" href="/console/v3/skills.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#skills"></use></svg><span>技能管理</span></a><a class="nav-item" href="/console/v3/runs.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#runs"></use></svg><span>运行记录</span></a><a class="nav-item" href="/console/v3/audit.html"><svg class="nav-icon" aria-hidden="true" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#audit"></use></svg><span>审计日志</span></a><a class="nav-item" href="/console/v3/local-client.html"><svg class="nav-icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>本机客户端</span></a></div></details></nav></div>
+  <div class="v3-sidebar-footer"><div class="v3-version-note">V3 工作区</div><div class="v3-system-links"><a href="/console/v2/chat.html">V2 控制台</a><a href="/swagger-ui/index.html" target="_blank" rel="noreferrer">OpenAPI</a><a href="/actuator/health" target="_blank" rel="noreferrer">健康检查</a></div></div>
+</aside><button id="v3NavScrim" class="v3-nav-scrim" type="button" aria-label="关闭导航" hidden></button>
+    <main class="workspace">
+        <header class="workspace-header v3-topbar"><button id="v3NavToggle" class="v3-icon-button" type="button" aria-label="打开导航" aria-controls="v3Sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button><p class="workspace-crumb">当前工作区 <span aria-hidden="true">/</span> <b id="pageTitle">能力总览</b></p><div class="user-actions"><button id="v3ContextToggle" class="button ghost v3-context-toggle" type="button" aria-controls="v3ContextPanel" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg><span>上下文</span></button><span class="user-avatar" aria-hidden="true">管</span><span id="currentUser" class="sr-only">—</span><button id="logoutBtn" class="button ghost" type="button">退出</button></div></header>
+        <p id="globalStatus" class="global-status" aria-live="polite" hidden></p>
+        <section id="overviewPage" class="page-view" aria-labelledby="overviewTitle">
+            <div class="page-intro"><div><p class="eyebrow">当前工作区</p><h1 id="overviewTitle">能力总览</h1><p>查看当前租户已交付的 Agent 能力、运行健康度与最近活动。</p></div><a class="button primary" href="/console/v3/runs.html">进入调试工作台</a></div>
+            <div class="stats-grid">
+                <article class="stat-card"><span>Agent 总数</span><strong id="overviewAgentCount">0</strong><a href="/console/v3/agents.html">管理 Agent →</a></article>
+                <article class="stat-card"><span>Tool 总数</span><strong id="overviewToolCount">0</strong><a href="/console/v3/tools.html">管理工具 →</a></article>
+                <article class="stat-card"><span>最近运行</span><strong id="overviewRunStatus">暂无</strong><small id="overviewRunTime">尚无运行记录</small></article>
+            </div>
+            <div class="overview-grid">
+                <article class="panel"><div class="panel-heading"><div><p class="eyebrow">活动</p><h2>最近运行</h2></div><a class="text-link" href="/console/v3/runs.html">查看全部 →</a></div><div id="overviewRuns" class="list-region"><p class="empty-state">正在加载最近运行。</p></div></article>
+                <article class="panel quick-actions"><div class="panel-heading"><div><p class="eyebrow">开始使用</p><h2>完成首个 Agent</h2></div></div><p id="overviewOnboardingHint" class="onboarding-hint">先添加并启用模型配置，随后创建 Agent 并发起一次调试运行。</p><ol id="overviewOnboardingSteps" class="onboarding-steps"><li data-step="model" aria-current="step">添加并启用模型配置</li><li data-step="agent">创建 Agent</li><li data-step="run">发起一次调试运行</li></ol><a id="overviewPrimaryAction" class="quick-action primary" href="/console/v3/model-configs.html"><span class="quick-action-icon" aria-hidden="true"><svg class="nav-icon" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#model-configs"></use></svg></span><span><strong id="overviewPrimaryActionTitle">配置首个模型</strong><small id="overviewPrimaryActionDescription">添加 Provider、地址与默认模型</small></span><b aria-hidden="true">→</b></a><a class="quick-action" href="/console/v3/model-configs.html"><span class="quick-action-icon" aria-hidden="true"><svg class="nav-icon" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#model-configs"></use></svg></span><span><strong>管理模型配置</strong><small>维护 Provider、地址与默认模型</small></span><b aria-hidden="true">→</b></a><a class="quick-action" href="/console/v3/tools.html"><span class="quick-action-icon" aria-hidden="true"><svg class="nav-icon" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#tools"></use></svg></span><span><strong>注册 Tool</strong><small>接入并治理可调用的能力</small></span><b aria-hidden="true">→</b></a><a class="quick-action" href="/console/v3/chat.html"><span class="quick-action-icon" aria-hidden="true"><svg class="nav-icon" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#chat"></use></svg></span><span><strong>开始会话</strong><small>连续聊天并保留上下文</small></span><b aria-hidden="true">→</b></a><a class="quick-action" href="/console/v3/runs.html"><span class="quick-action-icon" aria-hidden="true"><svg class="nav-icon" focusable="false"><use href="/console/v2/assets/workbench-icons.svg?v=1.0.0#runs"></use></svg></span><span><strong>执行 Agent</strong><small>发起调试并查看运行结果</small></span><b aria-hidden="true">→</b></a></article>
+            </div>
+        </section>
+    </main>
+</div>
+
+
+
+
+
+<aside id="v3ContextPanel" class="v3-context-panel" aria-label="会话上下文" hidden><div class="v3-context-header" id="v3ContextHeader"><h2>会话上下文</h2><button id="v3ContextClose" class="v3-icon-button" type="button" aria-label="关闭上下文"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><div id="v3ContextTabs" class="v3-context-tabs"></div><div id="v3ContextBody" class="v3-context-body"></div></aside>
+<script src="/assets/console-core.js?v=2.0.20"></script>
+<script src="/console/v2/assets/skills.js?v=2.1.2"></script>
+<script src="/console/v2/assets/sandbox-endpoints.js?v=1.1.1"></script>
+<script src="/console/v2/assets/skill-artifacts.js?v=1.0.2"></script>
+<script src="/console/v2/assets/project-development.js?v=1.2.2"></script>
+<script src="/console/v2/assets/local-projects.js?v=1.3.4"></script>
+<script src="/console/v2/assets/client-projects.js?v=1.2.3"></script>
+<script src="/console/v3/assets/chat-workspace.js?v=3.0.1"></script>
+<script src="/console/v3/assets/workspace.js?v=3.0.0"></script>
+<script src="/assets/app.js?v=2.0.47"></script>
+</body>
+</html>

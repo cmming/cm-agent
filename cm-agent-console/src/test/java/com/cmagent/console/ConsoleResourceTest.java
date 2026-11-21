@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -152,7 +154,7 @@ class ConsoleResourceTest {
         };
 
         assertThat(app)
-                .contains("loadCurrentPage", "/console/v2/login.html", "/api/auth/logout", "clearServerSession")
+                .contains("loadCurrentPage", "${consoleBasePath}/login.html", "/api/auth/logout", "clearServerSession")
                 .contains("state.token = accessToken", "loadMultiPage", "new DOMParser()", "pushState")
                 .contains("button[data-page]", "button[data-navigate]")
                 .doesNotContain("document.querySelectorAll(\"[data-page]\")")
@@ -404,6 +406,49 @@ class ConsoleResourceTest {
         String css = resource("META-INF/resources/console/v2/assets/multipage.css");
         assertThat(css).contains("grid-template-columns: 300px minmax(0, 1fr)",
                 ".management-form-grid", "repeat(2, minmax(0, 1fr))");
+    }
+
+    @Test
+    void v3各入口预载同一真实业务依赖并保留业务控件() throws IOException {
+        String[] pages = {"login", "overview", "agents", "model-configs", "tools", "skills", "projects",
+                "local-client", "chat", "runs", "audit"};
+        Pattern identifiers = Pattern.compile("\\bid=\"([^\"]+)\"");
+        for (String page : pages) {
+            String original = resource("META-INF/resources/console/v2/" + page + ".html");
+            String workspace = resource("META-INF/resources/console/v3/" + page + ".html");
+            assertThat(workspace).as("V3 页面 %s", page)
+                    .contains("data-console-version=\"v3\"", "/assets/console-core.js?v=2.0.20",
+                            "/assets/app.js?v=2.0.47", "/console/v2/assets/skills.js?v=2.1.2",
+                            "/console/v2/assets/project-development.js?v=1.2.2",
+                            "/console/v2/assets/local-projects.js?v=1.3.4",
+                            "/console/v2/assets/client-projects.js?v=1.2.3",
+                            "/console/v3/assets/workspace.js", "/console/v3/assets/chat-workspace.js")
+                    .doesNotContain("localStorage", "sessionStorage", "模拟回答", "示例预览");
+            for (String stylesheet : new String[]{"compatibility.css", "workspace.css", "chat-workspace.css"}) {
+                int position = workspace.indexOf("/console/v3/assets/" + stylesheet);
+                assertThat(position).as("%s 的 %s 应在 head 预载", page, stylesheet)
+                        .isGreaterThanOrEqualTo(0).isLessThan(workspace.indexOf("</head>"));
+            }
+            Matcher identifier = identifiers.matcher(original);
+            while (identifier.find()) {
+                assertThat(workspace).as("%s 保留共享业务绑定 %s", page, identifier.group(1))
+                        .contains("id=\"" + identifier.group(1) + "\"");
+            }
+        }
+    }
+
+    @Test
+    void v3管理导航覆盖现有模块且外观层不新增演示数据源() throws IOException {
+        String[] destinations = {"chat", "projects", "overview", "agents", "model-configs", "tools", "skills",
+                "runs", "audit", "local-client"};
+        String chat = resource("META-INF/resources/console/v3/chat.html");
+        for (String destination : destinations) {
+            assertThat(chat).contains("href=\"/console/v3/" + destination + ".html\"");
+        }
+        for (String script : new String[]{"workspace.js", "chat-workspace.js"}) {
+            assertThat(resource("META-INF/resources/console/v3/assets/" + script))
+                    .doesNotContain("localStorage", "sessionStorage", "simulationAnswer", "demo-run-");
+        }
     }
 
     private String resource(String path) throws IOException {

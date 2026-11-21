@@ -29,6 +29,25 @@ class ConsoleControllerRoutingTest {
     }
 
     @Test
+    void v3独立入口与固定短路径不改变默认版本() throws Exception {
+        for (String entry : new String[]{"/console/v3", "/console/v3/"}) {
+            mockMvc.perform(get(entry))
+                    .andExpect(status().isFound())
+                    .andExpect(header().string("Location", "/console/v3/login.html"));
+        }
+        for (String page : new String[]{"login", "overview", "agents", "model-configs", "tools", "skills",
+                "projects", "local-client", "chat", "runs", "audit"}) {
+            mockMvc.perform(get("/console/v3/" + page))
+                    .andExpect(status().isFound())
+                    .andExpect(header().string("Location", "/console/v3/" + page + ".html"));
+        }
+        mockMvc.perform(get("/console/v3/unsupported"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/console/v3/https:external.example"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     /**
      * 验证 v1 兼容路径继续返回原始单页控制台。
      */
