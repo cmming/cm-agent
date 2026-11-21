@@ -15,7 +15,7 @@
 | T3 | 完成 | 保留各页业务 DOM 与共享 API，八个管理页真实同源认证导航及只读资源检查已覆盖。各类管理写操作未逐项联调 |
 | T4 | 完成 | Node 257/257，控制台资源测试 18/18，独立路由测试 3/3。桌面及 390px、820px 浏览器窗口覆盖本次关键路径。独立评审聚焦兼容性与手机源码 |
 | T5 | 完成 | README、发布说明、V3 视觉文档与工作包已同步，实际地址和部署限制见本账本 |
-| T6 | 验证中 | 默认入口切换至 V3，显式版本入口仍指向各自版本。单独记录本轮验证与发布 |
+| T6 | 完成 | 默认入口与显式版本入口的跳转均符合预期，重启后两版可访问。定向测试全部通过，验证及发布详见 R1 记录 |
 
 ## 事实、假设与待核实项
 
@@ -69,6 +69,12 @@
 
 ## R1 默认入口验证与发布
 
-- 变更基线为 `0f88fea7e41853869104868e92b963e1e34176c6`，本轮改动未提交。
+- 变更基线为 `0f88fea7e41853869104868e92b963e1e34176c6`。入口实现提交 `ec58015d35ce028a5c1ab71514065cfee7f4ad16` 与冒烟夹具提交 `1282db53880648d048226cc0ca553e69fad02906` 均已推送至 `origin/master`。
+- 本机使用 JDK 21.0.11 和 Maven 3.9.4 执行 `mvn -q -pl cm-agent-server -am -Dtest=ConsoleControllerRoutingTest,ConsoleResourceTest -Dsurefire.failIfNoSpecifiedTests=false test`，路由测试 4 项和静态资源测试 18 项全部通过。
+- 2026-11-21 13:20:13（北京时间），使用 IDEA 的 `CmAgentServerApplication-mysql` 配置重启，8080 监听进程由 `2260` 切换为 `34208`，`/actuator/health` 返回 `UP`。冒烟夹具提交只涉及测试与说明。
+- 局域网实测 `/`、`/console`、`/console/`、`/console/v3`、`/console/v3/` 返回 HTTP 302 至 `/console/v3/login.html`，页面为 HTTP 200 且版本标记为 `v3`。`/console/v2` 与 `/console/v2/` 返回 HTTP 302 至 `/console/v2/login.html`，页面为 HTTP 200 且版本标记为 `v2`。V2、V3 聊天页和 `/console/v1/` 均返回 HTTP 200，`/console/v3/chat` 正确跳转至 V3 聊天页。
+- 首次 Rocky 冒烟检查使用 PostgreSQL 容器，Spring 上下文因测试缺少导入存储目录和密钥而未启动。冒烟测试加入 JUnit 独占临时目录与随机测试密钥。
+- Rocky 检出 `1282db53880648d048226cc0ca553e69fad02906`，Docker 23.0.6，使用 `maven:3.9.9-eclipse-temurin-21`（Maven 3.9.9、JDK 21.0.7）和 `postgres:16-alpine`。`mvn -B -q -pl cm-agent-server -am -Dtest=ConsoleSmokeTest,ConsoleControllerRoutingTest,ConsoleResourceTest -Dsurefire.failIfNoSpecifiedTests=false test` 退出 0，冒烟 3 项、路由 4 项、资源 18 项全部通过。此次验证聚焦入口和页面资源，范围为三组定向测试。
+- 按明确路径暂存。对比操作前后的 SHA-256，五个既有本地修改内容一致，六份未跟踪的旧原型文档仍在原位。工作包六份文档完成修订号、互链和围栏核对，`git diff --cached --check` 通过。
 
 关联：[清单](../checklists/2026-11-21-console-v3-workspace-checklist.md) · [提示词](../prompts/2026-11-21-console-v3-workspace-prompt.md) · [设计](../specs/2026-11-21-console-v3-workspace-design.md) · [计划](../plans/2026-11-21-console-v3-workspace.md) · [实现说明](../implementation/2026-11-21-console-v3-workspace-implementation-design.md)
